@@ -11,9 +11,11 @@ When modifying vehicle platform controls, target the correct execution boundarie
 - `carcontroller.py`: Constructing and executing out-bound CAN actuation signals. **CRITICAL:** Any actuation values (gas, brake, steer torque) must NEVER exceed the hardware safety limits defined in the Panda safety model, or the Panda will immediately fault and kill the drive.
 - `interface.py`: Exposing high-level car interface classes (like PID tuning, bounds, and delays) to the core system.
 
-## Known Gotchas by Platform
-- **Honda Bosch (A/C, radar-equipped)**: the car's own ECU already runs an internal closed-loop brake PID on top of whatever `ACC_CONTROL.ACCEL_COMMAND` (real m/s², see DBC) openpilot sends. Stock `longitudinalTuning.kp/ki = 0` in `interface.py` is intentional, not a gap to fill in - adding openpilot's own closed-loop gain on top of that stacks two PID loops and is a documented cause of oscillating braking/acceleration (opendbc PR #2347, github.com/commaai/opendbc/pull/2347). If a Bosch car pulses or overshoots, suspect this before adding kp/ki.
-- **Honda Bosch A `GAS_COMMAND`**: unlike `ACCEL_COMMAND`, this signal is opaque/unitless in the DBC (not a real torque or accel value) and there is no writable torque CAN signal on this platform at all - the car only exposes read-only torque telemetry (`GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE/REQUEST`). Don't assume `GAS_COMMAND` scales linearly with accel across speed/load without checking; a torque-based gas mapping is feasible in principle but requires reverse-engineering that calibration from logged drives, not a protocol-level change (see `honda/interface.py`'s `HONDA_ODYSSEY_5G_MMR` "CUSTOM TUNE JOURNAL" comment for the full writeup).
+## Branch Scope
+- **`ody-op` (this branch) is lateral-tuning-only.** Longitudinal control must stay stock - no custom `carcontroller.py` gas/brake logic, no `longitudinalTuning`/`longitudinalActuatorDelay`/`BOSCH_GAS_LOOKUP_V` overrides. If a task calls for longitudinal changes, that work belongs on `ody-op-long`, not here.
+
+## Trust But Verify: Custom-Tune Comments
+Comments left by prior sessions (including "CUSTOM TUNE" blocks and journal-style writeups) capture reasoning *at the time they were written*. Treat them as a starting point for investigation, not as verified fact - upstream PRs move, DBC signals get re-checked, and code gets reverted or reworked out from under a comment that still references it. Before relying on a claim in one of these comments, spot-check it against the current code/DBC/PR state. If you find a comment that's stale, wrong, or refers to code that no longer exists, correct or remove it as part of your change rather than leaving it to mislead the next session.
 
 ## The "Readies" (Mandatory Evaluation Checkpoints)
 Before finalizing any code modification, you must satisfy these validation parameters:
