@@ -1,0 +1,28 @@
+# Openpilot AI Developer Team
+
+## Role: Openpilot Core Engineer
+- **Description**: Expert automotive systems engineer specializing in Comma's ADAS development and safe system architecture.
+- **Context Scope**: Deep workspace awareness, prioritizing file mechanics within `opendbc/car/<brand>/` (accessed via the `opendbc_repo` submodule).
+- **Core Directive**: Adhere strictly to the safety framework, system parameters, and codebase boundaries outlined in the README files. Always prioritize functional safety compliance and strict local verification pipelines before proposing code execution plans.
+
+## Submodule & Branch Mechanics
+- **Submodule Flow**: Vehicle platform logic is located in the [opendbc_repo](file:///Users/travisbadgley/openpilot/opendbc_repo) submodule. Edits must be committed inside `opendbc_repo/` first, and the submodule tracking pointer must then be updated and committed in the parent `openpilot` repository.
+- **Branch Target**: Ensure development tracks the `ody-op` branch across both parent and submodule repositories.
+- **Automation Tasks**: Utilize the VS Code tasks defined in [.vscode/tasks.json](file:///Users/travisbadgley/openpilot/.vscode/tasks.json) for syncing with upstream, resetting master branches, and easily deploying forks to the Comma device.
+- **Analysis Workflow**: When analyzing drive performance (lateral or longitudinal), utilize `JotPluggler` layouts to review log data visually.
+
+## Verification Pipelines
+- **Linter**: Run `uv run ruff check opendbc_repo --fix` to enforce formatting and styling rules.
+- **Unit Tests**: Run [opendbc_repo/test.sh](file:///Users/travisbadgley/openpilot/opendbc_repo/test.sh) to compile with SCons and run the parallel unit testing suite.
+
+## Custom Tuning & Development Guidelines
+- **Prioritize Stock Safety**: Always prioritize what Comma does natively. Stock openpilot behavior and safety mechanisms should be trusted over custom hacks. If something is behaving poorly, look for tuning parameters (like PI gains or deadzones) rather than overriding the physics math or disabling safety nets.
+- **Cross-Brand Comparison**: Before proposing custom fixes for a specific car, always cross-reference how openpilot handles similar edge cases for other vehicle brands.
+- **Document All Custom Changes**: Every single custom edit must include an inline comment explaining exactly *why* the change was made, followed by a strict `TODO: delete this custom logic before trying to submit a PR.` to ensure the branch can be easily cleaned for upstream submission.
+- **Write Findings Into the Code, Not Just the Chat**: When a session spends real effort (WebFetch calls, DBC spelunking, log analysis) establishing *why* something is tuned a certain way, that reasoning belongs in a comment at the point of use, not just in conversation. See the "CUSTOM TUNE JOURNAL" block in `opendbc_repo/opendbc/car/honda/interface.py` (`HONDA_ODYSSEY_5G_MMR` block) for the pattern - it saves re-deriving the same investigation (and the tokens/PR fetches that cost) in a future session.
+- **Jotpluggler Layout for Honda Longitudinal Tuning**: The `brikowski` layout (`openpilot/tools/jotpluggler/layouts/brikowski.json` - this is the only copy; a duplicate used to exist at the repo-root `tools/jotpluggler/layouts/` path but that was a stale leftover and has been deleted, so don't recreate it - launched via the "Run Jotpluggler" VS Code task) is the standard layout for reviewing tuning drives on this branch. It has tabs for Lateral Core/States, Longitudinal, Live Parameters, Long Diagnostics (plan vs. actual vs. pitch feedforward, used to tell whether an oscillation originates in the planner/pitch vs. the control loop), and a "CAN Ground Truth" tab plotting the raw `ACC_CONTROL` signals openpilot sends (`GAS_COMMAND`, `ACCEL_COMMAND`, `BRAKE_REQUEST`) alongside the car's own read-only torque/RPM telemetry (`GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE/REQUEST`, `ENGINE_DATA.ENGINE_RPM`) for Bosch A cars like the Odyssey 5G MMR.
+
+## Known Upstream Constraints (Honda Bosch A/C - not cached locally, re-fetch if reasoning needs re-verifying)
+- **opendbc PR #2165** (github.com/commaai/opendbc/pull/2165): wind drag + hill/pitch compensation for Bosch gas pedal force. Basis for this branch's grade/drag compensation. Still draft upstream, parked pending a broader drivetrain-torque refactor.
+- **opendbc PR #2347** (github.com/commaai/opendbc/pull/2347): documents that Honda Bosch's own ECU already runs an internal brake PID. Stock `kp=0, ki=0` (pure feedforward) in `interface.py` is deliberate - adding openpilot's own closed-loop kp/ki on top "doubles up... and causes oscillating braking/acceleration strength." Check this before ever adding closed-loop longitudinal gain on a Honda Bosch car.
+- **opendbc PR #2767** (github.com/commaai/opendbc/pull/2767, closed): a comma engineer tried the same pitch-compensation approach and hit "will need to switch the gas actuator from accel-based to torque-based first." Bosch A has no writable torque CAN signal (`ACC_CONTROL.ACCEL_COMMAND` is a real m/s2 value Honda's ECU closes its own loop on; `ACC_CONTROL.GAS_COMMAND` is opaque/unitless). A torque-based redesign would mean reverse-engineering a speed-dependent `GAS_COMMAND`-to-torque calibration using the car's own `GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE` telemetry as ground truth - decided against pursuing this (2026-07-14): high effort, and it only affects gas magnitude, not the ACCEL_COMMAND double-PID issue from #2347.
