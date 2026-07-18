@@ -1,0 +1,155 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Push ody-op to device",
+      "type": "shell",
+      "command": "cd /Users/travisbadgley/openpilot && git push origin ody-op -f && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin ody-op && tools/op.sh build && sudo reboot\\\"\"",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Push ody-op-long to device",
+      "type": "shell",
+      "command": "cd /Users/travisbadgley/openpilot && git push origin ody-op-long -f && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin ody-op-long && tools/op.sh build && sudo reboot\\\"\"",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+
+    {
+      "label": "Checkout ody-op",
+      "type": "shell",
+      "command": "git checkout ody-op && cd opendbc_repo && git checkout ody-op",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Checkout ody-op-long",
+      "type": "shell",
+      "command": "git checkout ody-op-long && cd opendbc_repo && git checkout ody-op-long",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Run Jotpluggler",
+      "type": "shell",
+      "command": "uv run openpilot/tools/jotpluggler/jotpluggler --layout brikowski \"${input:jotplugglerArg}\"",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Run Cabana Live",
+      "type": "shell",
+      "command": "uv run scons openpilot/tools/cabana/_cabana openpilot/cereal/messaging/bridge && uv run openpilot/tools/cabana/_cabana --zmq tcp://192.168.1.200",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Run Cabana Route",
+      "type": "shell",
+      "command": "uv run scons openpilot/tools/cabana/_cabana openpilot/cereal/messaging/bridge && uv run openpilot/tools/cabana/_cabana \"${input:cabanaArg}\"",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Sync Upstream Codebase",
+      "type": "shell",
+      "command": "CURRENT_BRANCH=$(git branch --show-current) && \\\nif [[ \"$CURRENT_BRANCH\" != \"ody-op\" && \"$CURRENT_BRANCH\" != \"ody-op-long\" ]]; then echo '\\u274c Error: You can only squash on ody-op or ody-op-long. Aborting!' && exit 1; fi && \\\nif [ -n \"$(git status --porcelain)\" ]; then echo '\u274c Error: You have unstaged/uncommitted changes in openpilot. Aborting!' && exit 1; fi && \\\nif [ -n \"$(git -C opendbc_repo status --porcelain)\" ]; then echo '\u274c Error: You have unstaged/uncommitted changes in opendbc_repo. Aborting!' && exit 1; fi && \\\necho '\ud83d\udce5 Fetching latest factory updates...' && \\\ngit fetch upstream && \\\nPINNED_OPENDBC=$(git ls-tree upstream/master opendbc_repo | awk '{print $3}') && \\\nif [ -z \"$PINNED_OPENDBC\" ]; then echo '\u274c Error: could not read the opendbc commit pinned by openpilot upstream/master. Aborting!' && exit 1; fi && \\\necho \"\ud83d\udccc Pinning opendbc to $PINNED_OPENDBC (the commit openpilot master pins - NOT opendbc master; the two repos drift and a car.capnp schema mismatch crashes controlsd on-road)\" && \\\ncd opendbc_repo && \\\ngit fetch upstream && \\\necho '\ud83e\udd5e Squashing opendbc modifications onto the pinned commit...' && \\\ngit checkout $CURRENT_BRANCH && \\\ngit merge $PINNED_OPENDBC -m 'temp merge' && \\\ngit reset --soft $PINNED_OPENDBC && \\\ngit commit -m 'honda: sync and squash opendbc tuning modifications' --no-verify || true && \\\ncd .. && \\\necho '\ud83e\udd5e Squashing openpilot modifications...' && \\\ngit checkout $CURRENT_BRANCH && \\\n(git merge upstream/master -m 'temp merge' || (git add opendbc_repo && git commit -m 'resolve opendbc_repo' --no-verify)) && \\\ngit add opendbc_repo && \\\ngit reset --soft upstream/master && \\\ngit commit -m 'honda: sync and squash openpilot tuning modifications' --no-verify || true && \\\necho '\ud83d\udce4 Deploying clean forks to GitHub...' && \\\ncd opendbc_repo && \\\ngit push origin $CURRENT_BRANCH --force-with-lease && \\\ncd .. && \\\ngit push origin $CURRENT_BRANCH --force-with-lease && \\\necho '\ud83d\udd04 Updating submodules...' && \\\ngit submodule update --init --recursive && \\\necho '\u2705 Synchronization complete!'",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Reset Master Branches to Pristine Upstream",
+      "type": "shell",
+      "command": "CURRENT_BRANCH=$(git branch --show-current) && \\\nif [[ \"$CURRENT_BRANCH\" != \"ody-op\" && \"$CURRENT_BRANCH\" != \"ody-op-long\" ]]; then echo '\\u274c Error: You must be on ody-op or ody-op-long. Aborting!' && exit 1; fi && \\\necho '\\ud83d\\udce5 Syncing and resetting master branches...' && \\\ngit fetch upstream && \\\ngit checkout master && \\\ngit reset --hard upstream/master && \\\ncd opendbc_repo && \\\ngit fetch upstream && \\\ngit checkout master && \\\ngit reset --hard upstream/master && \\\necho '\\ud83d\\udce4 Overwriting master forks on GitHub...' && \\\ngit push origin master --force && \\\ncd .. && \\\ngit push origin master --force && \\\necho '\\ud83d\\udd04 Returning to tuning branch...' && \\\ngit checkout $CURRENT_BRANCH && \\\ncd opendbc_repo && \\\ngit checkout $CURRENT_BRANCH && \\\ncd .. && \\\necho '\\ud83d\\udd04 Updating submodules...' && \\\ngit submodule update --init --recursive && \\\necho '\\u2705 Master branches perfectly synchronized and reset!'",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Generate Longitudinal Report",
+      "type": "shell",
+      "command": "uv run python openpilot/tools/longitudinal_maneuvers/generate_report.py \"${input:reportRoute}\" 'ody-op-long tune'",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Run Checks",
+      "type": "shell",
+      "command": "echo '\ud83d\udd0d Checking your custom repository code syntax...' && \\\nuv run ruff check opendbc_repo && \\\nopendbc_repo/test.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "jotplugglerArg",
+      "type": "promptString",
+      "description": "Route/segment for jotpluggler — append /a for auto mode (full rlog when uploaded, qlog fallback otherwise). Recommended over /q, which is always decimated:"
+    },
+    {
+      "id": "cabanaArg",
+      "type": "promptString",
+      "description": "Enter route or segment for cabana:"
+    },
+    {
+      "id": "reportRoute",
+      "type": "promptString",
+      "description": "Route for longitudinal report (append /a for qlog fallback, e.g. 805f87f5.../00000091--39c3b16bcb/a):"
+    }
+  ]
+}
