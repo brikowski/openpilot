@@ -6,9 +6,9 @@
       "type": "pickString",
       "description": "Select the process to debug",
       "options": [
-        "openpilot/selfdrive/controls/controlsd.py",
-        "openpilot/system/timed/timed.py",
-        "openpilot/tools/sim/run_bridge.py"
+        "selfdrive/controls/controlsd.py",
+        "system/timed/timed.py",
+        "tools/sim/run_bridge.py"
       ]
     },
     {
@@ -16,7 +16,7 @@
       "type": "pickString",
       "description": "Select the process to debug",
       "options": [
-        "openpilot/selfdrive/ui/ui"
+        "selfdrive/ui/ui"
       ]
     },
     {
@@ -53,7 +53,7 @@
       "request": "attach",
       "pid": "${command:pickMyProcess}",
       "sourceMap": {
-        ".": "${workspaceFolder}/opendbc/safety"
+        ".": "${workspaceFolder}/opendbc_repo/opendbc/safety"
       },
       "initCommands": [
         "script import time; time.sleep(3)"
@@ -63,7 +63,7 @@
       "name": "Replay drive",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/opendbc/safety/tests/safety_replay/replay_drive.py",
+      "program": "${workspaceFolder}/opendbc_repo/opendbc/safety/tests/safety_replay/replay_drive.py",
       "args": [
         "${input:replayArg}"
       ],
