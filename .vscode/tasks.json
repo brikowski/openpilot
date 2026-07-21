@@ -2,21 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Push ody-op to device",
+      "label": "Push current branch to device",
       "type": "shell",
-      "command": "cd /Users/travisbadgley/openpilot && git push origin ody-op -f && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin ody-op && tools/op.sh build && sudo reboot\\\"\"",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Push ody-op-long to device",
-      "type": "shell",
-      "command": "cd /Users/travisbadgley/openpilot && git push origin ody-op-long -f && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin ody-op-long && tools/op.sh build && sudo reboot\\\"\"",
+      "command": "cd /Users/travisbadgley/openpilot && CURRENT_BRANCH=$(git branch --show-current) && case \"$CURRENT_BRANCH\" in ody-*) ;; *) echo \"\\u274c Refusing to deploy '$CURRENT_BRANCH' - checkout an ody-* branch first.\" && exit 1 ;; esac && echo \"\\ud83d\\ude97 Deploying $CURRENT_BRANCH to device...\" && git -C opendbc_repo push origin \"$CURRENT_BRANCH\" -f && git push origin \"$CURRENT_BRANCH\" -f && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin $CURRENT_BRANCH && tools/op.sh build && sudo reboot\\\"\"",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -27,21 +15,9 @@
     },
 
     {
-      "label": "Checkout ody-op",
+      "label": "Checkout branch",
       "type": "shell",
-      "command": "git checkout ody-op && cd opendbc_repo && git checkout ody-op",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Checkout ody-op-long",
-      "type": "shell",
-      "command": "git checkout ody-op-long && cd opendbc_repo && git checkout ody-op-long",
+      "command": "git checkout ${input:branchChoice} && cd opendbc_repo && git checkout ${input:branchChoice}",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -148,6 +124,13 @@
     }
   ],
   "inputs": [
+    {
+      "id": "branchChoice",
+      "type": "pickString",
+      "description": "Branch to checkout (parent + opendbc together):",
+      "options": ["ody-op", "ody-op-long", "ody-op-long2", "master"],
+      "default": "ody-op-long"
+    },
     {
       "id": "jotplugglerArg",
       "type": "promptString",
