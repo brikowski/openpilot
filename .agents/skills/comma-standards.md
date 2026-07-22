@@ -2,7 +2,7 @@
 # description: Triggers when writing, refactoring, or auditing code inside car ports or safety layers to ensure strict compliance with Comma's standards.
 
 ## Goal
-Ensure any proposed modification safely aligns with the architecture, guidelines, and definitions specified by Comma's engineering practices.
+Ensure any proposed modification safely aligns with the architecture, guidelines, and definitions specified by Comma's engineering practices. All fork modifications must comply with Openpilot's [safety framework](file:///Users/travisbadgley/openpilot/docs/SAFETY.md) and the [panda safety model](https://github.com/commaai/panda#safety-model).
 
 ## Code Architecture Alignment
 When modifying vehicle platform controls, target the correct execution boundaries:
@@ -26,7 +26,7 @@ Comments left by prior sessions (including "CUSTOM TUNE" blocks and journal-styl
 
 ## The "Readies" (Mandatory Evaluation Checkpoints)
 Before finalizing any code modification, you must satisfy these validation parameters:
-1. **Linter Compliance**: Force-verify Python modifications using the modern environment tool (e.g., `uv run ruff check . --fix`).
+1. **Linter Compliance**: Force-verify Python modifications using `uv run ruff check opendbc_repo --fix`.
 2. **Hook Verification**: Instruct or run `lefthook run lint` (or standard `pre-commit`) to prevent build log failures.
 3. **Safety Model Isolation**: Any logic touching C-based panda firmware must conform to MISRA C:2012 guidelines and support strict compiler flags (`-Wall -Wextra -Wstrict-prototypes -Werror`).
 4. **Car Interface Tests**: Run the car interfaces test suite (e.g., `uv run pytest opendbc_repo/opendbc/car/tests/test_car_interfaces.py` or equivalent in the active repository) to rapidly validate that car port modifications didn't break system definitions.

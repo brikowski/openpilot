@@ -15,6 +15,7 @@
 ## Verification Pipelines
 - **Linter**: Run `uv run ruff check opendbc_repo --fix` to enforce formatting and styling rules.
 - **Unit Tests**: Run [opendbc_repo/test.sh](file:///Users/travisbadgley/openpilot/opendbc_repo/test.sh) to compile with SCons and run the parallel unit testing suite.
+- **Car Interface Tests**: Run `uv run pytest opendbc_repo/opendbc/car/tests/test_car_interfaces.py` to validate that car port modifications didn't break system definitions.
 - **Longitudinal Maneuvers Report**: The opendbc README's recommended way to *behaviorally* evaluate longitudinal tuning (unit tests only check definitions). Run `uv run python openpilot/tools/longitudinal_maneuvers/generate_report.py <route>/a 'description'` (or the "Generate Longitudinal Report" VS Code task). The trailing **`/a`** forces the qlog fallback, needed when full rlogs aren't uploaded ("N/N logs were not found"). Output HTML lands in `openpilot/tools/longitudinal_maneuvers/longitudinal_reports/`; the summary table's target-cross times show how fast the car reaches each commanded accel. A parallel `lateral_maneuvers` tool exists for lateral (relevant to `ody-op`).
 
 ## Custom Tuning & Development Guidelines
