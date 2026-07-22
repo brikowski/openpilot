@@ -39,21 +39,9 @@
       }
     },
     {
-      "label": "Run Cabana Live",
+      "label": "Run Cabana",
       "type": "shell",
-      "command": "uv run scons openpilot/tools/cabana/_cabana openpilot/cereal/messaging/bridge && uv run openpilot/tools/cabana/_cabana --zmq tcp://192.168.1.200",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Run Cabana Route",
-      "type": "shell",
-      "command": "uv run scons openpilot/tools/cabana/_cabana openpilot/cereal/messaging/bridge && uv run openpilot/tools/cabana/_cabana \"${input:cabanaArg}\"",
+      "command": "ARG=\"${input:cabanaArg}\" && uv run scons openpilot/tools/cabana/_cabana openpilot/cereal/messaging/bridge && if [ \"$ARG\" = \"live\" ]; then uv run openpilot/tools/cabana/_cabana --zmq tcp://192.168.1.200; else uv run openpilot/tools/cabana/_cabana \"$ARG\"; fi",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -128,7 +116,7 @@
       "id": "branchChoice",
       "type": "pickString",
       "description": "Branch to checkout (parent + opendbc together):",
-      "options": ["ody-op", "ody-op-long", "ody-op-long2", "master"],
+      "options": ["ody-op", "ody-op-long", "master"],
       "default": "ody-op-long"
     },
     {
@@ -139,7 +127,7 @@
     {
       "id": "cabanaArg",
       "type": "promptString",
-      "description": "Enter route or segment for cabana:"
+      "description": "Enter route/segment for cabana, or 'live' to stream from the device:"
     },
     {
       "id": "reportRoute",
