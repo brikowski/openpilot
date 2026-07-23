@@ -4,7 +4,7 @@
     {
       "label": "Push current branch to device",
       "type": "shell",
-      "command": "cd /Users/travisbadgley/openpilot && CURRENT_BRANCH=$(git branch --show-current) && case \"$CURRENT_BRANCH\" in ody-*) ;; *) echo \"\\u274c Refusing to deploy '$CURRENT_BRANCH' - checkout an ody-* branch first.\" && exit 1 ;; esac && echo \"\\ud83d\\ude97 Deploying $CURRENT_BRANCH to device...\" && git -C opendbc_repo push origin \"$CURRENT_BRANCH\" -f && git push origin \"$CURRENT_BRANCH\" -f --no-verify && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin $CURRENT_BRANCH && tools/op.sh build && sudo reboot\\\"\"",
+      "command": "cd /Users/travisbadgley/openpilot && CURRENT_BRANCH=$(git branch --show-current) && case \"$CURRENT_BRANCH\" in ody-*) ;; *) echo \"\\u274c Refusing to deploy '$CURRENT_BRANCH' - checkout an ody-* branch first.\" && exit 1 ;; esac && echo \"\\ud83d\\ude97 Deploying $CURRENT_BRANCH to device...\" && git -C opendbc_repo push origin \"$CURRENT_BRANCH\" -f && git push origin \"$CURRENT_BRANCH\" -f --no-verify && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin $CURRENT_BRANCH && tools/op.sh build && (sudo reboot &) && exit 0\\\"\"",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
