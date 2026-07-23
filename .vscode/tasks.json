@@ -99,6 +99,18 @@
       }
     },
     {
+      "label": "Validate Log (watchlist)",
+      "type": "shell",
+      "command": "uv run python .agents/validate_log.py \"${input:reportRoute}\" \"${input:validateDescription}\"",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    },
+    {
       "label": "Run Checks",
       "type": "shell",
       "command": "echo '\ud83d\udd0d Checking your custom repository code syntax...' && \\\nuv run ruff check opendbc_repo --fix && \\\nopendbc_repo/test.sh && \\\nuv run pytest opendbc_repo/opendbc/car/tests/test_car_interfaces.py",
@@ -132,7 +144,12 @@
     {
       "id": "reportRoute",
       "type": "promptString",
-      "description": "Route for longitudinal report (append /a for qlog fallback, e.g. 805f87f5.../00000091--39c3b16bcb/a):"
+      "description": "Route for longitudinal report / validation (append /a for qlog fallback, e.g. 805f87f5.../00000091--39c3b16bcb/a):"
+    },
+    {
+      "id": "validateDescription",
+      "type": "promptString",
+      "description": "Short note for the validation ledger row (conditions, what you were checking):"
     }
   ]
 }
