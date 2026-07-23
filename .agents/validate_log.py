@@ -212,6 +212,16 @@ def analyze(msgs, platform):
   win = max(1, int(round(JERK_WIN_S / dt)))
   jerk = np.zeros_like(cmd_smooth)
   jerk[win:-win] = (cmd_smooth[2 * win:] - cmd_smooth[:-2 * win]) / (2 * win * dt)
+  # Gate to engaged frames, and drop a window either side of every engage/disengage edge:
+  # actuators.accel steps at those transitions, which would manufacture jerk that no
+  # jerk-limiter would ever see. (Every other metric here is already gated on longActive;
+  # this one was not. On routes 0000000e/00000001 it changed nothing - the peaks were real,
+  # engaged events - but a disengage step in a future log would otherwise read as a bind.)
+  edge = np.zeros_like(active)
+  for i in np.where(np.diff(active.astype(int)) != 0)[0]:
+    edge[max(0, i - 2 * win):i + 2 * win + 1] = True
+  jerk_valid = active & ~edge
+  jerk = np.where(jerk_valid, jerk, 0.0)
   over_cap = jerk < -BRAKE_ONSET_JERK
   binds, run = 0, 0
   for o in over_cap:
