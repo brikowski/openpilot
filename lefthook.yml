@@ -1,0 +1,11 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: staged whitespace
+      run: git diff --cached --check
+    - name: tuning tooling lint
+      run: .venv/bin/ruff check .agents --ignore ISC002
+    - name: tuning tooling tests
+      run: .venv/bin/python -m pytest .agents/test_validate_log.py -q
+    - name: Honda tune lint
+      run: .venv/bin/ruff check opendbc_repo/opendbc/car/honda

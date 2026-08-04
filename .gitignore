@@ -97,3 +97,6 @@ build/
 .context/
 PLAN.md
 TASK.md
+
+# local-only lefthook jobs for the ody-op-long tune; lefthook.yml stays upstream's
+lefthook-local.yml
