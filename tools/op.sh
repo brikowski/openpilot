@@ -390,13 +390,18 @@ function op_switch() {
 
   git config --replace-all remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
   git submodule deinit --all --force
-  git fetch "$REMOTE" "$BRANCH"
+  # Fetch the parent first without recursively fetching every changed submodule.
+  # On devices, parallel pack processing can exhaust memory before the checkout
+  # reaches the targeted, one-at-a-time submodule update below.
+  git -c pack.threads=1 -c core.deltaBaseCacheLimit=32m \
+    fetch --no-tags --no-recurse-submodules "$REMOTE" "$BRANCH"
   git checkout -f FETCH_HEAD
   git checkout -B "$BRANCH" --track "$REMOTE"/"$BRANCH"
   git submodule deinit --all --force
   git reset --hard "${REMOTE}/${BRANCH}"
   git clean -df
-  git submodule update --init --recursive
+  git -c pack.threads=1 -c core.deltaBaseCacheLimit=32m \
+    submodule update --jobs 1 --init --recursive
   git submodule foreach git reset --hard
   git submodule foreach git clean -df
 
