@@ -130,7 +130,16 @@ LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: MUST track the carcontroller's low-speed do
                               # to the 3-5 m/s part of the very region the bug lived in.
 STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
                                # deceleration only says the plan asked for braking; excess separates
-                               # car-port contribution from Honda actuator bite.
+                               # car-port contribution from Honda actuator bite. STILL REPORTED,
+                               # no longer graded - see STOP_LURCH_PORT_FLAG.
+STOP_LURCH_PORT_FLAG = 0.15    # m/s^2 of the stop lurch owned by the CAR PORT
+                               # (`stop_lurch_wire_extra`), which is the only part we could fix.
+                               # Calibrated 2026-08-05 over the 9 ledger drives that reached a
+                               # stop: port contribution maxed at 0.057 (median 0.014) while the
+                               # Honda actuator reached 2.744, so 0.15 is ~2.6x the observed
+                               # port maximum and fires on 0 of 9. Grading the TOTAL instead fired
+                               # on 17 of 24 drives for a symptom agents.md says not to tune
+                               # against. Re-derive if brake_pid's authority ever changes.
 STOP_LURCH_MIN_VEGO = 0.25     # m/s: below longcontrol's stopping threshold, standstill velocity/
                                # IMU noise can report a decel while the van is already stationary.
 HARSH_FELT_JERK_RMS = 0.35    # m/s^3: RMS jerk of ACHIEVED accel while engaged. This is what the
@@ -355,10 +364,27 @@ def analyze(msgs, platform):
                       f"context, not evidence (rate-based checks are reported but not graded).")
 
   # === convergence ===
+  # ANCHOR THIS TO THE CAR-PORT INPUT, not to longitudinalPlan.aTarget. Per the model-following
+  # rule, `carControl.actuators.accel` is what CarController was actually asked for; `aTarget` is
+  # one stage upstream and `longcontrol` legitimately overrides it (accel limits, the
+  # stopping/starting state machine). Referencing aTarget silently credits or blames us for
+  # longcontrol's work. `passthrough_rms` and the following checks were corrected on 2026-07-29;
+  # this one was missed and still read aTarget until 2026-08-05.
+  #
+  # Both are recorded because they answer different questions and the ledger has 51 rows of the
+  # old one: `track_rms` is achieved-vs-commanded (car port + Honda ECU + vehicle) and is the
+  # attributable number; `track_rms_plan` keeps the old planner-referenced value so historical
+  # rows stay comparable. `plan_override_rms` is the gap between them - if it is large, longcontrol
+  # is doing something aTarget does not show and neither number should be read as the car's.
+  # TODO: delete excessive comments before trying to submit a PR.
   if pid.sum() > 10:
-    r["track_rms"] = float(np.sqrt(np.nanmean((aego[pid] - atarget[pid]) ** 2)))
+    r["track_rms"] = float(np.sqrt(np.nanmean((aego[pid] - cc_accel[pid]) ** 2)))
+    r["track_rms_plan"] = float(np.sqrt(np.nanmean((aego[pid] - atarget[pid]) ** 2)))
+    r["plan_override_rms"] = float(np.sqrt(np.nanmean((atarget[pid] - cc_accel[pid]) ** 2)))
   else:
     r["track_rms"] = None
+    r["track_rms_plan"] = None
+    r["plan_override_rms"] = None
 
   # passthrough: wire should equal the CarController input in the GAS domain (brake_pid
   # intentionally diverges the wire in the brake domain, so exclude those frames)
@@ -640,6 +666,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "brake_release_hold_sec": None, "brake_release_hold_events": None,
          "brake_release_hold_max": None, "brake_release_hold_force_margin_mean": None,
          "brake_release_hold_request_mean": None, "brake_release_hold_tracking_mean": None,
+         "sign_disagree_sec": None, "sign_disagree_events": None, "sign_disagree_longest": None,
+         "sign_disagree_withheld_integral": None, "sign_disagree_withheld_worst": None,
          "low_speed_conflict_sec": None, "low_speed_conflict_events": None,
          "low_speed_conflict_worst": None,
          "reengagement_events": None, "reengagement_stale_sec": None,
@@ -853,7 +881,10 @@ def verdicts(r):
   add("controlsd crashes", r["crashes"] == 0,
       f"{r['crashes']}" + (f" ({', '.join(r.get('crashed_procs', []))})" if r["crashes"] else ""))
   if r["track_rms"] is not None:
-    add("track RMS |aEgo-aTarget|", r["track_rms"] <= TRACK_RMS_LIMIT, f"{r['track_rms']:.3f} (<= {TRACK_RMS_LIMIT})")
+    add("track RMS |aEgo-carControl|", r["track_rms"] <= TRACK_RMS_LIMIT,
+        f"{r['track_rms']:.3f} (<= {TRACK_RMS_LIMIT})"
+        + (f"; vs planner aTarget {r['track_rms_plan']:.3f}, longcontrol override "
+           f"{r['plan_override_rms']:.3f}" if r.get("plan_override_rms") is not None else ""))
   if r["passthrough_rms"] is not None:
     add("passthrough RMS", r["passthrough_rms"] <= PASSTHROUGH_RMS_LIMIT, f"{r['passthrough_rms']:.3f} (<= {PASSTHROUGH_RMS_LIMIT})")
   if r["gasf_eff_mean"] is not None:
@@ -994,7 +1025,15 @@ def verdicts(r):
         f"{r['cmd_jerk_rms']:.3f} = {r['harshness_ratio']:.1f}x amplification{split}",
         status="harsh ride - check the ratio: ~1x is our command, >>1x is added downstream" if harsh else None)
   if r.get("stop_lurch_worst") is not None:
-    lurch_bad = r.get("stop_lurch_excess", 0.0) > STOP_LURCH_EXCESS_FLAG
+    # FLAG ON OUR SHARE, NOT THE TOTAL. Grading `stop_lurch_excess` (everything the car achieved
+    # beyond the command) fired on 17 of 24 eligible drives while agents.md's own attribution says
+    # the lurch is Honda's actuator bite and "do not tune against this metric" - a 71% flag rate on
+    # a symptom nobody may act on is noise that also drives suggest_status promotions. The
+    # car-port's contribution is already separated out as `stop_lurch_wire_extra`, so flag that and
+    # keep reporting the rest. This preserves a real regression guard: if brake_pid ever starts
+    # contributing at a stop, wire_extra grows and this goes red.
+    # TODO: delete excessive comments before trying to submit a PR.
+    lurch_bad = r.get("stop_lurch_wire_extra", 0.0) > STOP_LURCH_PORT_FLAG
     in_stop = r.get("stop_lurch_in_stopping")
     where = "" if in_stop is None else (" in longControlState=stopping" if in_stop
                                         else " in longControlState=pid (NOT the stopping ramp)")
@@ -1015,7 +1054,12 @@ def verdicts(r):
     add("sign disagreement", not sd_bad,
         f"{r['sign_disagree_frac']*100:.2f}% sustained: "
         f"{r.get('sign_disagree_downhill_frac', 0.0)*100:.2f}% downhill, "
-        f"{non_grade*100:.2f}% non-grade; worst {r['sign_disagree_worst']:+.2f} m/s^2 "
+        f"{non_grade*100:.2f}% non-grade; {r.get('sign_disagree_sec', 0.0):.1f}s over "
+        f"{r.get('sign_disagree_events', 0)} event(s), longest "
+        f"{r.get('sign_disagree_longest', 0.0):.2f}s; "
+        f"{r.get('sign_disagree_withheld_integral', 0.0):.2f} m/s of requested speed withheld "
+        f"(worst request {r.get('sign_disagree_withheld_worst', 0.0):+.2f}, "
+        f"wire error {r['sign_disagree_worst']:+.2f} m/s^2) "
         f"({r.get('sign_disagree_transition_frames', 0)} transition frames ignored)",
         status=("large brake/accel disagreement beyond the designed hysteresis band" if magnitude_bad
                 else "sustained brake/accel disagreement away from descent grade compensation")
@@ -1240,7 +1284,7 @@ def main():
         f"{' (DIRTY)' if r.get('git_dirty') else ''}")
   for note in r["notes"]:
     print(f"  ! {note}")
-  conv = {"controlsd crashes", "track RMS |aEgo-aTarget|", "passthrough RMS",
+  conv = {"controlsd crashes", "track RMS |aEgo-carControl|", "passthrough RMS",
           "gasfactor stability", "windfactor rail exposure", "windfactor shadow (offline)",
           "accel rail saturation"}
   driver = {"gas overrides", "brake takeovers"}

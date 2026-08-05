@@ -141,6 +141,23 @@ def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitc
   A positive request can arrive one ACC_CONTROL period before the held CAN command releases.
   That transport phase is not a latched brake defect. Descents are kept separately because the
   actuator-domain decision intentionally includes gravity while ``requested`` does not.
+
+  MAGNITUDE IS REPORTED TWICE, ON PURPOSE - they answer different questions and one of them is
+  structurally near-zero here (measured 2026-08-05, routes 00000002/00000003):
+    * ``sign_disagree_worst`` = min(wire - requested). This is the ACCEL_COMMAND error, and in
+      exactly these frames the wire carries the request faithfully - measured -0.06 and -0.11
+      m/s^2. It is the right number for a STALE-STATE leak (route 34 read -2.04 that way) and
+      the wrong number for a domain hold, so ``SIGN_DISAGREE_MAG_FLAG`` at 0.50 cannot fire on
+      a hold no matter how bad the hold gets. Do not "fix" that by lowering the constant; it
+      guards a different failure.
+    * ``sign_disagree_withheld_*`` = the REQUEST itself over those frames. GAS_COMMAND is at its
+      inactive constant throughout (``brake_request`` and gas-inactive are exact complements in
+      create_acc_commands - verified 0 disagreeing frames across both routes), so a positive
+      ACCEL_COMMAND cannot produce acceleration. This is the severity the driver feels, and the
+      integral is in m/s: the speed openpilot asked for and did not get. Measured 1.82 and 7.62
+      m/s on those two routes while the error-based number stayed under 0.11.
+  Both are defined only on the CarController input and the wire, never on the reconstructed
+  domain or its thresholds, so two tunes can be compared on identical terms.
   TODO: delete excessive comments before trying to submit a PR.
   """
   raw = active & brake_request & (requested > request_threshold)
@@ -149,6 +166,9 @@ def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitc
   non_grade = sustained & ~downhill
   denom = max(1, int(np.sum(active)))
   err = wire_accel - requested
+  runs = np.diff(sustained.astype(np.int8), prepend=0, append=0)
+  starts = np.flatnonzero(runs == 1)
+  ends = np.flatnonzero(runs == -1)
   return {
     "sign_disagree_frac": float(np.sum(sustained) / denom),
     "sign_disagree_downhill_frac": float(np.sum(downhill) / denom),
@@ -156,6 +176,11 @@ def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitc
     "sign_disagree_worst": float(np.min(err[sustained])) if sustained.any() else 0.0,
     "sign_disagree_non_grade_worst": float(np.min(err[non_grade])) if non_grade.any() else 0.0,
     "sign_disagree_transition_frames": int(np.sum(raw) - np.sum(sustained)),
+    "sign_disagree_sec": float(np.sum(sustained) * dt),
+    "sign_disagree_events": int(len(starts)),
+    "sign_disagree_longest": float(np.max((ends - starts) * dt)) if len(starts) else 0.0,
+    "sign_disagree_withheld_integral": float(np.sum(requested[sustained]) * dt),
+    "sign_disagree_withheld_worst": float(np.max(requested[sustained])) if sustained.any() else 0.0,
   }
 
 
