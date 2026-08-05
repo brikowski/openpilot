@@ -1,5 +1,7 @@
-# name: comma-standards
-# description: Triggers when writing, refactoring, or auditing code inside car ports or safety layers to ensure strict compliance with Comma's standards.
+---
+name: comma-standards
+description: Use when writing, refactoring, or auditing code inside an opendbc car port or safety layer - carcontroller.py, carstate.py, values.py, interface.py, or anything emitting CAN. Enforces comma's architecture boundaries and the panda safety model, which silently drops out-of-range actuation while driving.
+---
 
 ## Goal
 Ensure any proposed modification safely aligns with the architecture, guidelines, and definitions specified by Comma's engineering practices. All fork modifications must comply with Openpilot's [safety framework](file:///Users/travisbadgley/openpilot/docs/SAFETY.md) and the [panda safety model](https://github.com/commaai/panda#safety-model).
