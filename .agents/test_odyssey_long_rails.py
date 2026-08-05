@@ -213,6 +213,28 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert gas != GAS_INACTIVE, "positive low-speed start request left GAS_COMMAND inactive"
       assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive start request"
 
+  def test_positive_request_releases_brake_domain_at_road_speed(self):
+    """Do not let descent hysteresis brake through an ordinary speed-recovery request."""
+    accels = np.array([-0.5] * 20 + [0.1] * 20)
+
+    rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
+    assert not rejects
+    for accel, gas, brake_request in seen[-10:]:
+      assert accel == 10
+      assert gas != GAS_INACTIVE, "positive recovery request left GAS_COMMAND inactive"
+      assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive recovery request"
+
+  def test_positive_request_keeps_braking_when_grade_requires_it(self):
+    """A positive raw request does not override a brake-domain entry on a steep descent."""
+    accels = np.array([-0.5] * 100 + [0.1] * 100)
+
+    rejects, seen = _run(True, accels, pitch=-0.05, vego=20.0)
+    assert not rejects
+    for accel, gas, brake_request in seen[-10:]:
+      assert accel <= 10
+      assert gas == GAS_INACTIVE, "steep-descent brake request unexpectedly activated gas"
+      assert brake_request == 1, "steep-descent brake request was released by raw accel alone"
+
   def test_lateral_defaults_follow_lka_limit_with_validated_delay(self):
     """Use stock LKA authority while retaining the validated delay correction.
 
