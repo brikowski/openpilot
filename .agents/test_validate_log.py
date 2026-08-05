@@ -14,6 +14,8 @@ from validate_log import (
 )
 from tuning_metrics import (
   after_grace,
+  brake_release_hold_metrics,
+  causal_lpf,
   command_transition_metrics,
   hold_last,
   max_edges_in_window,
@@ -39,6 +41,13 @@ def test_after_grace_ignores_one_can_period_but_keeps_a_latch():
 
   assert not after_grace(one_period, 0.01, 0.02).any()
   assert after_grace(latched, 0.01, 0.02).tolist() == [False, False, False, True, True, False]
+
+
+def test_causal_lpf_can_reproduce_a_zero_initialized_controller_filter():
+  samples = np.ones(3)
+
+  assert causal_lpf(samples, dt=0.1, tau=0.1).tolist() == [1.0, 1.0, 1.0]
+  assert causal_lpf(samples, dt=0.1, tau=0.1, initial=0.0).tolist() == [0.5, 0.75, 0.875]
 
 
 def test_physical_edges_do_not_splice_disjoint_mask_windows():
@@ -147,6 +156,28 @@ def test_sign_disagreement_ignores_transport_and_separates_downhill():
   assert np.isclose(metrics["sign_disagree_downhill_frac"], 3 / 12)
   assert np.isclose(metrics["sign_disagree_non_grade_frac"], 1 / 12)
   assert metrics["sign_disagree_transition_frames"] == 4
+
+
+def test_release_hold_uses_compensated_entry_predicate_and_measures_runs():
+  switch_accel = np.array([-0.3, -0.3, -0.19, -0.1, 0.0, 0.1,
+                           -0.3, -0.3, -0.15, -0.05, 0.05, -0.3])
+  entry = np.full(12, -0.2)
+  requested = np.linspace(-0.1, 0.12, 12)
+  actual = requested - 0.2
+  brake = np.zeros(12, dtype=bool)
+  brake[1:6] = True
+  brake[7:11] = True
+  active = np.ones(12, dtype=bool)
+
+  metrics = brake_release_hold_metrics(
+    switch_accel, entry, requested, actual, brake, active, dt=0.01,
+  )
+
+  assert np.isclose(metrics["brake_release_hold_sec"], 0.07)
+  assert metrics["brake_release_hold_events"] == 2
+  assert np.isclose(metrics["brake_release_hold_max"], 0.04)
+  assert np.isclose(metrics["brake_release_hold_force_margin_mean"], np.mean([0.01, 0.1, 0.2, 0.3, 0.05, 0.15, 0.25]))
+  assert np.isclose(metrics["brake_release_hold_tracking_mean"], -0.2)
 
 
 def _shadow_trace(error_sign=1.0, *, gas_live=True, braking=False):

@@ -19,12 +19,14 @@ and .agents/validate_log.py.
 
 TODO: delete excessive comments before trying to submit a PR.
 """
+import math
 import unittest
 
 import numpy as np
 
-from opendbc.car import DT_CTRL, structs
+from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
+from opendbc.car.honda.carcontroller import BRAKE_DOMAIN_ENTRY, DOMAIN_HYST_EXIT
 from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -213,27 +215,27 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert gas != GAS_INACTIVE, "positive low-speed start request left GAS_COMMAND inactive"
       assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive start request"
 
-  def test_positive_request_releases_brake_domain_at_road_speed(self):
-    """Do not let descent hysteresis brake through an ordinary speed-recovery request."""
-    accels = np.array([-0.5] * 20 + [0.1] * 20)
+  def test_descent_boundary_uses_compensated_force_hysteresis(self):
+    """Exercise the grade range where raw request and compensated force have opposite signs."""
+    vego = 20.0
+    wind_brake = np.interp(vego, [0.0, 13.4, 22.4, 31.3, 40.2], [0.000, 0.049, 0.136, 0.267, 0.441])
+    for pitch in [-0.023, -0.026, -0.030]:
+      with self.subTest(pitch=pitch):
+        force_offset = wind_brake * 0.5 + math.sin(pitch) * ACCELERATION_DUE_TO_GRAVITY
+        entry_request = BRAKE_DOMAIN_ENTRY - force_offset
+        within_band = entry_request + DOMAIN_HYST_EXIT / 2.0
+        release_request = entry_request + DOMAIN_HYST_EXIT + 0.05
+        accels = np.array([entry_request - 0.05] * 300 + [within_band] * 100 + [release_request] * 100)
 
-    rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
-    assert not rejects
-    for accel, gas, brake_request in seen[-10:]:
-      assert accel == 10
-      assert gas != GAS_INACTIVE, "positive recovery request left GAS_COMMAND inactive"
-      assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive recovery request"
-
-  def test_positive_request_keeps_braking_when_grade_requires_it(self):
-    """A positive raw request does not override a brake-domain entry on a steep descent."""
-    accels = np.array([-0.5] * 100 + [0.1] * 100)
-
-    rejects, seen = _run(True, accels, pitch=-0.05, vego=20.0)
-    assert not rejects
-    for accel, gas, brake_request in seen[-10:]:
-      assert accel <= 10
-      assert gas == GAS_INACTIVE, "steep-descent brake request unexpectedly activated gas"
-      assert brake_request == 1, "steep-descent brake request was released by raw accel alone"
+        rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
+        assert not rejects
+        # ACC_CONTROL is emitted at 50 Hz, so each 100-frame input phase contributes 50 samples.
+        for _, gas, brake_request in seen[-100:-50]:
+          assert gas == GAS_INACTIVE, "request inside the compensated-force band activated gas"
+          assert brake_request == 1, "raw request sign bypassed compensated-force hysteresis"
+        for _, gas, brake_request in seen[-25:]:
+          assert gas != GAS_INACTIVE, "request above the compensated-force release threshold left gas inactive"
+          assert brake_request == 0, "brake domain did not release above its compensated-force threshold"
 
   def test_lateral_defaults_follow_lka_limit_with_validated_delay(self):
     """Use stock LKA authority while retaining the validated delay correction.

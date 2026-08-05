@@ -37,7 +37,12 @@ No one tool establishes that a tune is good. Use these layers in order, and keep
     0.10-0.14 while observed mean error remained negative (-0.007 to -0.033 m/s²). Tightening the
     identification gate does not keep the factor off its lower rail; treat this as evidence of
     base-drag/gasfactor coupling, not evidence to change production commands.
-- **Domain hysteresis release — ROAD VALIDATION PENDING**: sunnypilot route `00000002--412e40c6a0` reproduced a physical recovery symptom inside the controller. Current logic spent 26.98 s in hysteresis-only brake domain, including 13.44 s after raw requests exceeded +0.02 m/s²; the reported 50->47 mph event held `BRAKE_REQUEST=1` for about 2.24 s. The candidate keeps `DOMAIN_HYST_EXIT=0.50` for descent stability but releases once the raw request exceeds +0.02 and compensated force is above brake entry. Frozen replay removes those positive-request holds; controlled downhill and ordinary-road validation remain required.
+- **Domain hysteresis — WATCH ONLY**: retain `DOMAIN_HYST_EXIT=0.50`. Sunnypilot route
+  `00000002--412e40c6a0` exposed 26.9 s where `BRAKE_REQUEST` remained live after compensated
+  force cleared the entry threshold. Exact replay reproduced the recorded wire at 99.98% and
+  showed the reported event held for 2.24 s; the rejected raw-request bypass would have trimmed
+  only its final 0.38 s while weakening the validated descent band. The validator now reports
+  compensated-force release holds directly, without sharing a threshold with production logic.
 
 ## Ordered Longitudinal Evidence Queue (agreed 2026-07-31)
 Apply this order as new logs arrive; do not skip ahead because a later idea is easy to code. Closing the
@@ -46,8 +51,8 @@ natural drive can accumulate the descent evidence below at any time.
 
 1. **Finish the terrain-matched descent validation.** Obtain at least 3 engaged downhill minutes on the
    `0000002f`/`00000030`-type route. Inspect physical `BRAKE_REQUEST` bursts, corrected downhill toggle
-   counts, intervention rate, sign disagreement, and raw Jotpluggler traces. Validate the
-   positive-request release candidate while retaining `DOMAIN_HYST_EXIT=0.50`.
+   counts, intervention rate, compensated-force release holds, and raw Jotpluggler traces. Keep
+   `DOMAIN_HYST_EXIT=0.50` unless that evidence supports an isolated replacement.
 2. **Evaluate a gas-active-only shadow windfactor.** First calculate it without changing commands. Learn
    only while `GAS_COMMAND` is live in the gas domain, neither pedal is pressed, the command is away from
    saturation, and speed/grade are sufficiently steady. Compare stability and following error with the
@@ -185,15 +190,18 @@ Only two things are live-learned today (`gasfactor` trim, `windfactor`) and that
 - **`.agents/preflash.py`** - runs both (`test_models` for the Odyssey + the rail test) in ~4 s. `test_models`' concrete classes only exist under `DIRECTLY_CALLED`, hence the hand-built runner. Run it before flashing; it says nothing about ride quality, which still needs a drive plus `validate_log.py`.
 
 ## PARKED NEXT: decouple the domain threshold from the gas-lookup floor (queued 2026-07-29)
-Do not combine this entry-threshold experiment with the positive-request release candidate. Route
-`00000002--412e40c6a0` found an excessive release hold, while the queued `min_gas_accel` change
-addresses delayed brake entry. Moving entry to -0.10 in the latest frozen replay increased brake
-exposure from 13.7% to 18.0%; it is not the fix for the reported underspeed.
+`BRAKE_DOMAIN_ENTRY=-0.20` is now named separately from the gas lookup with no behavior change.
+Do not combine a future entry experiment with a release-band change: entry at -0.10 addresses
+delayed brake entry, while route `00000002--412e40c6a0` exposed an excessive release hold. Moving
+entry alone to -0.10 increased frozen-replay brake exposure from 13.7% to 18.0%; it is not the fix
+for the reported underspeed. A combined -0.10 entry / 0.15 band released that event 1.12 s earlier
+on frozen inputs, but 0.15 is narrower than the 0.20 band that already failed on road and the pair
+changes both sides of the state machine. Keep it experimental until a clean baseline drive exists.
 
-**The next drive should be the `0000002f`/`00000030` descent route, not more highway.** Validate the
-positive-request release with ordinary disengage/re-engage and stop/start cycles, and target at
-least 3 engaged descent minutes. Compare physical `BRAKE_REQUEST` bursts, downhill toggles,
-interventions, sign disagreement, and whether set-speed recovery still undershoots. Known
+**The next drive should be the `0000002f`/`00000030` descent route, not more highway.** Establish a
+clean 0.50 baseline with ordinary disengage/re-engage and stop/start cycles, and target at least
+3 engaged descent minutes. Compare physical `BRAKE_REQUEST` bursts, compensated-force release
+holds, interventions, sign disagreement, and whether set-speed recovery still undershoots. Known
 felt-tapping route `2f` produced **18 physical edges/10s**, failed `BRAKE_RELEASE_HOLD` route `30`
 produced **10**, and 0.50 routes `34`/`35` produced **3/4**.
 

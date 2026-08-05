@@ -38,11 +38,12 @@ from pathlib import Path
 
 import numpy as np
 
+from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.tools.lib.logreader import LogReader
 from openpilot.common.hardware.hw import Paths
 # Compare learned gas factors against the LIVE seed table, so if the seed is retuned this
 # metric automatically measures against the new values instead of a stale copy.
-from opendbc.car.honda.carcontroller import GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V
+from opendbc.car.honda.carcontroller import BRAKE_DOMAIN_ENTRY, GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V
 # Same reason: read the interface accel rails from the live params, not a copied number.
 from opendbc.car.honda.values import CarControllerParams as HondaParams
 
@@ -50,6 +51,7 @@ from opendbc.car.honda.values import CarControllerParams as HondaParams
 # so synthetic traces can prove each metric both passes and fails before it grades a road drive.
 # TODO: delete excessive comments before trying to submit a PR.
 from tuning_metrics import (
+  brake_release_hold_metrics,
   causal_lpf as _causal_lpf,
   command_transition_metrics,
   hold_last as _hold_last,
@@ -138,6 +140,9 @@ HARSH_FELT_JERK_RMS = 0.35    # m/s^3: RMS jerk of ACHIEVED accel while engaged.
                               # with that ratio so harshness can be attributed rather than guessed.
 DOWNHILL_PITCH = -0.012       # rad (~-0.7%, -0.12 m/s^2 of hill_brake): the grade breakout, where
                               # the defect concentrates (10-66 toggles/min vs 2.4 overall)
+DOMAIN_PITCH_FILTER_TAU = 0.5  # MUST track the Odyssey FirstOrderFilter in carcontroller.py.
+DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
+DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
 
 # --- gas-active-only shadow windfactor (read-only; never changes recorded commands) ---
 # These mirror the inline production drag/learner constants in honda/carcontroller.py. Keeping the
@@ -540,7 +545,7 @@ def analyze(msgs, platform):
     #    These ask the only question the car port is accountable for: did the wire carry what the
     #    CarController was asked? See _following.
     r.update(_following(msgs, grid, cc_accel, active, pid, cc_pitch, vego, gaspressed,
-                        brakepressed, aego, dt, (cc_stopping > 0.5) & active))
+                        brakepressed, aego, windf, dt, (cc_stopping > 0.5) & active))
 
   # device thermal - platform-independent, and survives qlog (deviceState is undecimated)
   r.update(_thermal(msgs))
@@ -610,7 +615,7 @@ def _thermal(msgs):
 
 
 def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brakepressed,
-               aego, dt, stop_state):
+               aego, windfactor, dt, stop_state):
   """DID THE CAR PORT FOLLOW ITS INPUT? - the question it is directly accountable for.
 
   controlsd passes carControl.actuators.accel into CarController.update; we put ACCEL_COMMAND on
@@ -632,6 +637,9 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "brake_domain_frac": None, "sign_disagree_frac": None, "sign_disagree_worst": None,
          "sign_disagree_downhill_frac": None, "sign_disagree_non_grade_frac": None,
          "sign_disagree_non_grade_worst": None, "sign_disagree_transition_frames": None,
+         "brake_release_hold_sec": None, "brake_release_hold_events": None,
+         "brake_release_hold_max": None, "brake_release_hold_force_margin_mean": None,
+         "brake_release_hold_request_mean": None, "brake_release_hold_tracking_mean": None,
          "low_speed_conflict_sec": None, "low_speed_conflict_events": None,
          "low_speed_conflict_worst": None,
          "reengagement_events": None, "reengagement_stale_sec": None,
@@ -745,6 +753,18 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     downhill_pitch=DOWNHILL_PITCH,
     dt=dt,
     transition_grace_s=CAN_COMMAND_PERIOD_S,
+  ))
+
+  # Reconstruct the controller's compensated domain input and measure the symptom independently
+  # of its release threshold: BRAKE_REQUEST remains live after the base entry predicate clears.
+  filtered_pitch = _causal_lpf(pitch, dt, DOMAIN_PITCH_FILTER_TAU, initial=0.0)
+  base_drag = np.interp(vego_all, DOMAIN_WIND_SPEED_BP, DOMAIN_WIND_BRAKE_V)
+  gas_pedal_force = requested + base_drag * windfactor + np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY
+  switch_accel = np.where(vego_all < LOW_SPEED_DOMAIN_VEGO, requested, gas_pedal_force)
+  entry_threshold = np.interp(vego_all, [5.0, 10.0], [0.01, BRAKE_DOMAIN_ENTRY])
+  out.update(brake_release_hold_metrics(
+    switch_accel, entry_threshold, requested, aego, BR, active,
+    dt=dt,
   ))
 
   # Measure the driver-felt symptom directly: physical BRAKE_REQUEST bursts. Calling an edge
@@ -943,6 +963,13 @@ def verdicts(r):
         f"{r['gas_handoff_events']} inactive-to-live handoff(s), largest first command "
         f"{r['gas_handoff_max']:.0f} counts (<= {GAS_RAMP_STEP})",
         status="gas ramp state advanced while GAS_COMMAND was ineligible" if handoff_bad else None)
+  if r.get("brake_release_hold_sec") is not None:
+    add("brake release hold (diagnostic)", True,
+        f"{r['brake_release_hold_sec']:.2f}s over {r['brake_release_hold_events']} event(s), "
+        f"longest {r['brake_release_hold_max']:.2f}s; mean force margin "
+        f"{r['brake_release_hold_force_margin_mean']:+.2f}, request "
+        f"{r['brake_release_hold_request_mean']:+.2f}, aEgo-request "
+        f"{r['brake_release_hold_tracking_mean']:+.2f} m/s^2")
   if r.get("brake_toggle_max_10s") is not None:
     burst_bad = r["brake_toggle_max_10s"] > BRAKE_TOGGLE_BURST_FLAG
     dn = (f", {r['downhill_toggles_per_min']:.0f}/min on descents over {r['downhill_min']:.1f} min"
@@ -1219,6 +1246,7 @@ def main():
   driver = {"gas overrides", "brake takeovers"}
   quality = {"following - gas domain", "following - brake domain",
              "low-speed brake/accel conflict", "re-engagement brake lifecycle",
+             "brake release hold (diagnostic)",
              "brake-domain transition bursts",
              "sign disagreement", "ride harshness (felt)",
              "stop lurch (felt)"}

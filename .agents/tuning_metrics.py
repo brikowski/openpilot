@@ -10,12 +10,12 @@ TODO: delete excessive comments before trying to submit a PR.
 import numpy as np
 
 
-def causal_lpf(x, dt, tau):
+def causal_lpf(x, dt, tau, initial=None):
   if len(x) == 0:
     return x
   alpha = dt / (tau + dt)
   y = np.empty_like(x)
-  y[0] = x[0]
+  y[0] = x[0] if initial is None else initial + alpha * (x[0] - initial)
   for i in range(1, len(x)):
     y[i] = y[i - 1] + alpha * (x[i] - y[i - 1])
   return y
@@ -156,6 +156,26 @@ def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitc
     "sign_disagree_worst": float(np.min(err[sustained])) if sustained.any() else 0.0,
     "sign_disagree_non_grade_worst": float(np.min(err[non_grade])) if non_grade.any() else 0.0,
     "sign_disagree_transition_frames": int(np.sum(raw) - np.sum(sustained)),
+  }
+
+
+def brake_release_hold_metrics(switch_accel, entry_threshold, requested, actual_accel,
+                               brake_request, active, *, dt):
+  """Measure braking retained after the compensated input clears the entry threshold."""
+  hold = active & brake_request & (switch_accel >= entry_threshold)
+  edges = np.diff(hold.astype(np.int8), prepend=0, append=0)
+  starts = np.flatnonzero(edges == 1)
+  ends = np.flatnonzero(edges == -1)
+  durations = (ends - starts) * dt
+  force_margin = switch_accel - entry_threshold
+  tracking_error = actual_accel - requested
+  return {
+    "brake_release_hold_sec": float(np.sum(hold) * dt),
+    "brake_release_hold_events": int(len(starts)),
+    "brake_release_hold_max": float(np.max(durations)) if len(durations) else 0.0,
+    "brake_release_hold_force_margin_mean": float(np.mean(force_margin[hold])) if hold.any() else 0.0,
+    "brake_release_hold_request_mean": float(np.mean(requested[hold])) if hold.any() else 0.0,
+    "brake_release_hold_tracking_mean": float(np.mean(tracking_error[hold])) if hold.any() else 0.0,
   }
 
 
