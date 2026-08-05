@@ -16,10 +16,10 @@ code, DBC semantics, or full-rate logs.
 - Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. Our supplemental
   controller is integral-only and one-sided: it may add braking but cannot reduce Honda's request.
 - One stateful gas/brake-domain decision gates learning, supplemental braking, and the CAN command.
-  Entry uses the base threshold; exit hysteresis ramps from zero at 5 m/s to 0.50 m/s2 at 10 m/s.
-  Below 5 m/s, raw planner accel prevents grade compensation from releasing an engaged stop. At
-  road speed, a request above +0.02 m/s2 releases a latched domain once compensated force no longer
-  requires brake.
+  Its named entry threshold is -0.20 m/s2, behaviorally unchanged but separate from the gas lookup's
+  scaling floor. Exit hysteresis ramps from zero at 5 m/s to 0.50 m/s2 at 10 m/s. Below 5 m/s, raw
+  planner accel prevents grade compensation from releasing an engaged stop; at road speed both
+  entry and release use compensated force.
 - Domain and brake-PID state reset while longitudinal control is inactive. Gas ramp state resets
   while inactive or braking, keeping every inactive-to-live `GAS_COMMAND` handoff at <=60 counts.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
@@ -36,9 +36,10 @@ code, DBC semantics, or full-rate logs.
 - Grade compensation can sit near the gas/brake threshold on descents. Small symmetric hysteresis,
   time-based release holds, and replay-selected values failed road A/Bs. The retained 0.50 value is
   release-only and speed-ramped so it does not delay brake entry or normal low-speed starts.
-- Sunnypilot route `00000002--412e40c6a0` reproduced 26.98 s of hysteresis-only brake domain,
-  including 13.44 s against requests above +0.02 m/s2. That evidence supports the positive-request
-  release cap; it does not support moving brake entry from -0.20 to -0.10 m/s2.
+- Sunnypilot route `00000002--412e40c6a0` reproduced 26.9 s of compensated-force release hold.
+  Exact replay showed the reported event remained latched for 2.24 s; a raw-request release bypass
+  changed only its final 0.38 s and weakened the descent-stability mechanism, so it was rejected.
+  The validator retains the hold-time diagnosis independently of production release logic.
 - Replay is useful for fixed-input command shape but repeatedly underpredicted closed-loop domain
   transitions. Do not promote another transition change without a terrain-matched road comparison.
 - Late lead approaches and traffic-light non-commitment have first diverged in `aTarget`/`shouldStop`,
@@ -49,9 +50,9 @@ code, DBC semantics, or full-rate logs.
 
 ## Validation and reopening criteria
 
-- The tune is otherwise in maintenance mode; the positive-request domain release remains pending
-  controlled downhill and ordinary-road validation. Compare by resolved `opendbc_commit`, not only
-  the parent OpenPilot commit.
+- The tune is in maintenance mode with no release candidate active. Establish a terrain-matched
+  0.50 baseline before another domain-state experiment, and compare by resolved `opendbc_commit`,
+  not only the parent OpenPilot commit.
 - Keep the official lateral and longitudinal maneuver routes plus ordinary-road full-rate rlogs
   private and retained. `.agents/log-validation-ledger.jsonl` is the compact evidence index.
 - Reopen tuning only for a repeatable symptom whose first divergence is inside the Honda controller
