@@ -93,7 +93,12 @@ build/
 !.vscode/*.code-snippets
 
 # agents
-.claude/
+# Exclude .claude's CONTENTS, not the directory itself. `.claude/` would stop git descending into
+# it at all, and a negation inside an excluded directory is never evaluated - so `!.claude/skills/`
+# under it silently does nothing. Skills are shared project knowledge and must survive a clone;
+# settings.local.json stays local.
+.claude/*
+!.claude/skills/
 .context/
 PLAN.md
 TASK.md
