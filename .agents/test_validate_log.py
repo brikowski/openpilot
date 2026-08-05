@@ -158,6 +158,65 @@ def test_sign_disagreement_ignores_transport_and_separates_downhill():
   assert metrics["sign_disagree_transition_frames"] == 4
 
 
+def test_creep_detector_can_actually_fire():
+  """`creep at stop` has never flagged in 79 drives - prove that is the car, not a dead check.
+
+  agents.md habit #1: a check you have never seen fail is not evidence. This drives the exact
+  predicate with a synthetic creep (rolling forward at 1 m/s while the planner asks <= 0) and
+  asserts it trips, so a future edit that silently disables it goes red.
+  """
+  creep_vego, creep_aego, min_frames = 2.0, 0.15, 50
+  n = 200
+  active = np.ones(n, dtype=bool)
+  vego = np.full(n, 1.0)
+  cc_accel = np.full(n, -0.10)      # planner asking for no drive torque
+  aego = np.full(n, 0.20)           # ...and the van rolling forward anyway
+
+  creep = active & (vego < creep_vego) & (cc_accel <= 0.0) & (aego > creep_aego)
+  run = best = 0
+  for c in creep:
+    run = run + 1 if c else 0
+    best = max(best, run)
+  assert best >= min_frames, "creep predicate cannot fire even on a synthetic creep"
+
+  # And the healthy case must NOT fire, or the check is vacuous in the other direction.
+  healthy = active & (vego < creep_vego) & (cc_accel <= 0.0) & (np.full(n, -0.05) > creep_aego)
+  assert not healthy.any()
+
+
+def test_sign_disagreement_severity_uses_the_request_not_the_wire_error():
+  """The wire error is near-zero exactly where the domain withholds gas; grade the request.
+
+  Guards the 2026-08-05 finding: ACCEL_COMMAND carries the request faithfully through a domain
+  hold, so `sign_disagree_worst` (min(wire - requested)) stays tiny no matter how much
+  acceleration was actually withheld. If the withheld-request fields are ever re-derived from
+  `wire` this test goes red.
+  """
+  n = 22
+  requested = np.full(n, 0.40)   # openpilot asking for real acceleration
+  wire = requested.copy()        # ...and the wire carrying it perfectly
+  brake = np.zeros(n, dtype=bool)
+  brake[1:21] = True             # 20 frames latched; 2 lost to the 20 ms grace
+  active = np.ones(n, dtype=bool)
+  pitch = np.zeros(n)
+
+  m = sign_disagreement_metrics(
+    requested, wire, brake, active, pitch,
+    request_threshold=0.02, downhill_pitch=-0.012, dt=0.01, transition_grace_s=0.02,
+  )
+
+  # The error-based number sees nothing at all here - that is the whole point.
+  assert np.isclose(m["sign_disagree_worst"], 0.0)
+  # The request-based numbers see the full severity.
+  assert m["sign_disagree_events"] == 1
+  assert np.isclose(m["sign_disagree_sec"], 0.18)
+  assert np.isclose(m["sign_disagree_longest"], 0.18)
+  assert np.isclose(m["sign_disagree_withheld_worst"], 0.40)
+  assert np.isclose(m["sign_disagree_withheld_integral"], 18 * 0.01 * 0.40)
+  # Mutation guard: withheld severity must not collapse when the wire tracks the request.
+  assert m["sign_disagree_withheld_integral"] > abs(m["sign_disagree_worst"])
+
+
 def test_release_hold_uses_compensated_entry_predicate_and_measures_runs():
   switch_accel = np.array([-0.3, -0.3, -0.19, -0.1, 0.0, 0.1,
                            -0.3, -0.3, -0.15, -0.05, 0.05, -0.3])
