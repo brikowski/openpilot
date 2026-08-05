@@ -37,7 +37,7 @@ No one tool establishes that a tune is good. Use these layers in order, and keep
     0.10-0.14 while observed mean error remained negative (-0.007 to -0.033 m/s²). Tightening the
     identification gate does not keep the factor off its lower rail; treat this as evidence of
     base-drag/gasfactor coupling, not evidence to change production commands.
-- **Domain hysteresis and brake PID — WATCH ONLY**: retain `DOMAIN_HYST_EXIT=0.50` and the current brake PID until one comparable drive contains at least 3 engaged descent minutes and raw inspection shows a remaining physical transition symptom.
+- **Domain hysteresis release — ROAD VALIDATION PENDING**: sunnypilot route `00000002--412e40c6a0` reproduced a physical recovery symptom inside the controller. Current logic spent 26.98 s in hysteresis-only brake domain, including 13.44 s after raw requests exceeded +0.02 m/s²; the reported 50->47 mph event held `BRAKE_REQUEST=1` for about 2.24 s. The candidate keeps `DOMAIN_HYST_EXIT=0.50` for descent stability but releases once the raw request exceeds +0.02 and compensated force is above brake entry. Frozen replay removes those positive-request holds; controlled downhill and ordinary-road validation remain required.
 
 ## Ordered Longitudinal Evidence Queue (agreed 2026-07-31)
 Apply this order as new logs arrive; do not skip ahead because a later idea is easy to code. Closing the
@@ -46,8 +46,8 @@ natural drive can accumulate the descent evidence below at any time.
 
 1. **Finish the terrain-matched descent validation.** Obtain at least 3 engaged downhill minutes on the
    `0000002f`/`00000030`-type route. Inspect physical `BRAKE_REQUEST` bursts, corrected downhill toggle
-   counts, intervention rate, sign disagreement, and raw Jotpluggler traces. Keep
-   `DOMAIN_HYST_EXIT=0.50` unless that evidence shows a remaining physical transition symptom.
+   counts, intervention rate, sign disagreement, and raw Jotpluggler traces. Validate the
+   positive-request release candidate while retaining `DOMAIN_HYST_EXIT=0.50`.
 2. **Evaluate a gas-active-only shadow windfactor.** First calculate it without changing commands. Learn
    only while `GAS_COMMAND` is live in the gas domain, neither pedal is pressed, the command is away from
    saturation, and speed/grade are sufficiently steady. Compare stability and following error with the
@@ -184,12 +184,18 @@ Only two things are live-learned today (`gasfactor` trim, `windfactor`) and that
 - **`.agents/test_odyssey_long_rails.py`** - parent-repository coverage for the custom tune; keeping it outside the opendbc submodule leaves that worktree scoped to production edits. It drives the *active* path (`longActive=True`) over the full accel authority and across grade and speed, and asserts every emitted 0x1DF passes the real panda TX hook. Fills exactly the gap above. Runs in under 2 s, needs no route download. **Mutation-verified**: deleting the `np.clip(target_accel, BOSCH_ACCEL_MIN, BOSCH_ACCEL_MAX)` in `carcontroller.py` fails 26 of 28 sweep cases. It also carries a `test_sweep_actually_reaches_both_rails` guard so the assertions cannot go vacuous if the sweep range drifts, plus the route-34 inactive-state/re-engagement and engaged stop/start regressions above. This matters most for the coming `min_gas_accel` change: an out-of-range ACCEL_COMMAND is dropped by the panda **silently, while driving**.
 - **`.agents/preflash.py`** - runs both (`test_models` for the Odyssey + the rail test) in ~4 s. `test_models`' concrete classes only exist under `DIRECTLY_CALLED`, hence the hand-built runner. Run it before flashing; it says nothing about ride quality, which still needs a drive plus `validate_log.py`.
 
-## NEXT STEP: decouple the domain threshold from the gas-lookup floor (queued 2026-07-29)
-**The 0.50 road drives are complete, but road-test the inactive-state fix before starting this.** It changes the same domain state at engagement; stacking the threshold change now would make the next drive unable to validate the route-34 fix cleanly.
+## PARKED NEXT: decouple the domain threshold from the gas-lookup floor (queued 2026-07-29)
+Do not combine this entry-threshold experiment with the positive-request release candidate. Route
+`00000002--412e40c6a0` found an excessive release hold, while the queued `min_gas_accel` change
+addresses delayed brake entry. Moving entry to -0.10 in the latest frozen replay increased brake
+exposure from 13.7% to 18.0%; it is not the fix for the reported underspeed.
 
-**Know what is already stacked before you add to it.** Two domain-state changes are now on `HEAD` with zero road miles between them: `cd93d1abd` (clear the latch while inactive) and `d8f962bf3` (speed-schedule the exit band below 10 m/s). The gate above was written to prevent exactly this and the second one went in anyway. They ship as one unit now, so the next drive **cannot** attribute a regression to one or the other - it can only say "the pair is fine" or "the pair is not." That is acceptable because they touch disjoint conditions (inactive/re-engagement vs. sub-10 m/s while active) and each has its own passing regression test, but do not add a third. `min_gas_accel` moves the same boundary a third time and must wait for a clean row.
-
-**That drive should be the `0000002f`/`00000030` descent route, not more highway.** One drive closes the open questions: it validates `cd93d1abd` closed-loop (include ordinary disengage/manual-accelerate/re-engage behavior, the condition route 34 found the bug in), validates several normal engaged stop->start cycles after the low-speed band fix (`low-speed brake/accel conflict` must remain 0), and gives the terrain-matched 0.50-vs-none comparison the ledger has never had. Target >=3 descent minutes so the toggle rate is not a 1-minute estimate. Compare corrected `downhill_toggles_per_min` and the direct burst symptom `brake_toggle_max_10s`: known felt-tapping route `2f` produced **18 physical edges/10s**, failed `BRAKE_RELEASE_HOLD` route `30` produced **10**, 0.50 routes `34`/`35` produced **3/4**, and current route `3b` produced **2**. Also check `sign_disagree_worst` stays near -0.1 m/s^2 rather than route 34's -2.04.
+**The next drive should be the `0000002f`/`00000030` descent route, not more highway.** Validate the
+positive-request release with ordinary disengage/re-engage and stop/start cycles, and target at
+least 3 engaged descent minutes. Compare physical `BRAKE_REQUEST` bursts, downhill toggles,
+interventions, sign disagreement, and whether set-speed recovery still undershoots. Known
+felt-tapping route `2f` produced **18 physical edges/10s**, failed `BRAKE_RELEASE_HOLD` route `30`
+produced **10**, and 0.50 routes `34`/`35` produced **3/4**.
 
 `min_gas_accel` is derived from `BOSCH_GAS_LOOKUP_BP[0]` (= `min_gas` = -0.2), so the domain threshold asserts *the gas domain can deliver -0.2 m/s^2 of deceleration*. It cannot. At the crossing we command **23 of 2000 counts** of gas (1.2% throttle) and achieve ~0.0 m/s^2 while the plan asks -0.15. The whole -0.2..0 span of "gas authority" is under 9% throttle, which produces no braking at all. **The gas-signal scaling floor and the can-we-still-follow boundary are two different numbers sharing one constant.**
 
