@@ -83,3 +83,4 @@ Auto-maintained by `.agents/validate_log.py` (idempotent per route). One row per
 | 2026-08-05 | 00000000--454463b097 | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
 | 2026-08-05 | 00000002--412e40c6a0 | ody-sp-staging | - | 10.0 | 8.5 | 0 | 0.165 | 0.008 | 0.530 | 0.149 | 0.012 | 0.050 | 2 | 3.0 | 2.0 | re-engagement brake lifecycle, sign disagreement |
 | 2026-08-05 | 00000003--f670928197 | ody-op-long | d1d5eb5c7255 | 15.3 | 11.1 | 0 | 0.205 | 0.008 | 0.555 | 0.142 | 0.012 | 0.041 | 4 | 0.0 | 2.0 | sign disagreement |
+| 2026-08-06 | 00000004--49e92e9ae5 | ody-op-long | d1d5eb5c7255 | 12.8 | 11.6 | 0 | 0.175 | 0.007 | 0.598 | 0.152 | 0.009 | 0.056 | 4 | 0.0 | 2.3 | windfactor rail exposure, brake takeovers |

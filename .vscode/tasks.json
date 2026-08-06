@@ -2,22 +2,10 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Push current branch to device",
+      "label": "Pull and Validate New Logs (last 48 hours)",
+      "detail": "Pull every unvalidated private full-rate route from the device newer than 48 hours and run the Odyssey validator.",
       "type": "shell",
-      "command": "cd /Users/travisbadgley/openpilot && CURRENT_BRANCH=$(git branch --show-current) && case \"$CURRENT_BRANCH\" in ody-*) ;; *) echo \"\\u274c Refusing to deploy '$CURRENT_BRANCH' - checkout an ody-* branch first.\" && exit 1 ;; esac && if [ -n \"$(git status --porcelain)\" ]; then echo '\\u274c Refusing to deploy: openpilot has uncommitted changes.' && git status --short && exit 1; fi && if [ -n \"$(git -C opendbc_repo status --porcelain)\" ]; then echo '\\u274c Refusing to deploy: opendbc_repo has uncommitted changes.' && git -C opendbc_repo status --short && exit 1; fi && SUB_BRANCH=$(git -C opendbc_repo branch --show-current) && if [ \"$SUB_BRANCH\" != \"$CURRENT_BRANCH\" ]; then echo \"\\u274c Refusing to deploy: parent is $CURRENT_BRANCH but opendbc_repo is $SUB_BRANCH.\" && exit 1; fi && PINNED=$(git ls-tree HEAD opendbc_repo | awk '{print $3}') && ACTUAL=$(git -C opendbc_repo rev-parse HEAD) && if [ \"$PINNED\" != \"$ACTUAL\" ]; then echo \"\\u274c Refusing to deploy: parent pins $PINNED but opendbc_repo is at $ACTUAL.\" && exit 1; fi && git diff --check && git -C opendbc_repo diff --check && .venv/bin/python .agents/preflash.py && echo \"\\ud83d\\ude97 Deploying tested $CURRENT_BRANCH to device...\" && git -C opendbc_repo push origin \"$CURRENT_BRANCH\" && git push origin \"$CURRENT_BRANCH\" && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin $CURRENT_BRANCH && tools/op.sh build && (sudo reboot &) && exit 0\\\"\"",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-
-    {
-      "label": "Checkout branch",
-      "type": "shell",
-      "command": "git checkout ${input:branchChoice} && cd opendbc_repo && git checkout ${input:branchChoice}",
+      "command": "uv run python .agents/pull_logs.py --since-hours 48",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -28,6 +16,7 @@
     },
     {
       "label": "Run Jotpluggler",
+      "detail": "Open the standard Odyssey tuning layout for a local route or segment.",
       "type": "shell",
       "command": "uv run openpilot/tools/jotpluggler/jotpluggler --layout brikowski \"${input:jotplugglerArg}\"",
       "problemMatcher": [],
@@ -40,6 +29,7 @@
     },
     {
       "label": "Run Cabana",
+      "detail": "Open Cabana for a local route or stream live CAN from the device.",
       "type": "shell",
       "command": "ARG=\"${input:cabanaArg}\" && uv run scons openpilot/tools/cabana/_cabana openpilot/cereal/messaging/bridge && if [ \"$ARG\" = \"live\" ]; then uv run openpilot/tools/cabana/_cabana --zmq tcp://192.168.1.200; else uv run openpilot/tools/cabana/_cabana \"$ARG\"; fi",
       "problemMatcher": [],
@@ -51,10 +41,10 @@
       }
     },
     {
-      "label": "Inspect Upstream Delta",
-      "detail": "Read-only comparison after fetching: shows openpilot divergence, the compatible opendbc pin, and both net file lists. Does not rebase, push, or deploy.",
+      "label": "Deploy ody-op-long to device",
+      "detail": "Run Odyssey preflash checks, publish the clean matched parent/submodule branch, build it on the device, and reboot.",
       "type": "shell",
-      "command": "git fetch upstream && git -C opendbc_repo fetch upstream && PINNED=$(git ls-tree upstream/master opendbc_repo | awk '{print $3}') && test -n \"$PINNED\" && echo \"openpilot behind/ahead:\" && git rev-list --left-right --count upstream/master...HEAD && echo \"opendbc behind/ahead vs compatible pin $PINNED:\" && git -C opendbc_repo rev-list --left-right --count $PINNED...HEAD && echo \"net openpilot tree delta:\" && git diff --stat HEAD..upstream/master && echo \"net compatible opendbc tree delta:\" && git -C opendbc_repo diff --stat HEAD..$PINNED",
+      "command": "cd /Users/travisbadgley/openpilot && CURRENT_BRANCH=ody-op-long && test \"$(git branch --show-current)\" = \"$CURRENT_BRANCH\" || { echo \"Refusing to deploy: checkout $CURRENT_BRANCH in openpilot first.\"; exit 1; } && test -z \"$(git status --porcelain)\" || { echo 'Refusing to deploy: openpilot has uncommitted changes.'; git status --short; exit 1; } && test -z \"$(git -C opendbc_repo status --porcelain)\" || { echo 'Refusing to deploy: opendbc_repo has uncommitted changes.'; git -C opendbc_repo status --short; exit 1; } && test \"$(git -C opendbc_repo branch --show-current)\" = \"$CURRENT_BRANCH\" || { echo 'Refusing to deploy: parent and opendbc_repo branches differ.'; exit 1; } && test \"$(git ls-tree HEAD opendbc_repo | awk '{print $3}')\" = \"$(git -C opendbc_repo rev-parse HEAD)\" || { echo 'Refusing to deploy: parent opendbc pin does not match the checked-out submodule.'; exit 1; } && git diff --check && git -C opendbc_repo diff --check && .venv/bin/python .agents/preflash.py && git -C opendbc_repo push origin \"$CURRENT_BRANCH\" && git push origin \"$CURRENT_BRANCH\" && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin $CURRENT_BRANCH && tools/op.sh build && (sudo reboot &) && exit 0\\\"\"",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -64,103 +54,10 @@
       }
     },
     {
-      "label": "Sync Upstream Locally (rebase, keep history)",
-      "detail": "Rebases onto openpilot master and exactly the opendbc commit it pins. Resolves only gitlink conflicts and never pushes; run checks before publishing.",
+      "label": "Deploy ody-sp-staging to device",
+      "detail": "Publish the clean matched sunnypilot staging parent/submodule branch, build it on the device, and reboot.",
       "type": "shell",
-      "command": ".venv/bin/python .agents/sync_upstream.py",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Publish Validated Rebased Branches",
-      "detail": "Runs the complete check gate, then explicitly force-with-lease publishes both rebased tuning branches. Does not deploy to the device.",
-      "dependsOrder": "sequence",
-      "dependsOn": ["Run Checks"],
-      "type": "shell",
-      "command": "CURRENT_BRANCH=$(git branch --show-current) && case \"$CURRENT_BRANCH\" in ody-op|ody-op-long) ;; *) echo \"Refusing to publish $CURRENT_BRANCH\" && exit 1 ;; esac && test -z \"$(git status --porcelain)\" && test -z \"$(git -C opendbc_repo status --porcelain)\" && test \"$(git -C opendbc_repo branch --show-current)\" = \"$CURRENT_BRANCH\" && test \"$(git ls-tree HEAD opendbc_repo | awk '{print $3}')\" = \"$(git -C opendbc_repo rev-parse HEAD)\" && git -C opendbc_repo push origin \"$CURRENT_BRANCH\" --force-with-lease && git push origin \"$CURRENT_BRANCH\" --force-with-lease",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Generate Longitudinal Maneuver Report (local route)",
-      "detail": "Official openpilot closed-loop report. The route may be an SSH-pulled bare local id; public comma connect upload is not required.",
-      "type": "shell",
-      "command": "uv run python openpilot/tools/longitudinal_maneuvers/generate_report.py \"${input:reportRoute}\" 'ody-op-long tune'",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Generate Lateral Maneuver Report (local route)",
-      "detail": "Official openpilot lateral maneuver report for a locally pulled route. Only use a route recorded in Lateral Maneuver Mode.",
-      "type": "shell",
-      "command": "uv run python openpilot/tools/lateral_maneuvers/generate_report.py \"${input:reportRoute}\"",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Validate New Logs (pull from device)",
-      "detail": "Pull every unvalidated route in the selected window over SSH, retain the private full-rate rlogs locally, and run the Odyssey invariant/trend validator. Needs the device powered and on wifi.",
-      "type": "shell",
-      "command": "uv run python .agents/pull_logs.py --since-hours ${input:sinceHours} \"${input:validateDescription}\"",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Validate Log (pull one route from device)",
-      "detail": "Pull and retain one private full-rate route over SSH, then run the custom invariant/trend validator. Accepts a bare log id or dongle/logid.",
-      "type": "shell",
-      "command": "uv run python .agents/pull_logs.py --route \"${input:reportRoute}\" \"${input:validateDescription}\"",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Validate Log (comma API)",
-      "detail": "Validate straight from comma's servers - no device needed, but only works if the route is public AND its rlog was manually uploaded in connect. rlogs never auto-upload.",
-      "type": "shell",
-      "command": "uv run python .agents/validate_log.py \"${input:reportRoute}\" \"${input:validateDescription}\"",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Run Checks",
-      "detail": "Static checks, pure custom-metric tests, opendbc unit/safety tests, interface tests, and the Odyssey preflash gate. Does not grade ride quality.",
-      "type": "shell",
-      "command": "echo '\ud83d\udd0d Checking your custom repository code syntax...' && \\\nuv run ruff check opendbc_repo && \\\n.venv/bin/ruff check .agents --ignore ISC002 && \\\n.venv/bin/python -m pytest .agents/test_validate_log.py -q && \\\nopendbc_repo/test.sh && \\\nuv run pytest opendbc_repo/opendbc/car/tests/test_car_interfaces.py && \\\n.venv/bin/python .agents/preflash.py",
+      "command": "cd /Users/travisbadgley/sunnypilot && CURRENT_BRANCH=ody-sp-staging && test \"$(git branch --show-current)\" = \"$CURRENT_BRANCH\" || { echo \"Refusing to deploy: checkout $CURRENT_BRANCH in sunnypilot first.\"; exit 1; } && test -z \"$(git status --porcelain)\" || { echo 'Refusing to deploy: sunnypilot has uncommitted changes.'; git status --short; exit 1; } && test -z \"$(git -C opendbc_repo status --porcelain)\" || { echo 'Refusing to deploy: sunnypilot opendbc_repo has uncommitted changes.'; git -C opendbc_repo status --short; exit 1; } && test \"$(git -C opendbc_repo branch --show-current)\" = \"$CURRENT_BRANCH\" || { echo 'Refusing to deploy: parent and opendbc_repo branches differ.'; exit 1; } && test \"$(git ls-tree HEAD opendbc_repo | awk '{print $3}')\" = \"$(git -C opendbc_repo rev-parse HEAD)\" || { echo 'Refusing to deploy: parent opendbc pin does not match the checked-out submodule.'; exit 1; } && git diff --check && git -C opendbc_repo diff --check && git -C opendbc_repo push origin \"$CURRENT_BRANCH\" && git push origin \"$CURRENT_BRANCH\" && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin $CURRENT_BRANCH && tools/op.sh build && (sudo reboot &) && exit 0\\\"\"",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -172,37 +69,14 @@
   ],
   "inputs": [
     {
-      "id": "branchChoice",
-      "type": "pickString",
-      "description": "Branch to checkout (parent + opendbc together):",
-      "options": ["ody-op", "ody-op-long", "master"],
-      "default": "ody-op-long"
-    },
-    {
       "id": "jotplugglerArg",
       "type": "promptString",
-      "description": "Route/segment for jotpluggler — append /a for auto mode (full rlog when uploaded, qlog fallback otherwise). Recommended over /q, which is always decimated:"
+      "description": "Route or segment for Jotpluggler (append /a for auto mode):"
     },
     {
       "id": "cabanaArg",
       "type": "promptString",
-      "description": "Enter route/segment for cabana, or 'live' to stream from the device:"
-    },
-    {
-      "id": "reportRoute",
-      "type": "promptString",
-      "description": "Route id — bare (0000001f--765ef47daf) or full (805f87f5.../0000001f--765ef47daf). For the comma-API task only, append /a to allow qlog fallback:"
-    },
-    {
-      "id": "sinceHours",
-      "type": "promptString",
-      "description": "Pull routes newer than this many hours that aren't in the ledger yet:",
-      "default": "48"
-    },
-    {
-      "id": "validateDescription",
-      "type": "promptString",
-      "description": "Short note for the validation ledger row (conditions, what you were checking):"
+      "description": "Route or segment for Cabana, or 'live' to stream from the device:"
     }
   ]
 }
