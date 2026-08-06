@@ -20,6 +20,14 @@ the one every downstream metric already assumes:
   * continuous signals (speed, accel, pitch) are linearly interpolated
   * discrete CAN commands are ZERO-ORDER HELD, never interpolated - interpolating GAS_COMMAND
     invents values that were never on the wire, and half-on BRAKE_REQUEST bits
+
+UPSTREAM signals (radarState / longitudinalPlan / modelV2 / selfdriveState) are cached too, even
+though nothing upstream of carControl.actuators.accel is the car port's to fix. The reason is
+triage, not tuning: when the driver reports a symptom, the FIRST question is whether the planner
+even asked for it, and answering that used to cost a raw LogReader pass per question. The
+2026-08-05 investigation of the 20:09 slowdown on 00000004 needed five such passes before it could
+say "openpilot's allow_throttle coast clamp, not us". Those signals are exactly the ones that
+settle attribution, so they belong in the cache with everything else.
 TODO: delete excessive comments before trying to submit a PR.
 """
 import os
@@ -34,9 +42,19 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set changes, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 1
+SCHEMA = 2
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
+
+# capnp enums cannot go in an allow_pickle=False npz, so they are cached as their raw ints and
+# these map them back. Keep in sync with log.capnp if it ever gains a source/personality.
+PLAN_SOURCE = {0: "cruise", 1: "lead0", 2: "lead1", 3: "lead2", 4: "e2e"}
+PERSONALITY = {0: "aggressive", 1: "standard", 2: "relaxed"}
+
+
+def _enum(held):
+  """A zero-order-held enum column as ints, with absent streams as -1 rather than a NaN cast."""
+  return np.where(np.isnan(held), -1, held).astype(int)
 
 
 def _segments(route):
@@ -57,11 +75,14 @@ def _decode(paths):
   recv = CANParser(ODYSSEY_PT_DBC, [("VSA_STATUS", 0), ("GAS_PEDAL_2", 0),
                                     ("POWERTRAIN_DATA", 0), ("GEARBOX_AUTO", 0)], 1)
   cc = {k: [] for k in ("t", "accel", "active", "pitch", "pid")}
-  cs = {k: [] for k in ("t", "vego", "aego", "gas_pressed", "brake_pressed", "vcruise")}
+  cs = {k: [] for k in ("t", "vego", "aego", "gas_pressed", "brake_pressed", "vcruise", "steer_angle")}
   co = {k: [] for k in ("t", "accel", "gasfactor", "windfactor")}
-  lp = {k: [] for k in ("t", "atarget")}
+  lp = {k: [] for k in ("t", "atarget", "source", "allow_throttle", "has_lead", "should_stop")}
   sc = {k: [] for k in ("t", "gas", "accel", "brake_request")}
   rx = {k: [] for k in ("t", "computer_braking", "user_brake", "engine_torque", "rpm", "gear")}
+  rs = {k: [] for k in ("t", "present", "drel", "vrel", "vlead", "prob", "radar")}
+  md = {k: [] for k in ("t", "e2e_accel", "e2e_should_stop", "des_curvature", "gas_press_prob")}
+  ss = {k: [] for k in ("t", "experimental", "enabled", "personality")}
 
   for m in LogReader(paths):
     w = m.which()
@@ -82,6 +103,7 @@ def _decode(paths):
       cs["gas_pressed"].append(float(s.gasPressed))
       cs["brake_pressed"].append(float(s.brakePressed))
       cs["vcruise"].append(s.vCruise)          # km/h, and 0 on cruiseState for Bosch+OP long
+      cs["steer_angle"].append(s.steeringAngleDeg)   # NOT a lateral metric - reads curve entry
     elif w == "carOutput":
       a = m.carOutput.actuatorsOutput
       # gas/brake on carOutput are REPURPOSED to the learned factors by the Odyssey carcontroller.
@@ -90,8 +112,40 @@ def _decode(paths):
       co["gasfactor"].append(a.gas)
       co["windfactor"].append(a.brake)
     elif w == "longitudinalPlan":
+      p = m.longitudinalPlan
       lp["t"].append(t)
-      lp["atarget"].append(m.longitudinalPlan.aTarget)
+      lp["atarget"].append(p.aTarget)
+      # Which candidate in longitudinal_planner won this frame. `cruise` while decelerating with no
+      # lead means the a_cruise branch was clamped - see allow_throttle below.
+      lp["source"].append(float(p.longitudinalPlanSource.raw))
+      lp["allow_throttle"].append(float(p.allowThrottle))
+      lp["has_lead"].append(float(p.hasLead))
+      lp["should_stop"].append(float(p.shouldStop))
+    elif w == "radarState":
+      r = m.radarState
+      rs["t"].append(t)
+      rs["present"].append(float(r.leadOne.present))
+      rs["drel"].append(float(r.leadOne.dRel))
+      rs["vrel"].append(float(r.leadOne.vRel))
+      rs["vlead"].append(float(r.leadOne.vLead))
+      rs["prob"].append(float(r.leadOne.modelProb))
+      rs["radar"].append(float(r.leadOne.radar))
+    elif w == "modelV2":
+      a = m.modelV2.action
+      md["t"].append(t)
+      md["e2e_accel"].append(float(a.desiredAcceleration))
+      md["e2e_should_stop"].append(float(a.shouldStop))
+      md["des_curvature"].append(float(a.desiredCurvature))
+      # Index 1 with a 1.0 fallback reproduces longitudinal_planner exactly; any other index is a
+      # different prediction horizon and will not match the allow_throttle the planner acted on.
+      g = m.modelV2.meta.disengagePredictions.gasPressProbs
+      md["gas_press_prob"].append(float(g[1]) if len(g) > 1 else 1.0)
+    elif w == "selfdriveState":
+      s = m.selfdriveState
+      ss["t"].append(t)
+      ss["experimental"].append(float(s.experimentalMode))
+      ss["enabled"].append(float(s.enabled))
+      ss["personality"].append(float(s.personality.raw))
     elif w == "sendcan":
       sent.update([(m.logMonoTime, [(c.address, c.dat, c.src) for c in m.sendcan])])
       if sent.can_valid:
@@ -109,12 +163,12 @@ def _decode(paths):
         rx["engine_torque"].append(float(recv.vl["GAS_PEDAL_2"]["ENGINE_TORQUE_ESTIMATE"]))
         rx["rpm"].append(float(recv.vl["POWERTRAIN_DATA"]["ENGINE_RPM"]))
         rx["gear"].append(float(recv.vl["GEARBOX_AUTO"]["TRANS_TARGET_GEAR"]))
-  return cc, cs, co, lp, sc, rx
+  return cc, cs, co, lp, sc, rx, rs, md, ss
 
 
 def _build(route):
   full, paths = _segments(route)
-  cc, cs, co, lp, sc, rx = _decode(paths)
+  cc, cs, co, lp, sc, rx, rs, md, ss = _decode(paths)
   if len(cc["t"]) < 100:
     raise SystemExit(f"{full}: only {len(cc['t'])} carControl frames - not a usable route")
 
@@ -137,7 +191,7 @@ def _build(route):
   out["active"] = np.asarray(cc["active"], dtype=float) > 0.5
   out["pid"] = (np.asarray(cc["pid"], dtype=float) > 0.5) & out["active"]
   out["pitch"] = np.asarray(cc["pitch"], dtype=float)
-  for k in ("vego", "aego", "vcruise"):
+  for k in ("vego", "aego", "vcruise", "steer_angle"):
     out[k] = lin(cs, k)
   for k in ("gas_pressed", "brake_pressed"):
     out[k] = lin(cs, k) > 0.5
@@ -153,6 +207,29 @@ def _build(route):
     out[k] = zoh(rx, k)
   for k in ("engine_torque", "rpm"):
     out[k] = lin(rx, k)
+
+  # UPSTREAM. Same hold-vs-interpolate rule as the CAN block, for the same reason: every one of
+  # these is a DECISION a service published at its own rate, and a service downstream of it acts on
+  # the last message it received, not on a blend of two. Interpolating allow_throttle would invent
+  # a half-off throttle gate; interpolating a lead's dRel across an appear/disappear transition
+  # would invent a car closing from 0 m. So booleans, enums and lead geometry are all held.
+  # Enums come back as raw ints; decode with PLAN_SOURCE / PERSONALITY. -1 means the stream was
+  # absent, which is distinguishable from cruise(0) - NaN would not survive the int cast.
+  out["plan_source"] = _enum(zoh(lp, "source"))
+  out["personality"] = _enum(zoh(ss, "personality"))
+  for k in ("allow_throttle", "has_lead", "should_stop"):
+    out[k] = zoh(lp, k) > 0.5
+  out["lead_present"] = zoh(rs, "present") > 0.5
+  out["lead_radar"] = zoh(rs, "radar") > 0.5
+  for k in ("drel", "vrel", "vlead", "prob"):
+    out["lead_" + k] = zoh(rs, k)
+  out["e2e_should_stop"] = zoh(md, "e2e_should_stop") > 0.5
+  for k in ("experimental", "enabled"):
+    out[k] = zoh(ss, k) > 0.5
+  # Continuous upstream quantities. gas_press_prob is interpolated for readability - allow_throttle
+  # above is the authoritative record of what the planner actually decided from it.
+  for k in ("e2e_accel", "des_curvature", "gas_press_prob"):
+    out[k] = lin(md, k)
   return out
 
 
