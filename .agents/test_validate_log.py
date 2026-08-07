@@ -161,7 +161,7 @@ def test_sign_disagreement_ignores_transport_and_separates_downhill():
 def test_creep_detector_can_actually_fire():
   """`creep at stop` has never flagged in 79 drives - prove that is the car, not a dead check.
 
-  agents.md habit #1: a check you have never seen fail is not evidence. This drives the exact
+  tune-evidence.md habit #1: a check you have never seen fail is not evidence. This drives the exact
   predicate with a synthetic creep (rolling forward at 1 m/s while the planner asks <= 0) and
   asserts it trips, so a future edit that silently disables it goes red.
   """
