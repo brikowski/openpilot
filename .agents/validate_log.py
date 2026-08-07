@@ -3,7 +3,7 @@
 validate_log.py - deterministic per-log validation for the ody-op-long tune.
 
 Runs every uploaded route through the SAME set of checks so tune convergence
-and the cross-brand watchlist (see .agents/agents.md "Cross-Brand Longitudinal
+and the cross-brand watchlist (see .agents/tune-evidence.md "Cross-Brand Longitudinal
 Patterns") are evaluated identically each time, and appends the result to an
 evidence ledger so status transitions (watch -> candidate, parked -> revisit)
 become evidence-driven instead of re-derived by hand.
@@ -19,7 +19,7 @@ Usage:
 
 It PRINTS a verdict, APPENDS a row to the ledger (.jsonl authoritative +
 .md human view), and SUGGESTS status changes from accumulated evidence. It
-never edits agents.md itself - a human curates that prose from the suggestions.
+never edits tune-evidence.md itself - a human curates that prose from the suggestions.
 
 The watchlist checks only carry their full meaning on HONDA_ODYSSEY_5G_MMR,
 because the tune repurposes carOutput.actuatorsOutput.gas -> effective gasfactor
@@ -70,9 +70,9 @@ LEDGER_MD = LEDGER_DIR / "log-validation-ledger.md"
 ODYSSEY = "HONDA_ODYSSEY_5G_MMR"
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # GEARBOX_AUTO/TRANS_TARGET_GEAR on bus 1
 
-# ---- thresholds (grounded in the converged baselines recorded in agents.md) ----
+# ---- thresholds (grounded in the converged baselines recorded in tune-evidence.md) ----
 # Convergence regression guards. Baselines: track RMS ~0.22, passthrough RMS ~0.11
-# on route 00000013 (agents.md "Tune status" / ody-op-long2 notes).
+# on route 00000013 (tune-evidence.md "Tune status" / ody-op-long2 notes).
 TRACK_RMS_LIMIT = 0.35        # RMS(aEgo - aTarget) over active pid frames
 PASSTHROUGH_RMS_LIMIT = 0.25  # RMS(wire accel - CarController input) over gas-domain frames
 GASF_EFF_LO, GASF_EFF_HI = 0.05, 1.5   # effective gasfactor sane band (base 0.35-0.9 * trim)
@@ -82,7 +82,7 @@ WINDF_FLOOR = 0.1             # lower clip rail; evaluate only at highway speed 
 WINDF_FLOOR_EPS = 0.005
 WINDF_FLOOR_FRAC_FLAG = 0.50  # majority of highway frames on the rail = base/learner mismatch
 
-# Watchlist symptom thresholds. Each maps to a candidate tweak in agents.md.
+# Watchlist symptom thresholds. Each maps to a candidate tweak in tune-evidence.md.
 OVERSHOOT_MARGIN = 0.30       # m/s^2: aEgo below command during brake recovery = overshoot
 OVERSHOOT_FRAC_FLAG = 0.02    # >2% of braking frames overshooting -> Toyota future-error
 CREEP_VEGO = 2.0              # m/s: below this is the hold-at-stop window
@@ -92,7 +92,7 @@ BRAKE_ONSET_JERK = 2.0        # m/s^3: the parked ody-op-long2 cap; count would-
 JERK_SMOOTH_TAU = 0.20        # s: causal LPF before differentiating. Heavy on purpose - the
                               # command updates at 50Hz (carcontroller frame%2) but carControl
                               # logs at 100Hz, so frame-to-frame diff aliases (the artifact
-                              # agents.md flagged that faked earlier "clipped live" claims).
+                              # tune-evidence.md flagged that faked earlier "clipped live" claims).
 JERK_WIN_S = 0.10             # s: differentiate over this window (central slope), not 1 frame
 JERK_BIND_MIN_RUN = 5         # consecutive frames (~50ms) sustained over cap = a real bind
 
@@ -138,7 +138,7 @@ STOP_LURCH_PORT_FLAG = 0.15    # m/s^2 of the stop lurch owned by the CAR PORT
                                # stop: port contribution maxed at 0.057 (median 0.014) while the
                                # Honda actuator reached 2.744, so 0.15 is ~2.6x the observed
                                # port maximum and fires on 0 of 9. Grading the TOTAL instead fired
-                               # on 17 of 24 drives for a symptom agents.md says not to tune
+                               # on 17 of 24 drives for a symptom tune-evidence.md says not to tune
                                # against. Re-derive if brake_pid's authority ever changes.
 STOP_LURCH_MIN_VEGO = 0.25     # m/s: below longcontrol's stopping threshold, standstill velocity/
                                # IMU noise can report a decel while the van is already stationary.
@@ -244,7 +244,7 @@ def _jerk(smoothed, dt, active):
   """Windowed central-slope derivative of an already-smoothed accel signal, gated to engaged
   frames. Differentiate over ~JERK_WIN_S rather than adjacent frames: the command updates at 50Hz
   (carcontroller frame%2) but logs at 100Hz, and a naive np.gradient aliases that into phantom jerk
-  (the artifact that faked the earlier "clipped live" claims - see agents.md). Also drops a window
+  (the artifact that faked the earlier "clipped live" claims - see tune-evidence.md). Also drops a window
   either side of every engage/disengage edge, where the signal steps for reasons no jerk limiter
   would ever see."""
   return windowed_jerk(smoothed, dt, active, JERK_WIN_S)
@@ -414,7 +414,7 @@ def analyze(msgs, platform):
               "windf_floor_frac_highway"):
       r[k] = None
 
-  # crashes: a managed DRIVING process dying (agents.md: controlsd death -> relayMalfunction,
+  # crashes: a managed DRIVING process dying (tune-evidence.md: controlsd death -> relayMalfunction,
   # three layers down). The specific signal is an errorLogMessage whose JSON `msg == "crash"`
   # (the manager's crash report). Do NOT substring-match "crash"/"exc_info": that false-flags
   # any caught exception a background daemon logs - e.g. route 00000005 logged
@@ -498,7 +498,7 @@ def analyze(msgs, platform):
   #  flagged 0 of 5 substantial drives and could not have caught the real grade defect, which is
   #  on the command side and now lives in _following's downhill breakout.)
 
-  # 3. creep at stop -> creep comp (but NOT Ford-style subtraction on Bosch; see agents.md)
+  # 3. creep at stop -> creep comp (but NOT Ford-style subtraction on Bosch; see tune-evidence.md)
   creep = active & (vego < CREEP_VEGO) & (cc_accel <= 0.0) & (aego > CREEP_AEGO)
   # longest sustained run
   run, best = 0, 0
@@ -509,7 +509,7 @@ def analyze(msgs, platform):
 
   # 4. brake-onset jerk -> revisit parked ody-op-long2 if the 2.0 cap would actually bind.
   #    Differentiate over a ~0.1s window (central slope) rather than adjacent frames, so a
-  #    50Hz command sampled at 100Hz doesn't manufacture jerk (the aliasing agents.md warned
+  #    50Hz command sampled at 100Hz doesn't manufacture jerk (the aliasing tune-evidence.md warned
   #    about). A bind must be sustained JERK_BIND_MIN_RUN frames to count.
   if r["qlog_fallback"]:
     # One sample per JERK_WIN_S at 10Hz - there is no window to differentiate over. Record None
@@ -756,7 +756,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   # off the brake. Without the speed gate the standstill hold dominates - at a stop the request dives
   # while ACCEL_COMMAND sits on the stopping rail, which is correct behavior but reads as a
   # ~0.9 RMS "following error" and swamps the real signal (measured: 0.93 ungated vs 0.070 gated
-  # on route 0000002f). Stopping is the planner's business anyway - see agents.md.
+  # on route 0000002f). Stopping is the planner's business anyway - see tune-evidence.md.
   active = active & (vego > FOLLOW_MIN_VEGO) & ~brakepressed
   if active.sum() < 200:
     return out
@@ -936,9 +936,9 @@ def verdicts(r):
       status="Toyota future-error winddown" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
   add("creep at stop", r["creep_frames"] < CREEP_MIN_FRAMES,
       f"{r['creep_frames']} frames sustained",
-      status="creep comp (NOT Ford subtraction - see agents.md)" if r["creep_frames"] >= CREEP_MIN_FRAMES else None)
+      status="creep comp (NOT Ford subtraction - see tune-evidence.md)" if r["creep_frames"] >= CREEP_MIN_FRAMES else None)
   # Only a SUBSTANTIAL bind justifies un-parking: the planner's onset jerk normally sits
-  # right at the 2.0 cap (holdback negligible - agents.md), so a lone marginal peak ~2.1
+  # right at the 2.0 cap (holdback negligible - tune-evidence.md), so a lone marginal peak ~2.1
   # is noise. Flag on >=3 sustained binds or a peak well over the cap.
   # NOTE: the old "brake-onset jerk bind" CHECK was removed 2026-07-27. It differentiated
   # cc_accel - the PLANNER's command, an INPUT to the car controller - so it read identically on
@@ -1026,7 +1026,7 @@ def verdicts(r):
         status="harsh ride - check the ratio: ~1x is our command, >>1x is added downstream" if harsh else None)
   if r.get("stop_lurch_worst") is not None:
     # FLAG ON OUR SHARE, NOT THE TOTAL. Grading `stop_lurch_excess` (everything the car achieved
-    # beyond the command) fired on 17 of 24 eligible drives while agents.md's own attribution says
+    # beyond the command) fired on 17 of 24 eligible drives while tune-evidence.md's own attribution says
     # the lurch is Honda's actuator bite and "do not tune against this metric" - a 71% flag rate on
     # a symptom nobody may act on is noise that also drives suggest_status promotions. The
     # car-port's contribution is already separated out as `stop_lurch_wire_extra`, so flag that and
@@ -1196,7 +1196,7 @@ def write_ledger_md(rows):
   header = (
     "# Log Validation Ledger\n\n"
     "Auto-maintained by `.agents/validate_log.py` (idempotent per route). One row per validated "
-    "drive. FLAGged watchlist symptoms name the candidate tweak; see `.agents/agents.md` "
+    "drive. FLAGged watchlist symptoms name the candidate tweak; see `.agents/tune-evidence.md` "
     "\"Cross-Brand Longitudinal Patterns\" for status. Authoritative data is the sibling `.jsonl`; "
     "this table is the human view. `eng min` / `eng mi` are the coverage behind the row - a clean "
     "row off a couple engaged minutes is context, not evidence. `branch` is read from the log's own "
@@ -1319,7 +1319,7 @@ def main():
     print(f"\n  ledger: appended to {LEDGER_MD.name} / {LEDGER_JSONL.name}")
     sugg = suggest_status(args.route)
     if sugg:
-      print("\n  STATUS SUGGESTIONS (human applies to agents.md):")
+      print("\n  STATUS SUGGESTIONS (human applies to tune-evidence.md):")
       for s in sugg:
         print(f"    * {s}")
     report_thermal_advisory()

@@ -1,9 +1,18 @@
-# Openpilot AI Developer Team
+# Odyssey longitudinal tune — evidence archive
 
-## Role: Openpilot Core Engineer
-- **Description**: Expert automotive systems engineer specializing in Comma's ADAS development and safe system architecture.
-- **Context Scope**: Deep workspace awareness, prioritizing file mechanics within `opendbc/car/<brand>/` (accessed via the `opendbc_repo` submodule).
-- **Core Directive**: Adhere strictly to the safety framework, system parameters, and codebase boundaries outlined in the README files. Always prioritize functional safety compliance and strict local verification pipelines before proposing code execution plans.
+**This is a reference document, not an instruction file.** The rules that must survive a cold start
+live in the repo-root [`AGENTS.md`](../AGENTS.md) (`CLAUDE.md` is a symlink to it), which both Codex
+and Claude Code load automatically every session. This file holds the measurements, failed
+experiments, and reasoning *behind* those rules, and is read on demand — it is deliberately not
+auto-loaded, because at ~86 KB it would crowd out the work.
+
+Read it when you need the receipts: why a threshold is the value it is, what was already tried and
+failed, and which investigations are closed. Conclusions here that conflict with the root file are
+stale — the root file wins, and the conflict is worth fixing in place.
+
+(Historical note: this file predates the root `AGENTS.md` and once carried an agent persona header.
+That was removed 2026-08-06 to stop it reading as directives to any tool doing nested agent-file
+discovery.)
 
 ## Submodule & Branch Mechanics
 - **Submodule Flow**: Vehicle platform logic is located in the [opendbc_repo](file:///Users/travisbadgley/openpilot/opendbc_repo) submodule. Edits must be committed inside `opendbc_repo/` first, and the submodule tracking pointer must then be updated and committed in the parent `openpilot` repository.
@@ -119,7 +128,7 @@ Only two things are live-learned today (`gasfactor` trim, `windfactor`) and that
 - **Never learn**: `BRAKE_PID_KI` (adapting a gain against Honda's own brake loop is the #2347 instability by construction), `min_gas_accel` or any domain threshold, and the learn divisors themselves.
 
 ## Where the constants belong (audited 2026-07-29)
-`agents.md`'s own Bosch A generalization target is "shared Bosch A logic in `carcontroller.py`, per-car seed tables in `values.py`". **We are not there yet**, and it matters because module-level constants in `carcontroller.py` would silently apply to every Bosch Honda the moment the `CAR.HONDA_ODYSSEY_5G_MMR` gate is widened.
+`tune-evidence.md`'s own Bosch A generalization target is "shared Bosch A logic in `carcontroller.py`, per-car seed tables in `values.py`". **We are not there yet**, and it matters because module-level constants in `carcontroller.py` would silently apply to every Bosch Honda the moment the `CAR.HONDA_ODYSSEY_5G_MMR` gate is widened.
 - **Per-car, should move to `values.py`**: `GAS_FACTOR_SPEED_BP/V` (powertrain), the `wind_brake_ms2` curve (aerodynamics - frontal area x Cd, currently an undocumented inline `np.interp` at the point of use, which is worse than a named constant).
 - **Shared Bosch A, correctly module-level**: `DOMAIN_HYST_EXIT`, `BRAKE_PID_KI`, `BRAKE_DOMAIN_ENTRY` and the `min_gas_accel` speed ramp built from it (PR #2342 behavior), the learn divisors (convergence rates, not plant properties).
 - **Already correct**: `BOSCH_GAS_LOOKUP_V = [0, 2000]` is an INSTANCE attribute in `values.py`, not a class mutation. Upstream still mutates the class for `ACURA_RDX_3G_MMR`; ours does not, which is why it does not leak across cars in `test_car_interfaces`.
@@ -149,7 +158,9 @@ Only two things are live-learned today (`gasfactor` trim, `windfactor`) and that
 | 0.50 + low-speed release | `d8f962b` | 3b | **4.8** |
 
   - **Corrected conclusion: 0.50 does reduce descent toggling, roughly 2x below the best no-hysteresis routes** (3.6-4.8 vs 6.7-10.0), and the two regressed configs sit clearly above baseline where they belong. The morning's "0.50 only recovered baseline" reading was an artifact of the counter, not a property of the tune. **Both the original claim and its retraction were wrong for the same reason: nobody had checked the instrument.**
-  - **What is still NOT settled.** n is 2-3 routes per config, descent exposure is 0.84-1.26 min each, and within-config spread remains enormous - route `2f` at 45.9/min sits on the same commit as `29` at 10.0. A terrain-matched drive on the `0000002f`/`00000030` route with >=3 descent minutes is still the thing that would close this; the corrected numbers make the hypothesis much more likely, not proven.
+  - **What is still NOT settled.** n is 2-3 routes per config, descent exposure is 0.84-1.26 min each, and within-config spread remains enormous - route `2f` at 45.9/min sits on the same commit as `29` at 10.0. The corrected numbers make the hypothesis much more likely, not proven.
+  - **GATE RESTATED 2026-08-06 - the old ">=3 descent minutes in one drive" gate was unreachable and is retired.** It was written without checking the ledger. Measured over 46 validated routes / 643 engaged minutes: **zero** routes have ever reached 3.0 descent minutes, the maximum ever recorded is **2.10** (`00000049`, over 69 engaged min), and the median is 0.32. Worse, the two routes the gate itself named as the terrain match are `0000002f` = **0.57** and `00000030` = **1.42** descent minutes - together **1.99**, so the gate demanded more descent from a single drive than both of its own reference routes produced combined. Descent is a stable ~4% of engaged time on this terrain, so 3 minutes in one drive needs ~118 engaged minutes of continuous highway; a 129-minute drive (`0000000d`) returned 1.66. The gate also contradicted the pooling rule that governs every other comparison here.
+    **The gate is now: >=20 descent hold-episodes pooled across routes at ONE `opendbc_commit`, terrain-matched, measured at both the incumbent and the candidate setting.** Episodes, not wall-clock, because episodes are what the change is supposed to move; minutes were only ever a proxy for sample size. A hold-episode is >=0.5 s of `longActive & request > 0.02 & BRAKE_REQUEST & pitch < -0.7 deg`. Yield is ~12 episodes per long drive, so ~2 drives per arm. **The incumbent 0.50 arm is now SATISFIED** - pooled at `opendbc d1d5eb5c7255`: `0000000d` 12 episodes / 40.1 s and `00000003` 13 episodes / 36.3 s = **26 episodes / 76.9 s over 2.83 descent min**. What remains blocking is the candidate arm: the same roads driven at the new value. No amount of further baseline logging substitutes for that, and that half of the original gate was right.
   - **Priced cost of a wider band: sign disagreement scales with it.** 0.04-0.72% of engaged frames with no hysteresis, 2.18% at 0.20, 2.39%/2.74% at 0.50 - the two highest in the ledger. Magnitude stayed small (worst -0.12 m/s^2 on `00000035`); the -2.04 m/s^2 on `00000034` belongs to the re-engagement bug below, not to the band.
 - **Route `00000034` found a separate state-lifecycle regression in that implementation.** At re-engagement (route t=794.78 s), the CarController input was +0.09..+0.27 m/s^2 while the wire stayed -1.95..-1.76 for 0.20 s. Cause: while `longActive=False`, the hysteresis latch remained in the brake domain and `brake_pid` continued integrating against the driver's acceleration even though `create_acc_commands` correctly sent no brake; it reached about -2.0 and leaked into re-engagement. Fixed by clearing the domain latch whenever longitudinal control is inactive, which also routes the existing `else` through `brake_pid.reset()`. A regression test recreates active-brake -> inactive/manual +2 m/s^2 -> positive re-engagement and asserts ACCEL_COMMAND=+0.10, live gas, BRAKE_REQUEST=0. Open-loop route replay reduces request-error RMS 0.0468 -> 0.0071 and worst positive-request disagreement -2.07 -> -0.58; only a road drive can close the remaining closed-loop question.
   - **CORRECTION 2026-07-30: that test's `BRAKE_REQUEST=0` assertion was vacuous until today.** `_decode_acc_control` read `(dat[4] >> 3) & 0x1`, which is **`STANDSTILL`** (Motorola start bit 35), not `BRAKE_REQUEST` (bit 34 = byte 4, bit 2). `STANDSTILL` is driven by `stopping_counter`, which is 0 throughout these tests, so the assertion read a constant 0 and could never fail. Verified by re-running the sweep with the old index: the new `any(brake_requests)` guard fails 25 of 31 subtests. The *other* two assertions (ACCEL_COMMAND, live gas) were real and are what actually caught the route-34 bug, so the fix itself stands - but do not cite this test as BRAKE_REQUEST coverage for anything dated before 2026-07-30.
@@ -178,12 +189,14 @@ for the reported underspeed. A combined -0.10 entry / 0.15 band released that ev
 on frozen inputs, but 0.15 is narrower than the 0.20 band that already failed on road and the pair
 changes both sides of the state machine. Keep it experimental until a clean baseline drive exists.
 
-**The next drive should be the `0000002f`/`00000030` descent route, not more highway.** Establish a
-clean 0.50 baseline with ordinary disengage/re-engage and stop/start cycles, and target at least
-3 engaged descent minutes. Compare physical `BRAKE_REQUEST` bursts, compensated-force release
-holds, interventions, sign disagreement, and whether set-speed recovery still undershoots. Known
-felt-tapping route `2f` produced **18 physical edges/10s**, failed `BRAKE_RELEASE_HOLD` route `30`
-produced **10**, and 0.50 routes `34`/`35` produced **3/4**.
+**The next drive should be the `0000002f`/`00000030` descent route carrying a CANDIDATE value, not
+another baseline.** The 0.50 baseline arm is closed (26 pooled hold-episodes, see the restated gate
+above); do not spend another drive re-measuring it. Drive the same roads with ordinary
+disengage/re-engage and stop/start cycles until the candidate arm also reaches 20 pooled episodes.
+Compare physical `BRAKE_REQUEST` bursts, compensated-force release holds, interventions, sign
+disagreement, and whether set-speed recovery still undershoots. Known felt-tapping route `2f`
+produced **18 physical edges/10s**, failed `BRAKE_RELEASE_HOLD` route `30` produced **10**, and 0.50
+routes `34`/`35` produced **3/4**.
 
 `min_gas_accel` is derived from `BOSCH_GAS_LOOKUP_BP[0]` (= `min_gas` = -0.2), so the domain threshold asserts *the gas domain can deliver -0.2 m/s^2 of deceleration*. It cannot. At the crossing we command **23 of 2000 counts** of gas (1.2% throttle) and achieve ~0.0 m/s^2 while the plan asks -0.15. The whole -0.2..0 span of "gas authority" is under 9% throttle, which produces no braking at all. **The gas-signal scaling floor and the can-we-still-follow boundary are two different numbers sharing one constant.**
 
@@ -198,6 +211,64 @@ Measured following error inside `-0.2 < aTarget < -0.02`, gas domain, above 10 m
 Not a downhill-only defect - flat is just as bad. Upgrades are fine because gravity does the decelerating. Exposure is ~165 s of 45 engaged min, so it is real but second-order next to the toggling. It is also *sustained*, not a transient: for the full 3 s before a brake onset the plan asks -0.08..-0.20 and aEgo sits at ~0.0, then the correction arrives over ~0.5 s. That step is the lurch.
 
 Cost of the fix, open-loop and therefore indicative: moving entry from -0.20 to -0.10 takes overall brake duty 15% -> 36%. Prefer a separate named constant over reusing `min_gas`; a grade gate is **not** justified by the table above.
+
+### The EXIT side of the same conflation: withheld gas is engine braking, not coasting (measured 2026-08-06)
+
+Driver-reported, routes `0000000d` and `00000006` (2026-08-06): *"going downhill we keep slowing coming out of the hill while the car in front pulls away - there's no reason for us to continue to slow down."* The report is correct and the cause is ours. This is the **release** side of the `min_gas_accel` conflation documented above, and it is a **separate defect from the toggling** the `DOMAIN_HYST_EXIT` work was aimed at.
+
+Measured over descent hold-episodes (`longActive & request > 0.02 & BRAKE_REQUEST & pitch < -0.7 deg`), pooled at `opendbc d1d5eb5c7255`:
+
+| route | held | request mean | aEgo mean | shortfall | COMPUTER_BRAKING | brake_pid addon | engine torque |
+|---|---|---|---|---|---|---|---|
+| `0000000d` | 39.7 s | +0.192 | -0.065 | **-0.257** | 5% | -0.006 | **-103** |
+| `00000003` | 34.6 s | +0.134 | -0.009 | **-0.143** | 19% | -0.009 | **-164** |
+
+**It is not the friction brakes and it is not `brake_pid`.** `COMPUTER_BRAKING` is asserted on only 5-19% of those frames and the brake PID addon averages -0.006 m/s^2. **It is not a downshift either** - `TRANS_TARGET_GEAR` is unchanged across descent brake-domain entries (10.00 -> 10.00 on `0000000d`, 6.00 -> 6.00 on `00000003`, RPM +/-40). It is the closed throttle. On the *same descents* with the same positive request, the gas domain runs engine torque **+311** and achieves aEgo +0.502 against +0.552 asked; the brake domain runs **-103** and achieves -0.065 against +0.192 asked. Withholding `GAS_COMMAND` swings engine torque ~414 units. A 4500 lb van is not decelerating by coasting here - it is being engine-braked by a throttle we shut.
+
+**Why the release band is the wrong shape.** During those holds the required powertrain force `gas_pedal_force = accel + wind*windfactor + hill_brake` sits at **~0** (mean -0.001 on `0000000d`, -0.111 on `00000003`; 47%/16% of frames outright positive), while release requires `> +0.30`. So the exit band spans exactly the region where the physics wants roughly neutral torque, and in that region the action taken is "shut the throttle". Because the decision input carries `hill_brake`, both thresholds slide with grade *in request terms* (wind term +0.024 at 65 mph with the rail-pinned windfactor):
+
+| grade | hill_brake | enter brake if req < | exit brake if req > |
+|---|---|---|---|
+| +2.0 deg | +0.34 | -0.57 | -0.07 |
+| 0.0 deg | +0.00 | -0.22 | +0.28 |
+| -1.5 deg | -0.26 | **+0.03** | **+0.53** |
+| -3.0 deg | -0.51 | +0.29 | +0.79 |
+
+On a -1.5 deg descent we **enter** the brake domain while the planner still wants +0.03 and do not release until it asks +0.53. That is the whole of *"this behavior isn't seen on flat ground"*, and it is why the flat/uphill control route `00000006` (set 65, 100% lead-following, 7.4 engaged min) recorded **0.00 s of brake domain** - at its +1.31 deg mean pitch `hill_brake` = +0.22 lifted even a -0.71 request clear of entry.
+
+**RETRACTED CANDIDATE (proposed and killed the same day, 2026-08-06).** The first idea was "keep `BRAKE_REQUEST` latched but command the neutral gas value (~81 of 2000 counts) instead of the inactive constant, so the release threshold never has to move." **It is not implementable.** `hondacan.create_acc_commands` defines `gas_dom = (not brake_domain)` and `gas_command = gas if active and gas_dom else -30000` - gas and brake are **mutually exclusive by construction**, and `BRAKE_REQUEST` is the *same bit* as `BRAKE_LIGHTS`. Commanding both would put throttle against brake with **no panda check** (`honda_tx_hook` bounds magnitude only, see "Upstream test coverage") and would flash the brake lights at following traffic while accelerating. Do not resurrect it. Recorded because the reasoning is the useful part: the defect is real, but the domain flag is not a knob with an independent gas side.
+
+**What that leaves, and why nothing was written.** Keeping the mutual exclusion means the only lever is *when* we switch - i.e. exactly the `DOMAIN_HYST_EXIT` territory with the documented ~1:1 fidelity/chatter trade and three on-road failures. Existing evidence contraindicates both obvious directions: lowering the exit band was measured at **27.4 toggles/min at 0.20 vs 25.0 with no hysteresis at all** (worse than stock), and moving entry up from -0.20 to -0.10 takes brake duty **15% -> 36%**, which makes this defect *more* frequent. Moving entry down helps this defect and worsens the under-deceleration table above by the same mechanism. **There is no free setting** - the tune's own summary already said so, and this measurement is another instance of it, not an escape from it.
+
+**WHAT SHIPPED AS THE ROAD CANDIDATE (2026-08-06): `BRAKE_DOMAIN_ENTRY` -0.20 -> -0.30.** The
+insight that unblocked this is that **band position and band width are different axes.** Every prior
+sweep - `DOMAIN_HYST`, `BRAKE_RELEASE_HOLD`, `DOMAIN_HYST_EXIT` 0.20 - moved the *width*, which is
+what trades ~1:1 against chatter and failed three times. Nobody had moved the band's *position*.
+Method: re-run the domain state machine over the cached signals and **validate it against the logged
+`BRAKE_REQUEST` first** - 99.8% (`0000000d`) / 98.9% (`00000003`) agreement at the shipped -0.20, so
+the counterfactual is credible. Then sweep:
+
+| entry | descent hold vs +req | brake duty | descent toggles/min | x2.7 scaled |
+|---|---|---|---|---|
+| **-0.20** (was) | 74.3 s | 7.2% | 6.1 | 16.5 |
+| -0.25 | 45.6 s (-39%) | 5.6% | 6.5 | 17.5 |
+| **-0.30** (now) | 29.8 s (-60%) | 4.5% | 6.5 | 17.5 |
+| -0.35 | 17.1 s (-77%) | 3.5% | 5.8 | 15.6 |
+| -0.40 | 10.3 s (-86%) | 3.0% | 4.3 | 11.7 |
+
+Toggling is **flat to better** across the whole sweep, because shifting the band down means entering
+the brake domain less often - fewer entries, fewer edges. That is why this is not the 1:1 trade.
+-0.30 was chosen over -0.35/-0.40 as the smallest step that removes most of the defect.
+**The cost is real and is what to watch on road:** 132.5 s, 2.74% of engaged time, moves brake->gas
+domain. Mean request on those frames is ~0 (+0.030 / -0.048), so most of it is genuinely near-neutral
+where the gas domain belongs - but **p10 is -0.37**, and per the table above gas has no braking
+authority below ~-0.2. **Failure mode is late brake onset / longer stops, not chatter.** Revert to
+-0.20 if the driver reports either. Per habit #1 this is open-loop and therefore NOT validated;
+crossing rates underpredict ~2.7x and the sim freezes the feedback path.
+
+**The one genuinely untested state.** `GAS_COMMAND` has never been sent as **0** on this car: measured over `0000000d`/`00000003`, GAS_COMMAND is the -30000 inactive constant 4%/21% of engaged frames and positive 96%/79%, and **exactly 0 on 0.0%**. The +43 vs -139 torque contrast above is *low gas in the gas domain* vs *inactive in the brake domain*, so it conflates the domain flag with the gas value and cannot answer whether `GAS_COMMAND = 0` alone avoids the overrun fuel-cut. Per `comma-standards`, this signal is opaque/unitless in the DBC and must not be extrapolated. Answering it needs a deliberate probe, not a log query - and no existing route can substitute, because the state has never been on the wire.
+
+**Attribution note.** The 16:02/16:08 dips on `0000000d` that first looked like this defect are **upstream** - request was negative throughout and the wire tracked it to RMS 0.020, `plan_source = lead0`. On `00000006` the driver-reported event is upstream in full: **0.00 s brake domain, 0.00 s withheld gas**, wire-request RMS 0.0055, and the felt "holding the brake" is a **6.3 s lag** between the lead re-accelerating (t=374.0) and the MPC's request turning positive (t=380.3) while the gap opened 23 m -> 36 m. Do not attribute lead-following lag to the domain logic; check `brake_request` first.
 
 ## Ruled out on route 00000033 - do not re-investigate (2026-07-29)
 Three plausible causes of the harsh brake onset, all measured dead. Two were my own hypotheses.
