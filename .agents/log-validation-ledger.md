@@ -93,3 +93,5 @@ Auto-maintained by `.agents/validate_log.py` (idempotent per route). One row per
 | 2026-08-07 | 0000000d--9d32deed86 | ody-op-long | d1d5eb5c7255 | 65.4 | 76.2 | 0 | 0.112 | 0.004 | 0.626 | 0.117 | 0.005 | 0.033 | 3 | 0.0 | 0.5 | windfactor rail exposure |
 | 2026-08-08 | 0000000e--877b0ae1b5 | ody-op-long | c1ce76fa857a | 3.8 | 3.6 | 0 | 0.159 | 0.006 | 0.596 | 0.195 | 0.007 | 0.043 | 1 | 0.0 | 5.2 | none |
 | 2026-08-08 | 0000000f--b0eb8e3a15 | ody-op-long | c1ce76fa857a | 3.9 | 3.7 | 0 | 0.140 | 0.005 | 0.533 | 0.310 | 0.007 | 0.040 | 2 | 0.0 | 2.6 | sign disagreement |
+| 2026-08-08 | 00000012--36525474db | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-08 | 00000013--dd070c2142 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |

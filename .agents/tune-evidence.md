@@ -340,10 +340,44 @@ minutes (`0000000c`/`00000006`/`00000003`/`0000000d`):
 `carstate.py:102`, and no observed delayed-enablement gap for `carstate.py:121` (lockout releases
 at first motion; openpilot never wanted torque the EPS refused).** No code change is warranted;
 changing fault reporting with zero logged symptom is exactly what the tuning rules prohibit.
-Boundary: our logs are all openpilot-longitudinal; the stock-ACC ALT_RADAR config
-(`minSteerSpeed` = 70 km/h, radar intercepting steering) is NOT covered, and that is where any
-real delayed-enablement pain would live. Scanner: session scratchpad `steer_enable_scan.py`
-pattern - raw bus 1 `STEER_STATUS` against `carState`/`carControl`/`onroadEvents`.
+Scanner: session scratchpad `steer_enable_scan.py` pattern - raw bus 1 `STEER_STATUS` against
+`carState`/`carControl`/`onroadEvents`.
+
+### The 43.5 mph boundary is openpilot's config, not the EPS (stock-ACC routes, 2026-08-08)
+
+The gap above ("stock-ACC config NOT covered") is now closed. Driver-reported: *"it doesn't seem
+like a direct cut-off at 43 mph - sometimes it wouldn't kick on until 45+, sometimes steering
+doesn't drop off until under 43."* Measured on `00000012--36525474db` and `00000013--dd070c2142`
+(stock ACC + openpilot lateral, `minSteerSpeed` = 70 km/h = 43.50 mph), and both routes agree
+exactly:
+
+| quantity | route 12 | route 13 |
+|---|---|---|
+| EPS `low_speed_lockout` episodes | 2, both at **0.0 mph** | 2, both at **0.0 mph** |
+| EPS `no_torque_alert_1` | 32 eps, 19-31 mph, all cruise-off | 85 eps, 16-26 mph, all cruise-off |
+| `latActive` engage / disengage | **43.5 / 43.5** | **43.5 / 43.5** |
+| `lowSpeedAlert` SET | **44.6** | **44.6** |
+| `lowSpeedAlert` CLEAR | **45.7** | **45.7** |
+
+**There is no EPS speed lockout to find.** `low_speed_lockout` fires only at standstill; the EPS
+reports `normal` continuously through the whole 43-46 mph band. The boundary is entirely
+`ret.minSteerSpeed = 70. * CV.KPH_TO_MS` (`interface.py`, stock-ACC path) acting through
+`controlsd`'s `standstill = vEgo <= minSteerSpeed` gate - exact, no hysteresis, both directions.
+`no_torque_alert_1` is a driver-steering artifact at half that speed and is unrelated.
+
+**The felt inconsistency is the ALERT disagreeing with the CONTROL, in opposite directions.**
+`latActive` uses bare `minSteerSpeed` while `low_speed_alert` uses `+0.5` set / `+1.0` clear
+(`carstate.py`, the block carrying the `carstate.py:121` TODO):
+- accelerating: steering resumes at **43.5** but the alert holds to **45.7** -> 2.2 mph where it
+  steers while the UI says unavailable. This is the "wouldn't kick on until 45+" report.
+- decelerating: alert re-arms at **44.6** but steering runs to **43.5** -> 1.1 mph where the UI
+  warns while it still steers. This is the "doesn't drop off until under 43" report.
+
+**Not answerable from these logs:** whether 70 km/h is the *right* value. openpilot never commands
+torque below it (`vEgo` min while `latActive` = 43.5 on both routes), so nothing here tests the
+`interface.py` claim that the radar filters steering commands below that speed. Note 43.5 mph is
+approximately where Honda's own stock LKAS begins, so the value looks deliberate. Lowering it is a
+road experiment, not a code cleanup, and lateral is otherwise closed.
 
 ## Ruled out on route 00000033 - do not re-investigate (2026-07-29)
 Three plausible causes of the harsh brake onset, all measured dead. Two were my own hypotheses.
