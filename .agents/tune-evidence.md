@@ -315,6 +315,36 @@ position by ~0.2 m/s² and invalidate the road evidence. Consequences to remembe
 `DOWNHILL_PITCH = -0.012` measured is ~-0.032 true (~-1.8% grade), i.e. our "descent" metrics
 under-count shallow true descents, identically in both arms; and true grade ~= pitch - 0.02.
 
+## ALT_RADAR steering enablement (measured 2026-08-08 - no change warranted, do not re-investigate)
+
+Upstream carries two TODOs our platform can speak to: `carstate.py:121` "better handle delayed
+steering enablement on ALT_RADAR cars" and `carstate.py:102` "See if this logic works for all
+other Honda". Scanned raw `STEER_STATUS` (bus 1) + `carState` + alerts over 4 routes / ~92 engaged
+minutes (`0000000c`/`00000006`/`00000003`/`0000000d`):
+
+- **`low_speed_lockout`: 15 episodes, all at standstill** (entry vEgo <= 0.16 m/s, release by
+  0.26 m/s, up to 54 s parked). The `expected_low_speed_lockout` suppression caught every one -
+  `steerFaultTemporary` frame counts equal the `no_torque_alert_1` counts exactly on all 4 routes,
+  so lockout contributed zero fault frames.
+- **`no_torque_alert_1`: 230 episodes, and it is NOT a crawl-band phenomenon** - entry vEgo p50
+  3.6-8.0 m/s (max 26.5), duration p50 0.03-0.04 s (max 0.99). Every single episode began while
+  `latActive` was false, during manual/override steering (routes log 361-1290 steerOverride
+  events). Zero fault frames overlapped `latActive`; zero `steerTempUnavailable`(`Silent`) alerts
+  fired anywhere. (A first-25-transitions eyeball of `0000000c` had suggested a 0-1.2 m/s crawl
+  band; the full scan corrects that - biased sample.)
+- **Consequence chain if it ever did overlap**: `controlsd` drops `latActive` on any
+  `steerFaultTemporary` frame, and at 0.5+ m/s a persisting fault escalates to SOFT_DISABLE. On
+  this platform with openpilot long it simply never overlaps.
+
+**Verdict: the existing ALT_RADAR logic works as intended here - n=1 upstream confirmation for
+`carstate.py:102`, and no observed delayed-enablement gap for `carstate.py:121` (lockout releases
+at first motion; openpilot never wanted torque the EPS refused).** No code change is warranted;
+changing fault reporting with zero logged symptom is exactly what the tuning rules prohibit.
+Boundary: our logs are all openpilot-longitudinal; the stock-ACC ALT_RADAR config
+(`minSteerSpeed` = 70 km/h, radar intercepting steering) is NOT covered, and that is where any
+real delayed-enablement pain would live. Scanner: session scratchpad `steer_enable_scan.py`
+pattern - raw bus 1 `STEER_STATUS` against `carState`/`carControl`/`onroadEvents`.
+
 ## Ruled out on route 00000033 - do not re-investigate (2026-07-29)
 Three plausible causes of the harsh brake onset, all measured dead. Two were my own hypotheses.
 - **Gas cut at domain entry.** `GAS_COMMAND` in the frame *before* `BRAKE_REQUEST` goes 1 is **3 of 2000**, 41/41 onsets. There is no gas/brake double step. An earlier pass reported 38-62 counts; that was an artifact of taking `max` over the preceding 0.6 s instead of the frame before. **When measuring the size of a step, sample the frame adjacent to it.**
