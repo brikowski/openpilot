@@ -3,8 +3,6 @@
 Keep log I/O, CAN decoding, ledger mutation, and verdict policy in validate_log.py. Functions in
 this module accept arrays and return arrays or metric dictionaries, so every behavior-changing
 measurement can be mutation-tested without needing a route or comma device.
-
-TODO: delete excessive comments before trying to submit a PR.
 """
 
 import numpy as np
@@ -102,7 +100,6 @@ def command_transition_metrics(grid, requested, engaged, vego, brake_pressed, br
 
   These are car-port lifecycle invariants. They deliberately do not decide ride quality or infer
   closed-loop vehicle response.
-  TODO: delete excessive comments before trying to submit a PR.
   """
   dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
   err = wire_accel - requested
@@ -158,7 +155,6 @@ def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitc
       m/s on those two routes while the error-based number stayed under 0.11.
   Both are defined only on the CarController input and the wire, never on the reconstructed
   domain or its thresholds, so two tunes can be compared on identical terms.
-  TODO: delete excessive comments before trying to submit a PR.
   """
   raw = active & brake_request & (requested > request_threshold)
   sustained = after_grace(raw, dt, transition_grace_s)
@@ -214,7 +210,6 @@ def descent_hold_metrics(requested, brake_request, long_active, pitch, *,
   hand-summed totals in the evidence doc drifted (12 + 13 was recorded as 26). Same underlying
   frames as ``sign_disagree_downhill_frac`` minus the vEgo/brake-pressed narrowing - deliberate
   overlap: this is the gate's bookkeeping counter, not a new verdict, so it carries no flag.
-  TODO: delete excessive comments before trying to submit a PR.
   """
   hold = long_active & brake_request & (requested > request_threshold) & (pitch < downhill_pitch)
   edges = np.diff(hold.astype(np.int8), prepend=0, append=0)
@@ -241,7 +236,6 @@ def shadow_windfactor_metrics(grid, requested, actual_accel, speed, pitch, activ
   narrower identification gate. It can establish exposure and convergence, but the recorded
   plant response is frozen, so its error statistics are observational rather than a prediction
   of closed-loop ride quality.
-  TODO: delete excessive comments before trying to submit a PR.
   """
   n = len(grid)
   if n < 2:

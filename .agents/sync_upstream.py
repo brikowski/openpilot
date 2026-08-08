@@ -4,8 +4,6 @@
 This script deliberately never pushes. It resolves only opendbc_repo gitlink conflicts; any source
 conflict is left for a human to inspect. Run the full validation task after it completes, then use
 the separate publish task if the result should replace the remote rebased branch.
-
-TODO: delete excessive comments before trying to submit a PR.
 """
 
 import os

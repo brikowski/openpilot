@@ -16,8 +16,6 @@ The safety hook has no BRAKE_REQUEST check and no gas/brake mutual-exclusion che
 sweep cannot validate the domain decision. Two explicit state-machine regressions below cover the
 invariants we have learned on-road; ride quality and closed-loop behavior still require road drives
 and .agents/validate_log.py.
-
-TODO: delete excessive comments before trying to submit a PR.
 """
 import math
 import unittest
@@ -155,7 +153,6 @@ class TestOdysseyLongRails(unittest.TestCase):
     This reproduces route 00000034 at 794.78 s: a brake-domain latch survived disengagement,
     brake_pid integrated against the driver's acceleration to about -2 m/s^2, and the first
     re-engaged frames commanded brake while openpilot requested positive acceleration.
-    TODO: delete excessive comments before trying to submit a PR.
     """
     active = np.array([True] * 20 + [False] * 200 + [True] * 10)
     accels = np.array([-0.5] * 20 + [0.0] * 200 + [0.1] * 10)
@@ -174,7 +171,6 @@ class TestOdysseyLongRails(unittest.TestCase):
     Before this regression guard, the internal ramp advanced while GAS_COMMAND was parked at
     -30000. The first live command after brake or disengagement could therefore jump past the
     intended 60-count step even though every frame still passed panda safety.
-    TODO: delete excessive comments before trying to submit a PR.
     """
     scenarios = {
       "brake_to_gas": (
@@ -204,7 +200,6 @@ class TestOdysseyLongRails(unittest.TestCase):
     every subsequent +0.1 start request transmitted positive ACCEL_COMMAND with BRAKE_REQUEST=1
     and GAS_COMMAND inactive. Current-code replay over stop-heavy routes found 1.2-1.3 s episodes.
     The exit band is now zero below 5 m/s while retaining its full value at road speed.
-    TODO: delete excessive comments before trying to submit a PR.
     """
     accels = np.array([-0.5] * 20 + [0.1] * 20)
 

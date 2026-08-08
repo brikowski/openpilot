@@ -117,7 +117,6 @@ def pull(rid, expected_segments=None):
   LOCAL_ROOT.mkdir(parents=True, exist_ok=True)
   # CUSTOM TOOLING: keep interrupted rlogs outside their final path, retry the Wi-Fi/SSH stalls
   # observed on 2026-08-02, and retain the exact rsync failure for the next diagnosis.
-  # TODO: delete excessive comments before trying to submit a PR.
   cmd = _pull_command(rid)
   for attempt in range(1, PULL_ATTEMPTS + 1):
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -215,7 +214,6 @@ def main():
   # CUSTOM TOOLING: retain private rlogs by default. Metric backfills repeatedly needed routes
   # older than the device's ~2-day window, so implicit seven-day deletion discarded irreplaceable
   # evidence. Cleanup remains available only as an explicit, reviewable action.
-  # TODO: delete excessive comments before trying to submit a PR.
   ap.add_argument("--prune-hours", type=float,
                   help="OPT IN: after validation, delete ledgered local routes older than this")
   args = ap.parse_args()

@@ -8,8 +8,6 @@ Unlike the aggregate ledger check, this prints the individual intervals and comp
 * ``longitudinalPlan.aTarget`` is an upstream planner output that still passes through longcontrol.
 
 That distinction matters when deciding whether a deviation belongs to the car port.
-
-TODO: delete excessive comments before trying to submit a PR.
 """
 import argparse
 import os

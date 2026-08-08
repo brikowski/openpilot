@@ -25,8 +25,6 @@ The watchlist checks only carry their full meaning on HONDA_ODYSSEY_5G_MMR,
 because the tune repurposes carOutput.actuatorsOutput.gas -> effective gasfactor
 and .brake -> windfactor there (see honda/carcontroller.py L417-425). On other
 platforms only the convergence + crash checks are meaningful.
-
-TODO: delete excessive comments before trying to submit a PR.
 """
 import argparse
 import json
@@ -49,7 +47,6 @@ from opendbc.car.honda.values import CarControllerParams as HondaParams
 
 # CUSTOM TOOLING: keep behavior-changing array math independent from route I/O and ledger policy,
 # so synthetic traces can prove each metric both passes and fails before it grades a road drive.
-# TODO: delete excessive comments before trying to submit a PR.
 from tuning_metrics import (
   brake_release_hold_metrics,
   causal_lpf as _causal_lpf,
@@ -103,7 +100,6 @@ JERK_BIND_MIN_RUN = 5         # consecutive frames (~50ms) sustained over cap = 
 # ACCEL_COMMAND on the wire. Everything here measures that exact boundary and nothing else - no
 # aEgo, no car response, nothing the model or Honda's ECU owns. longitudinalPlan.aTarget is one
 # stage upstream and is deliberately not substituted for the CarController input.
-# TODO: delete excessive comments before trying to submit a PR.
 FOLLOW_GAS_RMS_LIMIT = 0.05   # RMS(ACCEL_COMMAND - carControl accel) in gas domain (measured ~0.011)
 FOLLOW_BRAKE_RMS_REGRESSION = 0.15  # brake domain diverges BY DESIGN (brake_pid supplements Honda's
                               # mushy brake), so this is a regression bound, not a target. Measured
@@ -165,7 +161,6 @@ DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
 # eligible minutes; every shadow moved 0.50 -> 0.10-0.14 while observed mean error stayed negative
 # (-0.007 to -0.033 m/s^2). The narrower gate therefore does not rescue the existing drag scale;
 # this is evidence to revisit identifiability/base drag, not permission to promote the shadow.
-# TODO: delete excessive comments before trying to submit a PR.
 SHADOW_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 SHADOW_WIND_DRAG_V = [0.000, 0.049, 0.136, 0.267, 0.441]
 SHADOW_WIND_INITIAL = 0.5
@@ -379,7 +374,6 @@ def analyze(msgs, platform):
   # attributable number; `track_rms_plan` keeps the old planner-referenced value so historical
   # rows stay comparable. `plan_override_rms` is the gap between them - if it is large, longcontrol
   # is doing something aTarget does not show and neither number should be read as the car's.
-  # TODO: delete excessive comments before trying to submit a PR.
   if pid.sum() > 10:
     r["track_rms"] = float(np.sqrt(np.nanmean((aego[pid] - cc_accel[pid]) ** 2)))
     r["track_rms_plan"] = float(np.sqrt(np.nanmean((aego[pid] - atarget[pid]) ** 2)))
@@ -660,7 +654,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   Returns brake-domain following error, sign disagreement, lifecycle regressions, and physical
   BRAKE_REQUEST burst metrics. A raw request-sign test cannot decide whether a transition was
   "commanded": the Odyssey deliberately adds drag and grade before choosing its actuator domain.
-  TODO: delete excessive comments before trying to submit a PR.
   """
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
          "brake_domain_frac": None, "sign_disagree_frac": None, "sign_disagree_worst": None,
@@ -722,7 +715,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   # CUSTOM TOOLING: lifecycle metrics live in a pure array function so synthetic golden traces
   # can prove the one-frame transport allowance, stale re-engagement detection, and gas handoff
   # measurement independently of CAN parsing and ledger mutation.
-  # TODO: delete excessive comments before trying to submit a PR.
   out.update(command_transition_metrics(
     grid, requested, eng_all, vego_all, brakepressed, BR, GAS, AC,
     low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
@@ -735,7 +727,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   # Read-only candidate learner: unlike the live learner, this advances only while a real gas
   # command is on the wire and the plant is in a steady, unsaturated identification window. It
   # replays on frozen response, so report convergence/exposure but never claim ride-quality gain.
-  # TODO: delete excessive comments before trying to submit a PR.
   base_drag = np.interp(vego_all, SHADOW_WIND_SPEED_BP, SHADOW_WIND_DRAG_V)
   out.update(shadow_windfactor_metrics(
     grid, requested, aego, vego_all, pitch, pid, gaspressed, brakepressed, BR, GAS,
@@ -1047,7 +1038,6 @@ def verdicts(r):
     # car-port's contribution is already separated out as `stop_lurch_wire_extra`, so flag that and
     # keep reporting the rest. This preserves a real regression guard: if brake_pid ever starts
     # contributing at a stop, wire_extra grows and this goes red.
-    # TODO: delete excessive comments before trying to submit a PR.
     lurch_bad = r.get("stop_lurch_wire_extra", 0.0) > STOP_LURCH_PORT_FLAG
     in_stop = r.get("stop_lurch_in_stopping")
     where = "" if in_stop is None else (" in longControlState=stopping" if in_stop
@@ -1238,7 +1228,6 @@ def write_ledger_md(rows):
     flags = [c["check"] for c in x.get("verdicts", []) if not c["ok"]]
     # CUSTOM TOOLING: verdict names can contain `|`, which otherwise creates extra Markdown table
     # columns and shifts every field after FLAGS. Use an HTML entity so the label still renders.
-    # TODO: delete excessive comments before trying to submit a PR.
     flags_text = (", ".join(flags) if flags else "none").replace("|", "&#124;")
     branch = x.get("git_branch") or "-"   # "-" = row predates provenance tracking
     odbc = x.get("opendbc_commit") or "-"

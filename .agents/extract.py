@@ -28,7 +28,6 @@ even asked for it, and answering that used to cost a raw LogReader pass per ques
 2026-08-05 investigation of the 20:09 slowdown on 00000004 needed five such passes before it could
 say "openpilot's allow_throttle coast clamp, not us". Those signals are exactly the ones that
 settle attribution, so they belong in the cache with everything else.
-TODO: delete excessive comments before trying to submit a PR.
 """
 import os
 import sys

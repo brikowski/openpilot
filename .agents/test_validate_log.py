@@ -105,8 +105,6 @@ def _transition_trace(brake_release_frame, first_gas):
 
 def test_transition_golden_trace_accepts_transport_skew_and_60_count_handoff():
   """The fixed trace stays clean while still proving every detector was exercised.
-
-  TODO: delete excessive comments before trying to submit a PR.
   """
   metrics = _transition_trace(brake_release_frame=12, first_gas=60)
 

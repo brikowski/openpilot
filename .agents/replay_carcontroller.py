@@ -14,7 +14,6 @@ what the new controller would COMMAND, not how the car would then behave. Comman
 magnitude are valid. BRAKE_REQUEST transition counts are not closed-loop predictions: changing
 the command would change aEgo and the planner's next request on-road, but both are frozen here.
 
-TODO: delete excessive comments before trying to submit a PR.
 
 Usage: replay_card.py <segment-range> <out.json>
 """
