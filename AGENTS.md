@@ -59,8 +59,10 @@ authority the car will not deliver. `validate_log` deliberately has no lateral c
 - Car-port edits must follow `.claude/skills/comma-standards/SKILL.md` — actuation must never exceed
   the panda safety limits, and file boundaries (`values.py` / `carstate.py` / `carcontroller.py` /
   `interface.py`) are load-bearing.
-- Custom edits carry an inline comment explaining *why*, ending
-  `TODO: delete excessive comments before trying to submit a PR.`
+- Custom edits carry an inline comment explaining *why*, written PR-lean from the start: the why
+  and any revert trigger stay in the code; numbers and route history go to
+  `.agents/tune-evidence.md`. (The old `TODO: delete excessive comments` marker convention was
+  retired 2026-08-08 — do not reintroduce it.)
 - **Never sync opendbc to its own master** — pin it to the commit openpilot master pins, or
   `controlsd` crashes on-road from a `car.capnp` schema mismatch.
 - `git commit` runs lefthook: ruff over `.agents` and the Honda tune, plus the tooling tests. It is
