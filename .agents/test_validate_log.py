@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from tuning_metrics import (
   brake_release_hold_metrics,
   causal_lpf,
   command_transition_metrics,
+  descent_hold_metrics,
   hold_last,
   max_edges_in_window,
   physical_edges,
@@ -237,6 +239,56 @@ def test_release_hold_uses_compensated_entry_predicate_and_measures_runs():
   assert np.isclose(metrics["brake_release_hold_max"], 0.04)
   assert np.isclose(metrics["brake_release_hold_force_margin_mean"], np.mean([0.01, 0.1, 0.2, 0.3, 0.05, 0.15, 0.25]))
   assert np.isclose(metrics["brake_release_hold_tracking_mean"], -0.2)
+
+
+def _descent_hold_trace(n=300, request=0.1, pitch_val=-0.02, hold_frames=80):
+  """One 0.8 s hold plus one 0.3 s sub-threshold run, at 100 Hz."""
+  requested = np.full(n, request)
+  brake = np.zeros(n, dtype=bool)
+  brake[10:10 + hold_frames] = True     # candidate episode
+  brake[200:230] = True                 # 0.3 s run: always below the 0.5 s episode floor
+  active = np.ones(n, dtype=bool)
+  pitch = np.full(n, pitch_val)
+  return descent_hold_metrics(
+    requested, brake, active, pitch,
+    request_threshold=0.02, downhill_pitch=-0.012, min_episode_s=0.5, dt=0.01,
+  )
+
+
+def test_descent_hold_counts_only_sustained_downhill_positive_request_holds():
+  m = _descent_hold_trace()
+  assert m["descent_hold_episodes"] == 1
+  assert np.isclose(m["descent_hold_sec"], 0.8)
+  assert np.isclose(m["descent_hold_longest"], 0.8)
+
+  # Mutations: each gate condition removed must zero the count, or the counter proves nothing.
+  assert _descent_hold_trace(hold_frames=40)["descent_hold_episodes"] == 0   # too short
+  assert _descent_hold_trace(pitch_val=0.0)["descent_hold_episodes"] == 0    # not a descent
+  assert _descent_hold_trace(request=-0.1)["descent_hold_episodes"] == 0     # request not positive
+
+
+def test_reledger_preserves_drive_date_and_description(monkeypatch, tmp_path):
+  jsonl = tmp_path / "ledger.jsonl"
+  monkeypatch.setattr(validate_log, "LEDGER_JSONL", jsonl)
+  monkeypatch.setattr(validate_log, "LEDGER_MD", tmp_path / "ledger.md")
+  r = {"platform": "X", "engaged_min": 1.0}
+  validate_log.append_ledger("00000042--aabbccddee", "first pass", r, [])
+  first = json.loads(jsonl.read_text().splitlines()[0])
+  # Backfill rerun on a later day: date and description must survive, metrics must refresh.
+  monkeypatch.setattr(validate_log, "datetime", _FrozenDate)
+  validate_log.append_ledger("00000042--aabbccddee", None, {**r, "engaged_min": 2.0}, [])
+  rows = [json.loads(l) for l in jsonl.read_text().splitlines()]
+  assert len(rows) == 1
+  assert rows[0]["date"] == first["date"]
+  assert rows[0]["description"] == "first pass"
+  assert rows[0]["engaged_min"] == 2.0
+
+
+class _FrozenDate:
+  @staticmethod
+  def now(tz=None):
+    from datetime import datetime as _dt
+    return _dt(2030, 1, 1, tzinfo=tz)
 
 
 def _shadow_trace(error_sign=1.0, *, gas_live=True, braking=False):
