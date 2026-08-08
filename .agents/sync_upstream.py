@@ -59,6 +59,13 @@ def resolve_parent_gitlinks(new_opendbc):
     if continued.returncode == 0:
       continue
 
+    # --continue exits nonzero when it lands this commit but the NEXT one conflicts. Fresh
+    # conflicts belong to the loop head, which classifies them (gitlink -> auto-resolve, source
+    # -> stop with instructions). Bailing here instead left the 2026-08-08 rebase stopped at
+    # commit 2 of 13 over a plain gitlink conflict that the loop itself knew how to resolve.
+    if output(["git", "diff", "--name-only", "--diff-filter=U"]):
+      continue
+
     # A parent commit that only moved the old opendbc pointer can become empty after every gitlink
     # conflict is deliberately resolved to the final rebased opendbc SHA. Skip only that proven
     # pointer-only commit; never discard a source change.
