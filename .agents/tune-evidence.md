@@ -25,9 +25,9 @@ discovery.)
 ## Layered Verification Workflow
 No one tool establishes that a tune is good. Use these layers in order, and keep an experimental production change isolated until both controlled and ordinary-road evidence agree.
 
-1. **Static, unit, interface, and panda-safety gates**: run the "Run Checks" task. It runs ruff, the pure custom-metric tests, `opendbc_repo/test.sh`, car-interface tests, upstream Odyssey `test_models`, and the custom active-longitudinal rail/lifecycle tests. These establish software correctness and legal CAN output; they do **not** grade ride quality.
-2. **Official controlled maneuvers**: for a longitudinal change, record the official longitudinal suite in a safe empty area and run "Generate Longitudinal Maneuver Report (local route)". For a lateral change, use the official lateral suite and its matching report task. These are the primary repeatable step-response characterization. Do not enable either maneuver mode automatically: the driver must make the safe-site decision.
-3. **Ordinary-road validation**: use "Validate Log (pull one route from device)" or "Validate New Logs" to SSH-pull full-rate rlogs privately and run the custom validator. The custom tool is authoritative for branch-specific invariants (wire/request fidelity, lifecycle leaks, gas handoff, physical CAN transitions, crashes, interventions, thermal) and useful for trends. A threshold flag identifies an event to inspect; by itself it is not permission to tune.
+1. **Static, unit, interface, and panda-safety gates** (the old "Run Checks" task was removed from tasks.json 2026-08-05; run the commands directly): `lefthook run pre-commit` covers ruff over `.agents` + the Honda tune plus the pure custom-metric tests; `.venv/bin/python -m pytest .agents/test_odyssey_long_rails.py` covers the active-longitudinal rail/lifecycle invariants; `opendbc_repo/test.sh` covers car-interface tests and upstream Odyssey `test_models`. These establish software correctness and legal CAN output; they do **not** grade ride quality.
+2. **Official controlled maneuvers**: for a longitudinal change, record the official longitudinal suite in a safe empty area and run `uv run openpilot/tools/longitudinal_maneuvers/generate_report.py` on the route (the VSCode report tasks were removed 2026-08-05). These are the primary repeatable step-response characterization. Do not enable either maneuver mode automatically: the driver must make the safe-site decision.
+3. **Ordinary-road validation**: the "Pull and Validate New Logs (last 48 hours)" task (or `.agents/pull_logs.py`) SSH-pulls full-rate rlogs privately and runs the custom validator; `.agents/validate_log.py <route>` re-validates one already-local route. The custom tool is authoritative for branch-specific invariants (wire/request fidelity, lifecycle leaks, gas handoff, physical CAN transitions, crashes, interventions, thermal) and useful for trends. A threshold flag identifies an event to inspect; by itself it is not permission to tune.
 4. **Raw attribution**: inspect flagged timestamps in the standard Jotpluggler layout; use Cabana when the question is raw CAN/DBC semantics. Decide whether the planner, car port, or Honda actuator owns the symptom before changing code.
 5. **Evidence rule**: change tuning only when controlled maneuvers and real-road evidence point the same way. Check provenance, compare the same `opendbc_commit`, require adequate exposure, and repeat the conclusion after dropping the most influential route.
 
@@ -35,9 +35,29 @@ No one tool establishes that a tune is good. Use these layers in order, and keep
 - **Counterfactual replay boundary**: `replay_carcontroller.py` compares command shape on frozen recorded inputs. It can catch command-fidelity regressions without driving, but cannot predict closed-loop vehicle response or on-road BRAKE_REQUEST counts. Never promote a tuning change from replay alone.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
-## Current Validation Arm (opened 2026-08-03, last updated 2026-08-05)
+## Current Validation Arm (opened 2026-08-03, last updated 2026-08-08)
+- **BRAKE_DOMAIN_ENTRY -0.20 -> -0.30 — ACTIVE ROAD CANDIDATE** (on branch at `opendbc c1ce76fa857a`,
+  first two candidate routes `0000000e`/`0000000f` driven 2026-08-08). Early road read in the gate's
+  own unit (ledger `descent_hold_episodes`, instrumented 2026-08-08): the open-loop prediction of a
+  -60% descent-hold *duration* cut did **not** appear — hold seconds per descent-minute is flat
+  (candidate 13.8 s / 0.51 dhmin = 27.0 vs incumbent 74.1 / 2.93 = 25.3). What did move is
+  *severity*: the longest single hold dropped (2.6/3.7 s vs 6.0/6.1 s on the incumbent descent
+  routes) and release-hold shortfall against a positive request roughly halved
+  (`brake_release_hold_tracking_mean` -0.14/-0.15 vs -0.22/-0.29), with zero descent toggles, zero
+  overshoot, zero jerk binds — the feared late-brake-onset cost has not appeared yet. Rule 1 again:
+  open-loop mispredicted direction-of-effect, not just magnitude. **Candidate arm: 8 of >=20 pooled
+  episodes** — keep driving the same descent roads to close it before judging. Revert trigger
+  unchanged: late brake onset or longer stops.
+  **Pooling note:** `opendbc 14677d814cb2` (2026-08-08) is comment-only over `c1ce76fa857a` —
+  identical tune behavior, so ledger rows at either hash pool together for this arm. Any further
+  hash must re-earn that equivalence with a behavior-free diff before pooling.
 - **Gas-command ramp fix — VALIDATED; this half of the arm is closed**: `bosch_last_gas` now resets whenever longitudinal gas is inactive or the controller is in the brake domain. Only eligible gas advances the 60-count ramp. The parent regression test mutates the old failure and the validator reports the first live `GAS_COMMAND` after every inactive-to-live handoff. New ordinary routes `45`, `4d`, `4f`, `50`-`54`, and `57` supplied 50.0 engaged minutes / 37.3 miles across seven useful drives: zero crashes, stale re-engagement braking, or low-speed conflicts, and all 72 gas handoffs began at `<=60` counts. Official longitudinal route `00000056--9c1708dfa7` completed all 21 required runs with another 101 handoffs at `<=60`, zero lifecycle conflicts, and repeatable start/step response. Do not reopen this arm without a new logged regression.
-- **Lateral-delay fallback correction — controlled rerun still required**: Odyssey `steerActuatorDelay` is `0.20`, so lagd's fixed `+0.20` produces a `0.40 s` cold-start total matching the measured delay. Route `00000055--b6c9bb3917` completed all 24 required lateral runs, but `liveDelay` stayed cached and estimated at `0.444 s` with 50 valid blocks / 100% calibration throughout, so that route did not execute the fallback. The device's `LiveDelay` cache was cleared while offroad on 2026-08-03 without resetting camera calibration or `CarParamsPrevRoute`; confirm the next route starts `unestimated` near `0.40 s`, then repeat the official lateral suite once.
+- **Lateral-delay fallback correction — CLOSED BY DECISION 2026-08-06** (lateral is settled per
+  CLAUDE.md; `validate_log` deliberately has no lateral checks). For the record: the planned
+  cold-start fallback confirmation was never executed — route `00000055--b6c9bb3917` completed all
+  24 lateral runs but `liveDelay` stayed cached at `0.444 s`, and the `LiveDelay` cache was cleared
+  offroad 2026-08-03. Reopen only on a logged lateral symptom, in which case that unexecuted
+  confirmation is the first step.
 - **Windfactor identification — NEXT, not part of this arm**: logs show windfactor can move while gas is not commanded, but do not change its gates until the remaining lateral-delay arm is validated. Make that a separate commit/road arm so attribution stays possible.
   - **Offline shadow added 2026-08-01:** the validator now replays the same sign-only learner only
     on live gas commands with neither pedal pressed, away from actuator rails, above 15 m/s, and
@@ -58,10 +78,14 @@ Apply this order as new logs arrive; do not skip ahead because a later idea is e
 remaining lateral-delay validation arm remains a prerequisite for changing windfactor, but a
 natural drive can accumulate the descent evidence below at any time.
 
-1. **Finish the terrain-matched descent validation.** Obtain at least 3 engaged downhill minutes on the
-   `0000002f`/`00000030`-type route. Inspect physical `BRAKE_REQUEST` bursts, corrected downhill toggle
-   counts, intervention rate, compensated-force release holds, and raw Jotpluggler traces. Keep
-   `DOMAIN_HYST_EXIT=0.50` unless that evidence supports an isolated replacement.
+1. **Finish the terrain-matched descent validation.** (Gate restated 2026-08-06 — the original
+   ">=3 engaged downhill minutes in one drive" wording here was unreachable and is retired; see
+   "GATE RESTATED 2026-08-06" below.) Reach >=20 pooled descent hold-episodes at the candidate
+   `opendbc_commit` on the `0000002f`/`00000030`-type roads — the ledger's `descent_hold_episodes`
+   column now counts the gate's exact unit. Inspect physical `BRAKE_REQUEST` bursts, corrected
+   downhill toggle counts, intervention rate, compensated-force release holds, and raw Jotpluggler
+   traces. Keep `DOMAIN_HYST_EXIT=0.50` (band *width*) regardless; the active candidate moves band
+   *position* (`BRAKE_DOMAIN_ENTRY=-0.30`).
 2. **Evaluate a gas-active-only shadow windfactor.** First calculate it without changing commands. Learn
    only while `GAS_COMMAND` is live in the gas domain, neither pedal is pressed, the command is away from
    saturation, and speed/grade are sufficiently steady. Compare stability and following error with the
@@ -160,7 +184,7 @@ Only two things are live-learned today (`gasfactor` trim, `windfactor`) and that
   - **Corrected conclusion: 0.50 does reduce descent toggling, roughly 2x below the best no-hysteresis routes** (3.6-4.8 vs 6.7-10.0), and the two regressed configs sit clearly above baseline where they belong. The morning's "0.50 only recovered baseline" reading was an artifact of the counter, not a property of the tune. **Both the original claim and its retraction were wrong for the same reason: nobody had checked the instrument.**
   - **What is still NOT settled.** n is 2-3 routes per config, descent exposure is 0.84-1.26 min each, and within-config spread remains enormous - route `2f` at 45.9/min sits on the same commit as `29` at 10.0. The corrected numbers make the hypothesis much more likely, not proven.
   - **GATE RESTATED 2026-08-06 - the old ">=3 descent minutes in one drive" gate was unreachable and is retired.** It was written without checking the ledger. Measured over 46 validated routes / 643 engaged minutes: **zero** routes have ever reached 3.0 descent minutes, the maximum ever recorded is **2.10** (`00000049`, over 69 engaged min), and the median is 0.32. Worse, the two routes the gate itself named as the terrain match are `0000002f` = **0.57** and `00000030` = **1.42** descent minutes - together **1.99**, so the gate demanded more descent from a single drive than both of its own reference routes produced combined. Descent is a stable ~4% of engaged time on this terrain, so 3 minutes in one drive needs ~118 engaged minutes of continuous highway; a 129-minute drive (`0000000d`) returned 1.66. The gate also contradicted the pooling rule that governs every other comparison here.
-    **The gate is now: >=20 descent hold-episodes pooled across routes at ONE `opendbc_commit`, terrain-matched, measured at both the incumbent and the candidate setting.** Episodes, not wall-clock, because episodes are what the change is supposed to move; minutes were only ever a proxy for sample size. A hold-episode is >=0.5 s of `longActive & request > 0.02 & BRAKE_REQUEST & pitch < -0.7 deg`. Yield is ~12 episodes per long drive, so ~2 drives per arm. **The incumbent 0.50 arm is now SATISFIED** - pooled at `opendbc d1d5eb5c7255`: `0000000d` 12 episodes / 40.1 s and `00000003` 13 episodes / 36.3 s = **26 episodes / 76.9 s over 2.83 descent min**. What remains blocking is the candidate arm: the same roads driven at the new value. No amount of further baseline logging substitutes for that, and that half of the original gate was right.
+    **The gate is now: >=20 descent hold-episodes pooled across routes at ONE `opendbc_commit`, terrain-matched, measured at both the incumbent and the candidate setting.** Episodes, not wall-clock, because episodes are what the change is supposed to move; minutes were only ever a proxy for sample size. A hold-episode is >=0.5 s of `longActive & request > 0.02 & BRAKE_REQUEST & pitch < -0.7 deg`. Yield is ~12 episodes per long drive, so ~2 drives per arm. **The incumbent 0.50 arm is now SATISFIED** - pooled at `opendbc d1d5eb5c7255`: **26 episodes / 74.1 s over 2.93 descent min** (`00000003` 15/32.8, `0000000d` 10/38.6, `0000000c` 1/2.7; instrumented 2026-08-08 by the ledger's `descent_hold_episodes` column - the hand-computed split recorded here earlier, "12 + 13 = 26 / 76.9 s", was internally inconsistent and off per-route; the pooled conclusion stands). What remains blocking is the candidate arm: the same roads driven at the new value. No amount of further baseline logging substitutes for that, and that half of the original gate was right.
   - **Priced cost of a wider band: sign disagreement scales with it.** 0.04-0.72% of engaged frames with no hysteresis, 2.18% at 0.20, 2.39%/2.74% at 0.50 - the two highest in the ledger. Magnitude stayed small (worst -0.12 m/s^2 on `00000035`); the -2.04 m/s^2 on `00000034` belongs to the re-engagement bug below, not to the band.
 - **Route `00000034` found a separate state-lifecycle regression in that implementation.** At re-engagement (route t=794.78 s), the CarController input was +0.09..+0.27 m/s^2 while the wire stayed -1.95..-1.76 for 0.20 s. Cause: while `longActive=False`, the hysteresis latch remained in the brake domain and `brake_pid` continued integrating against the driver's acceleration even though `create_acc_commands` correctly sent no brake; it reached about -2.0 and leaked into re-engagement. Fixed by clearing the domain latch whenever longitudinal control is inactive, which also routes the existing `else` through `brake_pid.reset()`. A regression test recreates active-brake -> inactive/manual +2 m/s^2 -> positive re-engagement and asserts ACCEL_COMMAND=+0.10, live gas, BRAKE_REQUEST=0. Open-loop route replay reduces request-error RMS 0.0468 -> 0.0071 and worst positive-request disagreement -2.07 -> -0.58; only a road drive can close the remaining closed-loop question.
   - **CORRECTION 2026-07-30: that test's `BRAKE_REQUEST=0` assertion was vacuous until today.** `_decode_acc_control` read `(dat[4] >> 3) & 0x1`, which is **`STANDSTILL`** (Motorola start bit 35), not `BRAKE_REQUEST` (bit 34 = byte 4, bit 2). `STANDSTILL` is driven by `stopping_counter`, which is 0 throughout these tests, so the assertion read a constant 0 and could never fail. Verified by re-running the sweep with the old index: the new `any(brake_requests)` guard fails 25 of 31 subtests. The *other* two assertions (ACCEL_COMMAND, live gas) were real and are what actually caught the route-34 bug, so the fix itself stands - but do not cite this test as BRAKE_REQUEST coverage for anything dated before 2026-07-30.
@@ -269,6 +293,26 @@ crossing rates underpredict ~2.7x and the sim freezes the feedback path.
 **The one genuinely untested state.** `GAS_COMMAND` has never been sent as **0** on this car: measured over `0000000d`/`00000003`, GAS_COMMAND is the -30000 inactive constant 4%/21% of engaged frames and positive 96%/79%, and **exactly 0 on 0.0%**. The +43 vs -139 torque contrast above is *low gas in the gas domain* vs *inactive in the brake domain*, so it conflates the domain flag with the gas value and cannot answer whether `GAS_COMMAND = 0` alone avoids the overrun fuel-cut. Per `comma-standards`, this signal is opaque/unitless in the DBC and must not be extrapolated. Answering it needs a deliberate probe, not a log query - and no existing route can substitute, because the state has never been on the wire.
 
 **Attribution note.** The 16:02/16:08 dips on `0000000d` that first looked like this defect are **upstream** - request was negative throughout and the wire tracked it to RMS 0.020, `plan_source = lead0`. On `00000006` the driver-reported event is upstream in full: **0.00 s brake domain, 0.00 s withheld gas**, wire-request RMS 0.0055, and the felt "holding the brake" is a **6.3 s lag** between the lead re-accelerating (t=374.0) and the MPC's request turning positive (t=380.3) while the gap opened 23 m -> 36 m. Do not attribute lead-following lag to the domain logic; check `brake_request` first.
+
+## Standing pitch bias (measured 2026-08-08, settles the old "+0.03 rad" open item)
+
+`carControl.orientationNED[1]` carries a constant positive offset. Median driving pitch
+(`vEgo > 5`) across every route with usable data: +0.019 to +0.033 rad over 7 routes spanning
+2026-07-29 -> 2026-08-08 (`00000031` +0.0255, `00000037` +0.0329, `00000003` +0.0236, `00000004`
++0.0240, `00000006` +0.0232, `0000000d` +0.0219, `0000000e` +0.0193). It is **speed-invariant**
+(`0000000d` steady-state medians +0.021/+0.019/+0.022 at 5-10 / 15-22 / >25 m/s) and
+**accel-invariant** (+0.023 at aEgo > +0.5 vs +0.021 at aEgo < -0.5, where body squat/dive would
+split these far wider) - so it is a mount/calibration offset, not aero or load transfer. The lone
+pre-tune log (`00000018`, 2026-06-05) has no usable speed data, so "always" is bounded at 2026-07-29.
+Magnitude: sin(0.02)*g ~= **+0.21 m/s² of phantom hill_brake** (the old note's ~+0.34 was an
+overestimate from the +0.03 guess).
+
+**Do not "fix" it.** Every empirical number in this file - band entry/exit behavior, descent masks,
+learner trims - was measured against the biased signal, and the domain decision and the validator
+read the same signal, so arms compare like-for-like. Zeroing the offset would shift effective band
+position by ~0.2 m/s² and invalidate the road evidence. Consequences to remember instead:
+`DOWNHILL_PITCH = -0.012` measured is ~-0.032 true (~-1.8% grade), i.e. our "descent" metrics
+under-count shallow true descents, identically in both arms; and true grade ~= pitch - 0.02.
 
 ## Ruled out on route 00000033 - do not re-investigate (2026-07-29)
 Three plausible causes of the harsh brake onset, all measured dead. Two were my own hypotheses.

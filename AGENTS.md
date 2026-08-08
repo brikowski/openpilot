@@ -68,42 +68,31 @@ authority the car will not deliver. `validate_log` deliberately has no lateral c
 
 ## Open item
 
-Entry `-0.20` with `DOMAIN_HYST_EXIT = 0.50` withholds `GAS_COMMAND` against a positive request for
-~50 s per 15 engaged minutes. Fidelity and descent chatter trade roughly 1:1 across every
-configuration tested, so there is no free setting. Route `00000003--f670928197` is the clean 0.50
-baseline.
+Withheld `GAS_COMMAND` on a descent is engine braking, not coasting: the throttle shuts in an
+unchanged gear (not friction brakes, not `brake_pid`, not a downshift) and the car lands
+**0.14-0.26 m/s² short of a positive request**. Because the decision input carries `hill_brake`,
+the band slides with grade — a -1.5° descent enters at **+0.03** / releases at **+0.53** where flat
+ground is -0.22/+0.28, which is why the symptom is grade-only. Band POSITION
+(`BRAKE_DOMAIN_ENTRY`) and band WIDTH (`DOMAIN_HYST_EXIT`) are different axes: every failed sweep
+moved width, which trades ~1:1 against descent chatter. **`BRAKE_DOMAIN_ENTRY = -0.30` (was -0.20)
+is on the branch as the road candidate.** Failure mode to watch: late brake onset and longer stops
+— revert to `-0.20` if that appears.
 
-**What withheld gas actually costs (measured 2026-08-06, driver-reported):** it is not coasting. On
-descent holds the throttle is shut in an unchanged gear, engine torque runs **-103/-164** against
-**+311** in the gas domain on the same descents, and the car lands **0.14-0.26 m/s² short of a
-positive request**. Not the friction brakes (`COMPUTER_BRAKING` 5-19%), not `brake_pid` (-0.006),
-not a downshift (gear unchanged). Because the decision input carries `hill_brake`, a -1.5° descent
-enters the brake domain at request **+0.03** and does not release until **+0.53** — flat ground is
--0.22/+0.28, which is why the symptom is grade-only.
+**Early road read (2 candidate routes, 2026-08-08):** the open-loop -60% hold-duration prediction
+did **not** appear — hold s/descent-min is flat (27.0 vs 25.3). Severity moved instead: longest
+hold 2.6-3.7 s vs 6.0-6.1 s, release shortfall roughly halved, zero descent toggles, and no late
+brake onset yet. Rule 1 again: open-loop mispredicted direction-of-effect, not just magnitude.
 
-**Band POSITION and band WIDTH are different axes — do not conflate them.** Every prior sweep moved
-the *width* (`DOMAIN_HYST_EXIT`), which trades ~1:1 against descent chatter and failed on road three
-times. `BRAKE_DOMAIN_ENTRY` moves the band's *position* and had never been swept. Open-loop over
-`0000000d`+`00000003`, with the domain state machine first validated at **99.8%/98.9%** against the
-logged wire, entry `-0.20 -> -0.30` gives descent hold **74.3 s -> 29.8 s (-60%)**, brake duty
-**7.2% -> 4.5%**, and descent toggles **6.1 -> 6.5/min (flat)** — it does *not* buy the hold
-reduction with chatter. **`BRAKE_DOMAIN_ENTRY = -0.30` is now on the branch as the road candidate.**
-Cost to watch: 132.5 s (2.74% of engaged time) moves brake->gas domain; the request there averages
-~0 but p10 is **-0.37**, and gas has no braking authority below ~-0.2, so **late brake onset and
-longer stops are the failure mode**. Revert to `-0.20` if that appears. Open-loop underpredicts
-~2.7x and cannot model feedback: this is a candidate, not a result.
+**Gate (restated 2026-08-06):** >=20 descent hold-episodes pooled at one `opendbc_commit` per arm,
+terrain-matched — scored by the ledger's `descent_hold_episodes` column (instrumented 2026-08-08;
+do **not** score it from `brake_release_hold_events`, which is not descent-restricted). Incumbent
+-0.20 arm: **satisfied** (26 episodes / 74.1 s at `d1d5eb5c7255`). Candidate arm at `c1ce76fa857a`:
+**8 of 20** — that is what blocks promotion or reversion.
 
 **Two dead ends, recorded so they are not retried.** (1) "Latch `BRAKE_REQUEST` but command neutral
 gas" is *not implementable* — `gas_dom = not brake_domain` makes them mutually exclusive by
 construction and `BRAKE_REQUEST` is the same bit as `BRAKE_LIGHTS`. (2) `GAS_COMMAND = 0` while
-braking passes panda, but `test_odyssey_long_rails` asserts `brake domain => GAS_INACTIVE` in two
-places, and since **panda has no gas/brake mutual-exclusion check** that test is the only guard
-there is. Do not weaken it to ship an unmeasured state. Detail in
-[`.agents/tune-evidence.md`](.agents/tune-evidence.md).
-
-**Gate, restated 2026-08-06 — the old ">=3 descent minutes in one drive" was unreachable.** Zero of
-46 routes ever hit it; the max ever is 2.10, and the gate's own reference routes `0000002f`/`00000030`
-are 0.57 and 1.42 (1.99 combined). It also contradicted rule 2 above. The gate is now **>=20 descent
-hold-episodes pooled at one `opendbc_commit`**, terrain-matched, at both the incumbent and candidate
-setting — not another replay sweep. **The incumbent 0.50 arm is satisfied** (26 episodes / 76.9 s).
-What blocks a change is the candidate arm: the same roads driven at the new value.
+braking passes panda, but **panda has no gas/brake mutual-exclusion check**, so the
+`test_odyssey_long_rails` `brake domain => GAS_INACTIVE` assertions are the only guard there is —
+do not weaken them to ship an unmeasured state. Numbers and derivations:
+[`.agents/tune-evidence.md`](.agents/tune-evidence.md) "Current Validation Arm".

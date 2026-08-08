@@ -54,6 +54,7 @@ from tuning_metrics import (
   brake_release_hold_metrics,
   causal_lpf as _causal_lpf,
   command_transition_metrics,
+  descent_hold_metrics,
   hold_last as _hold_last,
   max_edges_in_window as _max_edges_in_window,
   physical_edges as _physical_edges,
@@ -147,8 +148,10 @@ HARSH_FELT_JERK_RMS = 0.35    # m/s^3: RMS jerk of ACHIEVED accel while engaged.
                               # readout. Measured 0.25-0.39 across drives while commanded jerk was
                               # only 0.12-0.24, i.e. the car amplifies our command ~2x. Reported
                               # with that ratio so harshness can be attributed rather than guessed.
-DOWNHILL_PITCH = -0.012       # rad (~-0.7%, -0.12 m/s^2 of hill_brake): the grade breakout, where
-                              # the defect concentrates (10-66 toggles/min vs 2.4 overall)
+DOWNHILL_PITCH = -0.012       # rad (~-0.7 deg / -1.2% grade, -0.12 m/s^2 of hill_brake): the grade
+                              # breakout, where the defect concentrates (10-66 toggles/min vs 2.4 overall)
+DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode is >=0.5 s of
+                              # longActive & request > 0.02 & BRAKE_REQUEST & pitch < DOWNHILL_PITCH
 DOMAIN_PITCH_FILTER_TAU = 0.5  # MUST track the Odyssey FirstOrderFilter in carcontroller.py.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
@@ -682,6 +685,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "stop_lurch_request": None, "stop_lurch_wire": None, "stop_lurch_speed": None,
          "stop_jerk_worst": None, "stop_sec": None,
          "downhill_min": None, "downhill_toggles_per_min": None,
+         "descent_hold_episodes": None, "descent_hold_sec": None, "descent_hold_longest": None,
          "windf_shadow_eligible_min": None, "windf_shadow_start": None,
          "windf_shadow_end": None, "windf_shadow_min": None, "windf_shadow_max": None,
          "windf_shadow_drift": None, "windf_shadow_floor_frac": None,
@@ -869,6 +873,17 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     out["downhill_toggles"] = int(len(downhill_edges))
     out["downhill_windows"] = int(np.sum(np.diff(down.astype(np.int8), prepend=0) == 1))
     out["downhill_toggles_per_min"] = float(out["downhill_toggles"] / max(dn_min, 1e-3))
+
+  # Road-gate bookkeeping: score the BRAKE_DOMAIN_ENTRY arm in its own unit so pooling never
+  # falls back to hand arithmetic. Uses the UN-narrowed longActive mask (eng_all), matching the
+  # gate definition rather than the vEgo/brake-pressed following gate above.
+  out.update(descent_hold_metrics(
+    requested, BR, eng_all, pitch,
+    request_threshold=SIGN_DISAGREE_REQUEST,
+    downhill_pitch=DOWNHILL_PITCH,
+    min_episode_s=DESCENT_HOLD_MIN_S,
+    dt=dt,
+  ))
   return out
 
 
@@ -1174,6 +1189,14 @@ def append_ledger(route, description, r, v):
   rows = []
   if LEDGER_JSONL.exists():
     rows = [json.loads(l) for l in LEDGER_JSONL.read_text().splitlines() if l.strip()]
+  # The date column is read as the drive date (rows have always been written the day of the
+  # drive). A later re-validation - e.g. backfilling a new metric - must not restamp it to the
+  # rerun day, and must not blank a description the original run recorded.
+  prior = next((x for x in rows if _base_route(x.get("route", "")) == _base_route(route)), None)
+  if prior is not None:
+    row["date"] = prior.get("date", ts)
+    if not description:
+      row["description"] = prior.get("description", "")
   rows = [x for x in rows if _base_route(x.get("route", "")) != _base_route(route)]
   rows.append(row)
   with LEDGER_JSONL.open("w") as f:
