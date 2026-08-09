@@ -15,8 +15,9 @@ magnitude are valid. BRAKE_REQUEST transition counts are not closed-loop predict
 the command would change aEgo and the planner's next request on-road, but both are frozen here.
 
 
-Usage: replay_card.py <segment-range> <out.json>
+Usage: replay_carcontroller.py <segment-range> <out.json>
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -54,8 +55,12 @@ class _CSShim:
     self.stock_brake = _ZeroDict()
 
 
-def main():
-  seg_range, out_path = sys.argv[1], sys.argv[2]
+def main(argv=None):
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument("segments", help="local route ID or LogReader segment range")
+  parser.add_argument("output", help="JSON output path")
+  args = parser.parse_args(argv)
+  seg_range, out_path = args.segments, args.output
   # Accept a bare local route id as well as anything LogReader understands. Passing a
   # comma-joined path list hits the OS filename length limit on a 47-segment route.
   if "/" not in seg_range and "|" not in seg_range:

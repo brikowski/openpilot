@@ -1,34 +1,15 @@
 #!/usr/bin/env python3
-"""Decode a route's control signals once and cache them, so repeat analysis is instant.
+"""Decode and cache grid-aligned signals for exploratory route attribution.
 
     from extract import load
     d = load("00000003--f670928197")     # first call decodes; later calls hit the cache
     mph = d["vego"] * 2.23694
 
-Why this exists: a single analysis session on 2026-08-05 re-decoded the same 32-39 segment route
-about ten times - once per ad-hoc question plus once per validate_log run - at 1-3 minutes each.
-The bytes never changed; only the question did. Everything here is a pure function of the rlog, so
-it is cached on disk keyed by route and SCHEMA, and answering a follow-up question costs a few
-milliseconds instead of minutes.
-
-This is deliberately NOT part of validate_log.py. That tool is the deterministic gate and must read
-the log itself so a cache bug can never silently change a ledger row. This is for exploration: the
-ad-hoc "what happened at t=1936?" work that precedes a finding.
-
-Everything is resampled onto the 100 Hz carControl grid, because that is the control timebase and
-the one every downstream metric already assumes:
-  * continuous signals (speed, accel, pitch) are linearly interpolated
-  * discrete CAN commands are ZERO-ORDER HELD, never interpolated - interpolating GAS_COMMAND
-    invents values that were never on the wire, and half-on BRAKE_REQUEST bits
-
-UPSTREAM signals (radarState / longitudinalPlan / modelV2 / selfdriveState) are cached too, even
-though nothing upstream of carControl.actuators.accel is the car port's to fix. The reason is
-triage, not tuning: when the driver reports a symptom, the FIRST question is whether the planner
-even asked for it, and answering that used to cost a raw LogReader pass per question. The
-2026-08-05 investigation of the 20:09 slowdown on 00000004 needed five such passes before it could
-say "openpilot's allow_throttle coast clamp, not us". Those signals are exactly the ones that
-settle attribution, so they belong in the cache with everything else.
+The cache is for exploration only; validate_log reads source logs independently. Continuous
+signals are interpolated onto carControl time while discrete CAN and state signals use zero-order
+hold. Upstream planner/model signals are included to locate the first attribution divergence.
 """
+import argparse
 import os
 import sys
 import numpy as np
@@ -248,12 +229,13 @@ def load(route, refresh=False):
   return d
 
 
-def main():
-  if len(sys.argv) < 2:
-    raise SystemExit(__doc__)
-  refresh = "--refresh" in sys.argv
-  for route in [a for a in sys.argv[1:] if not a.startswith("--")]:
-    d = load(route, refresh=refresh)
+def main(argv=None):
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument("routes", nargs="+", help="local route IDs or unique prefixes")
+  parser.add_argument("--refresh", action="store_true", help="ignore an existing cache entry")
+  args = parser.parse_args(argv)
+  for route in args.routes:
+    d = load(route, refresh=args.refresh)
     eng = d["active"].sum() * 0.01
     print(f"{d['route']}: {len(d['t'])} frames, {d['t'][-1] / 60:.1f} min logged, "
           f"{eng / 60:.1f} min engaged, {len(d) - 2} signals cached")

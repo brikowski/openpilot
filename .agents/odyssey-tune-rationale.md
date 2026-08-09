@@ -11,15 +11,15 @@ code, DBC semantics, or full-rate logs.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
-- Filtered pitch and learned aerodynamic drag feed the gas side only. The supplemental brake PID
-  never feeds the gas calculation.
+- Filtered pitch and learned aerodynamic drag feed gas forward and participate in the compensated
+  domain decision; they never add brake authority to `ACCEL_COMMAND`.
 - Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. Our supplemental
   controller is integral-only and one-sided: it may add braking but cannot reduce Honda's request.
 - One stateful gas/brake-domain decision gates learning, supplemental braking, and the CAN command.
   Its named entry threshold `BRAKE_DOMAIN_ENTRY` is separate from the gas lookup's scaling floor;
   it is -0.30 m/s2 as of 2026-08-06 (a road candidate moving the band's *position*; the original
   decoupled value was -0.20). Exit hysteresis (band *width*) ramps from zero at 5 m/s to 0.50 m/s2
-  at 10 m/s. Below 5 m/s, raw planner accel prevents grade compensation from releasing an engaged
+  at 10 m/s. Below 5 m/s, the raw controller request prevents grade compensation from releasing an engaged
   stop; at road speed both entry and release use compensated force.
 - Domain and brake-PID state reset while longitudinal control is inactive. Gas ramp state resets
   while inactive or braking, keeping every inactive-to-live `GAS_COMMAND` handoff at <=60 counts.
@@ -52,9 +52,9 @@ code, DBC semantics, or full-rate logs.
 ## Validation and reopening criteria
 
 - The tune is in maintenance mode with one active road candidate: `BRAKE_DOMAIN_ENTRY = -0.30`
-  (since 2026-08-06). The incumbent 0.50/-0.20 baseline arm is closed; what blocks promotion or
-  reversion is the candidate arm of the descent hold-episode gate (see tune-evidence.md). Compare
-  by resolved `opendbc_commit`, not only the parent OpenPilot commit.
+  (since 2026-08-06). Finish the candidate descent hold-episode gate before promotion or reversion;
+  its current count and route evidence live in tune-evidence.md. Compare by resolved
+  `opendbc_commit`, not only the parent OpenPilot commit.
 - Keep the official lateral and longitudinal maneuver routes plus ordinary-road full-rate rlogs
   private and retained. `.agents/log-validation-ledger.jsonl` is the compact evidence index.
 - Reopen tuning only for a repeatable symptom whose first divergence is inside the Honda controller

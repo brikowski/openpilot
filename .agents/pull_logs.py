@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
-"""Pull route rlogs off the comma over SSH and validate them.
+"""Pull private full-rate rlogs from the comma device and validate them.
 
 Two modes:
     uv run python .agents/pull_logs.py --route 0000001f--765ef47daf ["note"]
     uv run python .agents/pull_logs.py --since-hours 48 ["note"]     # everything new
 
-Why SSH rather than the comma API (verified 2026-07-27):
-  * rlogs NEVER auto-upload. uploader's next_file_to_upload() only ever returns crash/boot files
-    plus qlog/qlog.zst/qcamera.ts, and returns None for anything else - rlog included.
-  * The tools cannot ask for one either: auto_source() only reads what is already on comma's
-    servers and raises LogsUnavailable ("please ensure all logs are uploaded") otherwise.
-  * So without clicking upload per route in connect, SSH is the ONLY way to get full-rate logs.
-    It also needs no comma auth and costs no cellular data.
-  * qlogs are not a substitute: at 1-in-10 decimation they suppress the jerk, domain-chatter and
-    kickdown metrics entirely (see validate_log's qlog_fallback handling).
+SSH preserves private full-rate evidence that is not automatically available through hosted route
+sources. Qlogs are too decimated for transition and jerk metrics.
 
 Device host comes from $COMMA_SSH (default comma@192.168.1.200); local store from $LOG_ROOT
 (default ~/.comma/media/0/realdata), matching Paths.log_root() so validate_log finds them.

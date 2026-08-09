@@ -1,21 +1,9 @@
-"""CUSTOM TUNE (ody-op-long): safety-rail coverage for the Odyssey longitudinal tune.
+"""Odyssey active-longitudinal panda-rail and state-machine regressions.
 
-Upstream has no test that executes this code. The archived Odyssey test route
-(opendbc/car/tests/routes.py) predates openpilot longitudinal on this car, so alpha_long resolves
-False, openpilotLongitudinalControl is False, and create_acc_commands is never called - measured, 0
-ACC_CONTROL frames. And test_panda_safety_tx_cases drives the controller with structs.CarControl()
-defaults (longActive=False), which pins ACCEL_COMMAND at 0 and GAS_COMMAND at the -30000 inactive
-constant. Neither exercises the domain decision, brake_pid, or the gas lookup.
-
-What this covers: every ACC_CONTROL frame our ACTIVE longitudinal path emits, over the full accel
-authority and on grades, must pass the real panda safety TX hook. honda_tx_hook bounds ACCEL_COMMAND
-to [-350, 200] counts and GAS_COMMAND to [-30000, 2000]; a frame outside those is dropped by the
-panda SILENTLY while driving, so it must be caught here instead.
-
-The safety hook has no BRAKE_REQUEST check and no gas/brake mutual-exclusion check, so the rail
-sweep cannot validate the domain decision. Two explicit state-machine regressions below cover the
-invariants we have learned on-road; ride quality and closed-loop behavior still require road drives
-and .agents/validate_log.py.
+The archived upstream Odyssey route does not exercise openpilot longitudinal. These tests drive
+the active path across accel, speed, and grade; require each ACC_CONTROL frame to pass the Honda TX
+hook; and separately guard domain lifecycle and gas/brake mutual exclusion. They do not grade road
+behavior.
 """
 import math
 import unittest

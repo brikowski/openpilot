@@ -18,6 +18,7 @@ from openpilot.common.hardware.hw import Paths
 from openpilot.tools.lib.logreader import LogReader
 from opendbc.can.parser import CANParser
 
+from tuning_metrics import hold_last
 from validate_log import FOLLOW_MIN_VEGO, ODYSSEY_PT_DBC, SIGN_DISAGREE_REQUEST, _rate, _series
 
 
@@ -66,15 +67,15 @@ def inspect(route):
   if _rate(t_can) < 20.0:
     raise SystemExit("sendcan is not full-rate; event inspection would be misleading")
 
-  def onto(t, values):
+  def linear(t, values):
     return np.interp(t_cc, t, np.asarray(values, dtype=float))
 
-  plan = onto(t_lp, plan_accel)
-  vego = onto(t_cs, vego_raw)
-  aego = onto(t_cs, aego_raw)
-  brake_pressed = onto(t_cs, brake_raw) > 0.5
-  br = onto(t_can, brake_request) > 0.5
-  wire = onto(t_can, wire_accel)
+  plan = linear(t_lp, plan_accel)
+  vego = linear(t_cs, vego_raw)
+  aego = linear(t_cs, aego_raw)
+  brake_pressed = hold_last(t_cc, t_cs, brake_raw) > 0.5
+  br = hold_last(t_cc, t_can, brake_request) > 0.5
+  wire = hold_last(t_cc, t_can, wire_accel)
   active = (active_raw > 0.5) & (vego > FOLLOW_MIN_VEGO) & ~brake_pressed
   brake_domain = active & br
 

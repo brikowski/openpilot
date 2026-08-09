@@ -1,6 +1,6 @@
 # Log Validation Ledger
 
-Auto-maintained by `.agents/validate_log.py` (idempotent per route). One row per validated drive. FLAGged watchlist symptoms name the candidate tweak; see `.agents/tune-evidence.md` "Cross-Brand Longitudinal Patterns" for status. Authoritative data is the sibling `.jsonl`; this table is the human view. `eng min` / `eng mi` are the coverage behind the row - a clean row off a couple engaged minutes is context, not evidence. `branch` is read from the log's own `initData`, so an A/B stays readable after the fact. **`opendbc` is the submodule commit that `git_commit` pins - THAT is where the tune lives, so group by it, not by branch**, and it is blank when the parent commit is not in the local object store or the tree was dirty. `follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) in each domain. `burst/10s` is the largest number of physical BRAKE_REQUEST edges in any 10-second window; it measures the driver-felt tapping symptom without pretending raw request sign determines the grade-compensated actuator domain.
+Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling `.jsonl`. One row is retained per route. Group behavioral comparisons by resolved `opendbc`, not by branch. Coverage and flags identify evidence to inspect; they do not authorize a tune change. `follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` counts physical BRAKE_REQUEST edges.
 
 | date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS | gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | FLAGS |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -95,3 +95,10 @@ Auto-maintained by `.agents/validate_log.py` (idempotent per route). One row per
 | 2026-08-08 | 0000000f--b0eb8e3a15 | ody-op-long | c1ce76fa857a | 3.9 | 3.7 | 0 | 0.140 | 0.005 | 0.533 | 0.310 | 0.007 | 0.040 | 2 | 0.0 | 2.6 | sign disagreement |
 | 2026-08-08 | 00000012--36525474db | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
 | 2026-08-08 | 00000013--dd070c2142 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-09 | 00000018--a4b211ddd9 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-09 | 00000017--7927211376 | ody-op-long | 2cc9d0df854d | 4.3 | 3.1 | 0 | 0.208 | 0.006 | 0.535 | 0.298 | 0.012 | 0.038 | 4 | 0.0 | 4.7 | sign disagreement |
+| 2026-08-09 | 00000016--caef34b02b | ody-op-long | 2cc9d0df854d | 3.6 | 3.4 | 0 | 0.164 | 0.005 | 0.530 | 0.170 | 0.010 | 0.037 | 3 | 0.0 | 5.6 | none |
+| 2026-08-09 | 00000015--349eb50047 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-09 | 00000014--92815009db | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-09 | 00000011--e2e2816cc7 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-09 | 00000010--52265a8960 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
