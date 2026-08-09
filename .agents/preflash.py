@@ -1,24 +1,9 @@
 #!/usr/bin/env python3
-"""Pre-flash gate for the Odyssey tune. Run before pushing a build to the device.
+"""Run Odyssey interface and command-rail checks before a device build.
 
-Fast checks only - nothing here grades ride quality or model following, which only a road drive and
-.agents/validate_log.py can do. This catches the class of breakage that is expensive to discover in
-the driver's seat: an interface that no longer parses Odyssey CAN, or a command the panda will
-silently drop.
-
-  1. opendbc test_models for HONDA_ODYSSEY_5G_MMR. This is upstream's own suite against the archived
-     Odyssey route (opendbc/car/tests/routes.py). It needs a hand-built runner because the concrete
-     test classes only exist under DIRECTLY_CALLED. Note what it does NOT cover: that route predates
-     openpilot longitudinal on this car, so alpha_long resolves False and our entire longitudinal
-     branch is skipped - measured, 0 ACC_CONTROL frames. It checks CarState parsing, fingerprinting,
-     the radar interface, and panda safety agreement.
-
-  2. The custom Odyssey command/parameter regressions, which fill the gaps #1 leaves: active
-     longitudinal safety rails and lifecycle transitions plus tuned parameter semantics. See
-     .agents/test_odyssey_long_rails.py.
-
-Usage:  ./.agents/preflash.py
+These software checks do not grade ride quality or replace full-rate road validation.
 """
+import argparse
 import os
 import subprocess
 import sys
@@ -59,7 +44,8 @@ def run_rails() -> bool:
                         cwd=OPENDBC.parent).returncode == 0
 
 
-def main() -> int:
+def main(argv=None) -> int:
+  argparse.ArgumentParser(description=__doc__).parse_args(argv)
   results = {}
 
   print(f"\n=== 1/2  opendbc test_models :: {PLATFORM} ===")
@@ -74,7 +60,8 @@ def main() -> int:
   for name, ok in results.items():
     print(f"  {'PASS' if ok else 'FAIL'}  {name}")
   if all(results.values()):
-    print("\nSafe to flash. Ride quality is still unmeasured - drive it, then run validate_log.py.")
+    print("\nSoftware gates passed. Confirm the intended clean build before flashing; road behavior "
+          "is still unmeasured.")
     return 0
   print("\nDo NOT flash.")
   return 1

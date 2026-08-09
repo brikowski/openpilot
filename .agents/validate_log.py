@@ -1,30 +1,9 @@
 #!/usr/bin/env python3
-"""
-validate_log.py - deterministic per-log validation for the ody-op-long tune.
+"""Validate a full-rate route and update the Odyssey evidence ledger.
 
-Runs every uploaded route through the SAME set of checks so tune convergence
-and the cross-brand watchlist (see .agents/tune-evidence.md "Cross-Brand Longitudinal
-Patterns") are evaluated identically each time, and appends the result to an
-evidence ledger so status transitions (watch -> candidate, parked -> revisit)
-become evidence-driven instead of re-derived by hand.
-
-Usage:
-    uv run python .agents/validate_log.py <route> ['description']
-    # route form matches generate_report.py, e.g. 805f87f5e96d128c/0000000d
-    # Default read mode is RLOG (rlogs only, error if absent). Append /a for ReadMode.AUTO, which
-    # PREFERS rlogs and only falls back to qlogs if none are uploaded - it does NOT force qlog.
-    # (An earlier version of this docstring said /a "forces the qlog fallback", which is wrong and
-    # led to three ledger rows being wrongly suspected of holding decimated data. If a route does
-    # come back decimated, qlog_fallback below detects it by rate and suppresses what it invalidates.)
-
-It PRINTS a verdict, APPENDS a row to the ledger (.jsonl authoritative +
-.md human view), and SUGGESTS status changes from accumulated evidence. It
-never edits tune-evidence.md itself - a human curates that prose from the suggestions.
-
-The watchlist checks only carry their full meaning on HONDA_ODYSSEY_5G_MMR,
-because the tune repurposes carOutput.actuatorsOutput.gas -> effective gasfactor
-and .brake -> windfactor there (see honda/carcontroller.py L417-425). On other
-platforms only the convergence + crash checks are meaningful.
+Usage: ``uv run python .agents/validate_log.py <route> [description]``. Local route IDs use
+private rlogs pulled from the device; qlog-rate data is detected and rate-sensitive metrics are
+suppressed. The JSONL ledger is authoritative and this tool never edits tune-evidence.md.
 """
 import argparse
 import json
@@ -52,6 +31,7 @@ from tuning_metrics import (
   causal_lpf as _causal_lpf,
   command_transition_metrics,
   descent_hold_metrics,
+  gasfactor_breakpoint_metrics,
   hold_last as _hold_last,
   max_edges_in_window as _max_edges_in_window,
   physical_edges as _physical_edges,
@@ -75,6 +55,10 @@ TRACK_RMS_LIMIT = 0.35        # RMS(aEgo - aTarget) over active pid frames
 PASSTHROUGH_RMS_LIMIT = 0.25  # RMS(wire accel - CarController input) over gas-domain frames
 GASF_EFF_LO, GASF_EFF_HI = 0.05, 1.5   # effective gasfactor sane band (base 0.35-0.9 * trim)
 GASF_DRIFT_LIMIT = 0.30       # within-drive drift (last10% mean - first10% mean); instability
+GASF_SEED_HALF_WIDTH = 1.5    # m/s around each breakpoint; midpoint bins bias sloped seeds
+GASF_SEED_MIN_ROUTE_S = 30.0  # reject drive-level samples too brief to represent a breakpoint
+GASF_SEED_MIN_DRIVES = 3
+GASF_SEED_MIN_TOTAL_S = 300.0
 WINDF_CLIP = 3.0              # windfactor upper clip rail (pinned = learner starved)
 WINDF_FLOOR = 0.1             # lower clip rail; evaluate only at highway speed where aero matters
 WINDF_FLOOR_EPS = 0.005
@@ -548,27 +532,14 @@ def analyze(msgs, platform):
 
   # === tuning-quality tests (2026-07-24) ===
   if is_ody:
-    # 5. gasfactor convergence by speed. Bin the learned effective gasfactor by the seed-table
-    #    speed breakpoints and store per drive; the cross-drive aggregate (report_gasf_seed)
-    #    tells us whether GAS_FACTOR_SPEED_V is right. Only frames where OP holds the gas
-    #    (learner-eligible: pid, not gas-pressed) so it reflects what the learner actually saw.
-    learn_frames = pid & (~gaspressed)
-    gasf_bins = {}
-    for i, bp in enumerate(GAS_FACTOR_SPEED_BP):
-      lo = 0.0 if i == 0 else (GAS_FACTOR_SPEED_BP[i - 1] + bp) / 2
-      hi_b = 1e9 if i == len(GAS_FACTOR_SPEED_BP) - 1 else (bp + GAS_FACTOR_SPEED_BP[i + 1]) / 2
-      m = learn_frames & (vego >= lo) & (vego < hi_b)
-      gasf_bins[str(bp)] = float(np.nanmean(gasf[m])) if m.sum() > 20 else None
-    r["gasf_by_speed"] = gasf_bins
-
-    # 6. MODEL-FOLLOWING FIDELITY. Replaced the old whole-drive `domain chatter` count
+    # 5. MODEL-FOLLOWING FIDELITY. Replaced the old whole-drive `domain chatter` count
     #    2026-07-29. That metric asked "how often did the domain flip?", which conflates flips the
     #    plan asked for with flips we invented, and averaged the answer over a whole drive - so a
     #    defect concentrated on descents (10-66 toggles/min) vanished into a 2.4/min average.
     #    These ask the only question the car port is accountable for: did the wire carry what the
     #    CarController was asked? See _following.
     r.update(_following(msgs, grid, cc_accel, active, pid, cc_pitch, vego, gaspressed,
-                        brakepressed, aego, windf, dt, (cc_stopping > 0.5) & active))
+                        brakepressed, aego, gasf, windf, dt, (cc_stopping > 0.5) & active))
 
   # device thermal - platform-independent, and survives qlog (deviceState is undecimated)
   r.update(_thermal(msgs))
@@ -638,7 +609,7 @@ def _thermal(msgs):
 
 
 def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brakepressed,
-               aego, windfactor, dt, stop_state):
+               aego, gasfactor, windfactor, dt, stop_state):
   """DID THE CAR PORT FOLLOW ITS INPUT? - the question it is directly accountable for.
 
   controlsd passes carControl.actuators.accel into CarController.update; we put ACCEL_COMMAND on
@@ -669,6 +640,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "reengagement_events": None, "reengagement_stale_sec": None,
          "reengagement_stale_events": None, "reengagement_stale_worst": None,
          "gas_handoff_events": None, "gas_handoff_max": None,
+         "gasf_by_speed": {}, "gasf_seed_by_speed": {}, "gasf_seconds_by_speed": {},
          "brake_toggle_edges": None, "brake_toggle_per_min": None,
          "brake_toggle_max_10s": None, "brake_toggle_min_gap": None,
          "felt_jerk_rms": None, "cmd_jerk_rms": None, "felt_jerk_p99": None,
@@ -711,6 +683,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   GAS = _hold_last(grid, t, gas)
   err = AC - requested
   eng_all, vego_all = active.copy(), vego     # keep un-gated masks for stop/start metrics
+
+  # Use the actual live gas domain and compare against the interpolated live seed over exactly
+  # the same frames. Broad midpoint bins made the old 8 m/s report structurally read high.
+  out.update(gasfactor_breakpoint_metrics(
+    vego_all, gasfactor, pid & ~gaspressed & ~brakepressed & (GAS > GAS_INACTIVE),
+    GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V,
+    half_width=GASF_SEED_HALF_WIDTH, min_exposure_s=GASF_SEED_MIN_ROUTE_S, dt=dt,
+  ))
 
   # CUSTOM TOOLING: lifecycle metrics live in a pure array function so synthetic golden traces
   # can prove the one-frame transport allowance, stale re-engagement detection, and gas handoff
@@ -1208,18 +1188,11 @@ def write_ledger_md(rows):
     return f"{val:.{p}f}" if isinstance(val, (int, float)) else "-"
   header = (
     "# Log Validation Ledger\n\n"
-    "Auto-maintained by `.agents/validate_log.py` (idempotent per route). One row per validated "
-    "drive. FLAGged watchlist symptoms name the candidate tweak; see `.agents/tune-evidence.md` "
-    "\"Cross-Brand Longitudinal Patterns\" for status. Authoritative data is the sibling `.jsonl`; "
-    "this table is the human view. `eng min` / `eng mi` are the coverage behind the row - a clean "
-    "row off a couple engaged minutes is context, not evidence. `branch` is read from the log's own "
-    "`initData`, so an A/B stays readable after the fact. **`opendbc` is the submodule commit that "
-    "`git_commit` pins - THAT is where the tune lives, so group by it, not by branch**, and it is "
-    "blank when the parent commit is not in the local object store or the tree was dirty. "
-    "`follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) in each domain. "
-    "`burst/10s` is the largest number of physical BRAKE_REQUEST edges in any 10-second window; "
-    "it measures the driver-felt tapping symptom without pretending raw request sign determines "
-    "the grade-compensated actuator domain.\n\n"
+    "Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling `.jsonl`. "
+    "One row is retained per route. Group behavioral comparisons by resolved `opendbc`, not by "
+    "branch. Coverage and flags identify evidence to inspect; they do not authorize a tune change. "
+    "`follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` "
+    "counts physical BRAKE_REQUEST edges.\n\n"
     "| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS "
     "| gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | FLAGS |\n"
     "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
@@ -1335,7 +1308,7 @@ def main():
       for s in sugg:
         print(f"    * {s}")
     report_thermal_advisory()
-    report_gasf_seed()
+    report_gasf_seed(r.get("opendbc_commit"))
 
 
 def report_thermal_advisory():
@@ -1387,29 +1360,36 @@ def report_thermal_advisory():
           f"{SOAK_ADVISORY_C:.0f}C advisory line. Leaving it in the car is fine for now.")
 
 
-def report_gasf_seed():
-  """Cross-drive: aggregate learned gasfactor_effective by speed bin across all Odyssey rows
-  and compare to the live seed table, so the seed (GAS_FACTOR_SPEED_V) can be refined from
-  accumulated evidence rather than the single drive it came from. Print-only; a human edits
-  the seed. Needs >=3 drives with data in a bin before suggesting a change."""
-  if not LEDGER_JSONL.exists():
+def report_gasf_seed(opendbc_commit):
+  """Report exposure-weighted gasfactor deltas for one exact opendbc version."""
+  if not LEDGER_JSONL.exists() or not opendbc_commit:
     return
   rows = [json.loads(l) for l in LEDGER_JSONL.read_text().splitlines() if l.strip()]
-  ody = [r for r in rows if r.get("platform") == ODYSSEY and r.get("gasf_by_speed")]
-  if len(ody) < 3:
+  ody = [r for r in rows if r.get("platform") == ODYSSEY and
+         r.get("opendbc_commit") == opendbc_commit and not r.get("thin_sample") and
+         not r.get("qlog_fallback") and r.get("gasf_seed_by_speed") and
+         r.get("gasf_seconds_by_speed") and "00000005--" not in r.get("route", "")]
+  if not ody:
     return
-  print(f"\n  GASFACTOR vs SEED (learned effective, {len(ody)} Odyssey drives):")
+  print(f"\n  GASFACTOR vs SEED ({opendbc_commit[:12]}, narrow live-gas windows):")
   for bp, seed in zip(GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V, strict=False):
-    vals = [d["gasf_by_speed"].get(str(bp)) for d in ody]
-    vals = [x for x in vals if x is not None]
-    if len(vals) < 3:
-      print(f"    {bp:>4.0f} m/s: seed {seed:.2f}  (only {len(vals)} drives w/ data - need 3)")
+    key = str(float(bp))
+    samples = [(d["gasf_by_speed"].get(key), d["gasf_seed_by_speed"].get(key),
+                d["gasf_seconds_by_speed"].get(key, 0.0)) for d in ody]
+    samples = [(learned, expected, seconds) for learned, expected, seconds in samples
+               if learned is not None and expected is not None and seconds >= GASF_SEED_MIN_ROUTE_S]
+    total_s = sum(x[2] for x in samples)
+    if len(samples) < GASF_SEED_MIN_DRIVES or total_s < GASF_SEED_MIN_TOTAL_S:
+      print(f"    {bp:>4.0f} m/s: point seed {seed:.2f}  ({len(samples)} drives, {total_s:.0f}s; "
+            f"need {GASF_SEED_MIN_DRIVES} drives/{GASF_SEED_MIN_TOTAL_S:.0f}s)")
       continue
-    m = float(np.mean(vals))
-    delta = m - seed
-    hint = f"  -> seed runs {'low' if delta > 0 else 'high'} by {abs(delta):.2f}, consider {seed + delta:.2f}" if abs(delta) > 0.08 else "  (seed good)"
-    print(f"    {bp:>4.0f} m/s: seed {seed:.2f}  learned {m:.2f} (n={len(vals)}, "
-          f"spread {min(vals):.2f}-{max(vals):.2f}){hint}")
+    weights = np.array([x[2] for x in samples])
+    deltas = np.array([x[0] - x[1] for x in samples])
+    delta = float(np.average(deltas, weights=weights))
+    hint = (f" -> point seed {'low' if delta > 0 else 'high'} by {abs(delta):.2f}, "
+            f"consider {seed + delta:.2f}") if abs(delta) > 0.08 else " (seed good)"
+    print(f"    {bp:>4.0f} m/s: point seed {seed:.2f}, delta {delta:+.2f} "
+          f"(n={len(samples)}, {total_s:.0f}s){hint}")
 
 
 if __name__ == "__main__":

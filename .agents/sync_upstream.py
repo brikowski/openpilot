@@ -6,6 +6,7 @@ conflict is left for a human to inspect. Run the full validation task after it c
 the separate publish task if the result should replace the remote rebased branch.
 """
 
+import argparse
 import os
 import subprocess
 import sys
@@ -78,7 +79,8 @@ def resolve_parent_gitlinks(new_opendbc):
     sys.exit("parent rebase needs manual attention. Nothing was pushed.")
 
 
-def main():
+def main(argv=None):
+  argparse.ArgumentParser(description=__doc__).parse_args(argv)
   branch = output(["git", "branch", "--show-current"])
   if branch not in ALLOWED_BRANCHES:
     sys.exit(f"refusing local rebase on {branch!r}; expected one of {sorted(ALLOWED_BRANCHES)}")
@@ -126,7 +128,8 @@ def main():
     sys.exit(f"rebased parent pins {recorded}, but opendbc_repo is {new_opendbc}")
 
   print("\nLocal rebase complete; nothing was pushed.")
-  print("Run 'Run Checks', inspect the net tune diff, then explicitly publish or deploy.")
+  print("Run `lefthook run pre-commit` and `.agents/preflash.py`, inspect the net tune diff, "
+        "then explicitly publish or deploy.")
   run(["git", "diff", "--stat", f"{pinned_sha}..{branch}"], cwd=OPENDBC)
 
 

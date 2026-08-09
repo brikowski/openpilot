@@ -19,6 +19,7 @@ from tuning_metrics import (
   causal_lpf,
   command_transition_metrics,
   descent_hold_metrics,
+  gasfactor_breakpoint_metrics,
   hold_last,
   max_edges_in_window,
   physical_edges,
@@ -27,6 +28,65 @@ from tuning_metrics import (
   sign_disagreement_metrics,
   stop_lurch_metrics,
 )
+
+
+def test_gasfactor_breakpoint_uses_same_frame_seed_and_narrow_window():
+  breakpoints = np.array([0.0, 4.0, 8.0, 12.0])
+  seeds = np.array([0.35, 0.63, 0.54, 0.46])
+  # Effective values exactly follow the live schedule. A midpoint-bin comparison against the
+  # 8 m/s point seed would falsely report a positive delta because the schedule slopes here.
+  speed = np.repeat(np.array([6.6, 7.5, 8.5, 9.4]), 100)
+  effective = np.interp(speed, breakpoints, seeds)
+  metrics = gasfactor_breakpoint_metrics(
+    speed, effective, np.ones(len(speed), dtype=bool), breakpoints, seeds,
+    half_width=1.5, min_exposure_s=3.0, dt=0.01,
+  )
+
+  learned = metrics["gasf_by_speed"]["8.0"]
+  expected = metrics["gasf_seed_by_speed"]["8.0"]
+  assert learned == expected
+  assert metrics["gasf_seconds_by_speed"]["8.0"] == 4.0
+
+
+def test_gasfactor_breakpoint_requires_route_exposure():
+  speed = np.full(2999, 8.0)
+  short = gasfactor_breakpoint_metrics(
+    speed, np.full_like(speed, 0.54), np.ones(len(speed), dtype=bool),
+    [0.0, 8.0], [0.35, 0.54], half_width=1.5, min_exposure_s=30.0, dt=0.01,
+  )
+  enough = gasfactor_breakpoint_metrics(
+    np.append(speed, 8.0), np.full(3000, 0.54), np.ones(3000, dtype=bool),
+    [0.0, 8.0], [0.35, 0.54], half_width=1.5, min_exposure_s=30.0, dt=0.01,
+  )
+
+  assert short["gasf_by_speed"]["8.0"] is None
+  assert enough["gasf_by_speed"]["8.0"] == 0.54
+
+
+def test_gasfactor_report_groups_exact_commit_and_exposure_weights(tmp_path, monkeypatch, capsys):
+  rows = []
+  for i, learned in enumerate([0.60, 0.63, 0.66]):
+    rows.append({
+      "route": f"0000001{i}--abc{i}", "platform": ODYSSEY, "opendbc_commit": "same123",
+      "thin_sample": False, "qlog_fallback": False,
+      "gasf_by_speed": {"8.0": learned}, "gasf_seed_by_speed": {"8.0": 0.54},
+      "gasf_seconds_by_speed": {"8.0": 100.0},
+    })
+  rows.append({
+    "route": "00000020--other", "platform": ODYSSEY, "opendbc_commit": "other456",
+    "thin_sample": False, "qlog_fallback": False,
+    "gasf_by_speed": {"8.0": 0.97}, "gasf_seed_by_speed": {"8.0": 0.54},
+    "gasf_seconds_by_speed": {"8.0": 1000.0},
+  })
+  ledger = tmp_path / "ledger.jsonl"
+  ledger.write_text("".join(json.dumps(row) + "\n" for row in rows))
+  monkeypatch.setattr(validate_log, "LEDGER_JSONL", ledger)
+
+  validate_log.report_gasf_seed("same123")
+  output = capsys.readouterr().out
+
+  assert "8 m/s: point seed 0.54, delta +0.09 (n=3, 300s)" in output
+  assert "0.97" not in output
 
 
 def test_hold_last_does_not_invent_intermediate_can_values():
