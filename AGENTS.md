@@ -10,8 +10,9 @@ The longitudinal tune is in maintenance/validation mode. Require a specific full
 symptom before opening another behavior change.
 
 Lateral is **settled and closed**: stock-LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.20`.
-Honda pairs the 3840 RDM range with one-sided brake drag we cannot command. `validate_log`
-deliberately has no lateral checks.
+Honda pairs the 3840 RDM range with one-sided brake drag we cannot command. The 0.20 s delay is
+the retained cold fallback; an uncached fallback-only road confirmation was not completed. Reopen
+it only for a logged lateral symptom. `validate_log` deliberately has no lateral checks.
 
 ## Attribution boundary
 
@@ -47,6 +48,10 @@ the domain bits leave gas inactive. Locate the first divergence before assigning
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
 - Car-port edits follow `.claude/skills/comma-standards/SKILL.md`. Keep production comments PR-lean:
   explain the invariant or reason; keep route numbers, dates, and experiment history in evidence.
+- `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The current
+  Odyssey use of its `gas`/`brake` fields for learned-factor telemetry is fork-only instrumentation.
+  Before an upstream PR, restore actuator semantics and either reconstruct the learners offline or
+  move them to an explicitly named diagnostic event accepted by the corresponding schema owner.
 - **Never sync opendbc to its own master.** Rebase it to the commit openpilot master pins, or
   `controlsd` crashes on-road from a `car.capnp` schema mismatch.
 - `lefthook run pre-commit` covers focused lint and pure metric tests. `.agents/preflash.py` adds
@@ -58,12 +63,20 @@ the domain bits leave gas inactive. Locate the first divergence before assigning
 `DOMAIN_HYST_EXIT=0.50` remains the validated width. Behavior-equivalent candidate hashes
 `c1ce76fa857a`, `14677d814cb2`, and `2cc9d0df854d` have **19/20** required terrain-matched hold
 episodes through 2026-08-09. The newest routes removed the early apparent severity advantage:
-hold exposure is not lower than the incumbent, while no late brake onset or longer-stop trigger
-has appeared. Finish the gate on the same version before promotion, reversion, or another entry
-position experiment.
+hold exposure is not lower than the incumbent. Route `0000001d--9be29ce71e` added a late-onset
+watch: unstable vision-lead range/range-rate was the primary delay, while frozen inputs put the
+current -0.30 brake-domain entry 0.21 s after -0.20. Do not count that mixed event as a candidate
+failure, but reopen or revert if late onset repeats with stable lead inputs. Finish the gate on a
+proven behavior-equivalent version before promotion, reversion, or another entry experiment.
 
 Keep gas and brake domains mutually exclusive. Panda bounds `ACCEL_COMMAND` and `GAS_COMMAND` but
 does not enforce that invariant; `.agents/test_odyssey_long_rails.py` does.
 
 Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, exposure-qualified,
 per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
+
+The production windfactor learner is not independently identified from the gasfactor learner and
+grade compensation. Do not call it validated or change it while the domain-entry arm is open. Once
+that arm closes, compare an evidence-derived fixed drag factor with a shadow learner restricted to
+live gas, no pedals, no saturation, and steady high-speed/grade windows. Because both learners use
+the same tracking error, freeze or partition gasfactor learning during windfactor identification.

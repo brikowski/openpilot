@@ -45,8 +45,8 @@ def remote_routes():
   # Group locally rather than with awk over ssh - far less quoting to get wrong.
   r = _ssh(f"find {REMOTE_ROOT} -maxdepth 1 -mindepth 1 -type d -printf '%T@ %f\\n'")
   if r.returncode != 0:
-    sys.exit(f"cannot reach {DEVICE}: {r.stderr.strip() or 'ssh failed'}\n"
-             f"Is the device powered and on wifi? Override with COMMA_SSH=user@ip")
+    sys.exit(f"cannot reach {DEVICE}: {r.stderr.strip() or 'ssh failed'}\n" +
+             "Is the device powered and on wifi? Override with COMMA_SSH=user@ip")
   newest, count = {}, {}
   for line in r.stdout.splitlines():
     parts = line.split()
@@ -187,12 +187,12 @@ def prune(hours, validated):
       shutil.rmtree(d)
     victims[rid] = len(dirs)
   if victims:
-    print(f"\npruned {sum(victims.values())} segment(s) from {len(victims)} validated route(s) "
+    print(f"\npruned {sum(victims.values())} segment(s) from {len(victims)} validated route(s) " +
           f"older than {hours:g}h, freed {freed/1e6:.0f} MB")
     for rid, n in sorted(victims.items()):
       print(f"    {rid}  {n} segs")
   if kept_unvalidated:
-    print(f"  kept {len(kept_unvalidated)} old route(s) that are NOT in the ledger yet: "
+    print(f"  kept {len(kept_unvalidated)} old route(s) that are NOT in the ledger yet: " +
           f"{', '.join(sorted(kept_unvalidated))}")
 
 
@@ -222,8 +222,10 @@ def main():
     routes = remote_routes()
     targets = [(r, ts, n) for r, ts, n in routes if ts >= cutoff and r not in done]
     skipped = [r for r, ts, _ in routes if ts >= cutoff and r in done]
-    print(f"device has {len(routes)} route(s); {len(targets)} new within {args.since_hours:g}h"
-          f"{f', {len(skipped)} already validated' if skipped else ''}")
+    recent = len(targets) + len(skipped)
+    summary = f"device has {len(routes)} route(s); {recent} within {args.since_hours:g}h: "
+    summary += f"{len(targets)} to pull/validate, {len(skipped)} already validated"
+    print(summary)
     if not targets:
       print("nothing to do.")
       return
