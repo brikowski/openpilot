@@ -5,7 +5,7 @@ route history and derivations belong in [`.agents/tune-evidence.md`](.agents/tun
 
 ## What this branch is
 
-`ody-op-long` is a **lateral-and-longitudinal** Honda Bosch A tune for `HONDA_ODYSSEY_5G_MMR`.
+`ody-op` is a **lateral-and-longitudinal** Honda Bosch A tune for `HONDA_ODYSSEY_5G_MMR`.
 The longitudinal tune is in maintenance/validation mode. Require a specific full-rate logged
 symptom before opening another behavior change.
 
