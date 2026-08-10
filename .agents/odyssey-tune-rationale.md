@@ -8,6 +8,8 @@ code, DBC semantics, or full-rate logs.
 
 - Lateral follows the stock LKA envelope: 2560 maximum command and the stock-derived torque tune.
   `steerActuatorDelay` is 0.20 s; openpilot's lag estimator adds 0.20 s for a 0.40 s cold fallback.
+  The uncached fallback-only road confirmation was not completed, so retain it as a closed
+  configuration choice rather than describing it as independently road-validated.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
@@ -25,8 +27,11 @@ code, DBC semantics, or full-rate logs.
   while inactive or braking, keeping every inactive-to-live `GAS_COMMAND` handoff at <=60 counts.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
   other Honda interfaces in the same process.
-- `actuatorsOutput.gas` and `.brake` carry effective gasfactor and windfactor for log telemetry;
-  actual gas and brake commands remain available in `sendcan`.
+- `actuatorsOutput.gas` and `.brake` currently carry effective gasfactor and windfactor for log
+  telemetry, while raw commands remain in `sendcan`. This is fork-only instrumentation: those
+  fields are defined as actuator outputs and must regain actuator semantics before an upstream PR.
+  Preserve learner visibility through deterministic offline reconstruction or a separately named,
+  schema-reviewed diagnostic event before removing this dependency from the validator and layout.
 
 ## Evidence that fixed the design
 
@@ -47,7 +52,11 @@ code, DBC semantics, or full-rate logs.
   upstream of the Honda port. Low-speed excess decel has primarily appeared after correct CAN output,
   in Honda's actuator response. Neither symptom justifies more port brake authority.
 - Windfactor is speed-adaptive but not independently identifiable from gasfactor and grade in ordinary
-  logs. Treat further wind learning as a separate architecture experiment, not routine tuning.
+  logs. Its value is therefore unproven, not "confirmed not dead." Finish the domain-entry arm
+  before comparing an evidence-derived fixed drag factor with a gas-active-only shadow learner.
+  Since gasfactor and windfactor currently learn from the same error, freeze or partition gasfactor
+  learning during drag identification; tighter windfactor gates alone do not make two coupled
+  parameters identifiable. Treat further wind learning as a separate architecture experiment.
 
 ## Validation and reopening criteria
 
