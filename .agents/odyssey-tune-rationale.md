@@ -1,6 +1,6 @@
 # Odyssey tune rationale
 
-This note preserves the evidence behind `ody-op-long` without carrying route history and failed
+This note preserves the evidence behind `ody-op` without carrying route history and failed
 experiments in production comments. Treat it as context to re-verify, not a substitute for current
 code, DBC semantics, or full-rate logs.
 
