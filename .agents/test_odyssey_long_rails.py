@@ -220,16 +220,16 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert gas != GAS_INACTIVE, "request above the compensated-force release threshold left gas inactive"
           assert brake_request == 0, "brake domain did not release above its compensated-force threshold"
 
-  def test_lateral_defaults_follow_lka_limit_with_configured_delay(self):
-    """Use stock LKA authority while retaining the configured cold-fallback delay.
+  def test_lateral_defaults_follow_stock_lka_tune(self):
+    """Keep the Odyssey lateral configuration behaviorally stock.
 
     Stock LKA sends at most 2560; the 3840 RDM command includes brake drag and is not an
-    equivalent steering-only operating point. lagd adds 0.20 s to CP.steerActuatorDelay. This
-    verifies configuration, not an uncached fallback-only road response.
+    equivalent steering-only operating point. The former 0.20 s fallback had no isolated evidence
+    of benefit, so keep the stock 0.15 s actuator delay until a logged symptom justifies tuning.
     """
     CP = _car_params()
     self.assertEqual(list(CP.lateralParams.torqueBP), [0.0, 2560.0])
     self.assertEqual(list(CP.lateralParams.torqueV), [0.0, 2560.0])
     self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, 0.9)
-    self.assertAlmostEqual(CP.steerActuatorDelay, 0.20)
-    self.assertAlmostEqual(CP.steerActuatorDelay + 0.20, 0.40)
+    self.assertAlmostEqual(CP.steerActuatorDelay, 0.15)
+    self.assertAlmostEqual(CP.steerActuatorDelay + 0.20, 0.35)

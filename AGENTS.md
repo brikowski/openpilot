@@ -5,14 +5,14 @@ route history and derivations belong in [`.agents/tune-evidence.md`](.agents/tun
 
 ## What this branch is
 
-`ody-op` is a **lateral-and-longitudinal** Honda Bosch A tune for `HONDA_ODYSSEY_5G_MMR`.
+`ody-op` is a Honda Bosch A longitudinal tune for `HONDA_ODYSSEY_5G_MMR`.
 The longitudinal tune is in maintenance/validation mode. Require a specific full-rate logged
 symptom before opening another behavior change.
 
-Lateral is **settled and closed**: stock-LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.20`.
-Honda pairs the 3840 RDM range with one-sided brake drag we cannot command. The 0.20 s delay is
-the retained cold fallback; an uncached fallback-only road confirmation was not completed. Reopen
-it only for a logged lateral symptom. `validate_log` deliberately has no lateral checks.
+Lateral is **stock and closed**: LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.15`.
+The former 0.20 s fallback had no isolated road benefit, so it was retired rather than kept as an
+unproven tune. Honda pairs the 3840 RDM range with one-sided brake drag we cannot command. Reopen
+lateral only for a logged symptom. `validate_log` deliberately has no lateral checks.
 
 ## Attribution boundary
 
@@ -59,15 +59,14 @@ the domain bits leave gas inactive. Locate the first divergence before assigning
 
 ## Active road question
 
-`BRAKE_DOMAIN_ENTRY=-0.30` is a road candidate intended to reduce descent engine-braking holds;
-`DOMAIN_HYST_EXIT=0.50` remains the validated width. Behavior-equivalent candidate hashes
-`c1ce76fa857a`, `14677d814cb2`, and `2cc9d0df854d` have **19/20** required terrain-matched hold
-episodes through 2026-08-09. The newest routes removed the early apparent severity advantage:
-hold exposure is not lower than the incumbent. Route `0000001d--9be29ce71e` added a late-onset
-watch: unstable vision-lead range/range-rate was the primary delay, while frozen inputs put the
-current -0.30 brake-domain entry 0.21 s after -0.20. Do not count that mixed event as a candidate
-failure, but reopen or revert if late onset repeats with stable lead inputs. Finish the gate on a
-proven behavior-equivalent version before promotion, reversion, or another entry experiment.
+The `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.50` arm is closed without promotion. It sharply
+reduced physical descent toggles versus stock on the GPS-matched 2026-08-11 routes, but held the
+brake domain through positive requests and produced sustained underspeed. The next isolated road
+candidate keeps entry at `-0.30` and narrows `DOMAIN_HYST_EXIT` to `0.20`. This exact combination is
+untested. A prior `0.20` width with `-0.20` entry measured 15.1 corrected descent toggles/min versus
+3.6-4.8 at `0.50`, so reject the candidate immediately if downhill tapping returns. Also revert for
+stable-lead late brake onset or longer stops. Do not change brake PID, gasfactor, or windfactor in
+this arm.
 
 Keep gas and brake domains mutually exclusive. Panda bounds `ACCEL_COMMAND` and `GAS_COMMAND` but
 does not enforce that invariant; `.agents/test_odyssey_long_rails.py` does.
@@ -76,7 +75,7 @@ Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, expos
 per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
 
 The production windfactor learner is not independently identified from the gasfactor learner and
-grade compensation. Do not call it validated or change it while the domain-entry arm is open. Once
+grade compensation. Do not call it validated or change it while the release-width arm is open. Once
 that arm closes, compare an evidence-derived fixed drag factor with a shadow learner restricted to
 live gas, no pedals, no saturation, and steady high-speed/grade windows. Because both learners use
 the same tracking error, freeze or partition gasfactor learning during windfactor identification.

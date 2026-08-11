@@ -107,3 +107,12 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-10 | 0000001b--a197933a31 | ody-op-long | 76bd3550e9e8 | 4.0 | 3.5 | 0 | 0.184 | 0.007 | 0.567 | 0.262 | 0.008 | 0.051 | 2 | 0.0 | 5.1 | gasfactor stability, brake_pid overshoot |
 | 2026-08-10 | 0000001a--b142456b31 | ody-op-long | 76bd3550e9e8 | 2.0 | 1.1 | 0 | 0.238 | 0.008 | 0.648 | 0.444 | 0.012 | 0.071 | 3 | 0.0 | 0.0 | none |
 | 2026-08-10 | 00000019--258d653bb0 | ody-op-long | 76bd3550e9e8 | 5.2 | 3.5 | 0 | 0.200 | 0.005 | 0.542 | 0.219 | 0.006 | 0.040 | 2 | 0.0 | 0.0 | none |
+| 2026-08-11 | 00000025--c46031719a | master | 44f2987cb6ed | 2.2 | 1.4 | 0 | 0.227 | 0.007 | 381.559 | 0.000 | 0.009 | 0.010 | 1 | 0.0 | 4.5 | gasfactor stability, windfactor rail exposure, gas handoff ramp, ride harshness (felt) |
+| 2026-08-11 | 00000024--5c888c605c | master | 44f2987cb6ed | 10.0 | 8.1 | 0 | 0.222 | 0.008 | 278.542 | 0.000 | 0.010 | 0.009 | 25 | 0.0 | 3.0 | gasfactor stability, windfactor rail exposure, brake takeovers, gas handoff ramp, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-11 | 00000026--bfe3fd933b | ody-op | 13cfc73646e1 | 14.8 | 11.3 | 0 | 0.223 | 0.008 | 0.568 | 0.139 | 0.011 | 0.048 | 3 | 0.0 | 4.1 | windfactor rail exposure, brake takeovers, sign disagreement |
+| 2026-08-11 | 00000023--2919f68187 | master | 44f2987cb6ed | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-11 | 00000022--3f79693040 | master | 44f2987cb6ed | 5.3 | 4.3 | 0 | 0.224 | 0.007 | 310.251 | 0.000 | 0.013 | 0.007 | 25 | 0.0 | 3.8 | gasfactor stability, windfactor rail exposure, gas handoff ramp, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-11 | 00000021--156458d88c | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-11 | 00000020--bc151e42d7 | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-11 | 0000001f--689f100ce4 | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
+| 2026-08-11 | 0000001e--ca249d4d04 | ody-op-long | 76bd3550e9e8 | 3.6 | 2.7 | 0 | 0.209 | 0.005 | 0.539 | 0.281 | 0.006 | 0.035 | 3 | 0.0 | 2.8 | sign disagreement |
