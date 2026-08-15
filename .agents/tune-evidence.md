@@ -105,6 +105,12 @@ the output to choose a bounded road-test candidate.
   0.19-0.20 s and achieved acceleration reached 80% in 0.64-0.66 s. Radar's two downhill
   applications had a median duration of 10.86 s and median achieved-accel 80% time of 8.08 s.
   The gap is both WHEN and HOW.
+- **Upstream stock is a measured control, not the recovery candidate.** Master route
+  `00000024--5c888c605c` (opendbc `44f2987cb6ed`) produced 98 downhill edges in 0.906 min
+  (108.2/min, peak 25/10 s), versus 2 in 1.057 min on `ody-op` route
+  `00000026--bfe3fd933b` (1.9/min, peak 3/10 s). The current upstream pin `c536b211b762` retains
+  the same relevant raw-accel, fixed -0.20 Honda Bosch split. Resetting the driving candidate to
+  upstream stock would therefore restore the worst logged version of this symptom.
 - **Attribution on routes `3f`/`40`:** the pulse clusters were cruise-plan requests crossing the
   raw -0.40 entry. Planner-to-carControl RMS was 0.0067/0.0101 m/s2. The car port converted those
   small crossings into `BRAKE_REQUEST`; its shaper started at -0.20 and reached the shallow
@@ -114,8 +120,10 @@ the output to choose a bounded road-test candidate.
   road benefit, so neither it nor the raw -0.40/direct-release stack carries into `ody-op-test2`.
 - **`ody-op-test2` is a one-variable reset from `ody-op`.** It keeps the recovery branch's
   compensated entry/release, brake PID, gas path, and thresholds. Only ordinary road-speed onset
-  changes: first `ACCEL_COMMAND=0.0`, then 0.20 m/s3 toward the request; requests <=-1.5 m/s2,
-  stopping, and speeds below 10 m/s bypass shaping. The radar values size a bounded test, not a
+  changes: first `ACCEL_COMMAND=-0.10`, then no faster than 0.60 m/s3 toward the request; requests
+  <=-1.5 m/s2, stopping, and speeds below 10 m/s bypass shaping. On matched radar route `3b`, the
+  two downhill entries started at -0.08 and 0.00; the first progressed to -0.40 after 0.5 s while
+  the second remained at 0.00 through 0.5 s. The radar values bracket a bounded test, not a
   claim that proprietary Honda target selection has been reproduced.
 - **Archived stock-radar evidence establishes semantics, not calibration.** OEM-long routes
   `00000012--36525474db` and `00000013--dd070c2142` contain repeated 0.66-1.73 s coast runs at mild

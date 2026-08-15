@@ -84,12 +84,19 @@ downhill applications had a median duration of 10.86 s and median achieved-accel
 a pulse-braking fix, and the `ody-op-test` stack is closed without promotion.
 
 `ody-op-test2` starts fresh from `ody-op` and changes only the first ordinary road-speed
-`ACCEL_COMMAND`: begin at neutral and progress at 0.20 m/s3 toward the request. Requests at or below
+`ACCEL_COMMAND`: begin at -0.10 m/s2 and progress at no more than 0.60 m/s3 toward the request.
+Matched radar route `3b` entered its two downhill episodes at -0.08 and 0.00; its first reached
+-0.40 after 0.5 s. These values bracket a test candidate, not a claimed stock control law. Requests at or below
 -1.5 m/s2, low-speed control, and stopping retain immediate authority. It does not change
 `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, brake PID, compensated domain selection,
 gasfactor, windfactor, or gas eligibility. This is software-verified only until controlled
 maneuvers and a terrain-matched road drive show gradual onset without late braking, longer stops,
 descent overspeed, or added interventions. Episode frequency remains a separate question.
+
+Do not substitute upstream-stock Honda longitudinal as the recovery baseline. Full-rate master
+route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s, versus 1.9/min and
+peak 3/10 s on `ody-op` route `00000026--bfe3fd933b`. The current upstream-pinned Honda path still
+uses the same raw request and fixed -0.20 split, so that comparison remains behaviorally relevant.
 
 Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, exposure-qualified,
 per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
