@@ -292,7 +292,7 @@ def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitc
 
 def brake_release_hold_metrics(switch_accel, entry_threshold, requested, actual_accel,
                                brake_request, active, *, dt):
-  """Measure braking retained after the compensated input clears the entry threshold."""
+  """Measure braking retained after the production domain input clears its entry threshold."""
   hold = active & brake_request & (switch_accel >= entry_threshold)
   edges = np.diff(hold.astype(np.int8), prepend=0, append=0)
   starts = np.flatnonzero(edges == 1)
@@ -314,7 +314,7 @@ def descent_hold_metrics(requested, brake_request, long_active, pitch, *,
                          request_threshold, downhill_pitch, min_episode_s, dt):
   """Count the road gate's unit directly: descent hold-episodes.
 
-  The BRAKE_DOMAIN_ENTRY road gate (restated 2026-08-06) is scored in episodes of
+  The historical domain-entry road gate (restated 2026-08-06) is scored in episodes of
   ``longActive & request > threshold & BRAKE_REQUEST & pitch < downhill_pitch`` lasting at least
   ``min_episode_s``. Until this existed the gate was scored by ad-hoc offline analysis, and the
   hand-summed totals in the evidence doc drifted (12 + 13 was recorded as 26). Same underlying

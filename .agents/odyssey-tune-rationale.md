@@ -12,21 +12,20 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
-- Filtered pitch and learned aerodynamic drag feed gas forward and, above 5 m/s on `ody-op`,
-  participate in the compensated domain decision. They never add brake authority to
-  `ACCEL_COMMAND`. The controller and validator share `odyssey_domain_switch_accel`, so a future
-  experiment cannot silently change one model without the other.
-- Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. Our supplemental
-  controller is integral-only and one-sided: it may add braking but cannot reduce Honda's request.
+- Filtered pitch and learned aerodynamic drag feed the opaque gas command. On `ody-op-test2` they
+  cannot select the brake domain or change `ACCEL_COMMAND`; the validator models the same upstream
+  raw-request split used by `hondacan`.
+- Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. The fresh
+  `ody-op-test2` brake path therefore adds no second controller.
 - `ody-op` retains `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, compensated road-speed
   switching, and its one-sided brake integral. `ody-op-test` is frozen after its stacked coast,
   threshold, integral, onset, and release experiments failed the reported downhill symptom.
-- `ody-op-test2` changes only ordinary road-speed brake onset: -0.10 m/s2 first command, then no
-  faster than 0.60 m/s3 toward the request. Matched radar route `3b` entered its two downhill
-  episodes at -0.08 and 0.00; its first reached -0.40 after 0.5 s. Requests at or below -1.5 m/s2,
-  stopping, and control below 10 m/s retain immediate authority.
-- Brake-PID and gas-ramp state reset while longitudinal control is inactive. Gas ramp state also
-  resets while braking, keeping every inactive-to-live `GAS_COMMAND` handoff at <=60.
+- `ody-op-test2` removes the unproven custom brake PID, compensated threshold, release hysteresis,
+  and onset shaping. Its clipped `ACCEL_COMMAND` and raw-request gas/brake split match upstream
+  Honda source semantics. This is a clean reference, not a comfort claim; logged upstream stock
+  remains the worst downhill-cycling control.
+- Gas ramp state resets while longitudinal gas is inactive, keeping every inactive-to-live
+  `GAS_COMMAND` handoff at <=60.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
   other Honda interfaces in the same process.
 - `.agents/analyze_radar_commands.py` is the offline stock-radar reverse-engineering tool. It
@@ -79,18 +78,20 @@ a substitute for current code, DBC semantics, or full-rate logs.
   upstream of the Honda port. Low-speed excess decel has primarily appeared after correct CAN output,
   in Honda's actuator response. Neither symptom justifies more port brake authority.
 - Windfactor is speed-adaptive but not independently identifiable from gasfactor and grade in ordinary
-  logs. Its value is therefore unproven, not "confirmed not dead." Finish the onset-shape arm
-  before comparing an evidence-derived fixed drag factor with a gas-active-only shadow learner.
-  Since gasfactor and windfactor currently learn from the same error, freeze or partition gasfactor
-  learning during drag identification; tighter windfactor gates alone do not make two coupled
-  parameters identifiable. Treat further wind learning as a separate architecture experiment.
+  logs. Its value is therefore unproven, not "confirmed not dead" and not part of the known-good set.
+  It remains unchanged on this branch only to keep the fresh brake-source reference from also changing
+  gas behavior. Any removal or replacement is a separate architecture experiment; freeze or partition
+  gasfactor during drag identification because the current learners use the same error.
+- The bounded onset shaper was withdrawn before road validation when the calibration audit found
+  that every numeric brake value in that stack was still provisional. Its `-0.10`, `0.60 m/s3`,
+  `10 m/s`, and `-1.5 m/s2` values remain historical hypotheses, not retained behavior.
 
 ## Validation and reopening criteria
 
 - `ody-op` remains the recovery and shared-tooling branch; stock Honda radar remains the road
-  fallback. `ody-op-test` is a frozen failed snapshot. `ody-op-test2` is the unvalidated onset-only
-  candidate. Compare it on the same terrain against radar and `ody-op`, and group openpilot
-  evidence by resolved `opendbc_commit`.
+  fallback. `ody-op-test` is a frozen failed snapshot. `ody-op-test2` is now a software-only clean
+  brake-source reference, not an onset candidate or presumed improvement. Compare any future road
+  evidence on the same terrain against radar and `ody-op`, grouped by resolved `opendbc_commit`.
 - Keep the official lateral and longitudinal maneuver routes plus ordinary-road full-rate rlogs
   private and retained. `.agents/log-validation-ledger.jsonl` is the compact evidence index.
 - Reopen tuning only for a repeatable symptom whose first divergence is inside the Honda controller
