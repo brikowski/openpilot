@@ -21,9 +21,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - `ody-op` retains `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, compensated road-speed
   switching, and its one-sided brake integral. `ody-op-test` is frozen after its stacked coast,
   threshold, integral, onset, and release experiments failed the reported downhill symptom.
-- `ody-op-test2` changes only ordinary road-speed brake onset: neutral first command, then a
-  0.20 m/s3 progression toward the request. Requests at or below -1.5 m/s2, stopping, and control
-  below 10 m/s retain immediate authority.
+- `ody-op-test2` changes only ordinary road-speed brake onset: -0.10 m/s2 first command, then no
+  faster than 0.60 m/s3 toward the request. Matched radar route `3b` entered its two downhill
+  episodes at -0.08 and 0.00; its first reached -0.40 after 0.5 s. Requests at or below -1.5 m/s2,
+  stopping, and control below 10 m/s retain immediate authority.
 - Brake-PID and gas-ramp state reset while longitudinal control is inactive. Gas ramp state also
   resets while braking, keeping every inactive-to-live `GAS_COMMAND` handoff at <=60.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
