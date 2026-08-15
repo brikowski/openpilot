@@ -10,6 +10,7 @@ import validate_log
 from validate_log import (
   ODYSSEY,
   _base_route,
+  _domain_model,
   _suggest_status_rows,
   write_ledger_md,
 )
@@ -58,6 +59,34 @@ def test_brake_episode_metrics_distinguish_progressive_and_sudden_onsets():
   assert slow["brake_episode_ramp80_median"] > 2.0
   assert fast["brake_episode_ramp80_median"] < 0.5
   assert fast["brake_episode_onset_jerk_median"] < slow["brake_episode_onset_jerk_median"]
+
+
+def test_domain_model_selects_exact_opendbc_source_semantics():
+  requested = np.full(200, -0.10)
+  speed = np.array([4.0] * 100 + [20.0] * 100)
+  pitch = np.full(200, -0.05)
+  windfactor = np.full(200, 0.5)
+
+  switch, threshold, valid, note = _domain_model(
+    "f6e4f07bdc61", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid and note == "raw upstream split"
+  np.testing.assert_array_equal(switch, requested)
+  np.testing.assert_array_equal(threshold, np.full(200, -0.20))
+
+  switch, threshold, valid, note = _domain_model(
+    "e29fe3dccd09", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid and note == "legacy compensated ody-op split"
+  assert switch[0] == requested[0]
+  assert switch[-1] < requested[-1]
+  np.testing.assert_allclose(threshold[[0, -1]], np.array([0.01, -0.30]))
+
+  switch, threshold, valid, note = _domain_model(
+    "unknown", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert switch is threshold is None
+  assert not valid and "unmapped" in note
 
 
 def test_gasfactor_breakpoint_uses_same_frame_seed_and_narrow_window():

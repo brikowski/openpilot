@@ -61,6 +61,12 @@ the output to choose a bounded road-test candidate.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
 ## Current Validation Arm (reset 2026-08-14)
+- **Fresh brake-source reset (2026-08-14).** `ody-op-test2` no longer carries a supplemental brake
+  PID, compensated entry threshold, stateful release hysteresis, or onset shaper. It sends the
+  clipped controller request as `ACCEL_COMMAND` and uses Honda's upstream raw-request split at the
+  live gas-lookup floor. The road-validated `<=60` inactive-to-live gas ramp and supported Odyssey
+  gasfactor calibration remain; windfactor stays gas-side and explicitly unproven. This is a clean
+  source reference, not a claim of improved road behavior, and it has not been deployed or driven.
 - **The two-state threshold/width arm is CLOSED without promotion.** Entry=-0.30,width=0.50 sharply
   reduced descent transitions versus master but held the brake domain through positive requests
   and produced sustained underspeed. The split width=0.20 retest on routes
@@ -118,13 +124,10 @@ the output to choose a bounded road-test candidate.
   torque, and amplified achieved jerk. The first discontinuity was the domain state; the shaper was
   also much faster than radar. `BRAKE_PID_KI=0` cannot explain the pulses and has no isolated matched
   road benefit, so neither it nor the raw -0.40/direct-release stack carries into `ody-op-test2`.
-- **`ody-op-test2` is a one-variable reset from `ody-op`.** It keeps the recovery branch's
-  compensated entry/release, brake PID, gas path, and thresholds. Only ordinary road-speed onset
-  changes: first `ACCEL_COMMAND=-0.10`, then no faster than 0.60 m/s3 toward the request; requests
-  <=-1.5 m/s2, stopping, and speeds below 10 m/s bypass shaping. On matched radar route `3b`, the
-  two downhill entries started at -0.08 and 0.00; the first progressed to -0.40 after 0.5 s while
-  the second remained at 0.00 through 0.5 s. The radar values bracket a bounded test, not a
-  claim that proprietary Honda target selection has been reproduced.
+- **The onset-only `ody-op-test2` design was withdrawn before road validation.** It would have
+  started `ACCEL_COMMAND` at -0.10 and progressed at 0.60 m/s3, with -1.5 m/s2, stopping, and
+  10 m/s bypasses. Those values were bracketed by only two matched-radar downhill entries and were
+  never proven on this vehicle. They remain historical command-shape rationale, not live behavior.
 - **Archived stock-radar evidence establishes semantics, not calibration.** OEM-long routes
   `00000012--36525474db` and `00000013--dd070c2142` contain repeated 0.66-1.73 s coast runs at mild
   `ACCEL_COMMAND` (roughly -0.1 to -0.3), usually gas-to-coast-to-gas and once
@@ -136,9 +139,10 @@ the output to choose a bounded road-test candidate.
   entries per route, while preserving `ACCEL_COMMAND` through the coast state. The recorded aEgo
   still belongs to the old controller, and replay/request error changed materially on three routes;
   do not use these counts or jerk values as a road prediction.
-- **The frozen-input `BRAKE_PID_KI=0` ablation is not retained.** Its replay-only command-shape
-  change was stacked with later mechanisms and never earned an isolated matched road conclusion.
-  Windfactor identification remains parked because its learner is coupled to gasfactor.
+- **No custom brake PID is retained.** The earlier `BRAKE_PID_KI=0` replay ablation was not road
+  proof; the fresh reset instead follows the independently verified upstream Bosch constraint that
+  Honda closes the acceleration loop and the port should not stack another controller. Windfactor
+  identification remains parked because its learner is coupled to gasfactor.
 - **Historical pooling note:** entry=-0.30,width=0.50 hashes `c1ce76fa857a`, `14677d814cb2`, and
   `2cc9d0df854d` are behavior-equivalent. Their 19/20 interim gate and later route evidence describe
   the now-closed 0.50 arm and must not be pooled with the failed 0.20-width retest.
@@ -161,7 +165,7 @@ the output to choose a bounded road-test candidate.
   (0.0670/0.0649 RMS), residual lag (0.11/0.12 s), and live delay (0.372/0.374 s), with no lane
   departure warnings. With no isolated benefit, `steerActuatorDelay` returned from 0.20 to stock
   0.15. Reopen only for a logged lateral symptom; `validate_log` deliberately has no lateral checks.
-- **Windfactor identification — PARKED, not part of this arm**: logs show windfactor can move while gas is not commanded. Do not change its gates during the onset-shape arm; any future experiment must be isolated so attribution stays possible.
+- **Windfactor identification — PARKED, not part of this arm**: logs show windfactor can move while gas is not commanded. It is not known-good behavior; it remains unchanged only to isolate the brake-source reset. Any removal or replacement must be an independent gas-side experiment so attribution stays possible.
   - **Offline shadow added 2026-08-01:** the validator now replays the same sign-only learner only
     on live gas commands with neither pedal pressed, away from actuator rails, above 15 m/s, and
     at steady speed/grade. Four substantial current-logic routes (`0000003c`, `0000003e`,
@@ -175,18 +179,18 @@ the output to choose a bounded road-test candidate.
 
 ## Ordered Longitudinal Evidence Queue (agreed 2026-07-31)
 Apply this order as new logs arrive; do not skip ahead because a later idea is easy to code. Lateral
-is stock unless a logged symptom reopens it. Close the onset-shape arm before changing brake PID,
-gasfactor, or windfactor.
+is stock unless a logged symptom reopens it. The onset-shape and custom brake-PID questions are
+closed by removal; do not couple the remaining gasfactor and windfactor work to a new brake arm.
 
-1. **Road-test the onset-only `ody-op-test2` against stock Honda radar and `ody-op` on matched
-   terrain.** Inspect first command, time to 80% depth, physical `BRAKE_REQUEST` edges, achieved
-   jerk, set-speed error, intervention rate, and raw Jotpluggler traces. Reject for late braking,
-   longer stops, descent overspeed, or no meaningful onset-shape improvement. Episode frequency is
-   reported but is not a knob in this arm.
-2. **Evaluate a gas-active-only shadow windfactor.** First calculate it without changing commands. Learn
+1. **Do not treat the fresh `ody-op-test2` reset as an improvement candidate.** If deliberately
+   driven, use a controlled reference route against stock Honda radar and `ody-op`; inspect command
+   passthrough, physical `BRAKE_REQUEST` edges, achieved jerk, set-speed error, interventions, and
+   raw traces. Its purpose is to establish a clean source baseline before proposing one new brake
+   mechanism, not to re-prove that upstream stock pulses on descents.
+2. **Evaluate a gas-active-only shadow windfactor as a separate gas-side arm.** First calculate it without changing commands. Learn
    only while `GAS_COMMAND` is live in the gas domain, neither pedal is pressed, the command is away from
    saturation, and speed/grade are sufficiently steady. Compare stability and following error with the
-   existing learner; promote it only as its own isolated road arm after the onset-shape arm closes.
+   existing learner; promote, replace, or remove it only in its own isolated road arm.
 3. **Consider Toyota-style predictive brake-integrator winddown only if overshoot repeats.** Require the
    brake-PID overshoot check to recur on at least 2 substantial, comparable recent routes and agree with a
    controlled brake maneuver. Adapt only future-error/integral winddown to the one-sided supplemental

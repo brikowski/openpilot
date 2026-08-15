@@ -12,7 +12,8 @@ test branch. Keep parent and nested opendbc branches paired.
 
 `ody-op-test` is a frozen failed experiment. Do not add commits to it or treat its coast interlock,
 raw `-0.40` entry, zero brake integral, onset shaper, or direct brake release as accepted knowledge.
-`ody-op-test2` is the active child and changes only ordinary road-speed brake onset shape.
+`ody-op-test2` is the active child and resets the complete brake-command path to upstream Honda
+source semantics while leaving the existing gas path unchanged for clean attribution.
 
 Lateral is **stock and closed**: LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.15`.
 The former 0.20 s fallback had no isolated road benefit, so it was retired rather than kept as an
@@ -83,17 +84,22 @@ downhill applications had a median duration of 10.86 s and median achieved-accel
 8.08 s. The gap is both episode frequency and onset shape. A one-command coast interlock is not
 a pulse-braking fix, and the `ody-op-test` stack is closed without promotion.
 
-`ody-op-test2` starts fresh from `ody-op` and changes only the first ordinary road-speed
-`ACCEL_COMMAND`: begin at -0.10 m/s2 and progress at no more than 0.60 m/s3 toward the request.
-Matched radar route `3b` entered its two downhill episodes at -0.08 and 0.00; its first reached
--0.40 after 0.5 s. These values bracket a test candidate, not a claimed stock control law. Requests at or below
--1.5 m/s2, low-speed control, and stopping retain immediate authority. It does not change
-`BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, brake PID, compensated domain selection,
-gasfactor, windfactor, or gas eligibility. This is software-verified only until controlled
-maneuvers and a terrain-matched road drive show gradual onset without late braking, longer stops,
-descent overspeed, or added interventions. Episode frequency remains a separate question.
+`ody-op-test2` is now the fresh brake-source baseline. It removes every unproven custom brake
+calibration: supplemental integral braking, compensated entry, stateful release hysteresis, and
+onset shaping. `ACCEL_COMMAND` is the clipped controller request, and Honda's upstream raw-request
+split at the live gas-lookup floor chooses the command domain. This is a source reference, not a
+claim that stock braking is comfortable: master route `00000024--5c888c605c` measured 108.2
+downhill edges/min. Do not deploy it as an improvement without an explicit controlled-reference
+test plan.
 
-Do not substitute upstream-stock Honda longitudinal as the recovery baseline. Full-rate master
+The retained custom longitudinal behavior is outside brake authority: the road-supported Odyssey
+gasfactor calibration and the validated `<=60` inactive-to-live gas ramp. Gas and brake remain
+mutually exclusive, disengagement emits no longitudinal command, Panda bounds command magnitude,
+and positive stop-release requests select gas immediately. Windfactor remains an explicitly
+unproven gas-side learner and is not allowed to choose the brake domain; audit it separately rather
+than coupling a powertrain rewrite to this brake reset.
+
+Do not substitute this stock-semantics reset for the `ody-op` recovery branch. Full-rate master
 route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s, versus 1.9/min and
 peak 3/10 s on `ody-op` route `00000026--bfe3fd933b`. The current upstream-pinned Honda path still
 uses the same raw request and fixed -0.20 split, so that comparison remains behaviorally relevant.
@@ -102,7 +108,7 @@ Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, expos
 per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
 
 The production windfactor learner is not independently identified from the gasfactor learner and
-grade compensation. Do not call it validated or change it while the onset-shape arm is open. Once
-that arm closes, compare an evidence-derived fixed drag factor with a shadow learner restricted to
-live gas, no pedals, no saturation, and steady high-speed/grade windows. Because both learners use
-the same tracking error, freeze or partition gasfactor learning during windfactor identification.
+grade compensation. Do not call it validated or include it among the known-good behavior. It is
+carried unchanged only so the fresh brake-source reference does not also become a gas-powertrain
+experiment. Any removal or replacement must be its own arm, with gasfactor frozen or partitioned
+during identification because both learners use the same tracking error.

@@ -21,10 +21,8 @@ from openpilot.common.hardware.hw import Paths
 # Compare learned gas factors against the LIVE seed table, so if the seed is retuned this
 # metric automatically measures against the new values instead of a stale copy.
 from opendbc.car.honda.carcontroller import (
-  BRAKE_DOMAIN_ENTRY,
   GAS_FACTOR_SPEED_BP,
   GAS_FACTOR_SPEED_V,
-  odyssey_domain_switch_accel,
 )
 # Same reason: read the interface accel rails from the live params, not a copied number.
 from opendbc.car.honda.values import CarControllerParams as HondaParams
@@ -91,9 +89,8 @@ JERK_BIND_MIN_RUN = 5         # consecutive frames (~50ms) sustained over cap = 
 # aEgo, no car response, nothing the model or Honda's ECU owns. longitudinalPlan.aTarget is one
 # stage upstream and is deliberately not substituted for the CarController input.
 FOLLOW_GAS_RMS_LIMIT = 0.05   # RMS(ACCEL_COMMAND - carControl accel) in gas domain (measured ~0.011)
-FOLLOW_BRAKE_RMS_REGRESSION = 0.15  # brake domain diverges BY DESIGN (brake_pid supplements Honda's
-                              # mushy brake), so this is a regression bound, not a target. Measured
-                              # 0.041-0.109 across 12 drives; the mean is the number to watch.
+FOLLOW_BRAKE_RMS_PASSTHROUGH = 0.05  # Fresh test2 has no port-added brake authority.
+FOLLOW_BRAKE_RMS_LEGACY = 0.15       # ody-op intentionally carries its historical supplement.
 SIGN_DISAGREE_REQUEST = 0.02  # m/s^2 above which the controller input genuinely asks acceleration
 SIGN_DISAGREE_NON_GRADE_FLAG = 0.01  # >1% sustained away from descents = unexplained domain hold
 SIGN_DISAGREE_MAG_FLAG = 0.50  # m/s^2: route 34 stale-state failure was -2.04; healthy grade holds
@@ -109,10 +106,9 @@ GAS_INACTIVE = -30000        # MUST track honda/hondacan.py create_acc_commands.
 GAS_RAMP_STEP = 60           # MUST track the Odyssey ramp in honda/carcontroller.py.
 REENGAGE_WINDOW_S = 0.50      # route 34 leaked stale brake for 0.20s after longitudinal re-entry
 REENGAGE_STALE_SEC_FLAG = 0.10
-LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: MUST track odyssey_domain_switch_accel's low-speed boundary
-                              # (raw accel below 5 m/s, and the lower knee of
-                              # both the min_gas_accel and DOMAIN_HYST_EXIT interps). Deliberately
-                              # NOT FOLLOW_MIN_VEGO - that one is a "is following a meaningful
+LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: region where an incorrect handoff can interfere with an
+                              # engaged stop or start. Deliberately NOT FOLLOW_MIN_VEGO - that is
+                              # an "is following a meaningful
                               # question" gate at 3.0, and using it here silently blinded the check
                               # to the 3-5 m/s part of the very region the bug lived in.
 STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
@@ -126,7 +122,7 @@ STOP_LURCH_PORT_FLAG = 0.15    # m/s^2 of the stop lurch owned by the CAR PORT
                                # Honda actuator reached 2.744, so 0.15 is ~2.6x the observed
                                # port maximum and fires on 0 of 9. Grading the TOTAL instead fired
                                # on 17 of 24 drives for a symptom tune-evidence.md says not to tune
-                               # against. Re-derive if brake_pid's authority ever changes.
+                               # against. Re-derive if the port ever regains supplemental authority.
 STOP_LURCH_MIN_VEGO = 0.25     # m/s: below longcontrol's stopping threshold, standstill velocity/
                                # IMU noise can report a decel while the van is already stationary.
 HARSH_FELT_JERK_RMS = 0.35    # m/s^3: RMS jerk of ACHIEVED accel while engaged. This is what the
@@ -138,10 +134,19 @@ DOWNHILL_PITCH = -0.012       # rad (~-0.7 deg / -1.2% grade, -0.12 m/s^2 of hil
                               # breakout, where the defect concentrates (10-66 toggles/min vs 2.4 overall)
 DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode is >=0.5 s of
                               # longActive & request > 0.02 & BRAKE_REQUEST & pitch < DOWNHILL_PITCH
-DOMAIN_PITCH_FILTER_TAU = 0.5  # MUST track the Odyssey FirstOrderFilter in carcontroller.py.
+DOMAIN_PITCH_FILTER_TAU = 0.5  # Legacy ody-op compensated-domain model.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
-
+RAW_DOMAIN_COMMITS = {
+  "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
+  "44f2987cb6ed",  # upstream stock comparison routes
+}
+COMPENSATED_DOMAIN_COMMITS = {
+  "13cfc73646e1",  # ody-op telemetry cleanup, 0.50 release width
+  "d18a8fd538d4",  # ody-op narrower-release candidate
+  "e29fe3dccd09",  # current ody-op recovery baseline
+  "dda5a5ed19a7",  # withdrawn test2 onset shaper on the ody-op domain model
+}
 # --- gas-active-only shadow windfactor (read-only; never changes recorded commands) ---
 # These mirror the inline production drag/learner constants in honda/carcontroller.py. Keeping the
 # shadow here is deliberate: it must earn a stable result on frozen logs before any production gate
@@ -228,6 +233,21 @@ def _series(msgs, which, extract):
   return np.array(out_t), np.array(out_v, dtype=float)
 
 
+def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
+  """Return the source-matched Odyssey domain input without importing branch-specific helpers."""
+  commit = (opendbc_commit or "")[:12]
+  if commit in RAW_DOMAIN_COMMITS:
+    return requested, np.full_like(requested, HondaParams.BOSCH_GAS_LOOKUP_BP[0]), True, "raw upstream split"
+  if commit in COMPENSATED_DOMAIN_COMMITS:
+    filtered_pitch = _causal_lpf(pitch, dt, DOMAIN_PITCH_FILTER_TAU, initial=0.0)
+    base_drag = np.interp(speed, DOMAIN_WIND_SPEED_BP, DOMAIN_WIND_BRAKE_V)
+    gas_pedal_force = requested + base_drag * windfactor + np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY
+    switch_accel = np.where(speed < LOW_SPEED_DOMAIN_VEGO, requested, gas_pedal_force)
+    entry_threshold = np.interp(speed, [5.0, 10.0], [0.01, -0.30])
+    return switch_accel, entry_threshold, True, "legacy compensated ody-op split"
+  return None, None, False, f"unmapped opendbc commit {commit or '?'}"
+
+
 def _jerk(smoothed, dt, active):
   """Windowed central-slope derivative of an already-smoothed accel signal, gated to engaged
   frames. Differentiate over ~JERK_WIN_S rather than adjacent frames: the command updates at 50Hz
@@ -283,6 +303,8 @@ def _provenance(msgs):
 
 def analyze(msgs, platform):
   r = {"platform": platform, "notes": []}
+  provenance = _provenance(msgs)
+  r.update(provenance)
 
   # --- gather series on their native timebases ---
   t_cc, cc_accel = _series(msgs, "carControl", lambda m: m.carControl.actuators.accel)
@@ -373,9 +395,9 @@ def analyze(msgs, platform):
     r["track_rms_plan"] = None
     r["plan_override_rms"] = None
 
-  # passthrough: wire should equal the CarController input in the GAS domain (brake_pid
-  # intentionally diverges the wire in the brake domain, so exclude those frames)
-  brake_added = wire < (cc_accel - 0.02)   # empirical brake-domain (brake_pid acted)
+  # Passthrough should now hold in both domains. Preserve the historical gas-domain metric by
+  # excluding frames where an older controller added material braking.
+  brake_added = wire < (cc_accel - 0.02)
   gas_dom = active & ~brake_added
   if gas_dom.sum() > 10:
     r["passthrough_rms"] = float(np.sqrt(np.nanmean((wire[gas_dom] - cc_accel[gas_dom]) ** 2)))
@@ -457,7 +479,7 @@ def analyze(msgs, platform):
     r["rail_lo_frac"] = float((active & (wire <= HondaParams.BOSCH_ACCEL_MIN + RAIL_EPS)).sum() / active.sum())
 
   # === watchlist symptoms (Odyssey telemetry semantics) ===
-  # 1. brake_pid overshoot -> Toyota future-error winddown.
+  # 1. Port-added braking. This should remain zero on the fresh stock-semantics brake path.
   #    CAREFUL - this must measure OUR controller, not the car's actuator. Naively comparing
   #    aEgo to the planner command flags "Honda's friction-brake actuator biting past our
   #    ACCEL_COMMAND setpoint", which is documented as NOT ours and NOT fixable (we have no
@@ -465,12 +487,11 @@ def analyze(msgs, platform):
   #    #2347 oscillation). Measured on route 00000001: that naive form flagged 7.1% of braking
   #    frames, but 4.6% were aEgo below the *wire* (pure actuator bite) and the mean
   #    (aEgo - planner) was +0.003, i.e. no systematic overshoot at all.
-  #    The actionable symptom is our integral-only brake_pid STILL ADDING brake while the car
-  #    is already decelerating past target - integral lag, exactly what Toyota's error_future
-  #    projection winds down sooner.
+  #    The actionable symptom is the port still sending more brake than requested while the car
+  #    is already decelerating past target.
   cmd_smooth = _causal_lpf(cc_accel, dt, JERK_SMOOTH_TAU)
   braking = pid & (cc_accel < -0.3)
-  brake_addon = wire - cc_accel                       # <0 = our brake_pid is adding brake
+  brake_addon = wire - cc_accel                       # <0 = the port is adding brake
   adding = brake_addon < -0.05
   already_past = aego < cc_accel - OVERSHOOT_MARGIN    # car already beyond commanded decel
   overshoot = braking & adding & already_past
@@ -544,16 +565,17 @@ def analyze(msgs, platform):
     #    defect concentrated on descents (10-66 toggles/min) vanished into a 2.4/min average.
     #    These ask the only question the car port is accountable for: did the wire carry what the
     #    CarController was asked? See _following.
-    r.update(_following(msgs, grid, cc_accel, active, pid, cc_pitch, vego, gaspressed,
-                        brakepressed, aego, gasf, windf, dt, (cc_stopping > 0.5) & active))
+    following = _following(msgs, grid, cc_accel, active, pid, cc_pitch, vego, gaspressed,
+                           brakepressed, aego, gasf, windf, dt, (cc_stopping > 0.5) & active,
+                           provenance.get("opendbc_commit"))
+    r.update(following)
+    if not following.get("domain_model_valid"):
+      r["notes"].append(f"DOMAIN MODEL SUPPRESSED: {following.get('domain_model_note')}")
 
   # device thermal - platform-independent, and survives qlog (deviceState is undecimated)
   r.update(_thermal(msgs))
   # real wall-clock start, so the cross-drive advisory can tell a park from a pit stop
   r.update(_wall_start(msgs))
-  # which code drove this row (branch/commit) - required for any A/B to be readable later
-  r.update(_provenance(msgs))
-
   return r
 
 
@@ -615,22 +637,20 @@ def _thermal(msgs):
 
 
 def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brakepressed,
-               aego, gasfactor, windfactor, dt, stop_state):
+               aego, gasfactor, windfactor, dt, stop_state, opendbc_commit):
   """DID THE CAR PORT FOLLOW ITS INPUT? - the question it is directly accountable for.
 
   controlsd passes carControl.actuators.accel into CarController.update; we put ACCEL_COMMAND on
   the wire. Any gap between those exact handoff signals is ours and nothing upstream can explain
   it. The wire is decoded from sent ACC_CONTROL on bus 1, not proxied off carOutput.
 
-  Deliberately measures the BRAKE domain, which `passthrough_rms` excludes. That exclusion was
-  justified as "brake_pid intentionally diverges the wire" - but intentional divergence is still
-  divergence, and it removed from measurement the only place we ever leave the model. It hid a
-  real defect for weeks: on descents the wire toggles BRAKE_REQUEST at up to 66/min against a
-  perfectly smooth request (driver-reported "tapping", routes 0000002f @ 07:50:57 and 08:18:53).
+  Deliberately measures the BRAKE domain, which the historical `passthrough_rms` excluded. The
+  fresh brake path should carry the controller request unchanged in both domains, so any material
+  gap is now a regression rather than an intentional supplement.
 
   Returns brake-domain following error, sign disagreement, lifecycle regressions, and physical
-  BRAKE_REQUEST burst metrics. A raw request-sign test cannot decide whether a transition was
-  "commanded": the Odyssey deliberately adds drag and grade before choosing its actuator domain.
+  BRAKE_REQUEST burst metrics. The fresh path's raw request and fixed upstream threshold supply the
+  exact domain-decision input below.
   """
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
          "brake_domain_frac": None, "coast_domain_frac": None,
@@ -665,6 +685,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "stop_jerk_worst": None, "stop_sec": None,
          "downhill_min": None, "downhill_toggles_per_min": None,
          "descent_hold_episodes": None, "descent_hold_sec": None, "descent_hold_longest": None,
+         "domain_model_valid": False, "domain_model_note": None,
+         "brake_passthrough_expected": False,
          "windf_shadow_eligible_min": None, "windf_shadow_start": None,
          "windf_shadow_end": None, "windf_shadow_min": None, "windf_shadow_max": None,
          "windf_shadow_drift": None, "windf_shadow_floor_frac": None,
@@ -770,13 +792,11 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     out["follow_gas_rms"] = float(np.sqrt(np.nanmean(err[gd] ** 2)))
   if bd.sum() > 50:
     out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[bd] ** 2)))
-    # One-signed by construction: target_accel = min(accel, accel + brake_addon), addon <= 0.
-    # So this is a direct readout of how much brake the brake_pid adds beyond the plan.
+    # Fresh brake semantics are passthrough, so a nonzero mean identifies port-side divergence.
     out["follow_brake_mean"] = float(np.nanmean(err[bd]))
 
-  # A positive request can lead the held 50 Hz command by one period, and a descent can correctly
-  # remain in the brake domain because the car-port switch includes gravity. Keep both visible,
-  # but grade only disagreement that survives transport grace away from a descent (or is huge).
+  # A positive request can lead the held 50 Hz command by one period. Keep transport skew visible
+  # while grading only disagreement that survives the command-period grace.
   out.update(sign_disagreement_metrics(
     requested, AC, BR, active, pitch,
     request_threshold=SIGN_DISAGREE_REQUEST,
@@ -785,22 +805,21 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     transition_grace_s=CAN_COMMAND_PERIOD_S,
   ))
 
-  # Use the production helper rather than mirroring its grade/raw decision here. Experiments that
-  # change the controller input then change this diagnostic in the same source edit.
-  filtered_pitch = _causal_lpf(pitch, dt, DOMAIN_PITCH_FILTER_TAU, initial=0.0)
-  base_drag = np.interp(vego_all, DOMAIN_WIND_SPEED_BP, DOMAIN_WIND_BRAKE_V)
-  gas_pedal_force = requested + base_drag * windfactor + np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY
-  switch_accel = odyssey_domain_switch_accel(requested, gas_pedal_force, vego_all)
-  entry_threshold = np.interp(vego_all, [5.0, 10.0], [0.01, BRAKE_DOMAIN_ENTRY])
-  out.update(brake_release_hold_metrics(
-    switch_accel, entry_threshold, requested, aego, BR, active,
-    dt=dt,
-  ))
+  switch_accel, entry_threshold, model_valid, model_note = _domain_model(
+    opendbc_commit, requested, vego_all, pitch, windfactor, dt,
+  )
+  out["domain_model_valid"] = model_valid
+  out["domain_model_note"] = model_note
+  out["brake_passthrough_expected"] = (opendbc_commit or "")[:12] in RAW_DOMAIN_COMMITS
+  if model_valid:
+    out.update(brake_release_hold_metrics(
+      switch_accel, entry_threshold, requested, aego, BR, active,
+      dt=dt,
+    ))
 
-  # Measure the driver-felt symptom directly: physical BRAKE_REQUEST bursts. Calling an edge
-  # "uncommanded" because raw accel did not cross zero is wrong on a grade; the controller's
-  # actuator decision intentionally includes pitch and drag. The known tapping route 2f produced
-  # 18 real edges in 10 s, failed BRAKE_RELEASE_HOLD produced 10, while 0.50 produced 2-4.
+  # Measure the driver-felt symptom directly: physical BRAKE_REQUEST bursts. The known tapping
+  # route 2f produced 18 real edges in 10 s, failed BRAKE_RELEASE_HOLD produced 10, while the
+  # historical 0.50 release width produced 2-4.
   brake_edges = _physical_edges(BR, active)
   brake_edge_times = grid[brake_edges]
   out["brake_toggle_edges"] = int(len(brake_edges))
@@ -855,8 +874,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     out["stop_jerk_worst"] = float(np.nanmax(np.abs(sj[stopping])))
     out["stop_sec"] = float(stopping.sum() * dt)
 
-  # Grade breakout. The defect concentrates on descents, where hill_brake = sin(pitch)*g drags
-  # gas_pedal_force across min_gas_accel and every crossing also resets brake_pid.
+  # Grade breakout. The symptom concentrates on descents even though the fresh domain decision is
+  # raw acceleration, so retain the terrain mask without asserting a mechanism.
   down = active & (pitch < DOWNHILL_PITCH)
   dn_min = down.sum() * dt / 60.0
   out["downhill_min"] = float(dn_min)
@@ -872,9 +891,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     out["downhill_windows"] = int(np.sum(np.diff(down.astype(np.int8), prepend=0) == 1))
     out["downhill_toggles_per_min"] = float(out["downhill_toggles"] / max(dn_min, 1e-3))
 
-  # Road-gate bookkeeping: score the BRAKE_DOMAIN_ENTRY arm in its own unit so pooling never
-  # falls back to hand arithmetic. Uses the UN-narrowed longActive mask (eng_all), matching the
-  # gate definition rather than the vEgo/brake-pressed following gate above.
+  # Preserve the historical positive-request descent-hold counter as a regression guard. A fresh
+  # raw-request split should report zero apart from command-period transport skew.
   out.update(descent_hold_metrics(
     requested, BR, eng_all, pitch,
     request_threshold=SIGN_DISAGREE_REQUEST,
@@ -942,11 +960,12 @@ def verdicts(r):
         f"{r['takeover_rate']:.1f}/10min engaged{suffix}",
         status="driver braking out of OP repeatedly - braking late or too weak" if not thin and r["takeover_rate"] > TAKEOVER_RATE_FLAG else None)
 
-  # watchlist -> each FLAG names its candidate tweak + status implication
-  add("brake_pid overshoot", r["overshoot_frac"] <= OVERSHOOT_FRAC_FLAG,
+  # Fresh test2 must not add braking; on historical/ody-op rows this remains a measured readout of
+  # the known supplemental controller rather than an assertion that it is absent.
+  add("port-added braking", r["overshoot_frac"] <= OVERSHOOT_FRAC_FLAG,
       f"{r['overshoot_frac']*100:.1f}% braking frames still adding past target "
       f"(addon mean {r.get('addon_mean', 0):+.3f}; Honda actuator bite {r.get('honda_bite_frac', 0)*100:.1f}% - NOT ours)",
-      status="Toyota future-error winddown" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
+      status="car port added brake authority" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
   add("creep at stop", r["creep_frames"] < CREEP_MIN_FRAMES,
       f"{r['creep_frames']} frames sustained",
       status="creep comp (NOT Ford subtraction - see tune-evidence.md)" if r["creep_frames"] >= CREEP_MIN_FRAMES else None)
@@ -962,9 +981,8 @@ def verdicts(r):
   # costs nothing), they just no longer produce a verdict. `wire_jerk_*` below measures
   # ACCEL_COMMAND and is the check that can actually see our code.
   if r.get("wire_jerk_max") is not None:
-    # Never flags: this is the A/B readout for brake-onset shaping, not a symptom. The planner
-    # check above measures our INPUT and is identical across branches; this measures what we
-    # actually put on the wire, so it is the only number that can move when the experiment lands.
+    # Never flags: this reports wire command shape separately from the planner input and achieved
+    # response, without assuming a particular shaping mechanism.
     add("wire jerk (A/B readout)", True,
         f"peak {r['wire_jerk_max']:.2f}, p99 {r['wire_jerk_p99']:.2f}, "
         f"onset mean {r['wire_jerk_onset_mean']:.2f} m/s^3 over {r['wire_jerk_onsets']} onsets")
@@ -981,13 +999,12 @@ def verdicts(r):
         status="wire diverging from the controller input where nothing should diverge"
                if r["follow_gas_rms"] > FOLLOW_GAS_RMS_LIMIT else None)
   if r.get("follow_brake_rms") is not None:
-    # Regression bound, not a target: brake_pid supplements Honda's mushy brake response BY
-    # DESIGN, so this is never zero. The mean is the number that matters - it is one-signed by
-    # construction (addon <= 0), so it reads out exactly how much extra brake we add.
-    add("following - brake domain", r["follow_brake_rms"] <= FOLLOW_BRAKE_RMS_REGRESSION,
+    passthrough = r.get("brake_passthrough_expected", False)
+    brake_limit = FOLLOW_BRAKE_RMS_PASSTHROUGH if passthrough else FOLLOW_BRAKE_RMS_LEGACY
+    add("following - brake domain", r["follow_brake_rms"] <= brake_limit,
         f"RMS {r['follow_brake_rms']:.4f}, mean {r['follow_brake_mean']:+.4f} m/s^2 extra brake "
-        f"({r['brake_domain_frac']*100:.0f}% of engaged frames in brake domain)",
-        status="brake_pid diverging further than designed" if r["follow_brake_rms"] > FOLLOW_BRAKE_RMS_REGRESSION else None)
+        f"({r['brake_domain_frac']*100:.0f}% of engaged frames in brake domain; <= {brake_limit:.2f})",
+        status="brake command diverging beyond its source-matched bound" if r["follow_brake_rms"] > brake_limit else None)
   if r.get("coast_domain_frac") is not None:
     coast_detail = f"{r['coast_domain_sec']:.2f}s over {r['coast_domain_events']} event(s) "
     coast_detail += f"({r['coast_domain_frac']*100:.1f}% of moving engaged frames); gas inactive, brake released"
@@ -1004,7 +1021,7 @@ def verdicts(r):
         f"{r['reengagement_events']} engagement(s), {r['reengagement_stale_sec']:.2f}s stale brake "
         f"over {r['reengagement_stale_events']} event(s), worst "
         f"{r['reengagement_stale_worst']:+.2f} m/s^2",
-        status="brake-domain state leaked across inactive control" if stale_bad else None)
+        status="brake command leaked across inactive control" if stale_bad else None)
   if r.get("gas_handoff_events"):
     handoff_bad = r["gas_handoff_max"] > GAS_RAMP_STEP + 0.5
     add("gas handoff ramp", not handoff_bad,
@@ -1012,8 +1029,7 @@ def verdicts(r):
         f"{r['gas_handoff_max']:.0f} counts (<= {GAS_RAMP_STEP})",
         status="gas ramp state advanced while GAS_COMMAND was ineligible" if handoff_bad else None)
   if r.get("direct_gas_to_brake") is not None:
-    # Diagnostic only. The frozen ody-op-test interlock intentionally suppressed gas-to-brake,
-    # but ody-op and the onset-only ody-op-test2 do not own that architecture.
+    # Diagnostic only. Direct handoffs are observations, not a claimed comfort invariant.
     add("direct gas/brake handoffs (diagnostic)", True,
         f"{r['direct_gas_to_brake']} gas-to-brake, {r['direct_brake_to_gas']} brake-to-gas above 5 m/s",
         status=None)
@@ -1066,15 +1082,14 @@ def verdicts(r):
     # the lurch is Honda's actuator bite and "do not tune against this metric" - a 71% flag rate on
     # a symptom nobody may act on is noise that also drives suggest_status promotions. The
     # car-port's contribution is already separated out as `stop_lurch_wire_extra`, so flag that and
-    # keep reporting the rest. This preserves a real regression guard: if brake_pid ever starts
-    # contributing at a stop, wire_extra grows and this goes red.
+    # keep reporting the rest. If the port adds braking at a stop, wire_extra grows and this goes red.
     lurch_bad = r.get("stop_lurch_wire_extra", 0.0) > STOP_LURCH_PORT_FLAG
     in_stop = r.get("stop_lurch_in_stopping")
     where = "" if in_stop is None else (" in longControlState=stopping" if in_stop
                                         else " in longControlState=pid (NOT the stopping ramp)")
     port_extra = r.get("stop_lurch_wire_extra", 0.0)
     actuator_extra = r.get("stop_lurch_actuator_extra", 0.0)
-    owner = ("car-port supplemental brake" if port_extra > actuator_extra
+    owner = ("car-port command" if port_extra > actuator_extra
              else "Honda actuator response")
     add("stop lurch (felt)", not lurch_bad,
         f"at {r['stop_lurch_speed']:.2f} m/s: request {r['stop_lurch_request']:+.2f}, "
