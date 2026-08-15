@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 OPENDBC = REPO / "opendbc_repo"
-ALLOWED_BRANCHES = {"ody-op", "ody-op-long"}
+ALLOWED_BRANCHES = {"ody-op", "ody-op-test2"}
 
 
 def run(args, *, cwd=REPO, check=True, capture=False, env=None):

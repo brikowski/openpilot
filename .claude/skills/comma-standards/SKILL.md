@@ -27,8 +27,10 @@ the active panda safety limits; an out-of-range message is rejected by the TX ho
 - Enabling Bosch openpilot longitudinal disables the radar/AEB path, as warned in `interface.py`.
 - Current Honda Bosch safety limits are `ACCEL_COMMAND` -3.5 to +2.0 m/s² and `GAS_COMMAND`
   -30000 inactive to 2000 maximum. Read both the DBC and `safety/modes/honda.h` before citing them.
-- Odyssey grade compensation also participates in the gas/brake domain decision. Preserve the
-  low-speed raw-controller-request path and re-verify pitch assumptions from logs before changing it.
+- The Odyssey domain decision comes from `odyssey_domain_switch_accel`, which also feeds the
+  validator. On `ody-op` it uses the raw controller request below 5 m/s and compensated force at
+  road speed. Change that helper—not a second mirrored model—and re-verify pitch assumptions from
+  logs before changing its behavior.
 
 ## Trust But Verify: Custom-Tune Comments
 Production comments should explain a non-obvious invariant or why the code differs from upstream.

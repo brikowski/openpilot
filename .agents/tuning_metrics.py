@@ -84,6 +84,82 @@ def windowed_jerk(smoothed, dt, active, window_s):
   return np.where(active & ~edge, jerk, 0.0)
 
 
+def brake_episode_metrics(grid, actual_accel, brake_request, controlling, brake_pressed, speed,
+                          pitch, *, min_speed, downhill_pitch, min_duration_s,
+                          smooth_tau, jerk_window_s):
+  """Describe complete computer-braking episodes using the achieved acceleration shape.
+
+  The same received ``BRAKE_REQUEST`` definition works for stock radar and openpilot. The caller
+  supplies the appropriate control mask, so this function does not guess who owned ACC_CONTROL.
+  """
+  grid = np.asarray(grid, dtype=float)
+  actual_accel = np.asarray(actual_accel, dtype=float)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  controlling = np.asarray(controlling, dtype=bool)
+  brake_pressed = np.asarray(brake_pressed, dtype=bool)
+  speed = np.asarray(speed, dtype=float)
+  pitch = np.asarray(pitch, dtype=float)
+  empty = {
+    "brake_episode_count": 0,
+    "brake_episode_duration_median": None,
+    "brake_episode_ramp80_median": None,
+    "brake_episode_onset_jerk_median": None,
+    "downhill_brake_episode_count": 0,
+    "downhill_brake_episode_duration_median": None,
+    "downhill_brake_episode_ramp80_median": None,
+  }
+  if len(grid) < 3:
+    return empty
+
+  dt = float(np.median(np.diff(grid)))
+  valid = (controlling & ~brake_pressed & np.isfinite(actual_accel) &
+           np.isfinite(speed) & np.isfinite(pitch))
+  computer_braking = brake_request & valid
+  starts = np.flatnonzero(np.diff(computer_braking.astype(np.int8), prepend=0) == 1)
+  ends = np.flatnonzero(np.diff(computer_braking.astype(np.int8), append=0) == -1) + 1
+  accel_smooth = causal_lpf(actual_accel, dt, smooth_tau)
+  jerk = windowed_jerk(accel_smooth, dt, valid, jerk_window_s)
+  rows = []
+  for start in starts:
+    later = ends[ends > start]
+    if not len(later):
+      continue
+    end = int(later[0])
+    duration = float(grid[end - 1] - grid[start])
+    if duration < min_duration_s or speed[start] < min_speed:
+      continue
+    segment = accel_smooth[start:end]
+    if not len(segment):
+      continue
+    initial = float(segment[0])
+    peak = float(np.nanmin(segment))
+    threshold = initial - 0.8 * (initial - peak)
+    reached = np.flatnonzero(segment <= threshold)
+    ramp80 = float(grid[start + reached[0]] - grid[start]) if len(reached) else None
+    onset_end = min(end, start + max(1, int(round(1.5 / dt))))
+    rows.append({
+      "duration": duration,
+      "ramp80": ramp80,
+      "onset_jerk": float(np.nanmin(jerk[start:onset_end])),
+      "downhill": bool(np.mean(pitch[start:end] < downhill_pitch) >= 0.5),
+    })
+
+  def median(key, selected):
+    values = [row[key] for row in selected if row[key] is not None]
+    return float(np.median(values)) if values else None
+
+  downhill = [row for row in rows if row["downhill"]]
+  return {
+    "brake_episode_count": len(rows),
+    "brake_episode_duration_median": median("duration", rows),
+    "brake_episode_ramp80_median": median("ramp80", rows),
+    "brake_episode_onset_jerk_median": median("onset_jerk", rows),
+    "downhill_brake_episode_count": len(downhill),
+    "downhill_brake_episode_duration_median": median("duration", downhill),
+    "downhill_brake_episode_ramp80_median": median("ramp80", downhill),
+  }
+
+
 def gas_handoff_values(gas_command, gas_inactive):
   """First live GAS_COMMAND after each physically adjacent inactive-to-live transition."""
   gas = np.asarray(gas_command)
@@ -142,6 +218,11 @@ def command_transition_metrics(grid, requested, engaged, vego, brake_pressed, br
                     brake_request & (gas_command <= gas_inactive))
 
   handoffs = gas_handoff_values(gas_command, gas_inactive)
+  gas_live = gas_command > gas_inactive
+  road_edge = (engaged[1:] & engaged[:-1] &
+               (vego[1:] > low_speed_vego) & (vego[:-1] > low_speed_vego))
+  gas_to_brake = road_edge & gas_live[:-1] & brake_request[1:]
+  brake_to_gas = road_edge & brake_request[:-1] & gas_live[1:]
   return {
     "low_speed_conflict_sec": float(sustained.sum() * dt),
     "low_speed_conflict_events": int(np.sum(np.diff(sustained.astype(np.int8), prepend=0) == 1)),
@@ -155,6 +236,8 @@ def command_transition_metrics(grid, requested, engaged, vego, brake_pressed, br
       float(np.nanmin(err[reengage_stale])) if reengage_stale.any() else 0.0),
     "gas_handoff_events": int(len(handoffs)),
     "gas_handoff_max": float(np.max(handoffs)) if len(handoffs) else None,
+    "direct_gas_to_brake": int(np.sum(gas_to_brake)),
+    "direct_brake_to_gas": int(np.sum(brake_to_gas)),
   }
 
 

@@ -12,7 +12,7 @@ import numpy as np
 
 from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.honda.carcontroller import BRAKE_DOMAIN_ENTRY, DOMAIN_HYST_EXIT
+from opendbc.car.honda.carcontroller import BRAKE_DOMAIN_ENTRY, DOMAIN_HYST_EXIT, odyssey_domain_switch_accel
 from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -85,6 +85,18 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_validator_domain_model_uses_controller_helper(self):
+    requested = np.array([-0.1, -0.1])
+    compensated = np.array([-0.6, -0.6])
+    speed = np.array([4.9, 5.1])
+
+    assert odyssey_domain_switch_accel(-0.1, -0.6, 4.9) == -0.1
+    assert odyssey_domain_switch_accel(-0.1, -0.6, 5.1) == -0.6
+    np.testing.assert_array_equal(
+      odyssey_domain_switch_accel(requested, compensated, speed),
+      np.array([-0.1, -0.6]),
+    )
+
   def test_alpha_long_available(self):
     """The tune is unreachable if the platform cannot get openpilot longitudinal."""
     assert _car_params().openpilotLongitudinalControl

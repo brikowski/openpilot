@@ -15,6 +15,7 @@ from validate_log import (
 )
 from tuning_metrics import (
   after_grace,
+  brake_episode_metrics,
   brake_release_hold_metrics,
   causal_lpf,
   command_transition_metrics,
@@ -28,6 +29,35 @@ from tuning_metrics import (
   sign_disagreement_metrics,
   stop_lurch_metrics,
 )
+
+
+def test_brake_episode_metrics_distinguish_progressive_and_sudden_onsets():
+  grid = np.arange(0.0, 6.0, 0.01)
+  brake = (grid >= 1.0) & (grid < 5.0)
+  common = {
+    "brake_request": brake,
+    "controlling": np.ones(len(grid), dtype=bool),
+    "brake_pressed": np.zeros(len(grid), dtype=bool),
+    "speed": np.full(len(grid), 20.0),
+    "pitch": np.full(len(grid), -0.02),
+    "min_speed": 5.0,
+    "downhill_pitch": -0.012,
+    "min_duration_s": 0.3,
+    "smooth_tau": 0.20,
+    "jerk_window_s": 0.10,
+  }
+  progressive = np.zeros(len(grid))
+  progressive[brake] = -np.minimum((grid[brake] - 1.0) / 3.0, 1.0)
+  sudden = np.zeros(len(grid))
+  sudden[brake] = -1.0
+
+  slow = brake_episode_metrics(grid, progressive, **common)
+  fast = brake_episode_metrics(grid, sudden, **common)
+
+  assert slow["brake_episode_count"] == slow["downhill_brake_episode_count"] == 1
+  assert slow["brake_episode_ramp80_median"] > 2.0
+  assert fast["brake_episode_ramp80_median"] < 0.5
+  assert fast["brake_episode_onset_jerk_median"] < slow["brake_episode_onset_jerk_median"]
 
 
 def test_gasfactor_breakpoint_uses_same_frame_seed_and_narrow_window():
@@ -179,6 +209,8 @@ def test_transition_golden_trace_accepts_transport_skew_and_60_count_handoff():
     "reengagement_stale_worst": 0.0,
     "gas_handoff_events": 1,
     "gas_handoff_max": 60.0,
+    "direct_gas_to_brake": 0,
+    "direct_brake_to_gas": 0,
   }
 
 
@@ -192,6 +224,27 @@ def test_transition_mutation_detects_latch_and_precharged_gas():
   assert metrics["reengagement_stale_events"] == 1
   assert metrics["gas_handoff_events"] == 1
   assert metrics["gas_handoff_max"] == 240.0
+
+
+def test_transition_mutation_detects_direct_domains_but_accepts_coast_interlock():
+  def run(brake, gas):
+    n = len(brake)
+    return command_transition_metrics(
+      np.arange(n, dtype=float) * 0.01, np.zeros(n), np.ones(n, dtype=bool),
+      np.full(n, 20.0), np.zeros(n, dtype=bool), np.array(brake, dtype=bool),
+      np.array(gas, dtype=float), np.zeros(n), low_speed_vego=5.0,
+      request_threshold=0.02, command_period_s=0.02, reengage_window_s=0.50,
+      gas_inactive=-30000,
+    )
+
+  direct = run([False, False, True, True, False], [60, 60, -30000, -30000, 60])
+  interlocked = run([False, False, False, True, False, False],
+                    [60, 60, -30000, -30000, -30000, 60])
+
+  assert direct["direct_gas_to_brake"] == 1
+  assert direct["direct_brake_to_gas"] == 1
+  assert interlocked["direct_gas_to_brake"] == 0
+  assert interlocked["direct_brake_to_gas"] == 0
 
 
 def test_sign_disagreement_ignores_transport_and_separates_downhill():

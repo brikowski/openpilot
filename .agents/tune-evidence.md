@@ -19,7 +19,8 @@ discovery.)
   requested, publish the child commit before the parent gitlink; pushing never implies deployment.
 - Rebase opendbc only onto the commit pinned by openpilot upstream. `.agents/sync_upstream.py` performs
   the compatible local pair rebase and never pushes; inspect source conflicts and the final Honda diff.
-- Keep parent and submodule on `ody-op`. The five VS Code tasks are intentionally limited to a
+- Keep the recovery/shared-tooling parent and submodule on `ody-op`; keep the onset-only child
+  paired on `ody-op-test2`. `ody-op-test` is a frozen failed snapshot. The five VS Code tasks are intentionally limited to a
   48-hour private log pull, Jotpluggler, Cabana, and explicit guarded deployments for openpilot and
   sunnypilot. There are no implicit sync, publish-only, maneuver, or generic validation tasks.
 
@@ -32,33 +33,107 @@ No one tool establishes that a tune is good. Use these layers in order, and keep
 4. **Raw attribution**: inspect flagged timestamps in the standard Jotpluggler layout; use Cabana when the question is raw CAN/DBC semantics. Decide whether the planner, car port, or Honda actuator owns the symptom before changing code.
 5. **Evidence rule**: change tuning only when controlled maneuvers and real-road evidence point the same way. Check provenance, compare the same `opendbc_commit`, require adequate exposure, and repeat the conclusion after dropping the most influential route.
 
+## Stock-radar command reverse-engineering tool
+
+Use `.agents/analyze_radar_commands.py` for command-shape analysis before proposing a gas-map or
+transition change. Supply at least two stock-radar routes for route-held-out validation and any
+OpenPilot routes to score against the pooled radar shadow:
+
+```bash
+uv run python .agents/analyze_radar_commands.py \
+  --stock-radar 0000002b--4882f84449 \
+  --stock-radar 0000003b--08f77bc5c3 \
+  --openpilot 00000038--5b6729c780 \
+  --openpilot 00000039--ae57d5ce6e \
+  --out /private/tmp/ody-radar-command-analysis.json \
+  --events /private/tmp/ody-radar-command-events.csv
+```
+
+The report keeps the raw 50 Hz `ACC_CONTROL` stream, integrity status, counter/checksum results,
+payload bit-change counts, domain transition timing, speed/acceleration cells, and a held-out
+model. This is not a calibration oracle: `GAS_COMMAND` is unitless/opaque, the fitted model is a
+shadow estimator, and replay/log fitting does not establish closed-loop ride quality. Preserve the
+`-30000` inactive sentinel, Honda safety rails, and the `<=60` first-live gas handoff while using
+the output to choose a bounded road-test candidate.
+
 - **Private log retention**: `pull_logs.py` retains full-rate local rlogs by default. Pruning is deliberately opt-in with `--prune-hours`; once both the device and local archive delete a route, new metrics cannot be backfilled. Official maneuver report generators accept these bare local route IDs, so comma connect publication is not required.
 - **Counterfactual replay boundary**: `replay_carcontroller.py` compares command shape on frozen recorded inputs. It can catch command-fidelity regressions without driving, but cannot predict closed-loop vehicle response or on-road BRAKE_REQUEST counts. Never promote a tuning change from replay alone.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
-## Current Validation Arm (opened 2026-08-11, last updated 2026-08-11)
-- **BRAKE_DOMAIN_ENTRY=-0.30, DOMAIN_HYST_EXIT=0.20 — ACTIVE ROAD CANDIDATE.** The prior
-  entry=-0.30,width=0.50 arm is closed without promotion. On the GPS-matched 2026-08-11 roads,
-  stock master route `00000024--5c888c605c` had 163 domain edges while ody-op route
-  `00000026--bfe3fd933b` had 20, and matched descents measured 115.8 versus 1.5 edges/min. That is
-  strong anti-tapping evidence. It did not make the overall behavior acceptable: the 0.50 route
-  stayed in the brake domain for 93% of matched descents and included a 17.4 s positive-request
-  hold, averaging 0.61 m/s below set speed. The narrower 0.20 width is a deliberate release test,
-  not a validated tune. The exact -0.30/0.20 combination has not been road-tested.
-- **Early rejection rule:** 0.20 previously failed with the older -0.20 entry. Corrected physical
-  edges on route `00000033` measured 15.1 descent toggles/min, versus 3.6-4.8 at 0.50 and 6.7-10.0
-  on the typical no-hysteresis routes. Reject this candidate immediately if downhill brake tapping
-  returns; also revert for stable-lead late brake onset or longer stops. Do not change brake PID,
-  gasfactor, or windfactor while this arm is open.
-- **Deferred ideas are not part of this candidate.** A frozen-input `BRAKE_PID_KI=0` ablation on
-  route `00000026` preserved domain flips while reducing request/wire RMS from 0.028 to 0.007,
-  peak wire jerk from 2.03 to 1.49, and onsets from 21 to 18. That is command-shape evidence only;
-  consider it as a separate future arm after the release-width result. The same route's production
-  windfactor spent 61% of its eligible high-speed exposure on the lower rail while the shadow moved
-  0.50 to 0.10; identification remains parked because the learners are coupled.
+## Current Validation Arm (reset 2026-08-14)
+- **The two-state threshold/width arm is CLOSED without promotion.** Entry=-0.30,width=0.50 sharply
+  reduced descent transitions versus master but held the brake domain through positive requests
+  and produced sustained underspeed. The split width=0.20 retest on routes
+  `00000027--fc0ab6fafa` and `00000028--06e3430ffc` returned driver-felt tapping: 12 physical
+  descent edges over 0.734 min, or 16.4/min. That is far below master route
+  `00000024--5c888c605c` (108.2/min) but a regression from width=0.50 route
+  `00000026--bfe3fd933b` (about 1.9/min), and it fails the predefined recurrence rule. Do not keep
+  moving `BRAKE_DOMAIN_ENTRY` or `DOMAIN_HYST_EXIT` as the next arm.
+- **Attribution points to the binary actuator transition, not request fidelity.** Across the split
+  routes, planner-to-carControl RMS was about 0.007 m/s2 and carControl-to-wire about 0.006. Most
+  brake entries used the cruise plan source, and the supplemental brake-PID term was near zero at
+  entry. Yet Honda `COMPUTER_BRAKING` was active in 84-90% of the following 0.5 s and engine torque
+  changed from positive to negative. A representative route-28 entry at 187.70 s carried request
+  +0.05 and wire +0.04 on a -0.041-rad descent while aEgo changed +0.42 to -0.27 m/s2. Smooth
+  numeric targets therefore do not make repeated gas-to-brake state changes smooth at the vehicle.
+- **The first `ody-op-test` three-state candidate FAILED its road screen.** Route
+  `00000029--4c9b612e7c` carried 9.718 engaged minutes and 163 state transitions: 24 gas-to-brake,
+  23 brake-to-gas, 53 coast-to-gas, 48 gas-to-coast, 8 coast-to-brake, and 7 brake-to-coast. The
+  driver-reported 08:33 pulsing coincided with repeated raw-request crossings near -0.30, typically
+  producing 0.6-1.0 s brake pulses with `COMPUTER_BRAKING` on every entry. Route-wide achieved jerk
+  RMS was 0.376 m/s3 (0.749 in brake versus 0.323 outside brake), and the validator measured 20.3
+  downhill brake edges/min. Request-to-wire fidelity remained good. The coast state was reachable
+  for 42.33 s over 60 events, but compensated force could reactivate gas throughout the old
+  brake-release band, so coast did not separate gas from brake.
+- **The one-command gas-to-brake coast interlock is CLOSED without promotion.** It removed the
+  direct gas-to-brake edges it targeted, but current routes `0000003f--cf7b94c588` and
+  `00000040--ff2868cffe` still produced driver-felt downhill pulses. A mechanism passing its own
+  invariant is not evidence that it fixed the symptom.
+- **Matched stock radar is the smoothness reference, not the target-selection oracle.** Route
+  `0000002b--4882f84449` had 41 transitions over 11.4 Honda-ACC-active minutes and zero direct
+  gas/brake handoffs. Its route-wide achieved jerk RMS was 0.305 m/s3 (0.511 in brake versus 0.280 outside
+  brake). Around 08:37:49 Honda ramped brake over roughly 2.8 s while passing a lead; another short
+  brake command occurred around 08:38:43 without an openpilot vision lead. The received Honda CAN
+  proves the brake commands, but the proprietary radar target choice is not logged. Keep phantom
+  braking separate from the smooth actuator-transition evidence.
+- **The 2026-08-13 conclusion that only episode timing remained is RETRACTED.** It was based on
+  route-wide/windowed jerk summaries from routes `38`/`39` and radar route `2b`; those aggregates
+  hid how quickly the shallow downhill commands reached their depth. On the completed direct-release
+  arm, route `3f` had 9 physical downhill edges over 0.272 min (33.1/min) and route `40` had 16 over
+  1.223 min (13.1/min), versus 4 over 1.316 min (3.0/min) on stock-radar route `3b`. Typical
+  OpenPilot downhill brake applications lasted 1.0-1.1 s; the wire reached 80% command depth in
+  0.19-0.20 s and achieved acceleration reached 80% in 0.64-0.66 s. Radar's two downhill
+  applications had a median duration of 10.86 s and median achieved-accel 80% time of 8.08 s.
+  The gap is both WHEN and HOW.
+- **Attribution on routes `3f`/`40`:** the pulse clusters were cruise-plan requests crossing the
+  raw -0.40 entry. Planner-to-carControl RMS was 0.0067/0.0101 m/s2. The car port converted those
+  small crossings into `BRAKE_REQUEST`; its shaper started at -0.20 and reached the shallow
+  -0.45..-0.54 episode depth in about 0.2 s. Honda then asserted `COMPUTER_BRAKING`, dropped engine
+  torque, and amplified achieved jerk. The first discontinuity was the domain state; the shaper was
+  also much faster than radar. `BRAKE_PID_KI=0` cannot explain the pulses and has no isolated matched
+  road benefit, so neither it nor the raw -0.40/direct-release stack carries into `ody-op-test2`.
+- **`ody-op-test2` is a one-variable reset from `ody-op`.** It keeps the recovery branch's
+  compensated entry/release, brake PID, gas path, and thresholds. Only ordinary road-speed onset
+  changes: first `ACCEL_COMMAND=0.0`, then 0.20 m/s3 toward the request; requests <=-1.5 m/s2,
+  stopping, and speeds below 10 m/s bypass shaping. The radar values size a bounded test, not a
+  claim that proprietary Honda target selection has been reproduced.
+- **Archived stock-radar evidence establishes semantics, not calibration.** OEM-long routes
+  `00000012--36525474db` and `00000013--dd070c2142` contain repeated 0.66-1.73 s coast runs at mild
+  `ACCEL_COMMAND` (roughly -0.1 to -0.3), usually gas-to-coast-to-gas and once
+  gas-to-coast-to-brake near -0.35. Their downhill exposure and brake sample are too small to choose
+  thresholds or predict ride quality. Promotion requires terrain-matched road comparisons against
+  stock Honda radar and `ody-op`.
+- **Historical fixed-input coast replay established reachability only.** Replaying master route 24 and ody-op
+  routes 26-28 through `ody-op-test` produced coast in 2.1-5.8% of engaged frames, with 18-37 coast
+  entries per route, while preserving `ACCEL_COMMAND` through the coast state. The recorded aEgo
+  still belongs to the old controller, and replay/request error changed materially on three routes;
+  do not use these counts or jerk values as a road prediction.
+- **The frozen-input `BRAKE_PID_KI=0` ablation is not retained.** Its replay-only command-shape
+  change was stacked with later mechanisms and never earned an isolated matched road conclusion.
+  Windfactor identification remains parked because its learner is coupled to gasfactor.
 - **Historical pooling note:** entry=-0.30,width=0.50 hashes `c1ce76fa857a`, `14677d814cb2`, and
   `2cc9d0df854d` are behavior-equivalent. Their 19/20 interim gate and later route evidence describe
-  the now-closed 0.50 arm and must not be pooled with the active 0.20-width candidate.
+  the now-closed 0.50 arm and must not be pooled with the failed 0.20-width retest.
 - **Late slow-lead braking — WATCH, mixed attribution (`0000001d--9be29ce71e`, 11:36:38-11:36:50):**
   the vision-only lead estimate was unstable (`~120 m -> absent -> 110 m -> 65 m`, with closing
   speed worsening to -8.5 m/s), and the planner did not select `lead0` until 0.9 s before the driver
@@ -66,7 +141,7 @@ No one tool establishes that a tune is good. Use these layers in order, and keep
   (route passthrough RMS 0.006 m/s2; immediately before intervention request -1.12, wire -1.18), so
   the controller did not withhold `ACCEL_COMMAND`. There was a smaller domain contribution: on
   frozen recorded inputs, compensated entry occurred at 11:36:49.55 with -0.20 and 11:36:49.76
-  with -0.30; the driver braked at 11:36:50.02. Thus the active candidate added ~0.21 s, while the
+  with -0.30; the driver braked at 11:36:50.02. Thus the prior entry candidate added ~0.21 s, while the
   compensated-force architecture as a whole entered ~2.0 s after a raw -0.20 request comparison.
   Do not tune against this one perception-confounded event. Reopen/revert the entry candidate if
   late onset repeats with a stable lead trajectory; keep inspecting lead, request, wire, gas/domain,
@@ -78,7 +153,7 @@ No one tool establishes that a tune is good. Use these layers in order, and keep
   (0.0670/0.0649 RMS), residual lag (0.11/0.12 s), and live delay (0.372/0.374 s), with no lane
   departure warnings. With no isolated benefit, `steerActuatorDelay` returned from 0.20 to stock
   0.15. Reopen only for a logged lateral symptom; `validate_log` deliberately has no lateral checks.
-- **Windfactor identification — PARKED, not part of this arm**: logs show windfactor can move while gas is not commanded. Do not change its gates during the release-width arm; any future experiment must be isolated so attribution stays possible.
+- **Windfactor identification — PARKED, not part of this arm**: logs show windfactor can move while gas is not commanded. Do not change its gates during the onset-shape arm; any future experiment must be isolated so attribution stays possible.
   - **Offline shadow added 2026-08-01:** the validator now replays the same sign-only learner only
     on live gas commands with neither pedal pressed, away from actuator rails, above 15 m/s, and
     at steady speed/grade. Four substantial current-logic routes (`0000003c`, `0000003e`,
@@ -86,24 +161,24 @@ No one tool establishes that a tune is good. Use these layers in order, and keep
     0.10-0.14 while observed mean error remained negative (-0.007 to -0.033 m/s²). Tightening the
     identification gate does not keep the factor off its lower rail; treat this as evidence of
     base-drag/gasfactor coupling, not evidence to change production commands.
-- **Domain hysteresis — ACTIVE WIDTH TEST**: the 0.50 width's anti-tapping benefit is retained as
-  historical evidence, but the latest matched drive showed its release cost is unacceptable at
-  entry=-0.30. Test 0.20 as an isolated width change and preserve the compensated-force state
-  machine. The validator reports release holds independently of production thresholds.
+- **Domain hysteresis — CLOSED WIDTH TEST**: the 0.50 width's anti-tapping benefit and release cost
+  remain historical evidence. The 0.20 retest returned tapping and failed its early rejection rule.
+  Preserve both results; do not resume width tuning without a new mechanism-specific symptom.
 
 ## Ordered Longitudinal Evidence Queue (agreed 2026-07-31)
 Apply this order as new logs arrive; do not skip ahead because a later idea is easy to code. Lateral
-is stock unless a logged symptom reopens it. Finishing the active release-width arm remains a
-prerequisite for changing windfactor.
+is stock unless a logged symptom reopens it. Close the onset-shape arm before changing brake PID,
+gasfactor, or windfactor.
 
-1. **Road-test the -0.30/0.20 combination on the matched descent.** Inspect physical
-   `BRAKE_REQUEST` bursts, corrected downhill toggle counts, positive-request release holds,
-   underspeed, intervention rate, and raw Jotpluggler traces. Stop this arm at the first clear
-   recurrence of the pulse; do not wait for a pooled gate to confirm an already-felt regression.
+1. **Road-test the onset-only `ody-op-test2` against stock Honda radar and `ody-op` on matched
+   terrain.** Inspect first command, time to 80% depth, physical `BRAKE_REQUEST` edges, achieved
+   jerk, set-speed error, intervention rate, and raw Jotpluggler traces. Reject for late braking,
+   longer stops, descent overspeed, or no meaningful onset-shape improvement. Episode frequency is
+   reported but is not a knob in this arm.
 2. **Evaluate a gas-active-only shadow windfactor.** First calculate it without changing commands. Learn
    only while `GAS_COMMAND` is live in the gas domain, neither pedal is pressed, the command is away from
    saturation, and speed/grade are sufficiently steady. Compare stability and following error with the
-   existing learner; promote it only as its own isolated road arm after the current validation arm closes.
+   existing learner; promote it only as its own isolated road arm after the onset-shape arm closes.
 3. **Consider Toyota-style predictive brake-integrator winddown only if overshoot repeats.** Require the
    brake-PID overshoot check to recur on at least 2 substantial, comparable recent routes and agree with a
    controlled brake maneuver. Adapt only future-error/integral winddown to the one-sided supplemental
@@ -132,7 +207,7 @@ prerequisite for changing windfactor.
 - **Current longitudinal design on this branch**: `ody-op` runs a speed-scheduled, live-trimmed gas feedforward plus one-sided supplemental integral braking. Filtered grade and learned drag feed gas and the compensated domain decision but never add brake authority. One stateful domain selects gas versus brake, gates supplemental braking and gasfactor learning, and is mirrored onto CAN. Below 5 m/s the raw controller request prevents grade compensation from releasing an engaged stop. Windfactor remains only partly identifiable; see the concise rationale and current code before using this historical archive.
 - **Review-sized design record**: `.agents/odyssey-tune-rationale.md` is the concise durable rationale removed from production comments; use the longer history here only when investigating a regression.
 - **Tune status (validated 2026-07-20, lateral returned fully to stock 2026-08-11; longitudinal has one isolated road candidate)**: after the master rebase + domain-decision cleanup, on-road drives (routes `00000009`, `0000000b`, `0000000c` under `805f87f5e96d128c`) show: zero `controlsd` crashes; planner->carcontroller passthrough near-perfect (`|aTarget-cmd|` ~0.0005-0.06); brake_pid gentle, no windup. **Lateral follows OpenPilot's stock-LKA baseline: 2560 maximum command, `latAccelFactor 0.9`, and `steerActuatorDelay=0.15`; the former linear 3840 RDM-range command, 1.1 override, and unproven 0.20 delay are historical and must not be treated as the current tune. Why 3840 was undone, and why it is CLOSED (do not retry):** Honda only accepts 2560 for LKA; the 3840 range is RDM, and the stock camera pairs that higher command with **one-sided brake drag we cannot command** - so asking for 3840 buys steer authority the car will not deliver without a braking action that is not ours to issue. Lateral is not a tuning lever and `validate_log` deliberately has no lateral checks. **The older "windfactor confirmed NOT dead" conclusion is retracted.** Current production and gas-active-only shadow evidence cannot identify windfactor independently from gasfactor and grade; its value remains parked and unproven. Before proposing a tune change, look for a specific logged symptom first. **Lead-approach braking that feels abrupt is upstream, not ours**: radar is disabled so every lead is vision-only (`radarState/leadOne/radar`=0, 0% radar-matched on real routes), and vision range-rate noise at 100m+ (worse in rain) makes the planner brake ~-0.5 to -0.8 m/s2 - gentle in magnitude, abrupt in onset. The only lever is Relaxed personality (settings, not code); comma's own radarless model work targets this.
-- **Brake-onset experiment (`DOMAIN_HYST` 0.06 + brake-onset jerk limit): CLOSED 2026-07-27, both branches DELETED.** Superseded by `DOMAIN_HYST_EXIT`. Do not recreate either without new evidence - the whole functional change was the five lines below, and the reason it died is worth more than the code. Retired tips in case a commit is still reachable: `ody-brake-onset` = parent `cb03c32b4` / opendbc `1b6048e98`; `ody-op-long2` = parent `9f73e6205` / opendbc `57fe3a908`.
+- **Historical brake-onset experiment (`DOMAIN_HYST` 0.06 + symmetric 2.0 m/s³ jerk limit): CLOSED 2026-07-27, both branches DELETED.** Do not recreate that combined architecture: its functional change and failed isolation remain useful history. The new `ody-op-test2` arm is materially narrower and is justified by later `3f`/`40` versus radar `3b` evidence: it shapes only ordinary road-speed brake entry and bypasses strong, low-speed, and stopping requests. Retired tips in case the historical commits are still reachable: `ody-brake-onset` = parent `cb03c32b4` / opendbc `1b6048e98`; `ody-op-long2` = parent `9f73e6205` / opendbc `57fe3a908`.
     ```python
     DOMAIN_HYST = 0.06                     # module scope
     self.in_brake_domain = False           # __init__
@@ -166,14 +241,19 @@ retaining or adding a learner is:
 1. **Is it a physical property of the plant, with an unambiguous per-frame error signal?** `gas_error = self.accel - aEgo` gives the gas/drag learners a signed error every frame. A crossing RATE or a chatter statistic is not that - it is a measurement over minutes.
 2. **Is a wrong value merely degraded, or unstable?** Wrong `gasfactor` = sluggish or eager, self-correcting. Wrong hysteresis width = a behavioral failure mode, and the degenerate direction is dangerous.
 3. **Can it converge inside one drive?** **Persistence is deliberately dropped** (no openpilot `Params` from opendbc, see the carcontroller note), so every learned value resets at each ignition. Anything that cannot converge in minutes must be a constant, because it will never be right when it is needed.
-- **`DOMAIN_HYST_EXIT` must stay a constant.** It fails all three. It is a stability parameter, not a plant estimate; adapting it from observed chatter is positive feedback (wider band -> less chatter -> widen further) whose degenerate end is never leaving the brake domain, i.e. brake dragging; and descents are only 2-5% of driving (0.17-2.09 min per drive measured), so a learner would spend every single drive re-converging and never arrive. The right mechanism is what we actually used: **size it offline from the ledger**, exactly as `GAS_FACTOR_SPEED_V` is re-derived from the "GASFACTOR vs SEED" report. If it later needs to vary, make it a speed/grade-scheduled table derived offline - not a learner.
+- **`DOMAIN_HYST_EXIT` must stay a constant.** It is a state-selection parameter, not a plant
+  estimate, and descents are only 2-5% of driving (0.17-2.09 min per drive measured), so a learner
+  would spend every drive re-converging. Size it offline from road evidence rather than adapting it
+  from transition counts.
 - **`hill_brake`'s gravity gain was the one remaining genuine candidate, and it is NOT worth learning.** It is physical and has a clean error signal, so it passes tests 1 and 2. But measured over 328k learner-eligible gas-domain frames across 5 drives, the residual `gas_error` regressed on the hill term gives slope +0.092, r = +0.145, implying a correction of only **0.91x** - about 9%, or 0.02 m/s^2 on a typical -0.22 hill term. The residual is dominated by a **pitch-independent** intercept (-0.069) that the existing learners already absorb. Note the trap: run this regression over ALL frames rather than gas-domain-only and the slope inflates, because `brake_pid` makes the wire more negative exactly on descents where the hill term is also negative - manufacturing a correlation that has nothing to do with gravity.
 - **Never learn**: `BRAKE_PID_KI` (adapting a gain against Honda's own brake loop is the #2347 instability by construction), `min_gas_accel` or any domain threshold, and the learn divisors themselves.
 
 ## Where the constants belong (audited 2026-07-29)
 `tune-evidence.md`'s own Bosch A generalization target is "shared Bosch A logic in `carcontroller.py`, per-car seed tables in `values.py`". **We are not there yet**, and it matters because module-level constants in `carcontroller.py` would silently apply to every Bosch Honda the moment the `CAR.HONDA_ODYSSEY_5G_MMR` gate is widened.
 - **Per-car, should move to `values.py`**: `GAS_FACTOR_SPEED_BP/V` (powertrain), the `wind_brake_ms2` curve (aerodynamics - frontal area x Cd, currently an inline `np.interp` at the point of use), and any evidence-derived fixed drag factor. Naming and relocating the curve is behavior-neutral; changing its factor or learning rule is a separate road arm.
-- **Shared Bosch A, correctly module-level**: `DOMAIN_HYST_EXIT`, `BRAKE_PID_KI`, `BRAKE_DOMAIN_ENTRY` and the `min_gas_accel` speed ramp built from it (PR #2342 behavior), the learn divisors (convergence rates, not plant properties).
+- **Shared Bosch A, correctly module-level**: `DOMAIN_HYST_EXIT`, `BRAKE_PID_KI`,
+  `BRAKE_DOMAIN_ENTRY` and its `min_gas_accel` speed ramp (PR #2342 behavior), and the learn divisors
+  (convergence rates, not plant properties). The Odyssey fingerprint gate currently limits their use.
 - **Already correct**: `BOSCH_GAS_LOOKUP_V = [0, 2000]` is an INSTANCE attribute in `values.py`, not a class mutation. Upstream still mutates the class for `ACURA_RDX_3G_MMR`; ours does not, which is why it does not leak across cars in `test_car_interfaces`.
 
 ## What the replay can and cannot predict (learned the hard way, three times)
@@ -473,7 +553,7 @@ All carcontroller.py files across opendbc were reviewed, then re-verified agains
 - **Toyota's predictive-error / jerk-based integral winddown** (`toyota/carcontroller.py` L214-238): Toyota computes `j_ego` (jerk) from filtered `aEgo`, projects `a_ego_future = aEgo + j_ego * future_t`, and feeds `error_future = cmd - a_ego_future` into the PID instead of raw error. This reduces overshoot when aEgo is trending toward target. **Watch for**: if logs show our `brake_pid` overshooting (contributing more braking than needed as `aEgo` catches up to `aTarget`), Toyota's future-error pattern is the fix. Current routes show no overshoot — this is "watch for" only.
 - **Toyota's high-pass pitch compensation** (`toyota/carcontroller.py` L229-233): a `HighPassFilter` on pitch that transiently amplifies the accel command on sudden grade changes, compensating for the PCM's slow pitch response. Capped at ±1.5 m/s². **Watch for**: sluggish response on sudden grade transitions (flat→steep hill). If seen, apply high-pass pitch on the **brake side only** (`self.accel` / `ACCEL_COMMAND`). The gas side (`GAS_COMMAND`) is blocked because it's opaque/unitless (PR #2767 confirmed).
 - **Ford's creep compensation** (`ford/carcontroller.py` L28-32): subtracts engine creep torque at 0-3 m/s, and crucially *accel-gates* it — `creep_accel = interp(v_ego, [1,3], [0.6,0])` then `interp(accel, [0,0.2], [creep,0])`, so it only fires when the car is nearly coasting and tapers to zero as commanded accel rises. **Do NOT port this to Bosch as-is.** Honda Bosch's `ACCEL_COMMAND` is a real m/s² the ECU closes its own loop on — it already accounts for its own creep — so subtracting creep openpilot-side would **double-count**. (Ford applies it on their brake/ABS path, which does *not* self-compensate; Honda Nidec has its own creep comp; Bosch's ECU handles it internally.) **Watch for**: the Odyssey physically creeping forward when the planner wants to hold position in the 0-5 m/s gas-domain hold-at-stop window. Only if that symptom is *seen in logs* consider creep subtraction. Current low-speed switch (planner accel holds brake through a stop) likely already covers it.
-- **Rate-limited / jerk-limited ACCEL_COMMAND** (Toyota does `rate_limit(pcm_accel_cmd, prev, ±0.12/frame)`; **Ford** does a brake-jerk limit `accel = max(accel, self.accel - 3.5*step*DT)` = 3.5 m/s³ on the ACCEL/brake side, `ford/carcontroller.py` L124-126): we rate-limit gas (60 units/frame) but not `self.accel`. Same territory as the `ody-op-long2` brake-onset jerk experiment, now CLOSED and deleted. **Ford's 3.5 m/s³ is *looser* than the 2.0 cap we tried**, which independently corroborates the finding: the planner's own onset jerk is the bottleneck, not our ramp rate — if even Ford's factory-tuned limit sits above where the planner ever drives, a tighter cap would bind even less. **Status: settled, do not revisit without a logged symptom.**
+- **Rate-limited / jerk-limited ACCEL_COMMAND** (Toyota does `rate_limit(pcm_accel_cmd, prev, ±0.12/frame)`; **Ford** does a brake-jerk limit `accel = max(accel, self.accel - 3.5*step*DT)` = 3.5 m/s³ on the ACCEL/brake side, `ford/carcontroller.py` L124-126): we rate-limit gas (60 units/frame) but not `self.accel`. The old symmetric 2.0 m/s³ experiment was closed because its original logs did not isolate a benefit. That conclusion is superseded for the narrower onset-only question by routes `3f`/`40`, where short downhill episodes reached 80% depth in about 0.2 s versus multi-second stock-radar ramps. `ody-op-test2` therefore tests only an ordinary road-speed brake-entry ramp; strong requests, stopping, low speed, and release remain baseline behavior.
 - **`longitudinalActuatorDelay = 0.5s` (Bosch, interface.py L86) is conventional, NOT a lever**: checked because it's a tempting knob. GM/Hyundai/VW all use 0.5; Toyota's 0.05 (`toyota/interface.py` L121) is **hybrid-only** ("Hybrids have much quicker longitudinal actuator response") — a physical-response fact, not a byproduct of their future-error winddown. 0.5 is correct for a Bosch ECU that closes its own accel loop. Do not lower it hoping for snappier braking; that just makes the planner less anticipatory (later braking). Noted here so a future session doesn't re-derive it as a "tweak."
 - **Patterns we correctly avoid**: full closed-loop PID on ACCEL_COMMAND (Toyota pattern - their PCM is dumb, Honda's isn't, stacking causes #2347 oscillation); GM's direct lookup with no learning (they have direct brake/regen actuators, we don't); Hyundai's explicit jerk signal (Honda has no writable jerk field in ACC_CONTROL).
 
