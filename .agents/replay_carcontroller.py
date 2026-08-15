@@ -31,7 +31,7 @@ from opendbc.car.honda.carcontroller import CarController
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tuning_metrics import causal_lpf, windowed_jerk
-from validate_log import JERK_SMOOTH_TAU, JERK_WIN_S
+from validate_log import GAS_INACTIVE, JERK_SMOOTH_TAU, JERK_WIN_S
 
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"
 
@@ -143,17 +143,29 @@ def main(argv=None):
   rec = np.interp(t, np.array(rec_t), np.array(rec_wire)) if rec_t else np.full_like(t, np.nan)
 
   # true domain handoff, decoded from the CAN this controller would actually have sent
-  flips = forceful = 0
+  flips = forceful = coast_entries = 0
+  brake_domain_frames = gas_domain_frames = coast_domain_frames = 0
   total_edges = []
   try:
     from opendbc.can.parser import CANParser
     cp = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
-    prev = None
-    for mono, sends in sendcans:
+    prev = prev_domain = None
+    for i, (mono, sends) in enumerate(sendcans):
       cp.update([(mono, [(addr, dat, src) for addr, dat, src in sends])])
       if cp.can_valid:
         br = int(cp.vl["ACC_CONTROL"]["BRAKE_REQUEST"])
         ac = float(cp.vl["ACC_CONTROL"]["ACCEL_COMMAND"])
+        gas = float(cp.vl["ACC_CONTROL"]["GAS_COMMAND"])
+        if act[i]:
+          domain = "brake" if br else ("gas" if gas > GAS_INACTIVE else "coast")
+          brake_domain_frames += domain == "brake"
+          gas_domain_frames += domain == "gas"
+          coast_domain_frames += domain == "coast"
+          if domain == "coast" and prev_domain != "coast":
+            coast_entries += 1
+          prev_domain = domain
+        else:
+          prev_domain = None
         if prev is not None and br != prev:
           flips += 1
           total_edges.append(mono)
@@ -167,7 +179,11 @@ def main(argv=None):
     "seg_range": seg_range,
     "frames": int(len(t)), "engaged_frames": int(act.sum()),
     "replayed": {**stats(wire, act), "domain_flips_open_loop_only": flips,
-                 "domain_forceful_open_loop_only": forceful},
+                 "domain_forceful_open_loop_only": forceful,
+                 "brake_domain_frames_open_loop_only": brake_domain_frames,
+                 "gas_domain_frames_open_loop_only": gas_domain_frames,
+                 "coast_domain_frames_open_loop_only": coast_domain_frames,
+                 "coast_entries_open_loop_only": coast_entries},
     "recorded": stats(rec, act),
     # fidelity: on the SAME branch that produced the log this must be ~0. If it is not, the
     # replay is not reproducing the drive and no A/B conclusion drawn from it is trustworthy.

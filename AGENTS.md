@@ -5,9 +5,14 @@ route history and derivations belong in [`.agents/tune-evidence.md`](.agents/tun
 
 ## What this branch is
 
-`ody-op` is a Honda Bosch A longitudinal tune for `HONDA_ODYSSEY_5G_MMR`.
-The longitudinal tune is in maintenance/validation mode. Require a specific full-rate logged
-symptom before opening another behavior change.
+`ody-op` is the recovery baseline and shared tooling/evidence branch for the Honda Bosch A tune on
+`HONDA_ODYSSEY_5G_MMR`. Experimental children inherit their validator, private-log tools, evidence,
+and standards from here; only mechanism-specific controller code and rail assertions belong on a
+test branch. Keep parent and nested opendbc branches paired.
+
+`ody-op-test` is a frozen failed experiment. Do not add commits to it or treat its coast interlock,
+raw `-0.40` entry, zero brake integral, onset shaper, or direct brake release as accepted knowledge.
+`ody-op-test2` is the active child and changes only ordinary road-speed brake onset shape.
 
 Lateral is **stock and closed**: LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.15`.
 The former 0.20 s fallback had no isolated road benefit, so it was retired rather than kept as an
@@ -59,23 +64,38 @@ the domain bits leave gas inactive. Locate the first divergence before assigning
 
 ## Active road question
 
-The `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.50` arm is closed without promotion. It sharply
-reduced physical descent toggles versus stock on the GPS-matched 2026-08-11 routes, but held the
-brake domain through positive requests and produced sustained underspeed. The next isolated road
-candidate keeps entry at `-0.30` and narrows `DOMAIN_HYST_EXIT` to `0.20`. This exact combination is
-untested. A prior `0.20` width with `-0.20` entry measured 15.1 corrected descent toggles/min versus
-3.6-4.8 at `0.50`, so reject the candidate immediately if downhill tapping returns. Also revert for
-stable-lead late brake onset or longer stops. Do not change brake PID, gasfactor, or windfactor in
-this arm.
+The two-state release-width work is closed without promotion. Entry `-0.30`, width `0.50` reduced
+descent transitions but held braking through positive requests; width `0.20` released sooner but
+returned driver-felt tapping on split routes `00000027`/`00000028` (12 physical descent edges over
+0.734 min, 16.4/min). Do not continue width or threshold tuning from that result.
 
-Keep gas and brake domains mutually exclusive. Panda bounds `ACCEL_COMMAND` and `GAS_COMMAND` but
-does not enforce that invariant; `.agents/test_odyssey_long_rails.py` does.
+The first `ody-op-test` architecture failed its road screen on route
+`00000029--4c9b612e7c`: it produced 24 direct gas-to-brake and 23 direct brake-to-gas handoffs in
+9.7 engaged minutes, including the driver-reported pulsing. Useful compensated gas was allowed to
+reactivate immediately above brake entry, so the coast state did not separate those transitions.
+
+The completed direct-release arm disproved two later claims. Routes `0000003f--cf7b94c588` and
+`00000040--ff2868cffe` had zero direct gas-to-brake handoffs yet still measured 33.1 and 13.1
+downhill brake edges/min. Their typical downhill applications lasted about 1.0-1.1 s; the wire
+reached 80% command depth in 0.19-0.20 s and the standardized achieved-accel metric reached 80%
+in 0.64-0.66 s. Stock-radar route `0000003b--08f77bc5c3` measured 3.0 downhill edges/min; its two
+downhill applications had a median duration of 10.86 s and median achieved-accel 80% time of
+8.08 s. The gap is both episode frequency and onset shape. A one-command coast interlock is not
+a pulse-braking fix, and the `ody-op-test` stack is closed without promotion.
+
+`ody-op-test2` starts fresh from `ody-op` and changes only the first ordinary road-speed
+`ACCEL_COMMAND`: begin at neutral and progress at 0.20 m/s3 toward the request. Requests at or below
+-1.5 m/s2, low-speed control, and stopping retain immediate authority. It does not change
+`BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, brake PID, compensated domain selection,
+gasfactor, windfactor, or gas eligibility. This is software-verified only until controlled
+maneuvers and a terrain-matched road drive show gradual onset without late braking, longer stops,
+descent overspeed, or added interventions. Episode frequency remains a separate question.
 
 Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, exposure-qualified,
 per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
 
 The production windfactor learner is not independently identified from the gasfactor learner and
-grade compensation. Do not call it validated or change it while the release-width arm is open. Once
+grade compensation. Do not call it validated or change it while the onset-shape arm is open. Once
 that arm closes, compare an evidence-derived fixed drag factor with a shadow learner restricted to
 live gas, no pedals, no saturation, and steady high-speed/grade windows. Because both learners use
 the same tracking error, freeze or partition gasfactor learning during windfactor identification.

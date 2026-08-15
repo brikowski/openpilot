@@ -20,13 +20,19 @@ from openpilot.tools.lib.logreader import LogReader
 from openpilot.common.hardware.hw import Paths
 # Compare learned gas factors against the LIVE seed table, so if the seed is retuned this
 # metric automatically measures against the new values instead of a stale copy.
-from opendbc.car.honda.carcontroller import BRAKE_DOMAIN_ENTRY, GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V
+from opendbc.car.honda.carcontroller import (
+  BRAKE_DOMAIN_ENTRY,
+  GAS_FACTOR_SPEED_BP,
+  GAS_FACTOR_SPEED_V,
+  odyssey_domain_switch_accel,
+)
 # Same reason: read the interface accel rails from the live params, not a copied number.
 from opendbc.car.honda.values import CarControllerParams as HondaParams
 
 # CUSTOM TOOLING: keep behavior-changing array math independent from route I/O and ledger policy,
 # so synthetic traces can prove each metric both passes and fails before it grades a road drive.
 from tuning_metrics import (
+  brake_episode_metrics,
   brake_release_hold_metrics,
   causal_lpf as _causal_lpf,
   command_transition_metrics,
@@ -50,7 +56,7 @@ ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # GEARBOX_AUTO/TRANS_TARGET_GE
 
 # ---- thresholds (grounded in the converged baselines recorded in tune-evidence.md) ----
 # Convergence regression guards. Baselines: track RMS ~0.22, passthrough RMS ~0.11
-# on route 00000013 (tune-evidence.md "Tune status" / ody-op-long2 notes).
+# on route 00000013 (tune-evidence.md "Tune status" historical notes).
 TRACK_RMS_LIMIT = 0.35        # RMS(aEgo - aTarget) over active pid frames
 PASSTHROUGH_RMS_LIMIT = 0.25  # RMS(wire accel - CarController input) over gas-domain frames
 GASF_EFF_LO, GASF_EFF_HI = 0.05, 1.5   # effective gasfactor sane band (base 0.35-0.9 * trim)
@@ -70,7 +76,7 @@ OVERSHOOT_FRAC_FLAG = 0.02    # >2% of braking frames overshooting -> Toyota fut
 CREEP_VEGO = 2.0              # m/s: below this is the hold-at-stop window
 CREEP_AEGO = 0.15             # m/s^2 forward while planner asks <=0 -> creep
 CREEP_MIN_FRAMES = 50         # ~0.5s at 100Hz sustained
-BRAKE_ONSET_JERK = 2.0        # m/s^3: the parked ody-op-long2 cap; count would-be binds
+BRAKE_ONSET_JERK = 2.0        # m/s^3: historical comparison cap; count would-be binds
 JERK_SMOOTH_TAU = 0.20        # s: causal LPF before differentiating. Heavy on purpose - the
                               # command updates at 50Hz (carcontroller frame%2) but carControl
                               # logs at 100Hz, so frame-to-frame diff aliases (the artifact
@@ -103,8 +109,8 @@ GAS_INACTIVE = -30000        # MUST track honda/hondacan.py create_acc_commands.
 GAS_RAMP_STEP = 60           # MUST track the Odyssey ramp in honda/carcontroller.py.
 REENGAGE_WINDOW_S = 0.50      # route 34 leaked stale brake for 0.20s after longitudinal re-entry
 REENGAGE_STALE_SEC_FLAG = 0.10
-LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: MUST track the carcontroller's low-speed domain boundary
-                              # (`switch_accel = accel if CS.out.vEgo < 5.0`, and the lower knee of
+LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: MUST track odyssey_domain_switch_accel's low-speed boundary
+                              # (raw accel below 5 m/s, and the lower knee of
                               # both the min_gas_accel and DOMAIN_HYST_EXIT interps). Deliberately
                               # NOT FOLLOW_MIN_VEGO - that one is a "is following a meaningful
                               # question" gate at 3.0, and using it here silently blinded the check
@@ -488,7 +494,7 @@ def analyze(msgs, platform):
     best = max(best, run)
   r["creep_frames"] = int(best)
 
-  # 4. brake-onset jerk -> revisit parked ody-op-long2 if the 2.0 cap would actually bind.
+  # 4. controller-input brake-onset jerk, retained as context for wire-side shaping.
   #    Differentiate over a ~0.1s window (central slope) rather than adjacent frames, so a
   #    50Hz command sampled at 100Hz doesn't manufacture jerk (the aliasing tune-evidence.md warned
   #    about). A bind must be sustained JERK_BIND_MIN_RUN frames to count.
@@ -525,7 +531,7 @@ def analyze(msgs, platform):
     r["wire_jerk_max"] = float(-np.min(wjerk)) if len(wjerk) else 0.0
     r["wire_jerk_p99"] = float(-np.percentile(wjerk, 1)) if len(wjerk) else 0.0
     # Onset-only mean: average commanded jerk over frames where the wire is actually deepening
-    # brake. This is the number the ody-op-long2 commit quoted (-0.78 -> -0.40 m/s^3 in replay).
+    # brake. Historical replay quoted -0.78 -> -0.40 m/s^3 for an earlier shaper.
     deepening = active & (wjerk < -0.5)
     r["wire_jerk_onset_mean"] = float(np.mean(wjerk[deepening])) if deepening.sum() > 10 else 0.0
     r["wire_jerk_onsets"] = int(np.sum(np.diff(deepening.astype(int)) == 1))
@@ -627,7 +633,9 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   "commanded": the Odyssey deliberately adds drag and grade before choosing its actuator domain.
   """
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
-         "brake_domain_frac": None, "sign_disagree_frac": None, "sign_disagree_worst": None,
+         "brake_domain_frac": None, "coast_domain_frac": None,
+         "coast_domain_sec": None, "coast_domain_events": None,
+         "sign_disagree_frac": None, "sign_disagree_worst": None,
          "sign_disagree_downhill_frac": None, "sign_disagree_non_grade_frac": None,
          "sign_disagree_non_grade_worst": None, "sign_disagree_transition_frames": None,
          "brake_release_hold_sec": None, "brake_release_hold_events": None,
@@ -640,9 +648,15 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "reengagement_events": None, "reengagement_stale_sec": None,
          "reengagement_stale_events": None, "reengagement_stale_worst": None,
          "gas_handoff_events": None, "gas_handoff_max": None,
+         "direct_gas_to_brake": None, "direct_brake_to_gas": None,
          "gasf_by_speed": {}, "gasf_seed_by_speed": {}, "gasf_seconds_by_speed": {},
          "brake_toggle_edges": None, "brake_toggle_per_min": None,
          "brake_toggle_max_10s": None, "brake_toggle_min_gap": None,
+         "brake_episode_count": None, "brake_episode_duration_median": None,
+         "brake_episode_ramp80_median": None, "brake_episode_onset_jerk_median": None,
+         "downhill_brake_episode_count": None,
+         "downhill_brake_episode_duration_median": None,
+         "downhill_brake_episode_ramp80_median": None,
          "felt_jerk_rms": None, "cmd_jerk_rms": None, "felt_jerk_p99": None,
          "harshness_ratio": None, "felt_jerk_brake": None, "felt_jerk_gas": None,
          "stop_lurch_worst": None, "stop_lurch_excess": None,
@@ -703,6 +717,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     reengage_window_s=REENGAGE_WINDOW_S,
     gas_inactive=GAS_INACTIVE,
   ))
+  out.update(brake_episode_metrics(
+    grid, aego, BR, eng_all, brakepressed, vego_all, pitch,
+    min_speed=LOW_SPEED_DOMAIN_VEGO,
+    downhill_pitch=DOWNHILL_PITCH,
+    min_duration_s=0.3,
+    smooth_tau=JERK_SMOOTH_TAU,
+    jerk_window_s=JERK_WIN_S,
+  ))
 
   # Read-only candidate learner: unlike the live learner, this advances only while a real gas
   # command is on the wire and the plant is in a steady, unsaturated identification window. It
@@ -737,8 +759,13 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     return out
 
   eng_min = max(1e-3, active.sum() * dt / 60.0)
-  bd, gd = active & BR, active & ~BR
+  bd = active & BR
+  gd = active & ~BR & (GAS > GAS_INACTIVE)
+  cd = active & ~BR & (GAS <= GAS_INACTIVE)
   out["brake_domain_frac"] = float(bd.sum() / active.sum())
+  out["coast_domain_frac"] = float(cd.sum() / active.sum())
+  out["coast_domain_sec"] = float(cd.sum() * dt)
+  out["coast_domain_events"] = int(np.sum(np.diff(cd.astype(np.int8), prepend=0) == 1))
   if gd.sum() > 50:
     out["follow_gas_rms"] = float(np.sqrt(np.nanmean(err[gd] ** 2)))
   if bd.sum() > 50:
@@ -758,12 +785,12 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     transition_grace_s=CAN_COMMAND_PERIOD_S,
   ))
 
-  # Reconstruct the controller's compensated domain input and measure the symptom independently
-  # of its release threshold: BRAKE_REQUEST remains live after the base entry predicate clears.
+  # Use the production helper rather than mirroring its grade/raw decision here. Experiments that
+  # change the controller input then change this diagnostic in the same source edit.
   filtered_pitch = _causal_lpf(pitch, dt, DOMAIN_PITCH_FILTER_TAU, initial=0.0)
   base_drag = np.interp(vego_all, DOMAIN_WIND_SPEED_BP, DOMAIN_WIND_BRAKE_V)
   gas_pedal_force = requested + base_drag * windfactor + np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY
-  switch_accel = np.where(vego_all < LOW_SPEED_DOMAIN_VEGO, requested, gas_pedal_force)
+  switch_accel = odyssey_domain_switch_accel(requested, gas_pedal_force, vego_all)
   entry_threshold = np.interp(vego_all, [5.0, 10.0], [0.01, BRAKE_DOMAIN_ENTRY])
   out.update(brake_release_hold_metrics(
     switch_accel, entry_threshold, requested, aego, BR, active,
@@ -926,11 +953,11 @@ def verdicts(r):
   # Only a SUBSTANTIAL bind justifies un-parking: the planner's onset jerk normally sits
   # right at the 2.0 cap (holdback negligible - tune-evidence.md), so a lone marginal peak ~2.1
   # is noise. Flag on >=3 sustained binds or a peak well over the cap.
-  # NOTE: the old "brake-onset jerk bind" CHECK was removed 2026-07-27. It differentiated
+  # NOTE: the old graded "brake-onset jerk bind" check was removed 2026-07-27. It differentiated
   # cc_accel - the PLANNER's command, an INPUT to the car controller - so it read identically on
   # every branch and could never measure a carcontroller change. Its only consumer was the jerk
-  # limiter, dropped when the brake-onset experiment closed, and it kept emitting "revisit PARKED
-  # ody-op-long2" at an archived branch. The `jerk_*` fields are still COMPUTED and still land in
+  # limiter and could not evaluate a wire-side experiment. The `jerk_*` fields are still computed
+  # and still land in
   # the ledger (they answer "would a cap bind?", which is a real question about the planner and
   # costs nothing), they just no longer produce a verdict. `wire_jerk_*` below measures
   # ACCEL_COMMAND and is the check that can actually see our code.
@@ -961,6 +988,10 @@ def verdicts(r):
         f"RMS {r['follow_brake_rms']:.4f}, mean {r['follow_brake_mean']:+.4f} m/s^2 extra brake "
         f"({r['brake_domain_frac']*100:.0f}% of engaged frames in brake domain)",
         status="brake_pid diverging further than designed" if r["follow_brake_rms"] > FOLLOW_BRAKE_RMS_REGRESSION else None)
+  if r.get("coast_domain_frac") is not None:
+    coast_detail = f"{r['coast_domain_sec']:.2f}s over {r['coast_domain_events']} event(s) "
+    coast_detail += f"({r['coast_domain_frac']*100:.1f}% of moving engaged frames); gas inactive, brake released"
+    add("coast domain (diagnostic)", True, coast_detail)
   if r.get("low_speed_conflict_sec") is not None:
     conflict_bad = r["low_speed_conflict_sec"] > LOW_SPEED_CONFLICT_SEC_FLAG
     add("low-speed brake/accel conflict", not conflict_bad,
@@ -980,6 +1011,12 @@ def verdicts(r):
         f"{r['gas_handoff_events']} inactive-to-live handoff(s), largest first command "
         f"{r['gas_handoff_max']:.0f} counts (<= {GAS_RAMP_STEP})",
         status="gas ramp state advanced while GAS_COMMAND was ineligible" if handoff_bad else None)
+  if r.get("direct_gas_to_brake") is not None:
+    # Diagnostic only. The frozen ody-op-test interlock intentionally suppressed gas-to-brake,
+    # but ody-op and the onset-only ody-op-test2 do not own that architecture.
+    add("direct gas/brake handoffs (diagnostic)", True,
+        f"{r['direct_gas_to_brake']} gas-to-brake, {r['direct_brake_to_gas']} brake-to-gas above 5 m/s",
+        status=None)
   if r.get("brake_release_hold_sec") is not None:
     add("brake release hold (diagnostic)", True,
         f"{r['brake_release_hold_sec']:.2f}s over {r['brake_release_hold_events']} event(s), "
@@ -997,6 +1034,19 @@ def verdicts(r):
         f"{r['brake_toggle_edges']} physical edges, peak {r['brake_toggle_max_10s']}/10s"
         f"{gap}{dn}",
         status="rapid BRAKE_REQUEST cycling (downhill tapping)" if burst_bad else None)
+  if r.get("brake_episode_count") is not None:
+    duration = (f"{r['brake_episode_duration_median']:.2f}s"
+                if r.get("brake_episode_duration_median") is not None else "n/a")
+    ramp80 = (f"{r['brake_episode_ramp80_median']:.2f}s"
+              if r.get("brake_episode_ramp80_median") is not None else "n/a")
+    downhill = ""
+    if r.get("downhill_brake_episode_count"):
+      downhill = (f"; downhill {r['downhill_brake_episode_count']} episode(s), median duration "
+                  f"{r['downhill_brake_episode_duration_median']:.2f}s, 80% depth "
+                  f"{r['downhill_brake_episode_ramp80_median']:.2f}s")
+    add("brake episode shape (diagnostic)", True,
+        f"{r['brake_episode_count']} episode(s), median duration {duration}, 80% depth {ramp80}"
+        f"{downhill}")
   if r.get("felt_jerk_rms") is not None:
     # Reported, and flagged on the SYMPTOM - not on blame. The driver feels aEgo jerk; whether it
     # is ours is what the ratio and the gas/brake split are for. Naming a check after a suspected
@@ -1216,7 +1266,7 @@ def write_ledger_md(rows):
 
 
 def main():
-  ap = argparse.ArgumentParser(description="Validate a route against the ody-op-long tune watchlist")
+  ap = argparse.ArgumentParser(description="Validate a route against the Odyssey longitudinal watchlist")
   ap.add_argument("route")
   ap.add_argument("description", nargs="?")
   ap.add_argument("--no-ledger", action="store_true", help="print only, don't append to the ledger")
