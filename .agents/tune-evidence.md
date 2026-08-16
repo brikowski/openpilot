@@ -53,8 +53,8 @@ The report keeps the raw 50 Hz `ACC_CONTROL` stream, integrity status, counter/c
 payload bit-change counts, domain transition timing, speed/acceleration cells, and a held-out
 model. This is not a calibration oracle: `GAS_COMMAND` is unitless/opaque, the fitted model is a
 shadow estimator, and replay/log fitting does not establish closed-loop ride quality. Preserve the
-`-30000` inactive sentinel, Honda safety rails, and the `<=60` first-live gas handoff while using
-the output to choose a bounded road-test candidate.
+`-30000` inactive sentinel and Honda safety rails; report first-live gas handoffs diagnostically
+rather than treating an uncalibrated slew limit as known-good behavior.
 
 - **Private log retention**: `pull_logs.py` retains full-rate local rlogs by default. Pruning is deliberately opt-in with `--prune-hours`; once both the device and local archive delete a route, new metrics cannot be backfilled. Official maneuver report generators accept these bare local route IDs, so comma connect publication is not required.
 - **Counterfactual replay boundary**: `replay_carcontroller.py` compares command shape on frozen recorded inputs. It can catch command-fidelity regressions without driving, but cannot predict closed-loop vehicle response or on-road BRAKE_REQUEST counts. Never promote a tuning change from replay alone.
@@ -180,7 +180,15 @@ the output to choose a bounded road-test candidate.
   Do not tune against this one perception-confounded event. Reopen/revert the entry candidate if
   late onset repeats with a stable lead trajectory; keep inspecting lead, request, wire, gas/domain,
   and `aEgo` separately.
-- **Gas-command ramp fix — VALIDATED; this half of the arm is closed**: `bosch_last_gas` now resets whenever longitudinal gas is inactive or the controller is in the brake domain. Only eligible gas advances the 60-count ramp. The parent regression test mutates the old failure and the validator reports the first live `GAS_COMMAND` after every inactive-to-live handoff. New ordinary routes `45`, `4d`, `4f`, `50`-`54`, and `57` supplied 50.0 engaged minutes / 37.3 miles across seven useful drives: zero crashes, stale re-engagement braking, or low-speed conflicts, and all 72 gas handoffs began at `<=60` counts. Official longitudinal route `00000056--9c1708dfa7` completed all 21 required runs with another 101 handoffs at `<=60`, zero lifecycle conflicts, and repeatable start/step response. Do not reopen this arm without a new logged regression.
+- **Gas-command ramp — MECHANISM VERIFIED, CALIBRATION RETIRED**: after its precharge defect was
+  fixed, seven ordinary drives produced 72 first-live commands at `<=60` counts and official route
+  `00000056--9c1708dfa7` added 101 more with clean lifecycle behavior. That proved the limiter worked
+  as coded and could complete the maneuver suite; it did not compare driver feel, achieved response,
+  or launch delay against upstream direct gas, and therefore did not prove the ramp or its 60-count
+  value helped. The route-42 resume audit further showed the limiter consumed about 0.45 s while the
+  larger response deficit continued for several seconds. `ody-op-test2` now applies calculated gas
+  immediately and retains the first-live command metric as a diagnostic. Reintroduce a limiter only
+  after an isolated direct-versus-limited road comparison identifies a repeatable transition defect.
 - **Lateral tune — RETIRED TO STOCK 2026-08-11.** The planned cold-start fallback confirmation was
   never executed: route `00000055--b6c9bb3917` completed all 24 lateral runs but `liveDelay` stayed
   cached at 0.444 s. The GPS-matched stock/ody routes showed essentially equal lateral tracking

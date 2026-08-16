@@ -103,7 +103,6 @@ LOW_SPEED_CONFLICT_SEC_FLAG = 0.10  # positive request with BRAKE_REQUEST still 
 CAN_COMMAND_PERIOD_S = 0.02   # ACC_CONTROL is emitted at 50 Hz while carControl logs at 100 Hz
 LOW_SPEED_SKEW_S = CAN_COMMAND_PERIOD_S  # tolerate one complete command period at a request edge
 GAS_INACTIVE = -30000        # MUST track honda/hondacan.py create_acc_commands.
-GAS_RAMP_STEP = 60           # MUST track the Odyssey ramp in honda/carcontroller.py.
 REENGAGE_WINDOW_S = 0.50      # route 34 leaked stale brake for 0.20s after longitudinal re-entry
 REENGAGE_STALE_SEC_FLAG = 0.10
 LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: region where an incorrect handoff can interfere with an
@@ -144,6 +143,7 @@ RAW_DOMAIN_COMMITS = {
 }
 THREE_DOMAIN_COMMITS = {
   "e46e9eaa6885",  # ody-op-test2 stateless coast and low-speed stop candidate
+  "ece147ad7730",  # same candidate with the unproven gas handoff ramp removed
 }
 COMPENSATED_DOMAIN_COMMITS = {
   "13cfc73646e1",  # ody-op telemetry cleanup, 0.50 release width
@@ -1030,11 +1030,9 @@ def verdicts(r):
         f"{r['reengagement_stale_worst']:+.2f} m/s^2",
         status="brake command leaked across inactive control" if stale_bad else None)
   if r.get("gas_handoff_events"):
-    handoff_bad = r["gas_handoff_max"] > GAS_RAMP_STEP + 0.5
-    add("gas handoff ramp", not handoff_bad,
+    add("gas handoff command (diagnostic)", True,
         f"{r['gas_handoff_events']} inactive-to-live handoff(s), largest first command "
-        f"{r['gas_handoff_max']:.0f} counts (<= {GAS_RAMP_STEP})",
-        status="gas ramp state advanced while GAS_COMMAND was ineligible" if handoff_bad else None)
+        f"{r['gas_handoff_max']:.0f} counts (no calibrated handoff limit)")
   if r.get("direct_gas_to_brake") is not None:
     # Diagnostic only. Direct handoffs are observations, not a claimed comfort invariant.
     add("direct gas/brake handoffs (diagnostic)", True,
