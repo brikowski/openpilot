@@ -12,8 +12,9 @@ test branch. Keep parent and nested opendbc branches paired.
 
 `ody-op-test` is a frozen failed experiment. Do not add commits to it or treat its coast interlock,
 raw `-0.40` entry, zero brake integral, onset shaper, or direct brake release as accepted knowledge.
-`ody-op-test2` is the active child and resets the complete brake-command path to upstream Honda
-source semantics while leaving the existing gas path unchanged for clean attribution.
+`ody-op-test2` is the active child. Its upstream raw-split reference failed its road screen; the
+current candidate adds only a stateless coast domain at road speed and low-speed stop authority.
+It does not restore the retired brake PID, compensated input, release hysteresis, or onset shaping.
 
 Lateral is **stock and closed**: LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.15`.
 The former 0.20 s fallback had no isolated road benefit, so it was retired rather than kept as an
@@ -68,7 +69,7 @@ the domain bits leave gas inactive. Locate the first divergence before assigning
 The two-state release-width work is closed without promotion. Entry `-0.30`, width `0.50` reduced
 descent transitions but held braking through positive requests; width `0.20` released sooner but
 returned driver-felt tapping on split routes `00000027`/`00000028` (12 physical descent edges over
-0.734 min, 16.4/min). Do not continue width or threshold tuning from that result.
+0.734 min, 16.4/min). Do not continue that two-state width/threshold architecture.
 
 The first `ody-op-test` architecture failed its road screen on route
 `00000029--4c9b612e7c`: it produced 24 direct gas-to-brake and 23 direct brake-to-gas handoffs in
@@ -84,13 +85,24 @@ downhill applications had a median duration of 10.86 s and median achieved-accel
 8.08 s. The gap is both episode frequency and onset shape. A one-command coast interlock is not
 a pulse-braking fix, and the `ody-op-test` stack is closed without promotion.
 
-`ody-op-test2` is now the fresh brake-source baseline. It removes every unproven custom brake
-calibration: supplemental integral braking, compensated entry, stateful release hysteresis, and
-onset shaping. `ACCEL_COMMAND` is the clipped controller request, and Honda's upstream raw-request
-split at the live gas-lookup floor chooses the command domain. This is a source reference, not a
-claim that stock braking is comfortable: master route `00000024--5c888c605c` measured 108.2
-downhill edges/min. Do not deploy it as an improvement without an explicit controlled-reference
-test plan.
+The fresh raw-split `ody-op-test2` reference failed on both first drives. Route
+`00000042--990be22fe1` measured 167 physical brake edges (30.3/min overall, peak 28/10 s,
+119.4/min downhill); route `00000041--91a6b6745b` measured 69 (11.2/min, peak 26/10 s,
+121.0/min downhill). Around 39 mph the raw request crossed `-0.20` repeatedly and Honda's
+`COMPUTER_BRAKING` followed every `BRAKE_REQUEST`. During the route-42 lead stop, the request
+relaxed from `-0.21` to `-0.18` below 2 mph, the raw split selected gas, speed rose, and the driver
+took over. The planner also withheld `shouldStop` until near zero; a car-port domain change cannot
+repair that upstream stop decision.
+
+The current candidate keeps `ACCEL_COMMAND` as the clipped raw request and uses three stateless
+domains. At road speed, positive requests select gas, requests from `0` through `-0.30` coast with
+both gas and brake inactive, and stronger requests select brake immediately. Below 5 m/s,
+non-positive requests select brake and any positive start request selects gas immediately. This
+separates the measured `-0.18/-0.23` chatter band without state that can hold brake through a
+positive request. Frozen-input replay reduced route-wide brake-bit edges from 69 to 2 and 167 to
+14, changed the route-42 39 mph pulse window from 36 to 0, and kept brake selected throughout both
+recorded stop approaches. Those are command-shape results only; controlled and ordinary-road
+drives must still reject late onset, excess overspeed, renewed tapping, or incomplete stops.
 
 The retained custom longitudinal behavior is outside brake authority: the road-supported Odyssey
 gasfactor calibration and the validated `<=60` inactive-to-live gas ramp. Gas and brake remain
@@ -99,7 +111,8 @@ and positive stop-release requests select gas immediately. Windfactor remains an
 unproven gas-side learner and is not allowed to choose the brake domain; audit it separately rather
 than coupling a powertrain rewrite to this brake reset.
 
-Do not substitute this stock-semantics reset for the `ody-op` recovery branch. Full-rate master
+Do not substitute the failed raw-split reference or the unvalidated three-domain candidate for the
+`ody-op` recovery branch. Full-rate master
 route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s, versus 1.9/min and
 peak 3/10 s on `ody-op` route `00000026--bfe3fd933b`. The current upstream-pinned Honda path still
 uses the same raw request and fixed -0.20 split, so that comparison remains behaviorally relevant.
@@ -109,6 +122,6 @@ per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin sugges
 
 The production windfactor learner is not independently identified from the gasfactor learner and
 grade compensation. Do not call it validated or include it among the known-good behavior. It is
-carried unchanged only so the fresh brake-source reference does not also become a gas-powertrain
+carried unchanged only so the brake-domain candidate does not also become a gas-powertrain
 experiment. Any removal or replacement must be its own arm, with gasfactor frozen or partitioned
 during identification because both learners use the same tracking error.

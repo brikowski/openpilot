@@ -139,3 +139,5 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-13 | 0000003d--9e8f784316 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
 | 2026-08-15 | 0000003f--cf7b94c588 | ody-op-test | 6ad6819a7421 | 3.9 | 3.7 | 0 | 0.185 | 0.013 | 0.520 | 0.179 | 0.006 | 0.047 | 8 | 0.0 | 2.6 | brake-domain transition bursts |
 | 2026-08-15 | 00000040--ff2868cffe | ody-op-test | 6ad6819a7421 | 9.3 | 6.2 | 0 | 0.233 | 0.050 | 0.658 | 0.273 | 0.009 | 0.130 | 7 | 0.0 | 4.3 | brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-16 | 00000042--990be22fe1 | ody-op-test2 | f6e4f07bdc61 | 5.7 | 3.9 | 0 | 0.221 | 0.006 | 0.620 | 0.305 | 0.008 | 0.008 | 28 | 0.0 | 3.5 | creep at stop, brake-domain transition bursts |
+| 2026-08-16 | 00000041--91a6b6745b | ody-op-test2 | f6e4f07bdc61 | 6.3 | 6.3 | 0 | 0.168 | 0.006 | 0.631 | 0.164 | 0.006 | 0.007 | 26 | 0.0 | 4.8 | brake-domain transition bursts |

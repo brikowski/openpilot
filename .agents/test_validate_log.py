@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import validate_log
 from validate_log import (
   ODYSSEY,
+  THREE_DOMAIN_COMMITS,
   _base_route,
   _domain_model,
   _suggest_status_rows,
@@ -73,6 +74,19 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert valid and note == "raw upstream split"
   np.testing.assert_array_equal(switch, requested)
   np.testing.assert_array_equal(threshold, np.full(200, -0.20))
+
+  candidate_commit = "candidate123"
+  THREE_DOMAIN_COMMITS.add(candidate_commit)
+  try:
+    switch, threshold, valid, note = _domain_model(
+      candidate_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+  finally:
+    THREE_DOMAIN_COMMITS.discard(candidate_commit)
+  assert valid and note == "raw three-domain coast split"
+  np.testing.assert_array_equal(switch, requested)
+  np.testing.assert_array_equal(threshold[:100], np.zeros(100))
+  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.30))
 
   switch, threshold, valid, note = _domain_model(
     "e29fe3dccd09", requested, speed, pitch, windfactor, 0.01,
