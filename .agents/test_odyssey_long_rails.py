@@ -122,6 +122,31 @@ class TestOdysseyLongRails(unittest.TestCase):
               assert gas != GAS_INACTIVE, "positive road request did not select gas"
               assert brake_request == 0
 
+  def test_road_speed_brake_domain_releases_for_positive_request(self):
+    """A settling brake request may cross the coast band, but positive gas releases immediately."""
+    accels = np.array([-0.31] * 20 + [-0.23] * 20 + [0.10] * 20)
+    rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
+    assert not rejects
+    brake = np.array([br for _, _, br in seen], dtype=bool)
+    gas = np.array([gas for _, gas, _ in seen])
+    # The state is intentionally narrow: negative coast requests do not re-arm/release the
+    # friction-brake domain, while a positive request still gets gas on the next command.
+    assert brake[:10].all()
+    assert brake[10:20].all()
+    assert not brake[-10:].any()
+    assert (gas[-10:] != GAS_INACTIVE).all()
+
+  def test_road_speed_gas_domain_does_not_pulse_at_zero(self):
+    """A tiny negative request releases gas only after leaving the narrow near-zero band."""
+    accels = np.array([0.10] * 20 + [-0.01] * 20 + [0.10] * 20 + [-0.03] * 20)
+    rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
+    assert not rejects
+    gases = np.array([gas for _, gas, _ in seen])
+    brake = np.array([br for _, _, br in seen], dtype=bool)
+    assert (gases[:30] != GAS_INACTIVE).all(), "near-zero road request pulsed gas inactive"
+    assert (gases[-10:] == GAS_INACTIVE).all(), "gas remained active past the release band"
+    assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
+
   def test_gas_command_does_not_add_unverified_grade_or_drag(self):
     """The gas wire must not change solely because the recorded pitch changes."""
     accels = np.full(40, 0.10)
