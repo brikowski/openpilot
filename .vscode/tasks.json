@@ -16,7 +16,7 @@
     {
       "label": "Run Jotpluggler",
       "type": "shell",
-      "command": "uv run openpilot/tools/jotpluggler/jotpluggler --layout brikowski \"${input:jotplugglerArg}\"",
+      "command": "uv run openpilot/tools/jotpluggler/jotpluggler --layout brikowski --data-dir /Users/travisbadgley/.comma/media/0/realdata \"${input:jotplugglerArg}\"",
       "problemMatcher": [],
       "presentation": {
         "echo": true,

@@ -122,6 +122,15 @@ class TestOdysseyLongRails(unittest.TestCase):
               assert gas != GAS_INACTIVE, "positive road request did not select gas"
               assert brake_request == 0
 
+  def test_gas_command_does_not_add_unverified_grade_or_drag(self):
+    """The gas wire must not change solely because the recorded pitch changes."""
+    accels = np.full(40, 0.10)
+    _, level = _run(True, accels, pitch=0.0, vego=31.0)
+    _, downhill = _run(True, accels, pitch=-0.05, vego=31.0)
+    level_gas = np.array([gas for _, gas, _ in level])
+    downhill_gas = np.array([gas for _, gas, _ in downhill])
+    np.testing.assert_array_equal(downhill_gas, level_gas)
+
   def test_low_speed_nonpositive_request_never_selects_gas(self):
     """A lead-stop request may relax above -0.20 but must keep brake authority below 5 m/s."""
     for vego in (0.0, 1.0, 4.99):
@@ -145,8 +154,8 @@ class TestOdysseyLongRails(unittest.TestCase):
   def test_acc_control_within_safety_rails(self):
     """Every ACC_CONTROL frame from the active path passes the panda TX hook.
 
-    Grade and speed still affect the Odyssey gas calibration, so sweep them even though domain
-    selection uses only the raw request and speed.
+    Speed affects the Odyssey gas calibration; grade is intentionally diagnostic-only. Sweep both
+    dimensions even though domain selection uses only the raw request and speed.
     """
     for pitch in [0.0, -0.05, -0.02, 0.02, 0.05]:
       for vego in [0.0, 3.0, 8.0, 20.0, 31.0]:
