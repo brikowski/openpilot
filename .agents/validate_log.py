@@ -137,9 +137,13 @@ DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode 
 DOMAIN_PITCH_FILTER_TAU = 0.5  # Legacy ody-op compensated-domain model.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
+THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track ODYSSEY_ROAD_BRAKE_ENTRY in carcontroller.py.
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
   "44f2987cb6ed",  # upstream stock comparison routes
+}
+THREE_DOMAIN_COMMITS = {
+  "e46e9eaa6885",  # ody-op-test2 stateless coast and low-speed stop candidate
 }
 COMPENSATED_DOMAIN_COMMITS = {
   "13cfc73646e1",  # ody-op telemetry cleanup, 0.50 release width
@@ -236,6 +240,9 @@ def _series(msgs, which, extract):
 def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
   """Return the source-matched Odyssey domain input without importing branch-specific helpers."""
   commit = (opendbc_commit or "")[:12]
+  if commit in THREE_DOMAIN_COMMITS:
+    entry_threshold = np.where(speed < LOW_SPEED_DOMAIN_VEGO, 0.0, THREE_DOMAIN_ROAD_BRAKE_ENTRY)
+    return requested, entry_threshold, True, "raw three-domain coast split"
   if commit in RAW_DOMAIN_COMMITS:
     return requested, np.full_like(requested, HondaParams.BOSCH_GAS_LOOKUP_BP[0]), True, "raw upstream split"
   if commit in COMPENSATED_DOMAIN_COMMITS:
@@ -810,7 +817,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   )
   out["domain_model_valid"] = model_valid
   out["domain_model_note"] = model_note
-  out["brake_passthrough_expected"] = (opendbc_commit or "")[:12] in RAW_DOMAIN_COMMITS
+  out["brake_passthrough_expected"] = (opendbc_commit or "")[:12] in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
   if model_valid:
     out.update(brake_release_hold_metrics(
       switch_accel, entry_threshold, requested, aego, BR, active,

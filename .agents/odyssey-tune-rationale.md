@@ -13,17 +13,17 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
 - Filtered pitch and learned aerodynamic drag feed the opaque gas command. On `ody-op-test2` they
-  cannot select the brake domain or change `ACCEL_COMMAND`; the validator models the same upstream
-  raw-request split used by `hondacan`.
+  cannot select the brake domain or change `ACCEL_COMMAND`; its command domains use only the raw
+  request and speed.
 - Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. The fresh
   `ody-op-test2` brake path therefore adds no second controller.
 - `ody-op` retains `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, compensated road-speed
   switching, and its one-sided brake integral. `ody-op-test` is frozen after its stacked coast,
   threshold, integral, onset, and release experiments failed the reported downhill symptom.
-- `ody-op-test2` removes the unproven custom brake PID, compensated threshold, release hysteresis,
-  and onset shaping. Its clipped `ACCEL_COMMAND` and raw-request gas/brake split match upstream
-  Honda source semantics. This is a clean reference, not a comfort claim; logged upstream stock
-  remains the worst downhill-cycling control.
+- The raw upstream-split `ody-op-test2` reference failed its first road screen. The current
+  candidate still removes the custom brake PID, compensated threshold, release hysteresis, and
+  onset shaping. It keeps raw clipped `ACCEL_COMMAND`, coasts for road-speed requests from `0`
+  through `-0.30`, brakes below `-0.30`, and retains brake for non-positive requests below 5 m/s.
 - Gas ramp state resets while longitudinal gas is inactive, keeping every inactive-to-live
   `GAS_COMMAND` handoff at <=60.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
@@ -74,6 +74,11 @@ a substitute for current code, DBC semantics, or full-rate logs.
   than a copied grade model.
 - Replay is useful for fixed-input command shape but repeatedly underpredicted closed-loop domain
   transitions. Do not promote another transition change without a terrain-matched road comparison.
+- Raw-split routes `00000042--990be22fe1` and `00000041--91a6b6745b` produced 167/69 brake edges,
+  including the reported 39 mph cycling. Route 42 also released brake and sent gas at about
+  `-0.18 m/s2` below 2 mph during a lead stop. The current three-domain candidate changes the
+  frozen-input edge counts to 14/2, removes all 36 edges from the exact pulse window, and keeps
+  both recorded stop windows in brake. Those results establish command shape only.
 - Late lead approaches and traffic-light non-commitment have first diverged in `aTarget`/`shouldStop`,
   upstream of the Honda port. Low-speed excess decel has primarily appeared after correct CAN output,
   in Honda's actuator response. Neither symptom justifies more port brake authority.
@@ -89,9 +94,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
 ## Validation and reopening criteria
 
 - `ody-op` remains the recovery and shared-tooling branch; stock Honda radar remains the road
-  fallback. `ody-op-test` is a frozen failed snapshot. `ody-op-test2` is now a software-only clean
-  brake-source reference, not an onset candidate or presumed improvement. Compare any future road
-  evidence on the same terrain against radar and `ody-op`, grouped by resolved `opendbc_commit`.
+  fallback. `ody-op-test` is a frozen failed snapshot. The raw-split `ody-op-test2` reference is
+  road-failed, and its three-domain successor is a software-only candidate rather than a presumed
+  improvement. Compare future evidence on the same terrain against radar and `ody-op`, grouped by
+  resolved `opendbc_commit`.
 - Keep the official lateral and longitudinal maneuver routes plus ordinary-road full-rate rlogs
   private and retained. `.agents/log-validation-ledger.jsonl` is the compact evidence index.
 - Reopen tuning only for a repeatable symptom whose first divergence is inside the Honda controller
