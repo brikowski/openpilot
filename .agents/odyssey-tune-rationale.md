@@ -24,8 +24,8 @@ a substitute for current code, DBC semantics, or full-rate logs.
   candidate still removes the custom brake PID, compensated threshold, release hysteresis, and
   onset shaping. It keeps raw clipped `ACCEL_COMMAND`, coasts for road-speed requests from `0`
   through `-0.30`, brakes below `-0.30`, and retains brake for non-positive requests below 5 m/s.
-- Gas ramp state resets while longitudinal gas is inactive, keeping every inactive-to-live
-  `GAS_COMMAND` handoff at <=60.
+- Eligible gas receives the calculated `GAS_COMMAND` immediately. The former 60-count handoff ramp
+  was mechanically verified but retired because no isolated comparison established a road benefit.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
   other Honda interfaces in the same process.
 - `.agents/analyze_radar_commands.py` is the offline stock-radar reverse-engineering tool. It
@@ -43,8 +43,8 @@ a substitute for current code, DBC semantics, or full-rate logs.
 
 ## Evidence that fixed the design
 
-- Precharging the gas ramp while its command was ineligible produced first live commands of
-  192-255 counts. Resetting inactive state has since held all validated handoffs to <=60.
+- The retired gas ramp reliably limited first-live commands after its precharge defect was fixed,
+  but those observations proved implementation rather than benefit versus upstream direct gas.
 - A latched brake domain once integrated while disengaged and leaked braking on re-engagement.
   Resetting domain and PID state with `longActive == false` eliminated that lifecycle failure.
 - Grade compensation can sit near the gas/brake threshold on descents. Small symmetric hysteresis,
@@ -100,9 +100,11 @@ a substitute for current code, DBC semantics, or full-rate logs.
   resolved `opendbc_commit`.
 - Keep the official lateral and longitudinal maneuver routes plus ordinary-road full-rate rlogs
   private and retained. `.agents/log-validation-ledger.jsonl` is the compact evidence index.
-- Reopen tuning only for a repeatable symptom whose first divergence is inside the Honda controller
-  or between controller output and CAN. Preserve the downstream Honda ECU loop and the <=60 gas
-  handoff invariant.
+- Reopen the layer containing a repeatable symptom's first divergence: model/planner,
+  `longcontrol`, Honda CAN/domain translation, or achieved Honda actuator response. A correct
+  numeric `ACCEL_COMMAND` without the correct active domain is not command fidelity. Preserve the
+  downstream Honda ECU loop and gas-command safety rails; never reshape a model command to hide an
+  upstream defect.
 - Before promotion, require controlled maneuvers and comparable ordinary-road evidence. Measure
   gas/coast/brake exposure, direct gas/brake handoffs, physical brake transitions, achieved jerk,
   set-speed error, and driver report. Software, replay, and preflash tests establish correctness and

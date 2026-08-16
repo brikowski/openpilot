@@ -32,6 +32,16 @@ Trace questionable behavior in this order:
 `longcontrol` may legitimately override it. Numeric `ACCEL_COMMAND` fidelity is not sufficient if
 the domain bits leave gas inactive. Locate the first divergence before assigning the symptom.
 
+Use that first divergence to choose the work:
+
+- If the model/planner command pulses or fails to stop, investigate Experimental/model/planner
+  behavior; do not compensate for it in the car port.
+- If the planner is smooth but `carControl` is not, investigate `longcontrol`.
+- If `carControl` is correct but numeric CAN or the active gas/brake domain differs, investigate the
+  Honda translation.
+- If numeric CAN and its domain are correct but `aEgo` bites or lags, calibrate Honda actuator
+  response without reshaping the model command.
+
 ## Evidence rules
 
 1. **Replay checks command shape, not closed-loop timing.** It freezes the recorded inputs; only a
@@ -104,12 +114,13 @@ positive request. Frozen-input replay reduced route-wide brake-bit edges from 69
 recorded stop approaches. Those are command-shape results only; controlled and ordinary-road
 drives must still reject late onset, excess overspeed, renewed tapping, or incomplete stops.
 
-The retained custom longitudinal behavior is outside brake authority: the road-supported Odyssey
-gasfactor calibration and the validated `<=60` inactive-to-live gas ramp. Gas and brake remain
-mutually exclusive, disengagement emits no longitudinal command, Panda bounds command magnitude,
-and positive stop-release requests select gas immediately. Windfactor remains an explicitly
-unproven gas-side learner and is not allowed to choose the brake domain; audit it separately rather
-than coupling a powertrain rewrite to this brake reset.
+The retained custom longitudinal behavior outside brake authority is the road-supported Odyssey
+gasfactor calibration. The unproven 60-count handoff ramp is retired: eligible gas now receives the
+calculated command immediately. Gas and brake remain mutually exclusive, disengagement emits no
+longitudinal command, Panda bounds command magnitude, and positive stop-release requests select gas
+immediately. Windfactor remains an explicitly unproven gas-side learner and is not allowed to choose
+the brake domain; audit it separately rather than coupling a powertrain rewrite to this focused gas
+handoff reset.
 
 Do not substitute the failed raw-split reference or the unvalidated three-domain candidate for the
 `ody-op` recovery branch. Full-rate master

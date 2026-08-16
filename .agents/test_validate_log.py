@@ -178,6 +178,28 @@ def test_after_grace_ignores_one_can_period_but_keeps_a_latch():
   assert after_grace(latched, 0.01, 0.02).tolist() == [False, False, False, True, True, False]
 
 
+def test_verdict_reports_direct_gas_handoff_without_inventing_a_limit():
+  route = {
+    "crashes": 0,
+    "track_rms": None,
+    "passthrough_rms": None,
+    "gasf_eff_mean": None,
+    "windf_mean": None,
+    "overshoot_frac": 0.0,
+    "creep_frames": 0,
+    "gas_handoff_events": 2,
+    "gas_handoff_max": 1200.0,
+  }
+
+  handoff = next(v for v in validate_log.verdicts(route)
+                 if v["check"] == "gas handoff command (diagnostic)")
+
+  assert handoff["ok"]
+  assert handoff["status"] is None
+  assert "1200 counts" in handoff["detail"]
+  assert "no calibrated handoff limit" in handoff["detail"]
+
+
 def test_causal_lpf_can_reproduce_a_zero_initialized_controller_filter():
   samples = np.ones(3)
 
@@ -236,10 +258,10 @@ def _transition_trace(brake_release_frame, first_gas):
   )
 
 
-def test_transition_golden_trace_accepts_transport_skew_and_60_count_handoff():
+def test_transition_golden_trace_accepts_transport_skew_and_reports_direct_gas_handoff():
   """The fixed trace stays clean while still proving every detector was exercised.
   """
-  metrics = _transition_trace(brake_release_frame=12, first_gas=60)
+  metrics = _transition_trace(brake_release_frame=12, first_gas=1200)
 
   assert metrics == {
     "low_speed_conflict_sec": 0.0,
@@ -251,22 +273,22 @@ def test_transition_golden_trace_accepts_transport_skew_and_60_count_handoff():
     "reengagement_stale_events": 0,
     "reengagement_stale_worst": 0.0,
     "gas_handoff_events": 1,
-    "gas_handoff_max": 60.0,
+    "gas_handoff_max": 1200.0,
     "direct_gas_to_brake": 0,
     "direct_brake_to_gas": 0,
   }
 
 
-def test_transition_mutation_detects_latch_and_precharged_gas():
-  """Mutating the trace to the old failure must make all three lifecycle metrics nonzero."""
-  metrics = _transition_trace(brake_release_frame=25, first_gas=240)
+def test_transition_mutation_detects_latch_without_grading_direct_gas_handoff():
+  """A direct gas handoff stays diagnostic while the mutated brake lifecycle must fail."""
+  metrics = _transition_trace(brake_release_frame=25, first_gas=1200)
 
   assert np.isclose(metrics["low_speed_conflict_sec"], 0.13)
   assert metrics["low_speed_conflict_events"] == 1
   assert np.isclose(metrics["reengagement_stale_sec"], 0.13)
   assert metrics["reengagement_stale_events"] == 1
   assert metrics["gas_handoff_events"] == 1
-  assert metrics["gas_handoff_max"] == 240.0
+  assert metrics["gas_handoff_max"] == 1200.0
 
 
 def test_transition_mutation_detects_direct_domains_but_accepts_coast_interlock():
