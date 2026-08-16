@@ -118,9 +118,10 @@ The retained custom longitudinal behavior outside brake authority is the road-su
 gasfactor calibration. The unproven 60-count handoff ramp is retired: eligible gas now receives the
 calculated command immediately. Gas and brake remain mutually exclusive, disengagement emits no
 longitudinal command, Panda bounds command magnitude, and positive stop-release requests select gas
-immediately. Windfactor remains an explicitly unproven gas-side learner and is not allowed to choose
-the brake domain; audit it separately rather than coupling a powertrain rewrite to this focused gas
-handoff reset.
+immediately. The new route-43 gas arm leaves that gasfactor calibration and the three-domain brake
+candidate unchanged, but removes unverified wind/grade feedforward from the actual `GAS_COMMAND`.
+Windfactor remains logged as diagnostic-only learner state; it cannot choose the brake domain or add
+wire force. This is a command-path isolation experiment, not a road-proven comfort improvement.
 
 Do not substitute the failed raw-split reference or the unvalidated three-domain candidate for the
 `ody-op` recovery branch. Full-rate master

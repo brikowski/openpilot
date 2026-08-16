@@ -61,6 +61,18 @@ rather than treating an uncalibrated slew limit as known-good behavior.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
 ## Current Validation Arm (raw split failed 2026-08-15; three-domain candidate)
+- **Route 43 gas attribution (2026-08-16).** The thin full-rate drive `00000043--87b375be62`
+  followed `carControl.actuators.accel` and the Honda CAN/domain bits (gas RMS 0.0098 m/s2,
+  brake RMS 0.0176 m/s2, no command/domain divergence), so its excessive gas is not a planner-to-
+  wire mismatch. Against held-out stock-radar routes `0000002b` and `0000003b`, the pooled gas
+  shadow scored the openpilot wire at MAE 817.9 counts with bias -817.7; at small positive
+  requests the current custom path reached roughly 750-1,700 counts where the stock-radar shadow
+  was typically 180-400. This is command-shape evidence, not a closed-loop ride result. The
+  smallest isolated arm therefore keeps the road-supported speed-scheduled gasfactor and the
+  existing brake/domain path, but removes wind/grade feedforward from the actual gas wire. The
+  windfactor learner remains diagnostic-only so this arm does not silently change its evidence
+  stream; the arm is not road-proven until a controlled and ordinary-road comparison is run.
+
 - **The fresh brake-source reset failed its first road screen.** It removed the supplemental brake
   PID, compensated input, release hysteresis, and onset shaping, then used upstream's raw `-0.20`
   split. Routes `00000042--990be22fe1` and `00000041--91a6b6745b` immediately reproduced the

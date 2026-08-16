@@ -141,3 +141,6 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-15 | 00000040--ff2868cffe | ody-op-test | 6ad6819a7421 | 9.3 | 6.2 | 0 | 0.233 | 0.050 | 0.658 | 0.273 | 0.009 | 0.130 | 7 | 0.0 | 4.3 | brake-domain transition bursts, ride harshness (felt) |
 | 2026-08-16 | 00000042--990be22fe1 | ody-op-test2 | f6e4f07bdc61 | 5.7 | 3.9 | 0 | 0.221 | 0.006 | 0.620 | 0.305 | 0.008 | 0.008 | 28 | 0.0 | 3.5 | creep at stop, brake-domain transition bursts |
 | 2026-08-16 | 00000041--91a6b6745b | ody-op-test2 | f6e4f07bdc61 | 6.3 | 6.3 | 0 | 0.168 | 0.006 | 0.631 | 0.164 | 0.006 | 0.007 | 26 | 0.0 | 4.8 | brake-domain transition bursts |
+| 2026-08-16 | 00000045--409f3100f1 | ody-op-test2 | ece147ad7730 | 1.8 | 1.4 | 0 | 0.451 | 0.010 | 1.604 | 0.625 | 0.013 | 0.017 | 2 | 0.0 | 5.7 | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, ride harshness (felt) |
+| 2026-08-16 | 00000044--2187f67793 | ody-op-test2 | ece147ad7730 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | device thermal |
+| 2026-08-16 | 00000043--87b375be62 | ody-op-test2 | ece147ad7730 | 5.7 | 5.0 | 0 | 0.436 | 0.009 | 1.409 | 1.635 | 0.010 | 0.018 | 6 | 0.0 | 1.8 | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, windfactor rail exposure, brake-domain transition bursts, ride harshness (felt) |

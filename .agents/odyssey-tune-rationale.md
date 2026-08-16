@@ -12,9 +12,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
-- Filtered pitch and learned aerodynamic drag feed the opaque gas command. On `ody-op-test2` they
-  cannot select the brake domain or change `ACCEL_COMMAND`; its command domains use only the raw
-  request and speed.
+- The active gas arm keeps the speed-scheduled gasfactor calibration but sends `GAS_COMMAND` from
+  the controller request only. Pitch and learned aerodynamic-drag data remain available for
+  diagnostic analysis; the controller does not use them to select the brake domain, change
+  `ACCEL_COMMAND`, or add wire force. Command domains use only the raw request and speed.
 - Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. The fresh
   `ody-op-test2` brake path therefore adds no second controller.
 - `ody-op` retains `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, compensated road-speed
@@ -84,9 +85,11 @@ a substitute for current code, DBC semantics, or full-rate logs.
   in Honda's actuator response. Neither symptom justifies more port brake authority.
 - Windfactor is speed-adaptive but not independently identifiable from gasfactor and grade in ordinary
   logs. Its value is therefore unproven, not "confirmed not dead" and not part of the known-good set.
-  It remains unchanged on this branch only to keep the fresh brake-source reference from also changing
-  gas behavior. Any removal or replacement is a separate architecture experiment; freeze or partition
-  gasfactor during drag identification because the current learners use the same error.
+  Route 43 also showed the candidate's GAS_COMMAND far above the pooled stock-radar shadow model at
+  small positive requests. The smallest isolated arm removes wind/grade feedforward from the wire
+  while retaining the road-supported gasfactor calibration; windfactor remains diagnostic-only so a
+  later identification can be compared without changing the brake path. Freeze or partition
+  gasfactor during any drag identification because the current learners use the same error.
 - The bounded onset shaper was withdrawn before road validation when the calibration audit found
   that every numeric brake value in that stack was still provisional. Its `-0.10`, `0.60 m/s3`,
   `10 m/s`, and `-1.5 m/s2` values remain historical hypotheses, not retained behavior.
