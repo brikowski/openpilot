@@ -81,10 +81,11 @@ Use that first divergence to choose the work:
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
 - Car-port edits follow `.claude/skills/comma-standards/SKILL.md`. Keep production comments PR-lean:
   explain the invariant or reason; keep route numbers, dates, and experiment history in evidence.
-- `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The current
-  Odyssey use of its `gas`/`brake` fields for learned-factor telemetry is fork-only instrumentation.
-  Before an upstream PR, restore actuator semantics and either reconstruct the learners offline or
-  move them to an explicitly named diagnostic event accepted by the corresponding schema owner.
+- `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The
+  historical deployed child used its `gas`/`brake` fields for learned-factor telemetry; the
+  upstream-rooted port restores actuator semantics. Any future learner telemetry must be
+  reconstructed offline or moved to an explicitly named diagnostic event accepted by the
+  corresponding schema owner.
 - **Never sync opendbc to its own master.** Rebase it to the commit openpilot master pins, or
   `controlsd` crashes on-road from a `car.capnp` schema mismatch.
 - `lefthook run pre-commit` covers focused lint and pure metric tests. `.agents/preflash.py` adds
