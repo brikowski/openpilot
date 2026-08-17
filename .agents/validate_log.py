@@ -151,6 +151,18 @@ THREE_DOMAIN_COMMITS = {
   "ece147ad7730",  # same candidate with the unproven gas handoff ramp removed
   "f453a51e0081",  # low-speed brake PID arm; source-matched domain model remains three-domain
 }
+# Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
+# carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
+# as upstream actuator-output semantics until the source proves otherwise, so a new route cannot
+# silently turn a raw gas command into a fake gasfactor measurement.
+LEGACY_LEARNER_TELEMETRY_COMMITS = {
+  "01df474580bd", "12daafe768b6", "13cfc73646e1", "13d2b66a4d51", "1b6048e980f7",
+  "2ad060f0797b", "2cc9d0df854d", "618dc5995f80", "69ae9bf908dc", "6ad6819a7421",
+  "6d2f79e69d6b", "6e6ca0b25458", "72e099164e11", "76bd3550e9e8", "7962b8b7cad3",
+  "82afd9a22743", "99db0e56c49d", "b21cb2c323fe", "c1ce76fa857a", "d12c1a64a4eb",
+  "d18a8fd538d4", "d1d5eb5c7255", "d8f962bf3189", "e29fe3dccd09", "ebc938710a88",
+  "ec823173de2a", "ece147ad7730", "f53d878a19bf", "f6e4f07bdc61",
+}
 LOW_SPEED_BRAKE_PID_COMMITS = {
   "f453a51e0081",  # intentional ACCEL_COMMAND divergence below 3 m/s when brake is selected
 }
@@ -338,6 +350,11 @@ def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
   return None, None, False, f"unmapped opendbc commit {commit or '?'}"
 
 
+def _has_learner_telemetry(opendbc_commit):
+  """Whether this opendbc revision emitted fork-only learner values in carOutput."""
+  return (opendbc_commit or "")[:12] in LEGACY_LEARNER_TELEMETRY_COMMITS
+
+
 def _jerk(smoothed, dt, active):
   """Windowed central-slope derivative of an already-smoothed accel signal, gated to engaged
   frames. Differentiate over ~JERK_WIN_S rather than adjacent frames: the command updates at 50Hz
@@ -408,8 +425,8 @@ def analyze(msgs, platform):
   _, cc_lat_active = _series(msgs, "carControl", lambda m: 1.0 if m.carControl.latActive else 0.0)
   _, cc_lat_torque = _series(msgs, "carControl", lambda m: m.carControl.actuators.torque)
   t_co, co_accel = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.accel)
-  _, co_gasf = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.gas)
-  _, co_windf = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.brake)
+  _, co_gas_output = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.gas)
+  _, co_brake_output = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.brake)
   _, co_lat_torque = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.torque)
   _, co_lat_torque_can = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.torqueOutputCan)
   t_cs, cs_aego = _series(msgs, "carState", lambda m: m.carState.aEgo)
@@ -454,8 +471,8 @@ def analyze(msgs, platform):
   aego = onto(t_cs, cs_aego)
   vego = onto(t_cs, cs_vego)
   wire = onto(t_co, co_accel)
-  gasf = onto(t_co, co_gasf)
-  windf = onto(t_co, co_windf)
+  gas_output = onto(t_co, co_gas_output)
+  brake_output = onto(t_co, co_brake_output)
   lat_active = cc_lat_active > 0.5
   lat_request = cc_lat_torque
   lat_output = onto(t_co, co_lat_torque)
@@ -530,23 +547,26 @@ def analyze(msgs, platform):
     r["passthrough_rms"] = None
 
   is_ody = platform == ODYSSEY
-  if is_ody and active.sum() > 10:
-    g = gasf[active]
+  learner_telemetry = is_ody and _has_learner_telemetry(provenance.get("opendbc_commit"))
+  if learner_telemetry and active.sum() > 10:
+    g = gas_output[active]
     r["gasf_eff_mean"] = float(np.nanmean(g))
     r["gasf_eff_min"] = float(np.nanmin(g))
     r["gasf_eff_max"] = float(np.nanmax(g))
     n = max(1, len(g) // 10)
     r["gasf_drift"] = float(np.nanmean(g[-n:]) - np.nanmean(g[:n]))
-    w = windf[active]
+    w = brake_output[active]
     r["windf_mean"] = float(np.nanmean(w))
     r["windf_max"] = float(np.nanmax(w))
     highway = active & (vego > 20.0)
-    r["windf_floor_frac_highway"] = (float(np.nanmean(windf[highway] <= WINDF_FLOOR + WINDF_FLOOR_EPS))
+    r["windf_floor_frac_highway"] = (float(np.nanmean(brake_output[highway] <= WINDF_FLOOR + WINDF_FLOOR_EPS))
                                      if highway.sum() > 50 else None)
   else:
     for k in ("gasf_eff_mean", "gasf_eff_min", "gasf_eff_max", "gasf_drift", "windf_mean", "windf_max",
               "windf_floor_frac_highway"):
       r[k] = None
+    if is_ody and not learner_telemetry:
+      r["notes"].append("learner state unavailable: carOutput gas/brake are actuator outputs")
 
   # crashes: a managed DRIVING process dying (tune-evidence.md: controlsd death -> relayMalfunction,
   # three layers down). The specific signal is an errorLogMessage whose JSON `msg == "crash"`
@@ -703,7 +723,10 @@ def analyze(msgs, platform):
     #    These ask the only question the car port is accountable for: did the wire carry what the
     #    CarController was asked? See _following.
     following = _following(msgs, grid, cc_accel, active, pid, cc_pitch, vego, gaspressed,
-                           brakepressed, aego, gasf, windf, dt, (cc_stopping > 0.5) & active,
+                           brakepressed, aego,
+                           gas_output if learner_telemetry else None,
+                           brake_output if learner_telemetry else None,
+                           dt, (cc_stopping > 0.5) & active,
                            provenance.get("opendbc_commit"))
     r.update(following)
     if not following.get("domain_model_valid"):
@@ -860,12 +883,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   eng_all, vego_all = active.copy(), vego     # keep un-gated masks for stop/start metrics
 
   # Use the actual live gas domain and compare against the interpolated live seed over exactly
-  # the same frames. Broad midpoint bins made the old 8 m/s report structurally read high.
-  out.update(gasfactor_breakpoint_metrics(
-    vego_all, gasfactor, pid & ~gaspressed & ~brakepressed & (GAS > GAS_INACTIVE),
-    GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V,
-    half_width=GASF_SEED_HALF_WIDTH, min_exposure_s=GASF_SEED_MIN_ROUTE_S, dt=dt,
-  ))
+  # the same frames. This is available only on older routes whose carOutput field carried the
+  # learner; current upstream actuator semantics intentionally leave the report empty.
+  if gasfactor is not None:
+    out.update(gasfactor_breakpoint_metrics(
+      vego_all, gasfactor, pid & ~gaspressed & ~brakepressed & (GAS > GAS_INACTIVE),
+      GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V,
+      half_width=GASF_SEED_HALF_WIDTH, min_exposure_s=GASF_SEED_MIN_ROUTE_S, dt=dt,
+    ))
 
   # CUSTOM TOOLING: lifecycle metrics live in a pure array function so synthetic golden traces
   # can prove the one-frame transport allowance, stale re-engagement detection, and gas handoff
@@ -1429,7 +1454,7 @@ def write_ledger_md(rows):
     "`follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` "
     "counts physical BRAKE_REQUEST edges.\n\n"
     "| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS "
-    "| gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | "
+    "| legacy gasf | legacy windf | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | "
     "lat CAN p95/max | lat sat | steer faults | FLAGS |\n"
     "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
   lines = []

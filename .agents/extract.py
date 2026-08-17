@@ -22,7 +22,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set changes, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 3
+SCHEMA = 4
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 
@@ -58,7 +58,7 @@ def _decode(paths):
   cs = {k: [] for k in ("t", "vego", "aego", "gas_pressed", "brake_pressed", "vcruise",
                         "steer_angle", "steer_rate", "steering_torque", "steering_pressed",
                         "steer_fault_temp", "steer_fault_perm")}
-  co = {k: [] for k in ("t", "accel", "gasfactor", "windfactor", "torque", "torque_output_can")}
+  co = {k: [] for k in ("t", "accel", "gas_output", "brake_output", "torque", "torque_output_can")}
   ctl = {k: [] for k in ("t", "lat_active", "saturated", "actual_lat_accel", "desired_lat_accel")}
   lp = {k: [] for k in ("t", "atarget", "source", "allow_throttle", "has_lead", "should_stop")}
   sc = {k: [] for k in ("t", "gas", "accel", "brake_request")}
@@ -96,11 +96,12 @@ def _decode(paths):
       cs["steer_fault_perm"].append(float(s.steerFaultPermanent))
     elif w == "carOutput":
       a = m.carOutput.actuatorsOutput
-      # gas/brake on carOutput are REPURPOSED to the learned factors by the Odyssey carcontroller.
+      # carOutput.actuatorsOutput describes the actuator output. Learner state is not part of the
+      # upstream CarOutput schema and is not reconstructed here; use raw sendcan for wire commands.
       co["t"].append(t)
       co["accel"].append(a.accel)
-      co["gasfactor"].append(a.gas)
-      co["windfactor"].append(a.brake)
+      co["gas_output"].append(a.gas)
+      co["brake_output"].append(a.brake)
       co["torque"].append(a.torque)
       co["torque_output_can"].append(a.torqueOutputCan)
     elif w == "controlsState":
@@ -197,8 +198,8 @@ def _build(route):
   for k in ("gas_pressed", "brake_pressed", "steering_pressed", "steer_fault_temp", "steer_fault_perm"):
     out[k] = lin(cs, k) > 0.5
   out["wire"] = lin(co, "accel")
-  out["gasfactor"] = lin(co, "gasfactor")
-  out["windfactor"] = lin(co, "windfactor")
+  out["gas_output"] = lin(co, "gas_output")
+  out["brake_output"] = lin(co, "brake_output")
   out["lat_output_torque"] = lin(co, "torque")
   out["lat_output_torque_can"] = lin(co, "torque_output_can")
   out["lat_state_active"] = zoh(ctl, "lat_active") > 0.5

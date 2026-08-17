@@ -12,6 +12,7 @@ from validate_log import (
   THREE_DOMAIN_COMMITS,
   _base_route,
   _domain_model,
+  _has_learner_telemetry,
   _suggest_status_rows,
   lateral_metrics,
   write_ledger_md,
@@ -110,6 +111,13 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   )
   assert switch is threshold is None
   assert not valid and "unmapped" in note
+
+
+def test_learner_telemetry_is_only_read_from_legacy_caroutput_semantics():
+  assert not _has_learner_telemetry("3169fd4cc3fa")
+  assert not _has_learner_telemetry("f453a51e0081")
+  assert _has_learner_telemetry("e29fe3dccd09")
+  assert not _has_learner_telemetry("future-unknown")
 
 
 def test_gasfactor_breakpoint_uses_same_frame_seed_and_narrow_window():

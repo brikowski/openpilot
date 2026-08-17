@@ -2,7 +2,7 @@
 
 Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling `.jsonl`. One row is retained per route. Group behavioral comparisons by resolved `opendbc`, not by branch. Coverage and flags identify evidence to inspect; they do not authorize a tune change. `follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` counts physical BRAKE_REQUEST edges.
 
-| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS | gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | lat CAN p95/max | lat sat | steer faults | FLAGS |
+| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS | legacy gasf | legacy windf | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | lat CAN p95/max | lat sat | steer faults | FLAGS |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 2026-07-25 | 805f87f5e96d128c/0000000e--f97802bf64 | - | - | - | - | 0 | 0.176 | 0.006 | 0.541 | 0.177 | - | - | - | - | - | - | - | - | none |
 | 2026-07-25 | 805f87f5e96d128c/00000001--ed594b3fa7 | - | - | - | - | 0 | 0.164 | 0.011 | 0.673 | 0.348 | - | - | - | - | - | - | - | - | brake_pid overshoot, brake-onset jerk bind, stop-approach quality |
@@ -151,6 +151,6 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-17 | 00000049--464c76b447 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 4 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | controlsd crashes |
 | 2026-08-17 | 0000004c--9430801c67 | ody-op-test2 | 3169fd4cc3fa | 10.8 | 7.7 | 0 | 0.256 | 0.007 | 252.175 | 0.000 | 0.008 | 0.013 | 6 | 0.0 | 3.7 | - | - | - | gasfactor stability, windfactor rail exposure, brake takeovers, brake-domain transition bursts, ride harshness (felt) |
 | 2026-08-17 | 0000004b--6997d79209 | ody-op-test2 | 3169fd4cc3fa | 6.3 | 6.7 | 0 | 0.157 | 0.007 | 347.075 | 0.000 | 0.006 | 0.013 | 2 | 0.0 | 4.8 | - | - | - | gasfactor stability, windfactor rail exposure |
-| 2026-08-17 | 0000004e--b155cb69cc | ody-op-test2 | f453a51e0081 | 27.1 | 25.7 | 0 | 0.252 | 0.007 | 279.577 | 0.000 | 0.007 | 0.010 | 8 | 0.4 | 0.7 | - | - | - | gasfactor stability, windfactor rail exposure, brake-domain transition bursts, ride harshness (felt) |
 | 2026-08-17 | 0000004d--4297d7e7b9 | ody-op-test2 | f453a51e0081 | 6.1 | 4.6 | 0 | 0.213 | 0.006 | 300.647 | 0.000 | 0.007 | 0.007 | 4 | 0.0 | 6.5 | - | - | - | gasfactor stability, windfactor rail exposure |
-| 2026-08-17 | 0000004f--2cf5bde88e | ody-op-test2 | f453a51e0081 | 21.3 | 19.4 | 0 | 0.264 | 0.005 | 185.727 | 0.000 | 0.006 | 0.008 | 4 | 0.9 | 0.5 | 1617/2560 | 0.5% | 1 | gasfactor stability, windfactor rail exposure |
+| 2026-08-17 | 0000004e--b155cb69cc | ody-op-test2 | f453a51e0081 | 27.1 | 25.7 | 0 | 0.252 | 0.007 | - | - | 0.007 | 0.010 | 8 | 0.4 | 0.7 | 1791/2560 | 0.7% | 5 | brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-17 | 0000004f--2cf5bde88e | ody-op-test2 | f453a51e0081 | 21.3 | 19.4 | 0 | 0.264 | 0.005 | - | - | 0.006 | 0.008 | 4 | 0.9 | 0.5 | 1617/2560 | 0.5% | 1 | none |
