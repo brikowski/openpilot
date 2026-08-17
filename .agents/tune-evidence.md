@@ -141,6 +141,19 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   with behavioral evidence or call their crash rows a tune regression; a fresh on-road route after
   the repair is required.
 
+- **Minimal upstream port (2026-08-17, software evidence only).** The deployed `f53d878a1` child
+  was based on the older `b0685818f` Honda architecture, while the parent’s current upstream pin is
+  `c536b211b762`. Rather than conflict-resolve the historical 18-commit tune stack, the active
+  behavior was ported onto that exact pin in nested commit `3169fd4cc3fa`. The four-file delta is
+  103 insertions and 11 deletions: Odyssey-only gasfactor/domain selection, explicit CAN-domain
+  inputs, the stock-LKA range correction, and an instance-scoped gas ceiling. Retired supplemental
+  brake PID, compensated input, onset shaping, and gas ramp code are not present. The nested
+  opendbc suite (4,011 tests, 703 skipped) and Odyssey rail suite (14 tests, 43 subtests) pass.
+  This commit is not yet paired, published, deployed, or road-tested; the existing device remains
+  on the repaired `f53d878a1` software state. The port also restores `CarOutput.actuatorsOutput`
+  gas/brake semantics to actual actuator output; learned factors are no longer written into those
+  fields as fork-only telemetry.
+
 - **The fresh brake-source reset failed its first road screen.** It removed the supplemental brake
   PID, compensated input, release hysteresis, and onset shaping, then used upstream's raw `-0.20`
   split. Routes `00000042--990be22fe1` and `00000041--91a6b6745b` immediately reproduced the
@@ -322,7 +335,7 @@ closed by removal; do not couple the remaining gasfactor and windfactor work to 
 - **Document All Custom Changes**: Every single custom edit must include an inline comment explaining exactly *why* the change was made, written PR-lean from the start — the why and any revert trigger live in the code, while numbers and route history live in this file. (The `TODO: delete excessive comments before trying to submit a PR.` marker convention was retired 2026-08-08 after an audit brought every comment to PR standard; do not reintroduce the marker.)
 - **Write Findings Into the Code, Not Just the Chat**: When a session spends real effort (WebFetch calls, DBC spelunking, log analysis) establishing *why* something is tuned a certain way, that reasoning belongs in a comment at the point of use, not just in conversation - it saves re-deriving the same investigation (and the tokens/PR fetches that cost) in a future session.
 - **Comments Are a Starting Point, Not Ground Truth**: Custom-tune comments (including "CUSTOM TUNE" blocks and any journal-style writeups) reflect the reasoning *at the time they were written*. Treat them as a lead to verify, not a fact to cite - upstream PRs move, DBC signals get re-checked, and code gets reworked or reverted out from under a comment that still references it. If you find one that's stale, wrong, or points at code that no longer exists, correct or remove it as part of your change rather than leaving it to mislead the next session.
-- **Jotpluggler Layout**: The `brikowski` layout (`openpilot/tools/jotpluggler/layouts/brikowski.json`, launched via the "Run Jotpluggler" task) is the standard layout for reviewing tuning drives. Keep the checked-in JSON minified. Its five tabs cover lateral reference, longitudinal tracking, learned factors, powertrain/CAN, and lead/feedforward attribution. `actuatorsOutput.gas` and `.brake` currently carry effective gasfactor and windfactor telemetry; raw commands remain in `sendcan`. This is explicitly **fork-only and not upstream-ready** because `CarOutput.actuatorsOutput` is defined to match what is sent to the car. Before upstreaming, restore actuator semantics and migrate this validator/layout dependency to deterministic offline reconstruction or a separately named diagnostic event approved with its schema.
+- **Jotpluggler Layout**: The `brikowski` layout (`openpilot/tools/jotpluggler/layouts/brikowski.json`, launched via the "Run Jotpluggler" task) is the standard layout for reviewing tuning drives. Keep the checked-in JSON minified. Its five tabs cover lateral reference, longitudinal tracking, learned factors, powertrain/CAN, and lead/feedforward attribution. The historical deployed child wrote effective gasfactor and windfactor telemetry into `actuatorsOutput.gas` and `.brake`; the upstream-rooted port restores those fields to actual actuator output, with raw commands remaining in `sendcan`. Any future learner telemetry must use deterministic offline reconstruction or a separately named diagnostic event approved with its schema.
 
 ## Known Upstream Constraints (Honda Bosch A/C - not cached locally, re-fetch if reasoning needs re-verifying)
 - **opendbc PR #2165** (github.com/commaai/opendbc/pull/2165): wind drag + hill/pitch compensation for Bosch gas pedal force. Still draft upstream, parked pending a broader drivetrain-torque refactor.
