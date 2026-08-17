@@ -100,6 +100,15 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   with the gas-domain road arm. A limit must be its own upstream-style experiment; Ford/Honda
   Nidec's near-cruise limit shape does not directly cover most route-48 events and must not be
   copied without controlled evidence.
+- **Next road-screen contract keeps the mechanisms isolated.** The first post-`f53d878a1` route
+  must assess only the gas-domain hold: report inactive-to-live gas entries/minute, sub-second gas
+  episodes, first-live command values, direct gas/brake handoffs, command-to-wire RMS, speed/grade
+  exposure, takeovers, and complete stops. Compare ordinary-road exposure with route 48 and use a
+  controlled set-speed/coast sequence; do not change the brake threshold or gasfactor in that arm.
+  The braking question is a separate matched A/B with Experimental mode off/on and no car-port
+  change. Its acceptance evidence is brake episode frequency and duration, request/wire/achieved
+  80%-depth timing, jerk, overspeed, interventions, and stop completion. A planner-mode result can
+  justify using the built-in mode; it cannot justify a new Honda brake shaper.
 - **Route 43 gas attribution (2026-08-16).** The thin full-rate drive `00000043--87b375be62`
   followed `carControl.actuators.accel` and the Honda CAN/domain bits (gas RMS 0.0098 m/s2,
   brake RMS 0.0176 m/s2, no command/domain divergence), so its excessive gas is not a planner-to-
