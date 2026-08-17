@@ -113,6 +113,13 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   opaque gas for tiny positive requests that immediately reverse. The projection cannot predict
   closed-loop speed, domain edges, or overspeed, so it selects no production value and is not yet a
   code change.
+- **Gas re-entry pulse diagnostic (2026-08-17, frozen full-rate extraction).** The validator now
+  reports only moving, engaged gas starts whose preceding frame was coast rather than brake, then
+  separates short episodes from entries whose first 20 ms request is at most `+0.02 m/s2`. On the
+  same predecessor extracts, route 4e contained 37 coast re-entries, 4 under one second and 4
+  tiny-request short pulses; route 4f contained 36 re-entries and no sub-second pulse. This is a
+  narrower symptom measure than the 13 short gas episodes above because it excludes brake-to-gas
+  handoffs. It is diagnostic only and does not authorize a deadband or any wire-command change.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176

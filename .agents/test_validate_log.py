@@ -25,6 +25,7 @@ from tuning_metrics import (
   command_transition_metrics,
   descent_hold_metrics,
   gasfactor_breakpoint_metrics,
+  gas_reentry_pulse_metrics,
   hold_last,
   max_edges_in_window,
   physical_edges,
@@ -327,6 +328,51 @@ def test_transition_mutation_detects_direct_domains_but_accepts_coast_interlock(
   assert direct["direct_brake_to_gas"] == 1
   assert interlocked["direct_gas_to_brake"] == 0
   assert interlocked["direct_brake_to_gas"] == 0
+
+
+def test_gas_reentry_pulse_metric_isolates_tiny_short_coast_reentry():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:190] = 100.0
+  requested = np.zeros(len(grid))
+  requested[150:190] = 0.01
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 1
+  assert metrics["gas_reentry_pulse_short_events"] == 1
+  assert metrics["gas_reentry_pulse_tiny_events"] == 1
+  assert metrics["gas_reentry_pulse_tiny_short_events"] == 1
+  assert np.isclose(metrics["gas_reentry_pulse_duration_median"], 0.39)
+  assert np.isclose(metrics["gas_reentry_pulse_entry_request_max"], 0.01)
+
+
+def test_gas_reentry_pulse_metric_does_not_call_brake_handoff_a_pulse():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_request[100:150] = True
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:260] = 100.0
+  requested = np.full(len(grid), 0.10)
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 0
 
 
 def test_sign_disagreement_ignores_transport_and_separates_downhill():

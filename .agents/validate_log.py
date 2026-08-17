@@ -36,6 +36,7 @@ from tuning_metrics import (
   command_transition_metrics,
   descent_hold_metrics,
   gasfactor_breakpoint_metrics,
+  gas_reentry_pulse_metrics,
   hold_last as _hold_last,
   max_edges_in_window as _max_edges_in_window,
   physical_edges as _physical_edges,
@@ -110,6 +111,9 @@ LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: region where an incorrect handoff can inter
                               # an "is following a meaningful
                               # question" gate at 3.0, and using it here silently blinded the check
                               # to the 3-5 m/s part of the very region the bug lived in.
+GAS_REENTRY_PULSE_ENTRY_MAX = 0.02  # m/s^2: diagnostic boundary for a tiny positive re-entry
+GAS_REENTRY_PULSE_MAX_S = 1.0        # s: short event boundary used by the gas-pulse readout
+GAS_REENTRY_PULSE_ENTRY_WINDOW_S = CAN_COMMAND_PERIOD_S
 STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
                                # deceleration only says the plan asked for braking; excess separates
                                # car-port contribution from Honda actuator bite. STILL REPORTED,
@@ -830,6 +834,12 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "reengagement_events": None, "reengagement_stale_sec": None,
          "reengagement_stale_events": None, "reengagement_stale_worst": None,
          "gas_handoff_events": None, "gas_handoff_max": None,
+         "gas_reentry_pulse_events": None, "gas_reentry_pulse_short_events": None,
+         "gas_reentry_pulse_tiny_events": None,
+         "gas_reentry_pulse_tiny_short_events": None,
+         "gas_reentry_pulse_duration_median": None,
+         "gas_reentry_pulse_tiny_duration_median": None,
+         "gas_reentry_pulse_entry_request_max": None,
          "direct_gas_to_brake": None, "direct_brake_to_gas": None,
          "gasf_by_speed": {}, "gasf_seed_by_speed": {}, "gasf_seconds_by_speed": {},
          "brake_toggle_edges": None, "brake_toggle_per_min": None,
@@ -904,6 +914,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     command_period_s=CAN_COMMAND_PERIOD_S,
     reengage_window_s=REENGAGE_WINDOW_S,
     gas_inactive=GAS_INACTIVE,
+  ))
+  out.update(gas_reentry_pulse_metrics(
+    grid, requested, eng_all, vego_all, BR, brakepressed, GAS,
+    low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
+    gas_inactive=GAS_INACTIVE,
+    entry_request_max=GAS_REENTRY_PULSE_ENTRY_MAX,
+    short_duration_s=GAS_REENTRY_PULSE_MAX_S,
+    entry_window_s=GAS_REENTRY_PULSE_ENTRY_WINDOW_S,
   ))
   out.update(brake_episode_metrics(
     grid, aego, BR, eng_all, brakepressed, vego_all, pitch,
@@ -1225,6 +1243,20 @@ def verdicts(r):
     add("gas handoff command (diagnostic)", True,
         f"{r['gas_handoff_events']} inactive-to-live handoff(s), largest first command "
         f"{r['gas_handoff_max']:.0f} counts (no calibrated handoff limit)")
+  if r.get("gas_reentry_pulse_events") is not None:
+    duration = (f"{r['gas_reentry_pulse_duration_median']:.2f}s"
+                if r.get("gas_reentry_pulse_duration_median") is not None else "n/a")
+    tiny_duration = (f"{r['gas_reentry_pulse_tiny_duration_median']:.2f}s"
+                     if r.get("gas_reentry_pulse_tiny_duration_median") is not None else "n/a")
+    entry_request = (f"{r['gas_reentry_pulse_entry_request_max']:+.3f} m/s^2"
+                     if r.get("gas_reentry_pulse_entry_request_max") is not None else "n/a")
+    add("gas re-entry pulses (diagnostic)", True,
+        f"{r['gas_reentry_pulse_events']} coast re-entry(s), "
+        f"{r['gas_reentry_pulse_short_events']} under {GAS_REENTRY_PULSE_MAX_S:.1f}s, "
+        f"{r['gas_reentry_pulse_tiny_short_events']} tiny-request short pulse(s) "
+        f"(<= {GAS_REENTRY_PULSE_ENTRY_MAX:+.2f} m/s^2); median {duration}, "
+        f"tiny median {tiny_duration}, max entry request {entry_request} "
+        f"(no calibrated limit)")
   if r.get("direct_gas_to_brake") is not None:
     # Diagnostic only. Direct handoffs are observations, not a claimed comfort invariant.
     add("direct gas/brake handoffs (diagnostic)", True,
