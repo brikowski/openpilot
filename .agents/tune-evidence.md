@@ -131,6 +131,16 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   windfactor learner remains diagnostic-only so this arm does not silently change its evidence
   stream; the arm is not road-proven until a controlled and ordinary-road comparison is run.
 
+- **Routes 49/4a are deployment-failure evidence, not tune evidence (2026-08-17).** The first
+  post-switch route records had zero engaged minutes and qlog-only control coverage. Their
+  `errorLogMessage` traces show manager retries failing to import compiled runtime modules
+  (`rednose.helpers.ekf_sym_pyx` and `msgq.visionipc.visionipc_pyx`) after a live branch switch
+  removed build artifacts; the Odyssey controller was never reached. The device was repaired with
+  the standard AGNOS build using its `/usr/local/venv` environment, then rebooted. Read-only
+  imports of those modules and `controlsd` pass on the repaired checkout. Do not pool these routes
+  with behavioral evidence or call their crash rows a tune regression; a fresh on-road route after
+  the repair is required.
+
 - **The fresh brake-source reset failed its first road screen.** It removed the supplemental brake
   PID, compensated input, release hysteresis, and onset shaping, then used upstream's raw `-0.20`
   split. Routes `00000042--990be22fe1` and `00000041--91a6b6745b` immediately reproduced the
