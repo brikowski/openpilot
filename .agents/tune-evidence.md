@@ -142,18 +142,20 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   the repair is required.
 
 - **Minimal upstream port (2026-08-17, software evidence only).** The deployed `f53d878a1` child
-  was based on the older `b0685818f` Honda architecture, while the parent’s current upstream pin is
-  `c536b211b762`. Rather than conflict-resolve the historical 18-commit tune stack, the active
-  behavior was ported onto that exact pin in nested commit `3169fd4cc3fa`. The four-file delta is
-  103 insertions and 11 deletions: Odyssey-only gasfactor/domain selection, explicit CAN-domain
-  inputs, the stock-LKA range correction, and an instance-scoped gas ceiling. Retired supplemental
-  brake PID, compensated input, onset shaping, and gas ramp code are not present. The nested
-  opendbc suite (4,011 tests, 703 skipped) and Odyssey rail suite (14 tests, 43 subtests) pass.
-  The parent was paired locally at `d70d1eacb3` and is published/deployed at `20c503cef2 →
-  3169fd4cc3fa`; the device’s manager, UI, Panda, hardwared, and native imports pass after reboot,
-  but no fresh route exists yet for road validation. The port also restores `CarOutput.actuatorsOutput`
-  gas/brake semantics to actual actuator output; learned factors are no longer written into those
-  fields as fork-only telemetry.
+  was based on the older `b0685818f` Honda architecture. The active behavior was ported onto the
+  exact Honda commit pinned by the then-current upstream parent, `c536b211b762`, in nested commit
+  `3169fd4cc3fa`. The four-file delta is 103 insertions and 11 deletions: Odyssey-only gasfactor/
+  domain selection, explicit CAN-domain inputs, the stock-LKA range correction, and an instance-
+  scoped gas ceiling. Retired supplemental brake PID, compensated input, onset shaping, and gas
+  ramp code are not present. The nested opendbc suite (4,011 tests, 703 skipped) and Odyssey rail
+  suite (14 tests, 43 subtests) pass. The parent has since been rebased onto
+  `openpilot/upstream/master` at `03e6c81821ed`; that upstream tree still pins `c536b211b762`,
+  and local parent `4700c7474d43` records the exact `3169fd4cc3fa` gitlink. This corrected parent
+  is not yet force-published or deployed. The device remains on the prior published pair
+  `20c503cef2 → 3169fd4cc3fa`; its manager, UI, Panda, hardwared, and native imports passed after
+  reboot, but no fresh route exists yet for road validation. The port also restores
+  `CarOutput.actuatorsOutput` gas/brake semantics to actual actuator output; learned factors are
+  no longer written into those fields as fork-only telemetry.
 
 - **The fresh brake-source reset failed its first road screen.** It removed the supplemental brake
   PID, compensated input, release hysteresis, and onset shaping, then used upstream's raw `-0.20`
