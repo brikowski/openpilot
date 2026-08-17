@@ -61,6 +61,19 @@ rather than treating an uncalibrated slew limit as known-good behavior.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
 ## Current Validation Arm (raw split failed 2026-08-15; three-domain candidate)
+- **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
+  `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
+  `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
+  (request-to-wire RMS 0.006 m/s2), while achieved `aEgo` was commonly 0.4-0.7 m/s2 lower when the
+  request was near zero on the uphill grade. The E2E desired acceleration followed the same
+  request and gas remained active for positive requests, so this route does not justify a
+  car-port gas compensation; the first unresolved question is the upstream Experimental grade
+  command versus Honda powertrain response. The route also establishes the lateral telemetry
+  baseline: 23.4 active minutes, CAN torque abs p95/max 1617/2560, 0.5% torque-controller
+  saturation, one steer-fault event, and 69 steering-override events. The Odyssey 3840 range is
+  now an isolated arm; command/output, lateral model error, steering response, overrides, and
+  faults are logged for the comparison, but the arm requires road validation and is not lane-
+  tracking proof.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176

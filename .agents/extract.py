@@ -22,7 +22,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set changes, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 2
+SCHEMA = 3
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 
@@ -54,9 +54,12 @@ def _decode(paths):
   sent = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
   recv = CANParser(ODYSSEY_PT_DBC, [("VSA_STATUS", 0), ("GAS_PEDAL_2", 0),
                                     ("POWERTRAIN_DATA", 0), ("GEARBOX_AUTO", 0)], 1)
-  cc = {k: [] for k in ("t", "accel", "active", "pitch", "pid")}
-  cs = {k: [] for k in ("t", "vego", "aego", "gas_pressed", "brake_pressed", "vcruise", "steer_angle")}
-  co = {k: [] for k in ("t", "accel", "gasfactor", "windfactor")}
+  cc = {k: [] for k in ("t", "accel", "active", "pitch", "pid", "lat_active", "lat_torque")}
+  cs = {k: [] for k in ("t", "vego", "aego", "gas_pressed", "brake_pressed", "vcruise",
+                        "steer_angle", "steer_rate", "steering_torque", "steering_pressed",
+                        "steer_fault_temp", "steer_fault_perm")}
+  co = {k: [] for k in ("t", "accel", "gasfactor", "windfactor", "torque", "torque_output_can")}
+  ctl = {k: [] for k in ("t", "lat_active", "saturated", "actual_lat_accel", "desired_lat_accel")}
   lp = {k: [] for k in ("t", "atarget", "source", "allow_throttle", "has_lead", "should_stop")}
   sc = {k: [] for k in ("t", "gas", "accel", "brake_request")}
   rx = {k: [] for k in ("t", "computer_braking", "user_brake", "engine_torque", "rpm", "gear")}
@@ -75,6 +78,8 @@ def _decode(paths):
       cc["active"].append(float(m.carControl.longActive))
       cc["pitch"].append(o[1] if len(o) == 3 else 0.0)
       cc["pid"].append(float(str(a.longControlState) == "pid"))
+      cc["lat_active"].append(float(m.carControl.latActive))
+      cc["lat_torque"].append(a.torque)
     elif w == "carState":
       s = m.carState
       cs["t"].append(t)
@@ -83,7 +88,12 @@ def _decode(paths):
       cs["gas_pressed"].append(float(s.gasPressed))
       cs["brake_pressed"].append(float(s.brakePressed))
       cs["vcruise"].append(s.vCruise)          # km/h, and 0 on cruiseState for Bosch+OP long
-      cs["steer_angle"].append(s.steeringAngleDeg)   # NOT a lateral metric - reads curve entry
+      cs["steer_angle"].append(s.steeringAngleDeg)
+      cs["steer_rate"].append(s.steeringRateDeg)
+      cs["steering_torque"].append(s.steeringTorque)
+      cs["steering_pressed"].append(float(s.steeringPressed))
+      cs["steer_fault_temp"].append(float(s.steerFaultTemporary))
+      cs["steer_fault_perm"].append(float(s.steerFaultPermanent))
     elif w == "carOutput":
       a = m.carOutput.actuatorsOutput
       # gas/brake on carOutput are REPURPOSED to the learned factors by the Odyssey carcontroller.
@@ -91,6 +101,15 @@ def _decode(paths):
       co["accel"].append(a.accel)
       co["gasfactor"].append(a.gas)
       co["windfactor"].append(a.brake)
+      co["torque"].append(a.torque)
+      co["torque_output_can"].append(a.torqueOutputCan)
+    elif w == "controlsState":
+      state = m.controlsState.lateralControlState
+      ctl["t"].append(t)
+      ctl["lat_active"].append(float(state.torqueState.active) if state.which() == "torqueState" else np.nan)
+      ctl["saturated"].append(float(state.torqueState.saturated) if state.which() == "torqueState" else np.nan)
+      ctl["actual_lat_accel"].append(float(state.torqueState.actualLateralAccel) if state.which() == "torqueState" else np.nan)
+      ctl["desired_lat_accel"].append(float(state.torqueState.desiredLateralAccel) if state.which() == "torqueState" else np.nan)
     elif w == "longitudinalPlan":
       p = m.longitudinalPlan
       lp["t"].append(t)
@@ -143,12 +162,12 @@ def _decode(paths):
         rx["engine_torque"].append(float(recv.vl["GAS_PEDAL_2"]["ENGINE_TORQUE_ESTIMATE"]))
         rx["rpm"].append(float(recv.vl["POWERTRAIN_DATA"]["ENGINE_RPM"]))
         rx["gear"].append(float(recv.vl["GEARBOX_AUTO"]["TRANS_TARGET_GEAR"]))
-  return cc, cs, co, lp, sc, rx, rs, md, ss
+  return cc, cs, co, ctl, lp, sc, rx, rs, md, ss
 
 
 def _build(route):
   full, paths = _segments(route)
-  cc, cs, co, lp, sc, rx, rs, md, ss = _decode(paths)
+  cc, cs, co, ctl, lp, sc, rx, rs, md, ss = _decode(paths)
   if len(cc["t"]) < 100:
     raise SystemExit(f"{full}: only {len(cc['t'])} carControl frames - not a usable route")
 
@@ -170,14 +189,22 @@ def _build(route):
   out["request"] = np.asarray(cc["accel"], dtype=float)
   out["active"] = np.asarray(cc["active"], dtype=float) > 0.5
   out["pid"] = (np.asarray(cc["pid"], dtype=float) > 0.5) & out["active"]
+  out["lat_active"] = np.asarray(cc["lat_active"], dtype=float) > 0.5
+  out["lat_request_torque"] = np.asarray(cc["lat_torque"], dtype=float)
   out["pitch"] = np.asarray(cc["pitch"], dtype=float)
-  for k in ("vego", "aego", "vcruise", "steer_angle"):
+  for k in ("vego", "aego", "vcruise", "steer_angle", "steer_rate", "steering_torque"):
     out[k] = lin(cs, k)
-  for k in ("gas_pressed", "brake_pressed"):
+  for k in ("gas_pressed", "brake_pressed", "steering_pressed", "steer_fault_temp", "steer_fault_perm"):
     out[k] = lin(cs, k) > 0.5
   out["wire"] = lin(co, "accel")
   out["gasfactor"] = lin(co, "gasfactor")
   out["windfactor"] = lin(co, "windfactor")
+  out["lat_output_torque"] = lin(co, "torque")
+  out["lat_output_torque_can"] = lin(co, "torque_output_can")
+  out["lat_state_active"] = zoh(ctl, "lat_active") > 0.5
+  out["lat_saturated"] = zoh(ctl, "saturated") > 0.5
+  out["actual_lat_accel"] = lin(ctl, "actual_lat_accel")
+  out["desired_lat_accel"] = lin(ctl, "desired_lat_accel")
   out["atarget"] = lin(lp, "atarget") if len(lp["t"]) else out["request"].copy()
   # Discrete CAN: zero-order hold only.
   out["gas_command"] = zoh(sc, "gas")

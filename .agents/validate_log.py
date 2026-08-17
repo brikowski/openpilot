@@ -246,6 +246,79 @@ def _series(msgs, which, extract):
   return np.array(out_t), np.array(out_v, dtype=float)
 
 
+def _torque_state_field(m, field):
+  state = m.controlsState.lateralControlState
+  return float(getattr(state.torqueState, field)) if state.which() == "torqueState" else np.nan
+
+
+def lateral_metrics(grid, lat_active, requested, output, output_can, steering_pressed,
+                    steer_fault_temp, steer_fault_perm, saturated, actual_lat_accel,
+                    desired_lat_accel, steering_angle, steering_rate, dt):
+  """Return lateral command, output, actuator-state, and override telemetry.
+
+  These are bounded telemetry readouts, not a lane-tracking score. The command/output pair shows
+  whether the controller is reaching the CAN range being tested; the torque-controller fields and
+  steering sensors show saturation, faults, overrides, and model-estimated lateral response.
+  """
+  out = {
+    "lat_active_sec": None, "lat_active_frac": None,
+    "lat_request_abs_p95": None, "lat_output_abs_p95": None,
+    "lat_output_torque_can_abs_p95": None, "lat_output_torque_can_abs_max": None,
+    "lat_follow_rms": None, "lat_follow_mean": None,
+    "lat_saturated_frac": None, "lat_model_rms": None, "lat_model_mean": None,
+    "steering_angle_abs_p95": None, "steering_rate_abs_p95": None,
+    "steering_override_events": None, "steering_override_sec": None,
+    "steer_fault_frames": None, "steer_fault_events": None,
+  }
+  if len(grid) == 0:
+    return out
+
+  active = lat_active & np.isfinite(requested)
+  if active.sum() < 10:
+    return out
+
+  out["lat_active_sec"] = float(active.sum() * dt)
+  out["lat_active_frac"] = float(active.mean())
+  out["lat_request_abs_p95"] = float(np.nanpercentile(np.abs(requested[active]), 95))
+
+  following = active & np.isfinite(output)
+  if following.sum() >= 10:
+    error = output[following] - requested[following]
+    out["lat_output_abs_p95"] = float(np.nanpercentile(np.abs(output[following]), 95))
+    out["lat_follow_rms"] = float(np.sqrt(np.nanmean(error ** 2)))
+    out["lat_follow_mean"] = float(np.nanmean(error))
+
+  can = active & np.isfinite(output_can)
+  if can.sum() >= 10:
+    can_abs = np.abs(output_can[can])
+    out["lat_output_torque_can_abs_p95"] = float(np.nanpercentile(can_abs, 95))
+    out["lat_output_torque_can_abs_max"] = float(np.nanmax(can_abs))
+
+  sat = active & saturated
+  out["lat_saturated_frac"] = float(sat.sum() / active.sum())
+
+  model = active & np.isfinite(actual_lat_accel) & np.isfinite(desired_lat_accel)
+  if model.sum() >= 10:
+    error = actual_lat_accel[model] - desired_lat_accel[model]
+    out["lat_model_rms"] = float(np.sqrt(np.nanmean(error ** 2)))
+    out["lat_model_mean"] = float(np.nanmean(error))
+
+  angle = active & np.isfinite(steering_angle)
+  if angle.sum() >= 10:
+    out["steering_angle_abs_p95"] = float(np.nanpercentile(np.abs(steering_angle[angle]), 95))
+  rate = active & np.isfinite(steering_rate)
+  if rate.sum() >= 10:
+    out["steering_rate_abs_p95"] = float(np.nanpercentile(np.abs(steering_rate[rate]), 95))
+
+  override = active & steering_pressed
+  out["steering_override_sec"] = float(override.sum() * dt)
+  out["steering_override_events"] = int(np.sum(np.diff(override.astype(np.int8), prepend=0) == 1))
+  fault = active & (steer_fault_temp | steer_fault_perm)
+  out["steer_fault_frames"] = int(fault.sum())
+  out["steer_fault_events"] = int(np.sum(np.diff(fault.astype(np.int8), prepend=0) == 1))
+  return out
+
+
 def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
   """Return the source-matched Odyssey domain input without importing branch-specific helpers."""
   commit = (opendbc_commit or "")[:12]
@@ -332,14 +405,27 @@ def analyze(msgs, platform):
                       lambda m: 1.0 if str(m.carControl.actuators.longControlState) == "pid" else 0.0)
   _, cc_stopping = _series(msgs, "carControl",
                            lambda m: 1.0 if str(m.carControl.actuators.longControlState) == "stopping" else 0.0)
+  _, cc_lat_active = _series(msgs, "carControl", lambda m: 1.0 if m.carControl.latActive else 0.0)
+  _, cc_lat_torque = _series(msgs, "carControl", lambda m: m.carControl.actuators.torque)
   t_co, co_accel = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.accel)
   _, co_gasf = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.gas)
   _, co_windf = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.brake)
+  _, co_lat_torque = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.torque)
+  _, co_lat_torque_can = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.torqueOutputCan)
   t_cs, cs_aego = _series(msgs, "carState", lambda m: m.carState.aEgo)
   _, cs_vego = _series(msgs, "carState", lambda m: m.carState.vEgo)
   _, cs_gaspressed = _series(msgs, "carState", lambda m: 1.0 if m.carState.gasPressed else 0.0)
   _, cs_brakepressed = _series(msgs, "carState", lambda m: 1.0 if m.carState.brakePressed else 0.0)
+  _, cs_steering_angle = _series(msgs, "carState", lambda m: m.carState.steeringAngleDeg)
+  _, cs_steering_rate = _series(msgs, "carState", lambda m: m.carState.steeringRateDeg)
+  _, cs_steering_pressed = _series(msgs, "carState", lambda m: 1.0 if m.carState.steeringPressed else 0.0)
+  _, cs_steer_fault_temp = _series(msgs, "carState", lambda m: 1.0 if m.carState.steerFaultTemporary else 0.0)
+  _, cs_steer_fault_perm = _series(msgs, "carState", lambda m: 1.0 if m.carState.steerFaultPermanent else 0.0)
   t_lp, lp_atarget = _series(msgs, "longitudinalPlan", lambda m: m.longitudinalPlan.aTarget)
+  t_ctl, ctl_lat_active = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "active"))
+  _, ctl_saturated = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "saturated"))
+  _, ctl_actual_lat_accel = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "actualLateralAccel"))
+  _, ctl_desired_lat_accel = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "desiredLateralAccel"))
 
   # Detect a qlog-decimated route by SAMPLE RATE, not frame count. The old count-based check
   # (len(t_cc) < 100) never fired on a real qlog route: qlog keeps 1 carControl in 10, so an hour
@@ -370,10 +456,30 @@ def analyze(msgs, platform):
   wire = onto(t_co, co_accel)
   gasf = onto(t_co, co_gasf)
   windf = onto(t_co, co_windf)
+  lat_active = cc_lat_active > 0.5
+  lat_request = cc_lat_torque
+  lat_output = onto(t_co, co_lat_torque)
+  lat_output_can = onto(t_co, co_lat_torque_can)
+  steering_angle = onto(t_cs, cs_steering_angle)
+  steering_rate = onto(t_cs, cs_steering_rate)
+  steering_pressed = onto(t_cs, cs_steering_pressed) > 0.5
+  steer_fault_temp = onto(t_cs, cs_steer_fault_temp) > 0.5
+  steer_fault_perm = onto(t_cs, cs_steer_fault_perm) > 0.5
+  ctl_active = onto(t_ctl, ctl_lat_active) > 0.5
+  saturated = onto(t_ctl, ctl_saturated) > 0.5
+  actual_lat_accel = onto(t_ctl, ctl_actual_lat_accel)
+  desired_lat_accel = onto(t_ctl, ctl_desired_lat_accel)
   atarget = onto(t_lp, lp_atarget) if len(t_lp) else cc_accel.copy()
   gaspressed = onto(t_cs, cs_gaspressed) > 0.5
   brakepressed = onto(t_cs, cs_brakepressed) > 0.5
   dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
+
+  r.update(lateral_metrics(
+    grid, lat_active, lat_request, lat_output, lat_output_can, steering_pressed,
+    steer_fault_temp, steer_fault_perm, saturated, actual_lat_accel, desired_lat_accel,
+    steering_angle, steering_rate, dt,
+  ))
+  r["lat_controller_active_frac"] = float(np.nanmean(ctl_active)) if len(t_ctl) else None
 
   active = cc_active > 0.5
   pid = (cc_pid > 0.5) & active
@@ -965,6 +1071,20 @@ def verdicts(r):
            f"{r['plan_override_rms']:.3f}" if r.get("plan_override_rms") is not None else ""))
   if r["passthrough_rms"] is not None:
     add("passthrough RMS", r["passthrough_rms"] <= PASSTHROUGH_RMS_LIMIT, f"{r['passthrough_rms']:.3f} (<= {PASSTHROUGH_RMS_LIMIT})")
+  if r.get("lat_active_sec") is not None:
+    add("lateral telemetry (diagnostic)", True,
+        f"{r['lat_active_sec'] / 60.0:.1f} active min; request/output abs p95 "
+        f"{r['lat_request_abs_p95']:.3f}/{r.get('lat_output_abs_p95', float('nan')):.3f}; "
+        f"CAN abs p95/max {r.get('lat_output_torque_can_abs_p95', float('nan')):.0f}/"
+        f"{r.get('lat_output_torque_can_abs_max', float('nan')):.0f}; "
+        f"saturated {r['lat_saturated_frac'] * 100.0:.1f}%, "
+        f"steer overrides {r['steering_override_events']}, faults {r['steer_fault_events']}")
+  if r.get("lat_model_rms") is not None:
+    add("lateral model tracking (diagnostic)", True,
+        f"actual-desired lateral accel RMS {r['lat_model_rms']:.3f}, "
+        f"mean {r['lat_model_mean']:+.3f} m/s^2; steering angle/rate abs p95 "
+        f"{r.get('steering_angle_abs_p95', float('nan')):.1f}/"
+        f"{r.get('steering_rate_abs_p95', float('nan')):.1f}")
   if r["gasf_eff_mean"] is not None:
     ok = GASF_EFF_LO <= r["gasf_eff_min"] and r["gasf_eff_max"] <= GASF_EFF_HI and abs(r["gasf_drift"]) <= GASF_DRIFT_LIMIT
     add("gasfactor stability", ok, f"mean {r['gasf_eff_mean']:.2f} [{r['gasf_eff_min']:.2f},{r['gasf_eff_max']:.2f}] drift {r['gasf_drift']:+.2f}")
@@ -1309,8 +1429,9 @@ def write_ledger_md(rows):
     "`follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` "
     "counts physical BRAKE_REQUEST edges.\n\n"
     "| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS "
-    "| gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | FLAGS |\n"
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+    "| gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | "
+    "lat CAN p95/max | lat sat | steer faults | FLAGS |\n"
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
   lines = []
   for x in rows:
     flags = [c["check"] for c in x.get("verdicts", []) if not c["ok"]]
@@ -1319,13 +1440,20 @@ def write_ledger_md(rows):
     flags_text = (", ".join(flags) if flags else "none").replace("|", "&#124;")
     branch = x.get("git_branch") or "-"   # "-" = row predates provenance tracking
     odbc = x.get("opendbc_commit") or "-"
+    lat_can = (f"{x['lat_output_torque_can_abs_p95']:.0f}/{x['lat_output_torque_can_abs_max']:.0f}"
+               if isinstance(x.get('lat_output_torque_can_abs_p95'), (int, float)) else '-')
+    lat_sat = (f"{x['lat_saturated_frac'] * 100:.1f}%"
+               if isinstance(x.get('lat_saturated_frac'), (int, float)) else '-')
+    steer_faults = (str(x['steer_fault_events'])
+                    if isinstance(x.get('steer_fault_events'), (int, float)) else '-')
     lines.append(f"| {x['date']} | {x['route']} | {branch} | {odbc} | {num(x, 'engaged_min')} | "
                  f"{num(x, 'engaged_mi')} | {x.get('crashes', '-')} | "
                  f"{fmt(x.get('track_rms'))} | {fmt(x.get('passthrough_rms'))} | "
                  f"{fmt(x.get('gasf_eff_mean'))} | {fmt(x.get('windf_mean'))} | "
                  f"{fmt(x.get('follow_gas_rms'))} | {fmt(x.get('follow_brake_rms'))} | "
                  f"{num(x, 'brake_toggle_max_10s', 0)} | "
-                 f"{num(x, 'override_rate')} | {num(x, 'takeover_rate')} | "
+                 f"{num(x, 'override_rate')} | {num(x, 'takeover_rate')} | {lat_can} | {lat_sat} | "
+                 f"{steer_faults} | "
                  f"{flags_text} |\n")
   LEDGER_MD.write_text(header + "".join(lines))
 
@@ -1394,6 +1522,7 @@ def main():
              "brake-domain transition bursts",
              "sign disagreement", "ride harshness (felt)",
              "stop lurch (felt)"}
+  lateral = {"lateral telemetry (diagnostic)", "lateral model tracking (diagnostic)"}
   hardware = {"device thermal"}
   def show(group):
     for c in v:
@@ -1407,12 +1536,15 @@ def main():
     print("\n  DRIVER INTERVENTIONS (ground truth - what the driver overruled)")
     show(driver)
   print("\n  WATCHLIST (cross-brand candidate tweaks)")
-  show({c["check"] for c in v} - conv - driver - quality - hardware)
+  show({c["check"] for c in v} - conv - driver - quality - hardware - lateral)
   print("\n  MODEL FOLLOWING (did the wire carry what CarController was asked?)")
   show(quality)
   if any(c["check"] in hardware for c in v):
     print("\n  DEVICE HARDWARE")
     show(hardware)
+  if any(c["check"] in lateral for c in v):
+    print("\n  LATERAL TELEMETRY (diagnostic, not lane-tracking proof)")
+    show(lateral)
 
   if not args.no_ledger:
     append_ledger(args.route, args.description, r, v)

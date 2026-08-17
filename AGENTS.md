@@ -32,10 +32,12 @@ current candidate changes only Odyssey command-domain selection around the raw `
 road-speed brake/coast separation, low-speed stop authority, and an OEM-aligned active-gas hold. It
 does not restore the retired brake PID, compensated input, coast interlock, or onset shaping.
 
-Lateral is **stock and closed**: LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.15`.
-The former 0.20 s fallback had no isolated road benefit, so it was retired rather than kept as an
-unproven tune. Honda pairs the 3840 RDM range with one-sided brake drag we cannot command. Reopen
-lateral only for a logged symptom. `validate_log` deliberately has no lateral checks.
+Lateral is currently an isolated **3840 command-range arm** with the stock
+`latAccelFactor 0.9` and `steerActuatorDelay 0.15`; it is not yet road-proven. Keep 3840 unless a
+logged or road-tested symptom gives a reason to reduce it. The former 0.20 s fallback had no
+isolated road benefit and remains retired. `extract.py` and `validate_log.py` record lateral
+command/output, torque-controller saturation, steering response, overrides, and faults; these are
+diagnostics and not lane-tracking proof.
 
 ## Attribution boundary
 

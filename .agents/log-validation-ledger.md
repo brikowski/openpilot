@@ -2,152 +2,155 @@
 
 Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling `.jsonl`. One row is retained per route. Group behavioral comparisons by resolved `opendbc`, not by branch. Coverage and flags identify evidence to inspect; they do not authorize a tune change. `follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` counts physical BRAKE_REQUEST edges.
 
-| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS | gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | FLAGS |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 2026-07-25 | 805f87f5e96d128c/0000000e--f97802bf64 | - | - | - | - | 0 | 0.176 | 0.006 | 0.541 | 0.177 | - | - | - | - | - | none |
-| 2026-07-25 | 805f87f5e96d128c/00000001--ed594b3fa7 | - | - | - | - | 0 | 0.164 | 0.011 | 0.673 | 0.348 | - | - | - | - | - | brake_pid overshoot, brake-onset jerk bind, stop-approach quality |
-| 2026-07-25 | 805f87f5e96d128c/00000004--d1d63a9026 | - | - | - | - | 0 | 0.149 | 0.008 | 0.592 | 0.304 | - | - | - | - | - | none |
-| 2026-07-25 | 805f87f5e96d128c/0000000a--3a97dc34b5 | - | - | - | - | 0 | 0.183 | 0.010 | 0.481 | 0.272 | - | - | - | - | - | brake_pid overshoot |
-| 2026-07-26 | 805f87f5e96d128c/00000005--8eae3adfa7/a | ody-op-long | 618dc5995f80 | 9.7 | 6.4 | 0 | 0.164 | 0.006 | 0.540 | 0.295 | - | - | - | 0.0 | 3.1 | brake takeovers |
-| 2026-07-26 | 805f87f5e96d128c/00000006--70bdd9faae/a | ody-op-long | 7962b8b7cad3 | 14.2 | 11.8 | 0 | 0.125 | 0.027 | 0.548 | 0.168 | - | - | - | 0.0 | 1.4 | none |
-| 2026-07-26 | 805f87f5e96d128c/0000000b--4b3a653442/a | ody-op-long | 7962b8b7cad3 | 7.8 | 5.8 | 0 | 0.115 | 0.004 | 0.493 | 0.279 | - | - | - | 0.0 | 1.3 | battery / charging |
-| 2026-07-26 | 805f87f5e96d128c/00000015--ab025cd335 | ody-op-long | 7962b8b7cad3 | 47.3 | 54.8 | 0 | 0.094 | 0.005 | 0.554 | 0.133 | - | - | - | 0.0 | 0.2 | none |
-| 2026-07-26 | 805f87f5e96d128c/00000016--2ecdd5db52 | ody-op-long | 7962b8b7cad3 | 43.0 | 47.7 | 0 | 0.098 | 0.008 | 0.604 | 0.132 | - | - | - | 0.0 | 0.0 | brake_pid overshoot, brake-onset jerk bind, domain chatter |
-| 2026-07-29 | 00000018--ce1aafe0cc | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 00000019--dd9d25cc71 | ody-op-long | 7962b8b7cad3 | 5.6 | 5.1 | 0 | 0.167 | 0.007 | 0.549 | 0.215 | 0.009 | 0.057 | - | 0.0 | 3.6 | brake_pid overshoot, uncommanded brake toggles, device thermal |
-| 2026-07-29 | 0000001a--ae75f0959b | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000001b--e87a7334b8 | ody-op-long | 7962b8b7cad3 | 3.7 | 4.2 | 0 | 0.112 | 0.004 | 0.640 | 0.277 | 0.005 | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000001c--20249e5d20 | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000001d--95261b0680 | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000001e--9ca059282b | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000001f--765ef47daf | ody-brake-onset | 1b6048e980f7 | 3.0 | 2.3 | 0 | 0.186 | 0.007 | 0.437 | 0.377 | 0.006 | - | - | 0.0 | 6.6 | ride harshness (felt) |
-| 2026-07-29 | 00000020--f4a151246e | ody-brake-onset | 1b6048e980f7 | 4.1 | 3.5 | 0 | 0.176 | 0.012 | 0.533 | 0.259 | 0.010 | 0.053 | - | 0.0 | 2.5 | brake_pid overshoot, low-speed brake/accel conflict, uncommanded brake toggles, stop lurch (felt), sign disagreement |
-| 2026-07-29 | 00000024--8899ced3b9 | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 00000025--0d5a75064f | ody-op-long | ec823173de2a | 4.4 | 3.8 | 0 | 0.163 | 0.004 | 0.538 | 0.253 | 0.006 | 0.053 | - | 0.0 | 2.3 | stop lurch (felt) |
-| 2026-07-29 | 00000027--c97ff87c6e | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | device thermal |
-| 2026-07-29 | 00000028--8dd012049a | ody-op-long | ec823173de2a | 1.3 | 0.7 | 0 | 0.242 | 0.005 | 0.653 | 0.427 | 0.012 | 0.099 | - | 0.0 | 0.0 | brake_pid overshoot, uncommanded brake toggles, stop lurch (felt), device thermal |
-| 2026-07-29 | 00000029--c583c86b8f | ody-op-long | ec823173de2a | 3.1 | 1.9 | 0 | 0.192 | 0.004 | 0.570 | 0.348 | 0.004 | 0.107 | - | 0.0 | 3.3 | brake_pid overshoot, uncommanded brake toggles, stop lurch (felt), sign disagreement |
-| 2026-07-29 | 0000002a--e9814d0236 | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000002b--668cb1bcab | ody-op-long | ec823173de2a | 1.6 | 1.3 | 0 | 0.194 | 0.003 | 0.600 | 0.427 | 0.009 | - | - | 0.0 | 0.0 | ride harshness (felt) |
-| 2026-07-29 | 0000002c--f2abe29ba7 | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000002d--f51b65182a | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 0000002e--9e12aec9ae | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-29 | 00000031--f0620ff07a | ody-op-long | 6d2f79e69d6b | 5.4 | 3.4 | 0 | 0.153 | 0.004 | 0.477 | 0.348 | 0.004 | 0.062 | - | 0.0 | 0.0 | low-speed brake/accel conflict, uncommanded brake toggles, stop lurch (felt), sign disagreement |
-| 2026-07-29 | 00000030--384f3f5d1e | ody-op-long | 6d2f79e69d6b | 9.3 | 6.7 | 0 | 0.204 | 0.010 | 0.567 | 0.224 | 0.007 | 0.063 | - | 0.0 | 2.1 | brake_pid overshoot, low-speed brake/accel conflict, uncommanded brake toggles, ride harshness (felt), stop lurch (felt), sign disagreement |
-| 2026-07-29 | 0000002f--e897169c3c | ody-op-long | ec823173de2a | 11.0 | 9.0 | 0 | 0.164 | 0.005 | 0.585 | 0.182 | 0.010 | 0.070 | - | 0.9 | 1.8 | uncommanded brake toggles, stop lurch (felt) |
-| 2026-07-29 | 00000023--e482ef1653 | ody-brake-onset | 1b6048e980f7 | 24.6 | 15.1 | 0 | 0.176 | 0.007 | 0.544 | 0.146 | 0.009 | 0.040 | - | 0.4 | 2.8 | brake takeovers, low-speed brake/accel conflict, stop lurch (felt), device thermal |
-| 2026-07-29 | 00000017--4bde00dfda | ody-op-long | 7962b8b7cad3 | 9.4 | 5.4 | 0 | 0.162 | 0.005 | 0.524 | 0.241 | 0.005 | 0.069 | - | 0.0 | 2.1 | stop lurch (felt) |
-| 2026-07-29 | 00000021--1f6710b405 | ody-brake-onset | 1b6048e980f7 | 17.0 | 9.6 | 0 | 0.174 | 0.007 | 0.522 | 0.192 | 0.010 | 0.046 | - | 0.6 | 0.6 | windfactor rail exposure, low-speed brake/accel conflict, stop lurch (felt) |
-| 2026-07-29 | 00000032--5cf8edfab7 | ody-op-long | 6d2f79e69d6b | 12.6 | 10.1 | 0 | 0.173 | 0.007 | 0.521 | 0.227 | 0.010 | 0.043 | - | 0.8 | 3.2 | brake takeovers, low-speed brake/accel conflict, uncommanded brake toggles |
-| 2026-07-30 | 00000033--2f0ed0c996 | ody-op-long | 12daafe768b6 | 9.5 | 6.7 | 0 | 0.213 | 0.006 | 0.504 | 0.253 | 0.012 | 0.090 | - | 0.0 | 2.1 | brake_pid overshoot, low-speed brake/accel conflict, uncommanded brake toggles, ride harshness (felt), sign disagreement |
-| 2026-07-30 | 00000036--4c1998f148 | ody-op-long | b21cb2c323fe | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-30 | 00000034--640ab5c81f | ody-op-long | b21cb2c323fe | 45.8 | 51.7 | 0 | 0.125 | 0.005 | 0.678 | 0.144 | 0.006 | 0.213 | - | 0.0 | 0.7 | brake_pid overshoot, following - brake domain, stop lurch (felt), sign disagreement |
-| 2026-07-30 | 00000035--fd634e7aba | ody-op-long | b21cb2c323fe | 48.4 | 51.7 | 0 | 0.123 | 0.007 | 0.472 | 0.122 | 0.006 | 0.046 | - | 0.0 | 0.8 | brake_pid overshoot, sign disagreement |
-| 2026-07-30 | 00000037--3c5f8ff19c | ody-op-long | d8f962bf3189 | 3.7 | 2.5 | 0 | 0.179 | 0.004 | 0.442 | 0.459 | 0.007 | 0.033 | 2 | 0.0 | 2.7 | sign disagreement |
-| 2026-07-30 | 00000039--82363de3c4 | ody-op-long | d8f962bf3189 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-07-30 | 0000003a--c86961b9f3 | ody-op-long | d8f962bf3189 | 2.0 | 0.6 | 0 | 0.208 | 0.009 | 0.639 | 0.487 | 0.011 | 0.110 | 2 | 0.0 | 0.0 | brake_pid overshoot, stop lurch (felt), sign disagreement |
-| 2026-07-30 | 0000003b--aeccafe9e4 | ody-op-long | d8f962bf3189 | 10.5 | 6.1 | 0 | 0.183 | 0.004 | 0.505 | 0.357 | 0.007 | 0.039 | 2 | 1.0 | 1.0 | stop lurch (felt), sign disagreement |
-| 2026-08-01 | 00000041--300908db45 | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-01 | 00000040--ca03731c09 | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-01 | 0000003f--91b3d5dc5f | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-01 | 0000003d--b4008dd953 | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-02 | 00000048--ed0e3ac0b8 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-02 | 00000047--f71dd29780 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-02 | 00000046--ff33b83a95 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-02 | 00000044--02e57d6de9 | ody-op-long | 01df474580bd | 40.8 | 37.4 | 0 | 0.124 | 0.003 | 0.557 | 0.123 | 0.004 | 0.039 | 3 | 0.0 | 0.7 | none |
-| 2026-08-02 | 00000049--b95d397532 | ody-op-long | 01df474580bd | 69.2 | 64.2 | 0 | 0.143 | 0.005 | 0.635 | 0.116 | 0.006 | 0.029 | 2 | 0.0 | 1.2 | windfactor rail exposure |
-| 2026-08-02 | 0000003c--00ad5f695d | ody-op-long | 82afd9a22743 | 46.2 | 52.1 | 0 | 0.112 | 0.006 | 0.598 | 0.165 | 0.008 | 0.031 | 4 | 0.2 | 0.6 | none |
-| 2026-08-02 | 0000003e--aa82d1d1f8 | ody-op-long | 82afd9a22743 | 39.3 | 45.0 | 0 | 0.093 | 0.005 | 0.582 | 0.158 | 0.006 | 0.055 | 2 | 0.0 | 0.0 | brake_pid overshoot |
-| 2026-08-02 | 00000042--0802bc4369 | ody-op-long | 82afd9a22743 | 6.5 | 4.1 | 0 | 0.157 | 0.004 | 0.614 | 0.344 | 0.007 | 0.054 | 2 | 0.0 | 1.5 | none |
-| 2026-08-02 | 0000004b--938df76703 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-02 | 0000004a--e95ac7f2e6 | ody-op-long | 01df474580bd | 5.1 | 4.8 | 0 | 0.198 | 0.006 | 0.669 | 0.281 | 0.012 | 0.036 | 2 | 0.0 | 3.9 | brake_pid overshoot, sign disagreement |
-| 2026-08-02 | 0000004c--c66974e5d7 | ody-op-long | 01df474580bd | 7.5 | 4.2 | 0 | 0.171 | 0.006 | 0.515 | 0.364 | 0.007 | 0.063 | 3 | 0.0 | 1.3 | none |
-| 2026-08-02 | 00000045--4a81f712e4 | ody-op-long | 01df474580bd | 26.4 | 19.1 | 0 | 0.155 | 0.004 | 0.615 | 0.153 | 0.006 | 0.046 | 2 | 0.0 | 0.8 | stop lurch (felt), sign disagreement |
-| 2026-08-04 | 00000057--9acd7c11bb | ody-op-long | 01df474580bd | 3.7 | 2.8 | 0 | 0.202 | 0.008 | 0.575 | 0.240 | 0.013 | 0.034 | 2 | 0.0 | 2.7 | sign disagreement |
-| 2026-08-04 | 00000054--57a4cbc10f | ody-op-long | 01df474580bd | 1.4 | 0.6 | 0 | 0.247 | 0.008 | 0.710 | 0.508 | 0.012 | 0.065 | 1 | 7.3 | 7.3 | ride harshness (felt), stop lurch (felt), sign disagreement |
-| 2026-08-04 | 00000053--bff6460b6d | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-04 | 00000052--f2f76723ca | ody-op-long | 01df474580bd | 1.7 | 1.9 | 0 | 0.167 | 0.003 | 0.709 | 0.283 | 0.012 | - | 0 | 0.0 | 0.0 | none |
-| 2026-08-04 | 00000051--1acac44b73 | ody-op-long | 01df474580bd | 3.0 | 1.1 | 0 | 0.280 | 0.009 | 0.781 | 0.450 | 0.016 | 0.038 | 4 | 3.3 | 3.3 | brake_pid overshoot, ride harshness (felt), sign disagreement |
-| 2026-08-04 | 00000050--50aff77789 | ody-op-long | 01df474580bd | 8.5 | 5.7 | 0 | 0.183 | 0.006 | 0.583 | 0.350 | 0.006 | 0.050 | 2 | 1.2 | 2.3 | sign disagreement |
-| 2026-08-04 | 0000004f--4283a4985a | ody-op-long | 01df474580bd | 5.3 | 6.1 | 0 | 0.104 | 0.005 | 0.621 | 0.305 | 0.010 | - | 0 | 0.0 | 1.9 | none |
-| 2026-08-04 | 0000004d--38bae28d12 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-04 | 00000055--b6c9bb3917 | ody-op-long | 01df474580bd | 4.3 | 1.7 | 0 | 0.376 | 0.012 | 0.631 | 0.420 | 0.031 | 0.038 | 4 | 0.0 | 14.0 | track RMS &#124;aEgo-aTarget&#124;, gasfactor stability, ride harshness (felt), sign disagreement |
-| 2026-08-04 | 00000056--9c1708dfa7 | ody-op-long | 01df474580bd | 9.8 | 2.5 | 0 | 0.953 | 0.078 | 0.979 | 0.440 | 0.092 | 0.275 | 11 | 0.0 | 7.1 | track RMS &#124;aEgo-aTarget&#124;, gasfactor stability, accel rail saturation, brake_pid overshoot, following - gas domain, following - brake domain, brake-domain transition bursts, ride harshness (felt), stop lurch (felt) |
-| 2026-08-04 | 0000005d--981b3417fe | ody-op-long | 6e6ca0b25458 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-04 | 0000005c--aa1352f7f8 | ody-op-long | 6e6ca0b25458 | 4.1 | 3.1 | 0 | 0.195 | 0.007 | 0.551 | 0.241 | 0.010 | 0.044 | 2 | 0.0 | 2.4 | brake_pid overshoot, sign disagreement |
-| 2026-08-04 | 0000005b--1e3c877c2b | ody-op-long | 6e6ca0b25458 | 3.6 | 1.5 | 0 | 0.320 | 0.011 | 0.488 | 0.409 | 0.025 | 0.051 | 2 | 5.6 | 11.2 | ride harshness (felt) |
-| 2026-08-04 | 0000005a--3f33268566 | ody-op-long | 6e6ca0b25458 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-04 | 00000059--272f90a4d5 | ody-op-long | 6e6ca0b25458 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-04 | 00000058--f3476dd478 | ody-op-long | 6e6ca0b25458 | 4.6 | 3.6 | 0 | 0.186 | 0.005 | 0.619 | 0.199 | 0.008 | 0.053 | 3 | 0.0 | 2.2 | stop lurch (felt), sign disagreement |
-| 2026-08-05 | 00000001--f60780ed70 | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-05 | 00000000--454463b097 | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-05 | 00000002--412e40c6a0 | ody-sp-staging | - | 10.0 | 8.5 | 0 | 0.165 | 0.008 | 0.530 | 0.149 | 0.012 | 0.050 | 2 | 3.0 | 2.0 | re-engagement brake lifecycle, sign disagreement |
-| 2026-08-06 | 0000000b--bb3354b510 | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-06 | 0000000a--ba09520c4b | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-07 | 00000008--91197a9251 | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-07 | 00000007--d4c69508dd | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-05 | 00000003--f670928197 | ody-op-long | d1d5eb5c7255 | 15.3 | 11.1 | 0 | 0.205 | 0.008 | 0.555 | 0.142 | 0.012 | 0.041 | 4 | 0.0 | 2.0 | sign disagreement |
-| 2026-08-06 | 00000004--49e92e9ae5 | ody-op-long | d1d5eb5c7255 | 12.8 | 11.6 | 0 | 0.175 | 0.007 | 0.598 | 0.152 | 0.009 | 0.056 | 4 | 0.0 | 2.3 | windfactor rail exposure, brake takeovers |
-| 2026-08-07 | 00000006--806d122b90 | ody-op-long | d1d5eb5c7255 | 7.4 | 6.9 | 0 | 0.118 | 0.003 | 0.560 | 0.104 | 0.006 | - | 0 | 0.0 | 4.0 | windfactor rail exposure |
-| 2026-08-06 | 0000000c--dc2e21655e | ody-op-long | d1d5eb5c7255 | 4.6 | 2.5 | 0 | 0.233 | 0.007 | 0.585 | 0.283 | 0.009 | 0.035 | 2 | 0.0 | 0.0 | sign disagreement |
-| 2026-08-07 | 0000000d--9d32deed86 | ody-op-long | d1d5eb5c7255 | 65.4 | 76.2 | 0 | 0.112 | 0.004 | 0.626 | 0.117 | 0.005 | 0.033 | 3 | 0.0 | 0.5 | windfactor rail exposure |
-| 2026-08-08 | 0000000e--877b0ae1b5 | ody-op-long | c1ce76fa857a | 3.8 | 3.6 | 0 | 0.159 | 0.006 | 0.596 | 0.195 | 0.007 | 0.043 | 1 | 0.0 | 5.2 | none |
-| 2026-08-08 | 0000000f--b0eb8e3a15 | ody-op-long | c1ce76fa857a | 3.9 | 3.7 | 0 | 0.140 | 0.005 | 0.533 | 0.310 | 0.007 | 0.040 | 2 | 0.0 | 2.6 | sign disagreement |
-| 2026-08-08 | 00000012--36525474db | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-08 | 00000013--dd070c2142 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-09 | 00000018--a4b211ddd9 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-09 | 00000017--7927211376 | ody-op-long | 2cc9d0df854d | 4.3 | 3.1 | 0 | 0.208 | 0.006 | 0.535 | 0.298 | 0.012 | 0.038 | 4 | 0.0 | 4.7 | sign disagreement |
-| 2026-08-09 | 00000016--caef34b02b | ody-op-long | 2cc9d0df854d | 3.6 | 3.4 | 0 | 0.164 | 0.005 | 0.530 | 0.170 | 0.010 | 0.037 | 3 | 0.0 | 5.6 | none |
-| 2026-08-09 | 00000015--349eb50047 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-09 | 00000014--92815009db | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-09 | 00000011--e2e2816cc7 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-09 | 00000010--52265a8960 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-10 | 0000001d--9be29ce71e | ody-op-long | 76bd3550e9e8 | 5.5 | 4.7 | 0 | 0.174 | 0.006 | 0.578 | 0.229 | 0.012 | 0.026 | 2 | 0.0 | 5.5 | none |
-| 2026-08-10 | 0000001c--ff5b1f22fa | ody-op-long | 76bd3550e9e8 | 3.8 | 3.6 | 0 | 0.152 | 0.006 | 0.562 | 0.220 | 0.009 | 0.047 | 2 | 0.0 | 2.7 | sign disagreement |
-| 2026-08-10 | 0000001b--a197933a31 | ody-op-long | 76bd3550e9e8 | 4.0 | 3.5 | 0 | 0.184 | 0.007 | 0.567 | 0.262 | 0.008 | 0.051 | 2 | 0.0 | 5.1 | gasfactor stability, brake_pid overshoot |
-| 2026-08-10 | 0000001a--b142456b31 | ody-op-long | 76bd3550e9e8 | 2.0 | 1.1 | 0 | 0.238 | 0.008 | 0.648 | 0.444 | 0.012 | 0.071 | 3 | 0.0 | 0.0 | none |
-| 2026-08-10 | 00000019--258d653bb0 | ody-op-long | 76bd3550e9e8 | 5.2 | 3.5 | 0 | 0.200 | 0.005 | 0.542 | 0.219 | 0.006 | 0.040 | 2 | 0.0 | 0.0 | none |
-| 2026-08-11 | 00000025--c46031719a | master | 44f2987cb6ed | 2.2 | 1.4 | 0 | 0.227 | 0.007 | 381.559 | 0.000 | 0.009 | 0.010 | 1 | 0.0 | 4.5 | gasfactor stability, windfactor rail exposure, gas handoff ramp, ride harshness (felt) |
-| 2026-08-11 | 00000024--5c888c605c | master | 44f2987cb6ed | 10.0 | 8.1 | 0 | 0.222 | 0.008 | 278.542 | 0.000 | 0.010 | 0.009 | 25 | 0.0 | 3.0 | gasfactor stability, windfactor rail exposure, brake takeovers, gas handoff ramp, brake-domain transition bursts, ride harshness (felt) |
-| 2026-08-11 | 00000026--bfe3fd933b | ody-op | 13cfc73646e1 | 14.8 | 11.3 | 0 | 0.223 | 0.008 | 0.568 | 0.139 | 0.011 | 0.048 | 3 | 0.0 | 4.1 | windfactor rail exposure, brake takeovers, sign disagreement |
-| 2026-08-11 | 00000023--2919f68187 | master | 44f2987cb6ed | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-11 | 00000022--3f79693040 | master | 44f2987cb6ed | 5.3 | 4.3 | 0 | 0.224 | 0.007 | 310.251 | 0.000 | 0.013 | 0.007 | 25 | 0.0 | 3.8 | gasfactor stability, windfactor rail exposure, gas handoff ramp, brake-domain transition bursts, ride harshness (felt) |
-| 2026-08-11 | 00000021--156458d88c | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-11 | 00000020--bc151e42d7 | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-11 | 0000001f--689f100ce4 | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-11 | 0000001e--ca249d4d04 | ody-op-long | 76bd3550e9e8 | 3.6 | 2.7 | 0 | 0.209 | 0.005 | 0.539 | 0.281 | 0.006 | 0.035 | 3 | 0.0 | 2.8 | sign disagreement |
-| 2026-08-11 | 00000028--06e3430ffc | ody-op | d18a8fd538d4 | 5.7 | 3.6 | 0 | 0.180 | 0.006 | 0.610 | 0.321 | 0.009 | 0.042 | 5 | 0.0 | 1.7 | brake-domain transition bursts |
-| 2026-08-11 | 00000027--fc0ab6fafa | ody-op | d18a8fd538d4 | 6.7 | 5.7 | 0 | 0.194 | 0.006 | 0.570 | 0.175 | 0.007 | 0.045 | 6 | 0.0 | 6.0 | brake-domain transition bursts |
-| 2026-08-12 | 0000002b--4882f84449 | ody-op-test | 2ad060f0797b | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-12 | 0000002a--8dc81b53eb | ody-op-test | 2ad060f0797b | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-12 | 00000029--4c9b612e7c | ody-op-test | 2ad060f0797b | 9.7 | 8.3 | 0 | 0.247 | 0.008 | 0.669 | 0.166 | 0.009 | 0.051 | 7 | 0.0 | 3.1 | windfactor rail exposure, brake_pid overshoot, direct gas/brake handoffs, brake-domain transition bursts, ride harshness (felt) |
-| 2026-08-12 | 00000034--525592d00c | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-12 | 00000033--dcaba08043 | ody-op-test | 99db0e56c49d | 7.3 | 4.8 | 0 | 0.190 | 0.006 | 0.627 | 0.347 | 0.007 | 0.050 | 2 | 0.0 | 2.8 | ride harshness (felt) |
-| 2026-08-12 | 00000032--408c894cc9 | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-12 | 00000031--22e2b835fd | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-12 | 00000030--a98b103512 | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-12 | 0000002f--54aeb866a2 | ody-op-test | 99db0e56c49d | 6.6 | 2.7 | 0 | 0.208 | 0.006 | 0.677 | 0.368 | 0.007 | 0.053 | 3 | 0.0 | 1.5 | ride harshness (felt) |
-| 2026-08-12 | 0000002e--9182063f29 | ody-op-test | 99db0e56c49d | 0.1 | 0.1 | 0 | 0.197 | 0.009 | 0.575 | 0.493 | 0.009 | - | 2 | 0.0 | 0.0 | ride harshness (felt) |
-| 2026-08-12 | 0000002d--be11d4df22 | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | device thermal |
-| 2026-08-13 | 00000036--b92e250f39 | ody-op-test | 72e099164e11 | 4.7 | 4.1 | 0 | 0.198 | 0.006 | 0.615 | 0.216 | 0.007 | 0.009 | 3 | 0.0 | 8.6 | none |
-| 2026-08-13 | 00000035--bc7d6d1f4a | ody-op-test | 72e099164e11 | 6.3 | 5.3 | 0 | 0.192 | 0.007 | 0.570 | 0.232 | 0.007 | 0.010 | 4 | 0.0 | 1.6 | none |
-| 2026-08-13 | 00000039--ae57d5ce6e | ody-op-test | 13d2b66a4d51 | 8.2 | 7.1 | 0 | 0.199 | 0.013 | 0.562 | 0.208 | 0.008 | 0.027 | 4 | 0.0 | 3.6 | windfactor rail exposure |
-| 2026-08-13 | 00000038--5b6729c780 | ody-op-test | 13d2b66a4d51 | 5.5 | 4.6 | 0 | 0.188 | 0.008 | 0.596 | 0.184 | 0.007 | 0.014 | 6 | 0.0 | 5.5 | brake-domain transition bursts |
-| 2026-08-13 | 0000003c--911ae07267 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-13 | 0000003b--08f77bc5c3 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | device thermal |
-| 2026-08-13 | 0000003e--63e230cc29 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-13 | 0000003d--9e8f784316 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-15 | 0000003f--cf7b94c588 | ody-op-test | 6ad6819a7421 | 3.9 | 3.7 | 0 | 0.185 | 0.013 | 0.520 | 0.179 | 0.006 | 0.047 | 8 | 0.0 | 2.6 | brake-domain transition bursts |
-| 2026-08-15 | 00000040--ff2868cffe | ody-op-test | 6ad6819a7421 | 9.3 | 6.2 | 0 | 0.233 | 0.050 | 0.658 | 0.273 | 0.009 | 0.130 | 7 | 0.0 | 4.3 | brake-domain transition bursts, ride harshness (felt) |
-| 2026-08-16 | 00000042--990be22fe1 | ody-op-test2 | f6e4f07bdc61 | 5.7 | 3.9 | 0 | 0.221 | 0.006 | 0.620 | 0.305 | 0.008 | 0.008 | 28 | 0.0 | 3.5 | creep at stop, brake-domain transition bursts |
-| 2026-08-16 | 00000041--91a6b6745b | ody-op-test2 | f6e4f07bdc61 | 6.3 | 6.3 | 0 | 0.168 | 0.006 | 0.631 | 0.164 | 0.006 | 0.007 | 26 | 0.0 | 4.8 | brake-domain transition bursts |
-| 2026-08-16 | 00000045--409f3100f1 | ody-op-test2 | ece147ad7730 | 1.8 | 1.4 | 0 | 0.451 | 0.010 | 1.604 | 0.625 | 0.013 | 0.017 | 2 | 0.0 | 5.7 | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, ride harshness (felt) |
-| 2026-08-16 | 00000044--2187f67793 | ody-op-test2 | ece147ad7730 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | device thermal |
-| 2026-08-16 | 00000043--87b375be62 | ody-op-test2 | ece147ad7730 | 5.7 | 5.0 | 0 | 0.436 | 0.009 | 1.409 | 1.635 | 0.010 | 0.018 | 6 | 0.0 | 1.8 | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, windfactor rail exposure, brake-domain transition bursts, ride harshness (felt) |
-| 2026-08-16 | 00000047--351c002dbd | ody-op-test2 | 69ae9bf908dc | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
-| 2026-08-16 | 00000046--63393d9e3c | ody-op-test2 | 69ae9bf908dc | 6.7 | 5.5 | 0 | 0.284 | 0.007 | 1.296 | 0.839 | 0.008 | 0.018 | 5 | 0.0 | 4.5 | gasfactor stability, brake-domain transition bursts, ride harshness (felt) |
-| 2026-08-17 | 00000048--766dc7107b | ody-op-test2 | d12c1a64a4eb | 10.1 | 9.7 | 0 | 0.418 | 0.008 | 1.554 | 2.696 | 0.009 | 0.018 | 4 | 0.0 | 2.0 | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, windfactor rail exposure, ride harshness (felt) |
-| 2026-08-17 | 0000004a--ed30053072 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 5 | - | - | - | - | - | - | - | 0.0 | 0.0 | controlsd crashes |
-| 2026-08-17 | 00000049--464c76b447 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 4 | - | - | - | - | - | - | - | 0.0 | 0.0 | controlsd crashes |
-| 2026-08-17 | 0000004c--9430801c67 | ody-op-test2 | 3169fd4cc3fa | 10.8 | 7.7 | 0 | 0.256 | 0.007 | 252.175 | 0.000 | 0.008 | 0.013 | 6 | 0.0 | 3.7 | gasfactor stability, windfactor rail exposure, brake takeovers, brake-domain transition bursts, ride harshness (felt) |
-| 2026-08-17 | 0000004b--6997d79209 | ody-op-test2 | 3169fd4cc3fa | 6.3 | 6.7 | 0 | 0.157 | 0.007 | 347.075 | 0.000 | 0.006 | 0.013 | 2 | 0.0 | 4.8 | gasfactor stability, windfactor rail exposure |
+| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS | gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | lat CAN p95/max | lat sat | steer faults | FLAGS |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-07-25 | 805f87f5e96d128c/0000000e--f97802bf64 | - | - | - | - | 0 | 0.176 | 0.006 | 0.541 | 0.177 | - | - | - | - | - | - | - | - | none |
+| 2026-07-25 | 805f87f5e96d128c/00000001--ed594b3fa7 | - | - | - | - | 0 | 0.164 | 0.011 | 0.673 | 0.348 | - | - | - | - | - | - | - | - | brake_pid overshoot, brake-onset jerk bind, stop-approach quality |
+| 2026-07-25 | 805f87f5e96d128c/00000004--d1d63a9026 | - | - | - | - | 0 | 0.149 | 0.008 | 0.592 | 0.304 | - | - | - | - | - | - | - | - | none |
+| 2026-07-25 | 805f87f5e96d128c/0000000a--3a97dc34b5 | - | - | - | - | 0 | 0.183 | 0.010 | 0.481 | 0.272 | - | - | - | - | - | - | - | - | brake_pid overshoot |
+| 2026-07-26 | 805f87f5e96d128c/00000005--8eae3adfa7/a | ody-op-long | 618dc5995f80 | 9.7 | 6.4 | 0 | 0.164 | 0.006 | 0.540 | 0.295 | - | - | - | 0.0 | 3.1 | - | - | - | brake takeovers |
+| 2026-07-26 | 805f87f5e96d128c/00000006--70bdd9faae/a | ody-op-long | 7962b8b7cad3 | 14.2 | 11.8 | 0 | 0.125 | 0.027 | 0.548 | 0.168 | - | - | - | 0.0 | 1.4 | - | - | - | none |
+| 2026-07-26 | 805f87f5e96d128c/0000000b--4b3a653442/a | ody-op-long | 7962b8b7cad3 | 7.8 | 5.8 | 0 | 0.115 | 0.004 | 0.493 | 0.279 | - | - | - | 0.0 | 1.3 | - | - | - | battery / charging |
+| 2026-07-26 | 805f87f5e96d128c/00000015--ab025cd335 | ody-op-long | 7962b8b7cad3 | 47.3 | 54.8 | 0 | 0.094 | 0.005 | 0.554 | 0.133 | - | - | - | 0.0 | 0.2 | - | - | - | none |
+| 2026-07-26 | 805f87f5e96d128c/00000016--2ecdd5db52 | ody-op-long | 7962b8b7cad3 | 43.0 | 47.7 | 0 | 0.098 | 0.008 | 0.604 | 0.132 | - | - | - | 0.0 | 0.0 | - | - | - | brake_pid overshoot, brake-onset jerk bind, domain chatter |
+| 2026-07-29 | 00000018--ce1aafe0cc | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 00000019--dd9d25cc71 | ody-op-long | 7962b8b7cad3 | 5.6 | 5.1 | 0 | 0.167 | 0.007 | 0.549 | 0.215 | 0.009 | 0.057 | - | 0.0 | 3.6 | - | - | - | brake_pid overshoot, uncommanded brake toggles, device thermal |
+| 2026-07-29 | 0000001a--ae75f0959b | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000001b--e87a7334b8 | ody-op-long | 7962b8b7cad3 | 3.7 | 4.2 | 0 | 0.112 | 0.004 | 0.640 | 0.277 | 0.005 | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000001c--20249e5d20 | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000001d--95261b0680 | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000001e--9ca059282b | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000001f--765ef47daf | ody-brake-onset | 1b6048e980f7 | 3.0 | 2.3 | 0 | 0.186 | 0.007 | 0.437 | 0.377 | 0.006 | - | - | 0.0 | 6.6 | - | - | - | ride harshness (felt) |
+| 2026-07-29 | 00000020--f4a151246e | ody-brake-onset | 1b6048e980f7 | 4.1 | 3.5 | 0 | 0.176 | 0.012 | 0.533 | 0.259 | 0.010 | 0.053 | - | 0.0 | 2.5 | - | - | - | brake_pid overshoot, low-speed brake/accel conflict, uncommanded brake toggles, stop lurch (felt), sign disagreement |
+| 2026-07-29 | 00000024--8899ced3b9 | ody-op-long | 7962b8b7cad3 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 00000025--0d5a75064f | ody-op-long | ec823173de2a | 4.4 | 3.8 | 0 | 0.163 | 0.004 | 0.538 | 0.253 | 0.006 | 0.053 | - | 0.0 | 2.3 | - | - | - | stop lurch (felt) |
+| 2026-07-29 | 00000027--c97ff87c6e | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | device thermal |
+| 2026-07-29 | 00000028--8dd012049a | ody-op-long | ec823173de2a | 1.3 | 0.7 | 0 | 0.242 | 0.005 | 0.653 | 0.427 | 0.012 | 0.099 | - | 0.0 | 0.0 | - | - | - | brake_pid overshoot, uncommanded brake toggles, stop lurch (felt), device thermal |
+| 2026-07-29 | 00000029--c583c86b8f | ody-op-long | ec823173de2a | 3.1 | 1.9 | 0 | 0.192 | 0.004 | 0.570 | 0.348 | 0.004 | 0.107 | - | 0.0 | 3.3 | - | - | - | brake_pid overshoot, uncommanded brake toggles, stop lurch (felt), sign disagreement |
+| 2026-07-29 | 0000002a--e9814d0236 | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000002b--668cb1bcab | ody-op-long | ec823173de2a | 1.6 | 1.3 | 0 | 0.194 | 0.003 | 0.600 | 0.427 | 0.009 | - | - | 0.0 | 0.0 | - | - | - | ride harshness (felt) |
+| 2026-07-29 | 0000002c--f2abe29ba7 | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000002d--f51b65182a | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 0000002e--9e12aec9ae | ody-op-long | ec823173de2a | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-29 | 00000031--f0620ff07a | ody-op-long | 6d2f79e69d6b | 5.4 | 3.4 | 0 | 0.153 | 0.004 | 0.477 | 0.348 | 0.004 | 0.062 | - | 0.0 | 0.0 | - | - | - | low-speed brake/accel conflict, uncommanded brake toggles, stop lurch (felt), sign disagreement |
+| 2026-07-29 | 00000030--384f3f5d1e | ody-op-long | 6d2f79e69d6b | 9.3 | 6.7 | 0 | 0.204 | 0.010 | 0.567 | 0.224 | 0.007 | 0.063 | - | 0.0 | 2.1 | - | - | - | brake_pid overshoot, low-speed brake/accel conflict, uncommanded brake toggles, ride harshness (felt), stop lurch (felt), sign disagreement |
+| 2026-07-29 | 0000002f--e897169c3c | ody-op-long | ec823173de2a | 11.0 | 9.0 | 0 | 0.164 | 0.005 | 0.585 | 0.182 | 0.010 | 0.070 | - | 0.9 | 1.8 | - | - | - | uncommanded brake toggles, stop lurch (felt) |
+| 2026-07-29 | 00000023--e482ef1653 | ody-brake-onset | 1b6048e980f7 | 24.6 | 15.1 | 0 | 0.176 | 0.007 | 0.544 | 0.146 | 0.009 | 0.040 | - | 0.4 | 2.8 | - | - | - | brake takeovers, low-speed brake/accel conflict, stop lurch (felt), device thermal |
+| 2026-07-29 | 00000017--4bde00dfda | ody-op-long | 7962b8b7cad3 | 9.4 | 5.4 | 0 | 0.162 | 0.005 | 0.524 | 0.241 | 0.005 | 0.069 | - | 0.0 | 2.1 | - | - | - | stop lurch (felt) |
+| 2026-07-29 | 00000021--1f6710b405 | ody-brake-onset | 1b6048e980f7 | 17.0 | 9.6 | 0 | 0.174 | 0.007 | 0.522 | 0.192 | 0.010 | 0.046 | - | 0.6 | 0.6 | - | - | - | windfactor rail exposure, low-speed brake/accel conflict, stop lurch (felt) |
+| 2026-07-29 | 00000032--5cf8edfab7 | ody-op-long | 6d2f79e69d6b | 12.6 | 10.1 | 0 | 0.173 | 0.007 | 0.521 | 0.227 | 0.010 | 0.043 | - | 0.8 | 3.2 | - | - | - | brake takeovers, low-speed brake/accel conflict, uncommanded brake toggles |
+| 2026-07-30 | 00000033--2f0ed0c996 | ody-op-long | 12daafe768b6 | 9.5 | 6.7 | 0 | 0.213 | 0.006 | 0.504 | 0.253 | 0.012 | 0.090 | - | 0.0 | 2.1 | - | - | - | brake_pid overshoot, low-speed brake/accel conflict, uncommanded brake toggles, ride harshness (felt), sign disagreement |
+| 2026-07-30 | 00000036--4c1998f148 | ody-op-long | b21cb2c323fe | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-30 | 00000034--640ab5c81f | ody-op-long | b21cb2c323fe | 45.8 | 51.7 | 0 | 0.125 | 0.005 | 0.678 | 0.144 | 0.006 | 0.213 | - | 0.0 | 0.7 | - | - | - | brake_pid overshoot, following - brake domain, stop lurch (felt), sign disagreement |
+| 2026-07-30 | 00000035--fd634e7aba | ody-op-long | b21cb2c323fe | 48.4 | 51.7 | 0 | 0.123 | 0.007 | 0.472 | 0.122 | 0.006 | 0.046 | - | 0.0 | 0.8 | - | - | - | brake_pid overshoot, sign disagreement |
+| 2026-07-30 | 00000037--3c5f8ff19c | ody-op-long | d8f962bf3189 | 3.7 | 2.5 | 0 | 0.179 | 0.004 | 0.442 | 0.459 | 0.007 | 0.033 | 2 | 0.0 | 2.7 | - | - | - | sign disagreement |
+| 2026-07-30 | 00000039--82363de3c4 | ody-op-long | d8f962bf3189 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-07-30 | 0000003a--c86961b9f3 | ody-op-long | d8f962bf3189 | 2.0 | 0.6 | 0 | 0.208 | 0.009 | 0.639 | 0.487 | 0.011 | 0.110 | 2 | 0.0 | 0.0 | - | - | - | brake_pid overshoot, stop lurch (felt), sign disagreement |
+| 2026-07-30 | 0000003b--aeccafe9e4 | ody-op-long | d8f962bf3189 | 10.5 | 6.1 | 0 | 0.183 | 0.004 | 0.505 | 0.357 | 0.007 | 0.039 | 2 | 1.0 | 1.0 | - | - | - | stop lurch (felt), sign disagreement |
+| 2026-08-01 | 00000041--300908db45 | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-01 | 00000040--ca03731c09 | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-01 | 0000003f--91b3d5dc5f | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-01 | 0000003d--b4008dd953 | ody-op-long | 82afd9a22743 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-02 | 00000048--ed0e3ac0b8 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-02 | 00000047--f71dd29780 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-02 | 00000046--ff33b83a95 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-02 | 00000044--02e57d6de9 | ody-op-long | 01df474580bd | 40.8 | 37.4 | 0 | 0.124 | 0.003 | 0.557 | 0.123 | 0.004 | 0.039 | 3 | 0.0 | 0.7 | - | - | - | none |
+| 2026-08-02 | 00000049--b95d397532 | ody-op-long | 01df474580bd | 69.2 | 64.2 | 0 | 0.143 | 0.005 | 0.635 | 0.116 | 0.006 | 0.029 | 2 | 0.0 | 1.2 | - | - | - | windfactor rail exposure |
+| 2026-08-02 | 0000003c--00ad5f695d | ody-op-long | 82afd9a22743 | 46.2 | 52.1 | 0 | 0.112 | 0.006 | 0.598 | 0.165 | 0.008 | 0.031 | 4 | 0.2 | 0.6 | - | - | - | none |
+| 2026-08-02 | 0000003e--aa82d1d1f8 | ody-op-long | 82afd9a22743 | 39.3 | 45.0 | 0 | 0.093 | 0.005 | 0.582 | 0.158 | 0.006 | 0.055 | 2 | 0.0 | 0.0 | - | - | - | brake_pid overshoot |
+| 2026-08-02 | 00000042--0802bc4369 | ody-op-long | 82afd9a22743 | 6.5 | 4.1 | 0 | 0.157 | 0.004 | 0.614 | 0.344 | 0.007 | 0.054 | 2 | 0.0 | 1.5 | - | - | - | none |
+| 2026-08-02 | 0000004b--938df76703 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-02 | 0000004a--e95ac7f2e6 | ody-op-long | 01df474580bd | 5.1 | 4.8 | 0 | 0.198 | 0.006 | 0.669 | 0.281 | 0.012 | 0.036 | 2 | 0.0 | 3.9 | - | - | - | brake_pid overshoot, sign disagreement |
+| 2026-08-02 | 0000004c--c66974e5d7 | ody-op-long | 01df474580bd | 7.5 | 4.2 | 0 | 0.171 | 0.006 | 0.515 | 0.364 | 0.007 | 0.063 | 3 | 0.0 | 1.3 | - | - | - | none |
+| 2026-08-02 | 00000045--4a81f712e4 | ody-op-long | 01df474580bd | 26.4 | 19.1 | 0 | 0.155 | 0.004 | 0.615 | 0.153 | 0.006 | 0.046 | 2 | 0.0 | 0.8 | - | - | - | stop lurch (felt), sign disagreement |
+| 2026-08-04 | 00000057--9acd7c11bb | ody-op-long | 01df474580bd | 3.7 | 2.8 | 0 | 0.202 | 0.008 | 0.575 | 0.240 | 0.013 | 0.034 | 2 | 0.0 | 2.7 | - | - | - | sign disagreement |
+| 2026-08-04 | 00000054--57a4cbc10f | ody-op-long | 01df474580bd | 1.4 | 0.6 | 0 | 0.247 | 0.008 | 0.710 | 0.508 | 0.012 | 0.065 | 1 | 7.3 | 7.3 | - | - | - | ride harshness (felt), stop lurch (felt), sign disagreement |
+| 2026-08-04 | 00000053--bff6460b6d | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-04 | 00000052--f2f76723ca | ody-op-long | 01df474580bd | 1.7 | 1.9 | 0 | 0.167 | 0.003 | 0.709 | 0.283 | 0.012 | - | 0 | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-04 | 00000051--1acac44b73 | ody-op-long | 01df474580bd | 3.0 | 1.1 | 0 | 0.280 | 0.009 | 0.781 | 0.450 | 0.016 | 0.038 | 4 | 3.3 | 3.3 | - | - | - | brake_pid overshoot, ride harshness (felt), sign disagreement |
+| 2026-08-04 | 00000050--50aff77789 | ody-op-long | 01df474580bd | 8.5 | 5.7 | 0 | 0.183 | 0.006 | 0.583 | 0.350 | 0.006 | 0.050 | 2 | 1.2 | 2.3 | - | - | - | sign disagreement |
+| 2026-08-04 | 0000004f--4283a4985a | ody-op-long | 01df474580bd | 5.3 | 6.1 | 0 | 0.104 | 0.005 | 0.621 | 0.305 | 0.010 | - | 0 | 0.0 | 1.9 | - | - | - | none |
+| 2026-08-04 | 0000004d--38bae28d12 | ody-op-long | 01df474580bd | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-04 | 00000055--b6c9bb3917 | ody-op-long | 01df474580bd | 4.3 | 1.7 | 0 | 0.376 | 0.012 | 0.631 | 0.420 | 0.031 | 0.038 | 4 | 0.0 | 14.0 | - | - | - | track RMS &#124;aEgo-aTarget&#124;, gasfactor stability, ride harshness (felt), sign disagreement |
+| 2026-08-04 | 00000056--9c1708dfa7 | ody-op-long | 01df474580bd | 9.8 | 2.5 | 0 | 0.953 | 0.078 | 0.979 | 0.440 | 0.092 | 0.275 | 11 | 0.0 | 7.1 | - | - | - | track RMS &#124;aEgo-aTarget&#124;, gasfactor stability, accel rail saturation, brake_pid overshoot, following - gas domain, following - brake domain, brake-domain transition bursts, ride harshness (felt), stop lurch (felt) |
+| 2026-08-04 | 0000005d--981b3417fe | ody-op-long | 6e6ca0b25458 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-04 | 0000005c--aa1352f7f8 | ody-op-long | 6e6ca0b25458 | 4.1 | 3.1 | 0 | 0.195 | 0.007 | 0.551 | 0.241 | 0.010 | 0.044 | 2 | 0.0 | 2.4 | - | - | - | brake_pid overshoot, sign disagreement |
+| 2026-08-04 | 0000005b--1e3c877c2b | ody-op-long | 6e6ca0b25458 | 3.6 | 1.5 | 0 | 0.320 | 0.011 | 0.488 | 0.409 | 0.025 | 0.051 | 2 | 5.6 | 11.2 | - | - | - | ride harshness (felt) |
+| 2026-08-04 | 0000005a--3f33268566 | ody-op-long | 6e6ca0b25458 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-04 | 00000059--272f90a4d5 | ody-op-long | 6e6ca0b25458 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-04 | 00000058--f3476dd478 | ody-op-long | 6e6ca0b25458 | 4.6 | 3.6 | 0 | 0.186 | 0.005 | 0.619 | 0.199 | 0.008 | 0.053 | 3 | 0.0 | 2.2 | - | - | - | stop lurch (felt), sign disagreement |
+| 2026-08-05 | 00000001--f60780ed70 | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-05 | 00000000--454463b097 | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-05 | 00000002--412e40c6a0 | ody-sp-staging | - | 10.0 | 8.5 | 0 | 0.165 | 0.008 | 0.530 | 0.149 | 0.012 | 0.050 | 2 | 3.0 | 2.0 | - | - | - | re-engagement brake lifecycle, sign disagreement |
+| 2026-08-06 | 0000000b--bb3354b510 | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-06 | 0000000a--ba09520c4b | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-07 | 00000008--91197a9251 | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-07 | 00000007--d4c69508dd | ody-op-long | d1d5eb5c7255 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-05 | 00000003--f670928197 | ody-op-long | d1d5eb5c7255 | 15.3 | 11.1 | 0 | 0.205 | 0.008 | 0.555 | 0.142 | 0.012 | 0.041 | 4 | 0.0 | 2.0 | - | - | - | sign disagreement |
+| 2026-08-06 | 00000004--49e92e9ae5 | ody-op-long | d1d5eb5c7255 | 12.8 | 11.6 | 0 | 0.175 | 0.007 | 0.598 | 0.152 | 0.009 | 0.056 | 4 | 0.0 | 2.3 | - | - | - | windfactor rail exposure, brake takeovers |
+| 2026-08-07 | 00000006--806d122b90 | ody-op-long | d1d5eb5c7255 | 7.4 | 6.9 | 0 | 0.118 | 0.003 | 0.560 | 0.104 | 0.006 | - | 0 | 0.0 | 4.0 | - | - | - | windfactor rail exposure |
+| 2026-08-06 | 0000000c--dc2e21655e | ody-op-long | d1d5eb5c7255 | 4.6 | 2.5 | 0 | 0.233 | 0.007 | 0.585 | 0.283 | 0.009 | 0.035 | 2 | 0.0 | 0.0 | - | - | - | sign disagreement |
+| 2026-08-07 | 0000000d--9d32deed86 | ody-op-long | d1d5eb5c7255 | 65.4 | 76.2 | 0 | 0.112 | 0.004 | 0.626 | 0.117 | 0.005 | 0.033 | 3 | 0.0 | 0.5 | - | - | - | windfactor rail exposure |
+| 2026-08-08 | 0000000e--877b0ae1b5 | ody-op-long | c1ce76fa857a | 3.8 | 3.6 | 0 | 0.159 | 0.006 | 0.596 | 0.195 | 0.007 | 0.043 | 1 | 0.0 | 5.2 | - | - | - | none |
+| 2026-08-08 | 0000000f--b0eb8e3a15 | ody-op-long | c1ce76fa857a | 3.9 | 3.7 | 0 | 0.140 | 0.005 | 0.533 | 0.310 | 0.007 | 0.040 | 2 | 0.0 | 2.6 | - | - | - | sign disagreement |
+| 2026-08-08 | 00000012--36525474db | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-08 | 00000013--dd070c2142 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-09 | 00000018--a4b211ddd9 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-09 | 00000017--7927211376 | ody-op-long | 2cc9d0df854d | 4.3 | 3.1 | 0 | 0.208 | 0.006 | 0.535 | 0.298 | 0.012 | 0.038 | 4 | 0.0 | 4.7 | - | - | - | sign disagreement |
+| 2026-08-09 | 00000016--caef34b02b | ody-op-long | 2cc9d0df854d | 3.6 | 3.4 | 0 | 0.164 | 0.005 | 0.530 | 0.170 | 0.010 | 0.037 | 3 | 0.0 | 5.6 | - | - | - | none |
+| 2026-08-09 | 00000015--349eb50047 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-09 | 00000014--92815009db | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-09 | 00000011--e2e2816cc7 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-09 | 00000010--52265a8960 | ody-op-long | 2cc9d0df854d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-10 | 0000001d--9be29ce71e | ody-op-long | 76bd3550e9e8 | 5.5 | 4.7 | 0 | 0.174 | 0.006 | 0.578 | 0.229 | 0.012 | 0.026 | 2 | 0.0 | 5.5 | - | - | - | none |
+| 2026-08-10 | 0000001c--ff5b1f22fa | ody-op-long | 76bd3550e9e8 | 3.8 | 3.6 | 0 | 0.152 | 0.006 | 0.562 | 0.220 | 0.009 | 0.047 | 2 | 0.0 | 2.7 | - | - | - | sign disagreement |
+| 2026-08-10 | 0000001b--a197933a31 | ody-op-long | 76bd3550e9e8 | 4.0 | 3.5 | 0 | 0.184 | 0.007 | 0.567 | 0.262 | 0.008 | 0.051 | 2 | 0.0 | 5.1 | - | - | - | gasfactor stability, brake_pid overshoot |
+| 2026-08-10 | 0000001a--b142456b31 | ody-op-long | 76bd3550e9e8 | 2.0 | 1.1 | 0 | 0.238 | 0.008 | 0.648 | 0.444 | 0.012 | 0.071 | 3 | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-10 | 00000019--258d653bb0 | ody-op-long | 76bd3550e9e8 | 5.2 | 3.5 | 0 | 0.200 | 0.005 | 0.542 | 0.219 | 0.006 | 0.040 | 2 | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-11 | 00000025--c46031719a | master | 44f2987cb6ed | 2.2 | 1.4 | 0 | 0.227 | 0.007 | 381.559 | 0.000 | 0.009 | 0.010 | 1 | 0.0 | 4.5 | - | - | - | gasfactor stability, windfactor rail exposure, gas handoff ramp, ride harshness (felt) |
+| 2026-08-11 | 00000024--5c888c605c | master | 44f2987cb6ed | 10.0 | 8.1 | 0 | 0.222 | 0.008 | 278.542 | 0.000 | 0.010 | 0.009 | 25 | 0.0 | 3.0 | - | - | - | gasfactor stability, windfactor rail exposure, brake takeovers, gas handoff ramp, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-11 | 00000026--bfe3fd933b | ody-op | 13cfc73646e1 | 14.8 | 11.3 | 0 | 0.223 | 0.008 | 0.568 | 0.139 | 0.011 | 0.048 | 3 | 0.0 | 4.1 | - | - | - | windfactor rail exposure, brake takeovers, sign disagreement |
+| 2026-08-11 | 00000023--2919f68187 | master | 44f2987cb6ed | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-11 | 00000022--3f79693040 | master | 44f2987cb6ed | 5.3 | 4.3 | 0 | 0.224 | 0.007 | 310.251 | 0.000 | 0.013 | 0.007 | 25 | 0.0 | 3.8 | - | - | - | gasfactor stability, windfactor rail exposure, gas handoff ramp, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-11 | 00000021--156458d88c | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-11 | 00000020--bc151e42d7 | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-11 | 0000001f--689f100ce4 | ody-op-long | 76bd3550e9e8 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-11 | 0000001e--ca249d4d04 | ody-op-long | 76bd3550e9e8 | 3.6 | 2.7 | 0 | 0.209 | 0.005 | 0.539 | 0.281 | 0.006 | 0.035 | 3 | 0.0 | 2.8 | - | - | - | sign disagreement |
+| 2026-08-11 | 00000028--06e3430ffc | ody-op | d18a8fd538d4 | 5.7 | 3.6 | 0 | 0.180 | 0.006 | 0.610 | 0.321 | 0.009 | 0.042 | 5 | 0.0 | 1.7 | - | - | - | brake-domain transition bursts |
+| 2026-08-11 | 00000027--fc0ab6fafa | ody-op | d18a8fd538d4 | 6.7 | 5.7 | 0 | 0.194 | 0.006 | 0.570 | 0.175 | 0.007 | 0.045 | 6 | 0.0 | 6.0 | - | - | - | brake-domain transition bursts |
+| 2026-08-12 | 0000002b--4882f84449 | ody-op-test | 2ad060f0797b | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-12 | 0000002a--8dc81b53eb | ody-op-test | 2ad060f0797b | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-12 | 00000029--4c9b612e7c | ody-op-test | 2ad060f0797b | 9.7 | 8.3 | 0 | 0.247 | 0.008 | 0.669 | 0.166 | 0.009 | 0.051 | 7 | 0.0 | 3.1 | - | - | - | windfactor rail exposure, brake_pid overshoot, direct gas/brake handoffs, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-12 | 00000034--525592d00c | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-12 | 00000033--dcaba08043 | ody-op-test | 99db0e56c49d | 7.3 | 4.8 | 0 | 0.190 | 0.006 | 0.627 | 0.347 | 0.007 | 0.050 | 2 | 0.0 | 2.8 | - | - | - | ride harshness (felt) |
+| 2026-08-12 | 00000032--408c894cc9 | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-12 | 00000031--22e2b835fd | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-12 | 00000030--a98b103512 | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-12 | 0000002f--54aeb866a2 | ody-op-test | 99db0e56c49d | 6.6 | 2.7 | 0 | 0.208 | 0.006 | 0.677 | 0.368 | 0.007 | 0.053 | 3 | 0.0 | 1.5 | - | - | - | ride harshness (felt) |
+| 2026-08-12 | 0000002e--9182063f29 | ody-op-test | 99db0e56c49d | 0.1 | 0.1 | 0 | 0.197 | 0.009 | 0.575 | 0.493 | 0.009 | - | 2 | 0.0 | 0.0 | - | - | - | ride harshness (felt) |
+| 2026-08-12 | 0000002d--be11d4df22 | ody-op-test | 99db0e56c49d | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | device thermal |
+| 2026-08-13 | 00000036--b92e250f39 | ody-op-test | 72e099164e11 | 4.7 | 4.1 | 0 | 0.198 | 0.006 | 0.615 | 0.216 | 0.007 | 0.009 | 3 | 0.0 | 8.6 | - | - | - | none |
+| 2026-08-13 | 00000035--bc7d6d1f4a | ody-op-test | 72e099164e11 | 6.3 | 5.3 | 0 | 0.192 | 0.007 | 0.570 | 0.232 | 0.007 | 0.010 | 4 | 0.0 | 1.6 | - | - | - | none |
+| 2026-08-13 | 00000039--ae57d5ce6e | ody-op-test | 13d2b66a4d51 | 8.2 | 7.1 | 0 | 0.199 | 0.013 | 0.562 | 0.208 | 0.008 | 0.027 | 4 | 0.0 | 3.6 | - | - | - | windfactor rail exposure |
+| 2026-08-13 | 00000038--5b6729c780 | ody-op-test | 13d2b66a4d51 | 5.5 | 4.6 | 0 | 0.188 | 0.008 | 0.596 | 0.184 | 0.007 | 0.014 | 6 | 0.0 | 5.5 | - | - | - | brake-domain transition bursts |
+| 2026-08-13 | 0000003c--911ae07267 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-13 | 0000003b--08f77bc5c3 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | device thermal |
+| 2026-08-13 | 0000003e--63e230cc29 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-13 | 0000003d--9e8f784316 | ody-op-test | ebc938710a88 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-15 | 0000003f--cf7b94c588 | ody-op-test | 6ad6819a7421 | 3.9 | 3.7 | 0 | 0.185 | 0.013 | 0.520 | 0.179 | 0.006 | 0.047 | 8 | 0.0 | 2.6 | - | - | - | brake-domain transition bursts |
+| 2026-08-15 | 00000040--ff2868cffe | ody-op-test | 6ad6819a7421 | 9.3 | 6.2 | 0 | 0.233 | 0.050 | 0.658 | 0.273 | 0.009 | 0.130 | 7 | 0.0 | 4.3 | - | - | - | brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-16 | 00000042--990be22fe1 | ody-op-test2 | f6e4f07bdc61 | 5.7 | 3.9 | 0 | 0.221 | 0.006 | 0.620 | 0.305 | 0.008 | 0.008 | 28 | 0.0 | 3.5 | - | - | - | creep at stop, brake-domain transition bursts |
+| 2026-08-16 | 00000041--91a6b6745b | ody-op-test2 | f6e4f07bdc61 | 6.3 | 6.3 | 0 | 0.168 | 0.006 | 0.631 | 0.164 | 0.006 | 0.007 | 26 | 0.0 | 4.8 | - | - | - | brake-domain transition bursts |
+| 2026-08-16 | 00000045--409f3100f1 | ody-op-test2 | ece147ad7730 | 1.8 | 1.4 | 0 | 0.451 | 0.010 | 1.604 | 0.625 | 0.013 | 0.017 | 2 | 0.0 | 5.7 | - | - | - | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, ride harshness (felt) |
+| 2026-08-16 | 00000044--2187f67793 | ody-op-test2 | ece147ad7730 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | device thermal |
+| 2026-08-16 | 00000043--87b375be62 | ody-op-test2 | ece147ad7730 | 5.7 | 5.0 | 0 | 0.436 | 0.009 | 1.409 | 1.635 | 0.010 | 0.018 | 6 | 0.0 | 1.8 | - | - | - | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, windfactor rail exposure, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-16 | 00000047--351c002dbd | ody-op-test2 | 69ae9bf908dc | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-16 | 00000046--63393d9e3c | ody-op-test2 | 69ae9bf908dc | 6.7 | 5.5 | 0 | 0.284 | 0.007 | 1.296 | 0.839 | 0.008 | 0.018 | 5 | 0.0 | 4.5 | - | - | - | gasfactor stability, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-17 | 00000048--766dc7107b | ody-op-test2 | d12c1a64a4eb | 10.1 | 9.7 | 0 | 0.418 | 0.008 | 1.554 | 2.696 | 0.009 | 0.018 | 4 | 0.0 | 2.0 | - | - | - | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, windfactor rail exposure, ride harshness (felt) |
+| 2026-08-17 | 0000004a--ed30053072 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 5 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | controlsd crashes |
+| 2026-08-17 | 00000049--464c76b447 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 4 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | controlsd crashes |
+| 2026-08-17 | 0000004c--9430801c67 | ody-op-test2 | 3169fd4cc3fa | 10.8 | 7.7 | 0 | 0.256 | 0.007 | 252.175 | 0.000 | 0.008 | 0.013 | 6 | 0.0 | 3.7 | - | - | - | gasfactor stability, windfactor rail exposure, brake takeovers, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-17 | 0000004b--6997d79209 | ody-op-test2 | 3169fd4cc3fa | 6.3 | 6.7 | 0 | 0.157 | 0.007 | 347.075 | 0.000 | 0.006 | 0.013 | 2 | 0.0 | 4.8 | - | - | - | gasfactor stability, windfactor rail exposure |
+| 2026-08-17 | 0000004e--b155cb69cc | ody-op-test2 | f453a51e0081 | 27.1 | 25.7 | 0 | 0.252 | 0.007 | 279.577 | 0.000 | 0.007 | 0.010 | 8 | 0.4 | 0.7 | - | - | - | gasfactor stability, windfactor rail exposure, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-17 | 0000004d--4297d7e7b9 | ody-op-test2 | f453a51e0081 | 6.1 | 4.6 | 0 | 0.213 | 0.006 | 300.647 | 0.000 | 0.007 | 0.007 | 4 | 0.0 | 6.5 | - | - | - | gasfactor stability, windfactor rail exposure |
+| 2026-08-17 | 0000004f--2cf5bde88e | ody-op-test2 | f453a51e0081 | 21.3 | 19.4 | 0 | 0.264 | 0.005 | 185.727 | 0.000 | 0.006 | 0.008 | 4 | 0.9 | 0.5 | 1617/2560 | 0.5% | 1 | gasfactor stability, windfactor rail exposure |

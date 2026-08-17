@@ -13,6 +13,7 @@ from validate_log import (
   _base_route,
   _domain_model,
   _suggest_status_rows,
+  lateral_metrics,
   write_ledger_md,
 )
 from tuning_metrics import (
@@ -566,7 +567,40 @@ def test_write_ledger_md_escapes_flag_column_delimiters(monkeypatch, tmp_path):
 
   table_row = ledger.read_text().splitlines()[-1]
   assert "track RMS &#124;aEgo-aTarget&#124;" in table_row
-  assert len(table_row.split("|")) == 19
+  assert len(table_row.split("|")) == 22
+
+
+def test_lateral_metrics_reports_command_output_and_safety_telemetry():
+  n = 100
+  grid = np.arange(n, dtype=float) * 0.01
+  active = np.ones(n, dtype=bool)
+  requested = np.full(n, 0.5)
+  output = requested.copy()
+  output[30:40] -= 0.1
+  output_can = output * 3840.0
+  steering_pressed = np.zeros(n, dtype=bool)
+  steering_pressed[50:55] = True
+  steer_fault_temp = np.zeros(n, dtype=bool)
+  steer_fault_temp[70:72] = True
+  steer_fault_perm = np.zeros(n, dtype=bool)
+  saturated = np.zeros(n, dtype=bool)
+  saturated[80:85] = True
+  actual = np.full(n, 0.8)
+  desired = np.full(n, 1.0)
+
+  metrics = lateral_metrics(
+    grid, active, requested, output, output_can, steering_pressed,
+    steer_fault_temp, steer_fault_perm, saturated, actual, desired,
+    np.full(n, 2.0), np.full(n, 3.0), 0.01,
+  )
+
+  assert np.isclose(metrics["lat_active_sec"], 1.0)
+  assert np.isclose(metrics["lat_follow_mean"], -0.01)
+  assert metrics["lat_output_torque_can_abs_max"] == 1920.0
+  assert np.isclose(metrics["lat_saturated_frac"], 0.05)
+  assert np.isclose(metrics["lat_model_rms"], 0.2)
+  assert metrics["steering_override_events"] == 1
+  assert metrics["steer_fault_events"] == 1
 
 
 def _status_row(route, opendbc_commit, flagged=True):
