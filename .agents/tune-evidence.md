@@ -149,8 +149,9 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   inputs, the stock-LKA range correction, and an instance-scoped gas ceiling. Retired supplemental
   brake PID, compensated input, onset shaping, and gas ramp code are not present. The nested
   opendbc suite (4,011 tests, 703 skipped) and Odyssey rail suite (14 tests, 43 subtests) pass.
-  This commit is not yet paired, published, deployed, or road-tested; the existing device remains
-  on the repaired `f53d878a1` software state. The port also restores `CarOutput.actuatorsOutput`
+  The parent is now paired locally at `d70d1eacb3`; the commit is not published, deployed, or
+  road-tested, and the existing device remains on the repaired `f53d878a1` software state. The port
+  also restores `CarOutput.actuatorsOutput`
   gas/brake semantics to actual actuator output; learned factors are no longer written into those
   fields as fork-only telemetry.
 
