@@ -377,6 +377,8 @@ def analyze(msgs, platform):
 
   active = cc_active > 0.5
   pid = (cc_pid > 0.5) & active
+  low_speed_pid_expected = provenance.get("opendbc_commit") in LOW_SPEED_BRAKE_PID_COMMITS
+  r["low_speed_brake_pid_expected"] = low_speed_pid_expected
 
   # === coverage ===
   # How much drive is behind every number below. Never flags - it sets how much this row is worth.
@@ -496,7 +498,8 @@ def analyze(msgs, platform):
     r["rail_lo_frac"] = float((active & (wire <= HondaParams.BOSCH_ACCEL_MIN + RAIL_EPS)).sum() / active.sum())
 
   # === watchlist symptoms (Odyssey telemetry semantics) ===
-  # 1. Port-added braking. This should remain zero on the fresh stock-semantics brake path.
+  # 1. Port-added braking. This should remain zero outside the explicitly source-mapped
+  # low-speed brake-tracking arm.
   #    CAREFUL - this must measure OUR controller, not the car's actuator. Naively comparing
   #    aEgo to the planner command flags "Honda's friction-brake actuator biting past our
   #    ACCEL_COMMAND setpoint", which is documented as NOT ours and NOT fixable (we have no
@@ -507,7 +510,18 @@ def analyze(msgs, platform):
   #    The actionable symptom is the port still sending more brake than requested while the car
   #    is already decelerating past target.
   cmd_smooth = _causal_lpf(cc_accel, dt, JERK_SMOOTH_TAU)
-  braking = pid & (cc_accel < -0.3)
+  low_speed_pid_window = (low_speed_pid_expected & pid & (vego > 1e-3) & (vego < 3.0) &
+                          (cc_accel < 0.0))
+  r["low_speed_brake_pid_frames"] = int(low_speed_pid_window.sum())
+  r["low_speed_brake_pid_addon_mean"] = (
+    float(np.nanmean((wire - cc_accel)[low_speed_pid_window]))
+    if low_speed_pid_window.any() else 0.0
+  )
+  r["low_speed_brake_pid_addon_max"] = (
+    float(np.nanmin((wire - cc_accel)[low_speed_pid_window]))
+    if low_speed_pid_window.any() else 0.0
+  )
+  braking = pid & (cc_accel < -0.3) & ~low_speed_pid_window
   brake_addon = wire - cc_accel                       # <0 = the port is adding brake
   adding = brake_addon < -0.05
   already_past = aego < cc_accel - OVERSHOOT_MARGIN    # car already beyond commanded decel
@@ -662,8 +676,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   it. The wire is decoded from sent ACC_CONTROL on bus 1, not proxied off carOutput.
 
   Deliberately measures the BRAKE domain, which the historical `passthrough_rms` excluded. The
-  fresh brake path should carry the controller request unchanged in both domains, so any material
-  gap is now a regression rather than an intentional supplement.
+  source-mapped low-speed brake-tracking arm is measured separately below 3 m/s; other brake-domain
+  frames must carry the controller request unchanged.
 
   Returns brake-domain following error, sign disagreement, lifecycle regressions, and physical
   BRAKE_REQUEST burst metrics. The fresh path's raw request and fixed upstream threshold supply the
@@ -704,6 +718,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "descent_hold_episodes": None, "descent_hold_sec": None, "descent_hold_longest": None,
          "domain_model_valid": False, "domain_model_note": None,
          "brake_passthrough_expected": False,
+         "low_speed_brake_pid_expected": False, "low_speed_brake_pid_frames": 0,
+         "low_speed_brake_pid_addon_mean": 0.0, "low_speed_brake_pid_addon_max": 0.0,
          "windf_shadow_eligible_min": None, "windf_shadow_start": None,
          "windf_shadow_end": None, "windf_shadow_min": None, "windf_shadow_max": None,
          "windf_shadow_drift": None, "windf_shadow_floor_frac": None,
@@ -801,16 +817,27 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   bd = active & BR
   gd = active & ~BR & (GAS > GAS_INACTIVE)
   cd = active & ~BR & (GAS <= GAS_INACTIVE)
+  source_commit = (opendbc_commit or "")[:12]
+  low_speed_pid_expected = source_commit in LOW_SPEED_BRAKE_PID_COMMITS
+  low_speed_pid_window = (low_speed_pid_expected & active & (vego < 3.0) &
+                           (vego > 1e-3) & (requested < 0.0) & BR)
+  out["low_speed_brake_pid_expected"] = low_speed_pid_expected
+  out["low_speed_brake_pid_frames"] = int(low_speed_pid_window.sum())
+  if low_speed_pid_window.any():
+    low_speed_addon = err[low_speed_pid_window]
+    out["low_speed_brake_pid_addon_mean"] = float(np.nanmean(low_speed_addon))
+    out["low_speed_brake_pid_addon_max"] = float(np.nanmin(low_speed_addon))
   out["brake_domain_frac"] = float(bd.sum() / active.sum())
   out["coast_domain_frac"] = float(cd.sum() / active.sum())
   out["coast_domain_sec"] = float(cd.sum() * dt)
   out["coast_domain_events"] = int(np.sum(np.diff(cd.astype(np.int8), prepend=0) == 1))
   if gd.sum() > 50:
     out["follow_gas_rms"] = float(np.sqrt(np.nanmean(err[gd] ** 2)))
-  if bd.sum() > 50:
-    out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[bd] ** 2)))
+  follow_bd = bd & ~low_speed_pid_window
+  if follow_bd.sum() > 50:
+    out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[follow_bd] ** 2)))
     # Fresh brake semantics are passthrough, so a nonzero mean identifies port-side divergence.
-    out["follow_brake_mean"] = float(np.nanmean(err[bd]))
+    out["follow_brake_mean"] = float(np.nanmean(err[follow_bd]))
 
   # A positive request can lead the held 50 Hz command by one period. Keep transport skew visible
   # while grading only disagreement that survives the command-period grace.
@@ -827,7 +854,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   )
   out["domain_model_valid"] = model_valid
   out["domain_model_note"] = model_note
-  source_commit = (opendbc_commit or "")[:12]
   out["brake_passthrough_expected"] = (
     source_commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
     and source_commit not in LOW_SPEED_BRAKE_PID_COMMITS
@@ -987,6 +1013,11 @@ def verdicts(r):
       f"{r['overshoot_frac']*100:.1f}% braking frames still adding past target "
       f"(addon mean {r.get('addon_mean', 0):+.3f}; Honda actuator bite {r.get('honda_bite_frac', 0)*100:.1f}% - NOT ours)",
       status="car port added brake authority" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
+  if r.get("low_speed_brake_pid_expected"):
+    add("low-speed brake tracking arm (diagnostic)", True,
+        f"{r.get('low_speed_brake_pid_frames', 0)} frames below 3 m/s; addon mean "
+        f"{r.get('low_speed_brake_pid_addon_mean', 0.0):+.3f}, most negative "
+        f"{r.get('low_speed_brake_pid_addon_max', 0.0):+.3f} m/s^2 (road validation required)")
   add("creep at stop", r["creep_frames"] < CREEP_MIN_FRAMES,
       f"{r['creep_frames']} frames sustained",
       status="creep comp (NOT Ford subtraction - see tune-evidence.md)" if r["creep_frames"] >= CREEP_MIN_FRAMES else None)
