@@ -69,6 +69,17 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   at requests no greater than 0.05 m/s2 and 83 lasted under one second. The prior -0.02 release
   hysteresis reduced the route-46 reference's 29.4/min rate but left positive-only re-entry exposed
   to near-zero request cycling.
+- **Route 48 closes another car-port brake-shaping hypothesis.** Its 12 complete road-speed brake
+  episodes in 10.13 engaged minutes (1.18/min) are close in frequency to stock-radar routes 2b and
+  3b (0.79 and 0.98/min). The remaining shape difference begins in the requested command: route 48
+  reached 80% `ACCEL_COMMAND` depth in 0.33 s and lasted 1.03 s median, versus 0.90/1.12 s and
+  5.92/5.27 s on radar. Achieved 80% times were 0.66 s versus 1.77/1.36 s, while median achieved
+  onset jerk (-1.56 m/s3) remained in the same range as radar (-1.23/-1.39 m/s3). Ten of the 12
+  OpenPilot episodes were cruise-plan requests without a lead; they crossed -0.30 and returned
+  positive quickly, and the port held brake until that positive release while preserving the raw
+  request. Do not add a Honda brake shaper for this aggregate difference. The next isolated brake
+  comparison is the built-in Experimental planner mode, which earlier within-drive evidence showed
+  reduces hill overspeed braking without car-port code.
 - **Stock radar defines the gas-domain continuity target.** On stock-radar route
   `0000002b--4882f84449`, gas was active for 85.6% of samples with `ACCEL_COMMAND` from -0.20
   through 0, and entered only 1.59 times/min. Its active `GAS_COMMAND` in that interval had median
