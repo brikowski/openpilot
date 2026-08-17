@@ -213,6 +213,10 @@ def gas_reentry_pulse_metrics(grid, requested, engaged, vego, brake_request, bra
     if not len(later):
       continue
     end = int(later[0])
+    # A normal command shutdown is not a gas pulse. Require the vehicle to remain in the moving
+    # control mask when gas ends; this excludes longitudinal disengagement and driver-brake exits.
+    if end >= len(moving) or not moving[end]:
+      continue
     duration = float(grid[end - 1] - grid[start])
     entry_end = min(end, start + entry_frames)
     entry_requests = requested[start:entry_end]

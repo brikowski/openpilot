@@ -120,6 +120,28 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   tiny-request short pulses; route 4f contained 36 re-entries and no sub-second pulse. This is a
   narrower symptom measure than the 13 short gas episodes above because it excludes brake-to-gas
   handoffs. It is diagnostic only and does not authorize a deadband or any wire-command change.
+- **Three post-`b472c9afe` uploads (2026-08-17).** Route
+  `00000051--f714a28f5f` is a 21-second disabled/offroad log with zero vehicle speed and no
+  longitudinal or lateral evidence; it is useful only as a thermal record (75C at start, 84C peak).
+  Routes `00000052--5550e053e9` and `00000053--360703793d` are thin ordinary-road samples with
+  5.7 and 5.5 engaged minutes, respectively. Neither contains moving Experimental driving, so
+  neither tests the uphill Experimental behavior.
+  Route 52 had 7 coast re-entries and no sub-second in-control pulse under the corrected diagnostic.
+  Its three raw gas intervals under two seconds were around 50 mph, began at requests from
+  `+0.001` to `+0.011 m/s2`, and remained faithful at the wire (`0.006 m/s2` gas RMS); a frozen
+  `+0.02` re-entry threshold removes the one 0.69-second interval without changing projected
+  brake edges. Route 53 had 3 true coast re-entries, including one 0.75-second tiny-request pulse
+  at about 427 seconds; its request-to-wire RMS was `0.007 m/s2`. A separate apparent 0.83-second
+  burst at 268 seconds ended with longitudinal disengagement and is excluded from the pulse count.
+  The `+0.02` projection removes the tiny-request classification but leaves a strong-request
+  transient, so it is not a complete fix for every short gas event.
+  Both routes carried raw commands correctly and had zero direct gas-to-brake handoffs. Route 52
+  measured 17 brake edges (peak 4/10s, 12/min on a very short downhill window); route 53 measured
+  3 edges (peak 2/10s). Their port-owned stop-lurch portions were `+0.07` and `+0.03 m/s2`, below
+  the current action bound, while the remaining response was Honda actuator behavior. Lateral
+  telemetry reached the restored 3840 range without controller saturation or steer faults on either
+  route. These are attribution and candidate-screening results, not enough exposure to promote a
+  production gas threshold.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176

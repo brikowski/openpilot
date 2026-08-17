@@ -154,3 +154,6 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-17 | 0000004d--4297d7e7b9 | ody-op-test2 | f453a51e0081 | 6.1 | 4.6 | 0 | 0.213 | 0.006 | 300.647 | 0.000 | 0.007 | 0.007 | 4 | 0.0 | 6.5 | - | - | - | gasfactor stability, windfactor rail exposure |
 | 2026-08-17 | 0000004e--b155cb69cc | ody-op-test2 | f453a51e0081 | 27.1 | 25.7 | 0 | 0.252 | 0.007 | - | - | 0.007 | 0.010 | 8 | 0.4 | 0.7 | 1791/2560 | 0.7% | 5 | brake-domain transition bursts, ride harshness (felt) |
 | 2026-08-17 | 0000004f--2cf5bde88e | ody-op-test2 | f453a51e0081 | 21.3 | 19.4 | 0 | 0.264 | 0.005 | - | - | 0.006 | 0.008 | 4 | 0.9 | 0.5 | 1617/2560 | 0.5% | 1 | none |
+| 2026-08-17 | 00000052--5550e053e9 | ody-op-test2 | b472c9afee21 | 5.7 | 4.5 | 0 | 0.239 | 0.008 | - | - | 0.006 | 0.011 | 4 | 1.8 | 3.5 | 1588/3840 | 0.0% | 0 | device thermal |
+| 2026-08-17 | 00000053--360703793d | ody-op-test2 | b472c9afee21 | 5.5 | 4.8 | 0 | 0.218 | 0.007 | - | - | 0.007 | 0.009 | 2 | 0.0 | 9.2 | 1175/3840 | 0.0% | 0 | none |
+| 2026-08-17 | 00000051--f714a28f5f | ody-op-test2 | b472c9afee21 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | device thermal |

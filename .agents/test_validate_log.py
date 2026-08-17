@@ -375,6 +375,26 @@ def test_gas_reentry_pulse_metric_does_not_call_brake_handoff_a_pulse():
   assert metrics["gas_reentry_pulse_events"] == 0
 
 
+def test_gas_reentry_pulse_metric_ignores_disengagement_exit():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  engaged[190:] = False
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:190] = 100.0
+  requested = np.full(len(grid), 0.01)
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 0
+
+
 def test_sign_disagreement_ignores_transport_and_separates_downhill():
   requested = np.full(12, 0.1)
   wire = np.zeros(12)

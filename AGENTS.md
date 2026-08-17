@@ -149,6 +149,16 @@ tiny positive cruise requests before crossing the `-0.20` release boundary. That
 gas-domain re-entry arm; the current `-0.50` brake arm does not claim to resolve it. This is a
 command-path isolation experiment, not a road-proven comfort improvement.
 
+The first post-`b472c9afe` ordinary-road uploads were thin: route `00000052--5550e053e9` had 5.7
+engaged minutes and route `00000053--360703793d` had 5.5; route `00000051--f714a28f5f` was
+offroad-only. Both driving routes carried `carControl` to CAN correctly and had no direct gas-to-
+brake handoff. Route 53 still contains one true sub-second coast-to-gas pulse at a tiny positive
+request; route 52 contains no sub-second in-control pulse under the corrected diagnostic, though it
+has shorter gas intervals. A frozen `+0.02 m/s²` re-entry threshold screens those tiny entries but
+does not remove route 53's strong-request transient, so no production gas deadband is promoted from
+these routes alone. Treat route 52's short downhill brake window and both routes' stop-lurch readings
+as thin context, not a brake retune authorization.
+
 Do not substitute the failed raw-split reference or the unvalidated command-domain candidate for the
 `ody-op` recovery branch. Full-rate master
 route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s, versus 1.9/min and
