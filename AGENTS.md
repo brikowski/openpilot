@@ -123,15 +123,19 @@ relaxed from `-0.21` to `-0.18` below 2 mph, the raw split selected gas, speed r
 took over. The planner also withheld `shouldStop` until near zero; a car-port domain change cannot
 repair that upstream stop decision.
 
-The current candidate keeps `ACCEL_COMMAND` as the clipped raw request and uses state only to choose
-Honda's binary command domains. At road speed, brake enters below `-0.30` and remains selected while
-the request is negative; a positive request releases it immediately. An active gas command remains
-live down to Honda's upstream `-0.20` split, but after coast it re-enters only for a positive
-request. Below 5 m/s, non-positive requests select brake and any positive start request selects gas
-immediately. Frozen-input replay reduced route-wide brake-bit edges from 69 to 2 and 167 to 14 on
-routes 41/42; the route-48 gas arm projects gas entries from 168 to 23 and sub-second episodes from
-83 to 2. Those are command-shape results only; controlled and ordinary-road drives must still
-reject late onset, excess overspeed, renewed tapping, gas pulsing, or incomplete stops.
+The current `-0.50` brake-entry arm keeps `ACCEL_COMMAND` as the clipped raw request and uses state
+only to choose Honda's binary command domains. At road speed, brake enters below `-0.50` and remains
+selected while the request is negative; a positive request releases it immediately. An active gas
+command remains live down to Honda's upstream `-0.20` split, but after coast it re-enters only for a
+positive request. Below 5 m/s, non-positive requests select brake and any positive start request
+selects gas immediately. The earlier `-0.30` replay results on routes 41/42 are retained as command-
+shape evidence for that predecessor, not as validation of this arm. Controlled and ordinary-road
+drives must reject late onset, excess overspeed, renewed tapping, gas pulsing, or incomplete stops.
+
+The `-0.50` arm changes one road-speed entry constant only; it does not change the gasfactor, gas
+handoff semantics, low-speed stop authority, or numeric `ACCEL_COMMAND`. It is software-validated
+and road-unvalidated until the official controlled maneuvers and a terrain-matched ordinary-road
+drive are complete.
 
 The retained custom longitudinal behavior outside brake authority is the road-supported Odyssey
 gasfactor calibration. The unproven 60-count handoff ramp is retired: eligible gas now receives the

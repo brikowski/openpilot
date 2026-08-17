@@ -88,7 +88,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert valid and note == "raw three-domain coast split"
   np.testing.assert_array_equal(switch, requested)
   np.testing.assert_array_equal(threshold[:100], np.zeros(100))
-  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.30))
+  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.50))
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.

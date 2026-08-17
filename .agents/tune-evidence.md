@@ -87,6 +87,17 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   upstream Experimental/model attribution and does not justify adding Honda gas force or changing
   the gas map. Current routes also no longer expose internal gasfactor/windfactor state through
   `carOutput`; the validator must not grade actual gas/brake actuator outputs as learner values.
+- **Road-speed `-0.50` brake-entry arm (2026-08-17, software only).** Nested opendbc commit
+  `b472c9afe` changes only the Odyssey road-speed brake-entry constant from `-0.30` to `-0.50`.
+  It preserves raw clipped `ACCEL_COMMAND`, low-speed brake authority, the upstream `-0.20` active
+  gas hold, positive-request brake release, and all gasfactor behavior. The nested opendbc suite
+  passed 4,011 tests with 703 skips; the Odyssey rails and validator tests passed 45 tests and 43
+  subtests. Frozen-input replay of routes 4e/4f is retained only as command-shape evidence (the
+  replayed request-error RMS was 0.0042/0.0036 m/s2); it cannot predict closed-loop domain edges.
+  Routes 4e/4f ran the predecessor `f453a51e0081`, so neither is road evidence for `b472c9afe`.
+  The arm requires the official longitudinal maneuvers and a terrain-matched ordinary-road drive;
+  reject it for late onset, overspeed, renewed tapping or gas pulsing, incomplete stops, or driver
+  takeovers.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176

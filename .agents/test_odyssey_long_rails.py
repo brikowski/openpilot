@@ -90,15 +90,15 @@ class TestOdysseyLongRails(unittest.TestCase):
       ("stopping", 20.0, LongCtrlState.stopping, 0.0),
     ):
       with self.subTest(name=name):
-        accels = np.array([0.5] * 20 + [-0.5] * 100)
+        accels = np.array([0.5] * 20 + [-0.6] * 100)
         # Positive aEgo would make the former supplemental integrator add braking.
         aegos = np.array([0.0] * 20 + [2.0] * 100)
         rejects, seen = _run(True, accels, pitch=pitch, vego=vego, aegos=aegos, long_control_state=state)
         assert not rejects
         brake = np.array([br for _, _, br in seen], dtype=bool)
         entry = np.flatnonzero(brake & ~np.roll(brake, 1))[0]
-        assert {accel for accel, _, _ in seen[entry:]} == {-50}, \
-          f"{name} brake command diverged from the -0.50 m/s^2 request"
+        assert {accel for accel, _, _ in seen[entry:]} == {-60}, \
+          f"{name} brake command diverged from the -0.60 m/s^2 request"
 
   def test_road_speed_coasts_through_raw_split_chatter(self):
     """Small negative requests must not alternate Honda's gas and friction-brake domains."""
@@ -107,24 +107,27 @@ class TestOdysseyLongRails(unittest.TestCase):
         with self.subTest(vego=vego, pitch=pitch):
           # These requests bracket the upstream -0.20 split in the failed route. They must remain
           # neutral; a stronger request still gets immediate brake authority and positive gets gas.
-          accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.31] * 20 + [-0.5] * 20 + [0.10] * 20)
+          accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.31] * 20 + [-0.49] * 20 + [-0.51] * 20 + [0.10] * 20)
           rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
           assert not rejects
-          assert {-18, -23, -31, -50, 10}.issubset({accel for accel, _, _ in seen})
+          assert {-18, -23, -31, -49, -51, 10}.issubset({accel for accel, _, _ in seen})
           for accel, gas, brake_request in seen:
             if accel in (-18, -23):
               assert gas == GAS_INACTIVE, "negative road request left GAS_COMMAND active"
               assert brake_request == 0, "raw -0.20 crossing still toggled BRAKE_REQUEST"
-            elif accel in (-31, -50):
+            elif accel == -51:
               assert gas == GAS_INACTIVE
               assert brake_request == 1, "stronger road request did not select brake immediately"
+            elif accel in (-31, -49):
+              assert gas == GAS_INACTIVE
+              assert brake_request == 0, "mild road request did not remain in coast"
             elif accel == 10:
               assert gas != GAS_INACTIVE, "positive road request did not select gas"
               assert brake_request == 0
 
   def test_road_speed_brake_domain_releases_for_positive_request(self):
     """A settling brake request may cross the coast band, but positive gas releases immediately."""
-    accels = np.array([-0.5] * 20 + [-0.45] * 20 + [0.10] * 20)
+    accels = np.array([-0.6] * 20 + [-0.55] * 20 + [0.10] * 20)
     rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
     assert not rejects
     brake = np.array([br for _, _, br in seen], dtype=bool)

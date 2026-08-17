@@ -22,9 +22,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
   switching, and its one-sided brake integral. `ody-op-test` is frozen after its stacked coast,
   threshold, integral, onset, and release experiments failed the reported downhill symptom.
 - The raw upstream-split `ody-op-test2` reference failed its first road screen. The current
-  candidate still removes the custom brake PID, compensated threshold, release hysteresis, and
+  `-0.50` arm still removes the custom brake PID, compensated threshold, release hysteresis, and
   onset shaping. It keeps raw clipped `ACCEL_COMMAND`, coasts for road-speed requests from `0`
-  through `-0.30`, brakes below `-0.30`, and retains brake for non-positive requests below 5 m/s.
+  through `-0.50`, brakes below `-0.50`, and retains brake for non-positive requests below 5 m/s.
+  This is a software-validated, road-unvalidated arm.
 - Eligible gas receives the calculated `GAS_COMMAND` immediately. The former 60-count handoff ramp
   was mechanically verified but retired because no isolated comparison established a road benefit.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
@@ -36,11 +37,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
   intentionally treats `GAS_COMMAND` as opaque and never produces a live command. Its pure metric
   helpers and mutation tests live in `radar_command_metrics.py` and
   `test_radar_command_metrics.py`.
-- `actuatorsOutput.gas` and `.brake` currently carry effective gasfactor and windfactor for log
-  telemetry, while raw commands remain in `sendcan`. This is fork-only instrumentation: those
-  fields are defined as actuator outputs and must regain actuator semantics before an upstream PR.
-  Preserve learner visibility through deterministic offline reconstruction or a separately named,
-  schema-reviewed diagnostic event before removing this dependency from the validator and layout.
+- `actuatorsOutput.gas` and `.brake` carry actual actuator outputs, while raw commands remain in
+  `sendcan`. Learner visibility is recovered through deterministic offline reconstruction; the
+  validator and Jotpluggler layout must not treat these actuator fields as gasfactor/windfactor
+  telemetry.
 
 ## Evidence that fixed the design
 

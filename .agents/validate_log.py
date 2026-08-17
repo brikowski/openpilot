@@ -136,10 +136,11 @@ DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode 
 DOMAIN_PITCH_FILTER_TAU = 0.5  # Legacy ody-op compensated-domain model.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
-THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRAKE_ENTRY.
+THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.50  # MUST track the current ODYSSEY_ROAD_BRAKE_ENTRY.
 THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "3169fd4cc3fa": -0.30,  # deployed baseline; preserve the threshold it actually drove with
   "f453a51e0081": -0.30,  # low-speed brake-tracking arm; road-speed domain is unchanged
+  "b472c9afe": -0.50,  # isolated road-speed brake-entry arm; road validation pending
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -150,6 +151,7 @@ THREE_DOMAIN_COMMITS = {
   "e46e9eaa6885",  # ody-op-test2 stateless coast and low-speed stop candidate
   "ece147ad7730",  # same candidate with the unproven gas handoff ramp removed
   "f453a51e0081",  # low-speed brake PID arm; source-matched domain model remains three-domain
+  "b472c9afe",  # isolated -0.50 road-speed brake-entry arm
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
