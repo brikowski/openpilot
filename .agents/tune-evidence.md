@@ -106,6 +106,13 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   not evidence to raise gasfactor or add grade force. Route 4f had no sub-second moving gas episode
   under the same predecessor arm. The `-0.50` brake arm deliberately leaves gas re-entry unchanged;
   a separate gas-domain arm needs its own controlled/ordinary-road comparison.
+- **Gas re-entry deadband sizing (2026-08-17, frozen-input projection only).** Applying a candidate
+  `+0.02 m/s2` minimum only when re-entering gas after coast projects route 4e from 76 to 69 gas
+  entries and from 15 to 12 sub-second episodes, while leaving projected brake-domain time and
+  route 4f's sub-second count unchanged. This leaves the raw `ACCEL_COMMAND` intact but withholds
+  opaque gas for tiny positive requests that immediately reverse. The projection cannot predict
+  closed-loop speed, domain edges, or overspeed, so it selects no production value and is not yet a
+  code change.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176
