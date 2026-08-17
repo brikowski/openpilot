@@ -144,7 +144,10 @@ longitudinal command, Panda bounds command magnitude, and positive stop-release 
 immediately. The new route-43 gas arm leaves that gasfactor calibration and the three-domain brake
 candidate unchanged, but removes unverified wind/grade feedforward from the actual `GAS_COMMAND`.
 Windfactor remains logged as diagnostic-only learner state; it cannot choose the brake domain or add
-wire force. This is a command-path isolation experiment, not a road-proven comfort improvement.
+wire force. The latest full non-Experimental route still had 13 sub-second gas episodes beginning at
+tiny positive cruise requests before crossing the `-0.20` release boundary. That is a separate
+gas-domain re-entry arm; the current `-0.50` brake arm does not claim to resolve it. This is a
+command-path isolation experiment, not a road-proven comfort improvement.
 
 Do not substitute the failed raw-split reference or the unvalidated command-domain candidate for the
 `ody-op` recovery branch. Full-rate master

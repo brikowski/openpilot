@@ -98,6 +98,14 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   The arm requires the official longitudinal maneuvers and a terrain-matched ordinary-road drive;
   reject it for late onset, overspeed, renewed tapping or gas pulsing, incomplete stops, or driver
   takeovers.
+- **Route 4e gas-pulse attribution (2026-08-17).** The non-Experimental full route contained 76
+  moving gas episodes; 13 lasted under one second (one under 0.5 s). The short episodes began at
+  tiny positive cruise requests (`+0.001` to `+0.014 m/s2`) and ended when the same request fell
+  through the active-gas `-0.20` release boundary, usually on a descent. Planner-to-`carControl`
+  and `carControl`-to-wire fidelity remained intact, so this is a request/domain re-entry symptom,
+  not evidence to raise gasfactor or add grade force. Route 4f had no sub-second moving gas episode
+  under the same predecessor arm. The `-0.50` brake arm deliberately leaves gas re-entry unchanged;
+  a separate gas-domain arm needs its own controlled/ordinary-road comparison.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176
