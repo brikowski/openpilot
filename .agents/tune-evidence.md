@@ -100,6 +100,16 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   with the gas-domain road arm. A limit must be its own upstream-style experiment; Ford/Honda
   Nidec's near-cruise limit shape does not directly cover most route-48 events and must not be
   copied without controlled evidence.
+- **Highway-limit candidate sizing is not yet a tune.** Applying Ford's exact upstream
+  `get_pid_accel_limits` shape (`+2.0` to `+0.2` m/s2 over cruise-speed deltas of 2.0 to 0.4 m/s)
+  to route 48 would clip 44.5 of 111.3 seconds with high-grade, high-request exposure, leaving
+  52.3 seconds in gears 7-10 unchanged. A separate widened shape that reaches +0.3 m/s2 by a
+  2.0 m/s cruise delta would clip 82.8 seconds in those gears, but its breakpoint and +0.3 value
+  are Odyssey-specific calibration, not current commaai/opendbc master behavior. Both are
+  command-shape projections only. If the gas arm road screen passes, the next controlled arm must
+  compare one such pre-`carControl` limit against the unmodified f53d878a1 controller on the same
+  uphill set-speed sequence, measuring downshifts, achieved acceleration, overspeed/underspeed,
+  and post-shift surge before any ordinary-road promotion.
 - **Next road-screen contract keeps the mechanisms isolated.** The first post-`f53d878a1` route
   must assess only the gas-domain hold: report inactive-to-live gas entries/minute, sub-second gas
   episodes, first-live command values, direct gas/brake handoffs, command-to-wire RMS, speed/grade
