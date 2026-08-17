@@ -3,6 +3,21 @@
 Read this before changing the tune or its tooling. This file holds decisions and invariants;
 route history and derivations belong in [`.agents/tune-evidence.md`](.agents/tune-evidence.md).
 
+## Project objective
+
+Make the Odyssey track `carControl.actuators.accel` as smoothly as Honda's stock radar commands the
+vehicle, while keeping the smallest practical delta from current `commaai/openpilot` and
+`commaai/opendbc` master.
+
+- Treat stock radar as the benchmark for actuator transitions, episode shape, and achieved ride
+  response, not for its proprietary target selection.
+- Prefer mechanisms already used on current upstream master. A fork-only mechanism needs a concise,
+  PR-quality physical rationale, focused regression coverage, and an isolated road arm.
+- Minimize production code and change one mechanism per road comparison. Replay establishes command
+  shape only; promotion requires controlled maneuvers and ordinary-road evidence.
+- Preserve honest command attribution. If the vehicle cannot smoothly achieve a request, prefer the
+  narrowest upstream-style limit before `carControl` over hiding the mismatch in Honda CAN shaping.
+
 ## What this branch is
 
 `ody-op` is the recovery baseline and shared tooling/evidence branch for the Honda Bosch A tune on

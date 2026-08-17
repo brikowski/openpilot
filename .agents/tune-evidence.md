@@ -61,6 +61,34 @@ rather than treating an uncalibrated slew limit as known-good behavior.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
 ## Current Validation Arm (raw split failed 2026-08-15; three-domain candidate)
+- **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
+  `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
+  `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176
+  m/s2. The wire carried the request; the first material divergence was Honda's achieved response.
+  The route had 168 inactive-to-live gas episodes in 10.13 engaged minutes (16.6/min); 163 began
+  at requests no greater than 0.05 m/s2 and 83 lasted under one second. The prior -0.02 release
+  hysteresis reduced the route-46 reference's 29.4/min rate but left positive-only re-entry exposed
+  to near-zero request cycling.
+- **Stock radar defines the gas-domain continuity target.** On stock-radar route
+  `0000002b--4882f84449`, gas was active for 85.6% of samples with `ACCEL_COMMAND` from -0.20
+  through 0, and entered only 1.59 times/min. Its active `GAS_COMMAND` in that interval had median
+  154 and p90 310 counts. Holding an already-active Odyssey gas domain down to the existing Honda
+  Bosch -0.20 split therefore follows both upstream semantics and measured OEM command shape; it
+  does not infer a new `GAS_COMMAND` calibration.
+- **Current isolated gas-pulse arm.** At road speed, an active gas command now remains active down
+  to Honda's upstream -0.20 gas split. After a true coast or brake state, gas still requires a
+  positive request to re-enter; below 5 m/s, non-positive requests retain brake authority. Frozen
+  route-48 inputs project 168->23 gas entries and 83->2 sub-second gas episodes, with zero direct
+  gas-to-brake handoffs. This is command-shape evidence only and requires an isolated road screen.
+- **Route 48 also exposes a separate highway request/gear interaction.** Around 59-71 mph,
+  repeated requests near +0.6 to +0.8 m/s2 were followed by several seconds of undertracking while
+  the 10-speed shifted down through multiple gears, then by positive achieved-acceleration surges.
+  The online gas trim spent 59.0% of engaged frames at its 3.0 rail and did not converge away from
+  the mismatch. Stock radar requested materially less acceleration in comparable high-speed/grade
+  cells and tracked it more closely. Do not raise gas force or combine a cruise-acceleration limit
+  with the gas-domain road arm. A limit must be its own upstream-style experiment; Ford/Honda
+  Nidec's near-cruise limit shape does not directly cover most route-48 events and must not be
+  copied without controlled evidence.
 - **Route 43 gas attribution (2026-08-16).** The thin full-rate drive `00000043--87b375be62`
   followed `carControl.actuators.accel` and the Honda CAN/domain bits (gas RMS 0.0098 m/s2,
   brake RMS 0.0176 m/s2, no command/domain divergence), so its excessive gas is not a planner-to-
@@ -91,11 +119,13 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   the driver took over. In both routes the planner kept `shouldStop=false` while moving and only
   asserted it near zero after takeover. The upstream stop decision and the low-speed domain error
   are separate findings.
-- **Current three-domain candidate.** `ACCEL_COMMAND` remains the raw clipped request. At road
-  speed, request `>0` selects gas, `[-0.30, 0]` selects true coast, and `<-0.30` selects brake. Below
-  5 m/s, every non-positive request selects brake and a positive request selects gas immediately.
-  There is no state, PID, onset shaper, or compensated brake input. The `-0.30` entry is a bounded
-  candidate chosen below the measured `-0.18/-0.23` chatter band, not a validated calibration.
+- **Current command-domain candidate.** `ACCEL_COMMAND` remains the raw clipped request. At road
+  speed, brake enters below -0.30 and remains selected while the request is negative; positive gas
+  releases it immediately. An active gas command remains live down to the stock -0.20 split, but
+  after coast it re-enters only for a positive request. Below 5 m/s, every non-positive request
+  selects brake and a positive request selects gas immediately. There is no brake PID, onset
+  shaper, or compensated brake input. The -0.30 brake entry remains an unvalidated calibration;
+  the gas-domain hold is the isolated route-48 arm.
 - **Frozen-input replay result, not road proof.** Route-wide brake-bit edges changed 69->2 on route
   41 and 167->14 on route 42. The exact route-42 39 mph window changed 36->0, and both stop windows
   remained continuously in brake with zero gas. Replay freezes the old response and planner input,
