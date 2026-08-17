@@ -142,6 +142,16 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   telemetry reached the restored 3840 range without controller saturation or steer faults on either
   route. These are attribution and candidate-screening results, not enough exposure to promote a
   production gas threshold.
+- **Road-speed `+0.02 m/s2` gas re-entry arm (2026-08-17, software only).** Nested opendbc commit
+  `46468be93` adds the isolated Odyssey candidate. It keeps a fresh road-speed request at or below
+  `+0.02 m/s2` in coast after gas has
+  already ended, while preserving active gas through Honda's existing `-0.20` release split and
+  all low-speed start behavior. This is the smallest source delta that addresses the observed
+  coast-to-gas pulse without reshaping `ACCEL_COMMAND`, changing gasfactor, or adding Honda force.
+  The latest frozen routes project removal of route 52's lone sub-second in-control interval and
+  route 53's tiny-request pulse, but route 53 retains a separate strong-request transient. The arm
+  therefore requires an official controlled screen and an ordinary-road drive; reject it for
+  under-acceleration, overspeed, renewed gas pulsing, or any low-speed start/stop regression.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176

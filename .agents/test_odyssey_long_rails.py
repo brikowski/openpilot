@@ -140,15 +140,17 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert (gas[-10:] != GAS_INACTIVE).all()
 
   def test_road_speed_gas_domain_does_not_pulse_at_zero(self):
-    """Gas stays active through zero, but re-enters only for a positive request after coasting."""
-    accels = np.array([0.10] * 20 + [-0.19] * 20 + [-0.21] * 20 + [-0.10] * 20 + [0.01] * 20)
+    """Gas stays active through zero, but re-enters only after a material request following coast."""
+    accels = np.array([0.10] * 20 + [-0.19] * 20 + [-0.21] * 20 + [-0.10] * 20 +
+                      [0.01] * 20 + [0.03] * 20)
     rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
     assert not rejects
     gases = np.array([gas for _, gas, _ in seen])
     brake = np.array([br for _, _, br in seen], dtype=bool)
     assert (gases[:20] != GAS_INACTIVE).all(), "stock gas range pulsed inactive"
     assert (gases[20:40] == GAS_INACTIVE).all(), "gas re-entered for a non-positive request"
-    assert (gases[-10:] != GAS_INACTIVE).all(), "positive road request did not re-enter gas"
+    assert (gases[80:100] == GAS_INACTIVE).all(), "tiny road request re-entered gas"
+    assert (gases[-10:] != GAS_INACTIVE).all(), "material road request did not re-enter gas"
     assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
 
   def test_gas_command_does_not_add_unverified_grade_or_drag(self):

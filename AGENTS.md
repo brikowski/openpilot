@@ -159,6 +159,11 @@ does not remove route 53's strong-request transient, so no production gas deadba
 these routes alone. Treat route 52's short downhill brake window and both routes' stop-lurch readings
 as thin context, not a brake retune authorization.
 
+The isolated `+0.02 m/s²` Odyssey road-speed gas re-entry arm is now implemented in the nested
+opendbc candidate for the next road screen. It changes only fresh gas entry after coast; active gas,
+the upstream `-0.20` release split, low-speed start behavior, raw `ACCEL_COMMAND`, and gasfactor are
+unchanged. It is not road-validated or a claim that the strong-request transient is solved.
+
 Do not substitute the failed raw-split reference or the unvalidated command-domain candidate for the
 `ody-op` recovery branch. Full-rate master
 route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s, versus 1.9/min and
