@@ -147,3 +147,5 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-16 | 00000047--351c002dbd | ody-op-test2 | 69ae9bf908dc | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | none |
 | 2026-08-16 | 00000046--63393d9e3c | ody-op-test2 | 69ae9bf908dc | 6.7 | 5.5 | 0 | 0.284 | 0.007 | 1.296 | 0.839 | 0.008 | 0.018 | 5 | 0.0 | 4.5 | gasfactor stability, brake-domain transition bursts, ride harshness (felt) |
 | 2026-08-17 | 00000048--766dc7107b | ody-op-test2 | d12c1a64a4eb | 10.1 | 9.7 | 0 | 0.418 | 0.008 | 1.554 | 2.696 | 0.009 | 0.018 | 4 | 0.0 | 2.0 | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, windfactor rail exposure, ride harshness (felt) |
+| 2026-08-17 | 0000004a--ed30053072 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 5 | - | - | - | - | - | - | - | 0.0 | 0.0 | controlsd crashes |
+| 2026-08-17 | 00000049--464c76b447 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 4 | - | - | - | - | - | - | - | 0.0 | 0.0 | controlsd crashes |
