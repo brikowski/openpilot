@@ -149,3 +149,5 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-17 | 00000048--766dc7107b | ody-op-test2 | d12c1a64a4eb | 10.1 | 9.7 | 0 | 0.418 | 0.008 | 1.554 | 2.696 | 0.009 | 0.018 | 4 | 0.0 | 2.0 | track RMS &#124;aEgo-carControl&#124;, gasfactor stability, windfactor rail exposure, ride harshness (felt) |
 | 2026-08-17 | 0000004a--ed30053072 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 5 | - | - | - | - | - | - | - | 0.0 | 0.0 | controlsd crashes |
 | 2026-08-17 | 00000049--464c76b447 | ody-op-test2 | f53d878a19bf | 0.0 | 0.0 | 4 | - | - | - | - | - | - | - | 0.0 | 0.0 | controlsd crashes |
+| 2026-08-17 | 0000004c--9430801c67 | ody-op-test2 | 3169fd4cc3fa | 10.8 | 7.7 | 0 | 0.256 | 0.007 | 252.175 | 0.000 | 0.008 | 0.013 | 6 | 0.0 | 3.7 | gasfactor stability, windfactor rail exposure, brake takeovers, brake-domain transition bursts, ride harshness (felt) |
+| 2026-08-17 | 0000004b--6997d79209 | ody-op-test2 | 3169fd4cc3fa | 6.3 | 6.7 | 0 | 0.157 | 0.007 | 347.075 | 0.000 | 0.006 | 0.013 | 2 | 0.0 | 4.8 | gasfactor stability, windfactor rail exposure |

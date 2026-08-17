@@ -107,15 +107,15 @@ class TestOdysseyLongRails(unittest.TestCase):
         with self.subTest(vego=vego, pitch=pitch):
           # These requests bracket the upstream -0.20 split in the failed route. They must remain
           # neutral; a stronger request still gets immediate brake authority and positive gets gas.
-          accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.31] * 20 + [0.10] * 20)
+          accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.31] * 20 + [-0.5] * 20 + [0.10] * 20)
           rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
           assert not rejects
-          assert {-18, -23, -31, 10}.issubset({accel for accel, _, _ in seen})
+          assert {-18, -23, -31, -50, 10}.issubset({accel for accel, _, _ in seen})
           for accel, gas, brake_request in seen:
             if accel in (-18, -23):
               assert gas == GAS_INACTIVE, "negative road request left GAS_COMMAND active"
               assert brake_request == 0, "raw -0.20 crossing still toggled BRAKE_REQUEST"
-            elif accel == -31:
+            elif accel in (-31, -50):
               assert gas == GAS_INACTIVE
               assert brake_request == 1, "stronger road request did not select brake immediately"
             elif accel == 10:
@@ -124,7 +124,7 @@ class TestOdysseyLongRails(unittest.TestCase):
 
   def test_road_speed_brake_domain_releases_for_positive_request(self):
     """A settling brake request may cross the coast band, but positive gas releases immediately."""
-    accels = np.array([-0.31] * 20 + [-0.23] * 20 + [0.10] * 20)
+    accels = np.array([-0.5] * 20 + [-0.45] * 20 + [0.10] * 20)
     rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
     assert not rejects
     brake = np.array([br for _, _, br in seen], dtype=bool)
@@ -172,6 +172,29 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert accel == 10
           assert gas != GAS_INACTIVE, "positive low-speed start request did not select gas"
           assert brake_request == 0, "positive low-speed start request left brake active"
+
+  def test_low_speed_brake_pid_adds_only_when_aego_lags(self):
+    """A low-speed negative request gets a bounded correction only when the car under-decelerates."""
+    accels = np.array([-0.21] * 30 + [-0.17] * 50)
+    aegos = np.array([-0.21] * 10 + [0.5] * 70)
+    rejects, seen = _run(True, accels, pitch=0.0, vego=1.0, aegos=aegos)
+    assert not rejects
+    commands = np.array([accel for accel, _, _ in seen])
+    assert set(commands[:5]) == {-21}, "zero tracking error should leave the raw request unchanged"
+    assert commands[5] < -21, "low-speed under-deceleration did not add brake authority"
+    assert commands[-1] < -17, "low-speed brake correction did not follow the relaxed negative request"
+    assert commands.min() >= ACCEL_MIN_COUNTS, "low-speed correction exceeded the Honda safety rail"
+
+  def test_low_speed_brake_pid_resets_when_longitudinal_control_is_inactive(self):
+    """An inactive interval must clear the low-speed integrator before positive re-engagement."""
+    active = np.array([True] * 60 + [False] * 20 + [True] * 20)
+    accels = np.array([-0.21] * 60 + [0.0] * 20 + [0.1] * 20)
+    aegos = np.array([0.5] * 60 + [2.0] * 20 + [0.0] * 20)
+    rejects, seen = _run(active, accels, pitch=0.0, vego=1.0, aegos=aegos)
+    assert not rejects
+    reengaged = seen[-10:]
+    assert {accel for accel, _, _ in reengaged} == {10}
+    assert all(gas != GAS_INACTIVE and brake == 0 for _, gas, brake in reengaged)
 
   def test_alpha_long_available(self):
     """The tune is unreachable if the platform cannot get openpilot longitudinal."""

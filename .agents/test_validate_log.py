@@ -88,6 +88,14 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   np.testing.assert_array_equal(threshold[:100], np.zeros(100))
   np.testing.assert_array_equal(threshold[100:], np.full(100, -0.30))
 
+  # Historical route provenance must retain the threshold that was actually deployed, even when
+  # the current candidate's default has moved.
+  _, old_threshold, valid, _ = _domain_model(
+    "3169fd4cc3fa", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid
+  np.testing.assert_array_equal(old_threshold[100:], np.full(100, -0.30))
+
   switch, threshold, valid, note = _domain_model(
     "e29fe3dccd09", requested, speed, pitch, windfactor, 0.01,
   )

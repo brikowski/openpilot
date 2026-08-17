@@ -141,6 +141,71 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   with behavioral evidence or call their crash rows a tune regression; a fresh on-road route after
   the repair is required.
 
+- **Fresh source-matched baseline route 4c failed the pulsing-brake screen (2026-08-17).** Route
+  `0000004c--9430801c67` ran on parent `1195e247c5b8` with nested `3169fd4cc3fa`, after the
+  parent was rebased onto `openpilot/upstream/master` and the exact pair was deployed and verified
+  on the device. It recorded 50 physical brake-domain edges, a peak of 6 in 10 seconds, and
+  29 downhill edges/min over 10.8 engaged minutes; the shortest edge gap was 0.56 s. There were
+  four driver brake takeovers among 29 brake presses and felt-jerk RMS was 0.408 m/s3 versus
+  0.189 m/s3 commanded (2.2x), with brake jerk RMS 0.73 versus gas 0.37. Route `0000004b` is
+  only 6.3 engaged minutes and is retained as context, not pooled evidence.
+- **Route-4c attribution identifies the request/domain interaction, not CAN fidelity.** In the
+  repeated approximately 44 mph set-speed window, `longitudinalPlan.aTarget` and
+  `carControl.actuators.accel` agreed (RMS 0.0085 m/s2); requests repeatedly moved from about
+  `-0.31` to `0.00..+0.02` and back. `ACCEL_COMMAND` followed `carControl`, the gas/brake bits
+  followed the selected domain, and Honda `COMPUTER_BRAKING` followed `BRAKE_REQUEST`. The
+  first actionable divergence is therefore the closed-loop interaction between mild negative
+  speed-regulation requests and Honda's binary friction-brake domain, not a numeric CAN encoding
+  error. The four driver takeovers, including one near a request of `-0.24` and another near
+  `-0.16`, remain a counter-risk: lowering brake entry could under-brake those situations and
+  must be rejected if controlled or ordinary-road overspeed/stop screens worsen.
+- **Next isolated brake arm: change one constant, `-0.30` to `-0.50`.** Keep raw
+  `ACCEL_COMMAND`, the low-speed brake authority, the existing negative-request brake hold, and
+  all gasfactor/windfactor behavior unchanged. The only change is that a road-speed request must
+  be below `-0.50` to newly select friction brake; mild negative requests coast, while stronger
+  requests retain brake authority and positive requests release immediately. Frozen route-4c
+  inputs project 50 to 6 brake-domain edges and retain three stronger-request episodes, but this
+  is command-shape evidence only. It does not establish closed-loop edge counts, onset, comfort,
+  overspeed, or stop completion. The arm requires the official controlled maneuvers and an
+  ordinary-road drive before any promotion.
+- **Low-speed stopped-lead concern is a separate open safety finding (2026-08-17).** In the
+  route-4b approach at approximately 2.3 to 1.1 mph, the lead remained about 4 m ahead and its
+  filtered speed was approximately 0.1--0.2 m/s. OpenPilot's `shouldStop` stayed false, but its
+  request moved from about `-0.88` to `-0.17 m/s2`; `carControl`, `ACCEL_COMMAND`,
+  `BRAKE_REQUEST`, and Honda `COMPUTER_BRAKING` agreed, with no gas-domain release. The driver
+  brake takeover at about 1.1 mph ended `longActive`; it was not caused by the Odyssey port
+  releasing brake. This is not closed as safe merely because the recorded gap remained about 4 m:
+  the driver reported that the lead was stopped and that an override was necessary.
+- **Do not use the `-0.50` road threshold or Ford creep compensation as this fix.** The threshold
+  is inactive below 5 m/s, and Honda Bosch `ACCEL_COMMAND` is already the raw OpenPilot request
+  with Honda closing the acceleration loop. The upstream generic stop state does not assert until
+  below approximately 0.3 m/s. A low-speed stopped-lead arm must first establish whether the
+  planner/lead estimate, the generic stop transition, or Honda's response owns the risk; it then
+  requires a controlled stopped-lead approach and ordinary-road confirmation of gap, complete
+  stop, takeover, onset, and no renewed pulsing. Keep the `-0.50` arm unpublished until that
+  screen is complete.
+
+- **MVL-inspired low-speed brake-tracking arm (2026-08-17, nested `f453a51e0`).** MVL's Honda
+  Bosch branch provides a directly relevant precedent: a one-sided integral correction below
+  3 m/s when the recorded acceleration is weaker than the negative request. The literal branch
+  gate uses its road-speed gas threshold (`accel < min_gas`) and `KI=1.0`; that would reset on
+  this Odyssey as the low-speed request relaxed from about `-0.20` to `-0.17`, even though our
+  three-domain low-speed policy deliberately kept the brake domain selected. The isolated arm
+  therefore makes the smallest semantic adaptation: `kP=0`, `KI=0.5`, the prior Odyssey seed,
+  and the already-selected low-speed brake domain as the gate. It changes only clipped
+  `ACCEL_COMMAND`; gas selection, brake selection, planner inputs, and positive re-engagement are
+  unchanged, and the integrator resets whenever control is inactive or the brake domain is not
+  selected. The focused rail test covers persistent under-deceleration, the relaxed `-0.17`
+  request, Panda limits, and inactive reset.
+- **Frozen-input result for the arm is command evidence only.** On route `0000004b`, the arm keeps
+  brake authority through the reported 1.2--1.1 mph crawl and continues correcting the relaxed
+  negative request; the replayed final approach was approximately `-0.50 m/s2` versus a raw
+  request near `-0.17 m/s2`. This is materially closer to the stock-radar low-speed command
+  magnitude than the recorded raw command, but the recorded `aEgo` is held fixed, so replay does
+  not prove stopping distance, comfort, or collision avoidance. Road validation must reject the
+  arm for excess onset, a stop lurch, renewed pulsing, a positive-request hold, late stop, or any
+  driver takeover; do not promote it from this replay.
+
 - **Minimal upstream port (2026-08-17, software evidence only).** The deployed `f53d878a1` child
   was based on the older `b0685818f` Honda architecture. The active behavior was ported onto the
   exact Honda commit pinned by the then-current upstream parent, `c536b211b762`, in nested commit
@@ -150,10 +215,10 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   ramp code are not present. The nested opendbc suite (4,011 tests, 703 skipped) and Odyssey rail
   suite (14 tests, 43 subtests) pass. The parent has since been rebased onto
   `openpilot/upstream/master` at `03e6c81821ed`; that upstream tree still pins `c536b211b762`,
-  and local parent `4700c7474d43` records the exact `3169fd4cc3fa` gitlink. This corrected parent
-  is not yet force-published or deployed. The device remains on the prior published pair
-  `20c503cef2 → 3169fd4cc3fa`; its manager, UI, Panda, hardwared, and native imports passed after
-  reboot, but no fresh route exists yet for road validation. The port also restores
+  and parent `1195e247c5b8` records the exact `3169fd4cc3fa` gitlink. This corrected pair is
+  force-published on `origin/ody-op-test2` and deployed on the device. Its manager, UI, Panda,
+  hardwared, and native imports passed after reboot; route 4c is the first fresh behavioral
+  screen and fails the current `-0.30` brake-entry setting as documented above. The port also restores
   `CarOutput.actuatorsOutput` gas/brake semantics to actual actuator output; learned factors are
   no longer written into those fields as fork-only telemetry.
 
@@ -175,7 +240,7 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   the driver took over. In both routes the planner kept `shouldStop=false` while moving and only
   asserted it near zero after takeover. The upstream stop decision and the low-speed domain error
   are separate findings.
-- **Current command-domain candidate.** `ACCEL_COMMAND` remains the raw clipped request. At road
+- **Deployed source-matched command-domain baseline.** `ACCEL_COMMAND` remains the raw clipped request. At road
   speed, brake enters below -0.30 and remains selected while the request is negative; positive gas
   releases it immediately. An active gas command remains live down to the stock -0.20 split, but
   after coast it re-enters only for a positive request. Below 5 m/s, every non-positive request
