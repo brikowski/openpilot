@@ -76,6 +76,14 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   `-0.20`, not planner tracking. This confirms the minimal three-domain candidate remains the
   correct next road arm, but does not validate it. Route `00000026--8d38fff2db` is still
   incomplete at 33/57 segments and must not be analyzed or used for promotion.
+- **Route-25 frozen-input replay of the current candidate (command evidence only).** Feeding the
+  staging route's recorded `carControl` and `carState` through nested `46468be936` reduced
+  request-to-returned-command RMS from `0.00815` to `0.00492 m/s2` over 67,328 engaged frames.
+  The candidate produced 36 brake-bit flips, 17 with a forceful `ACCEL_COMMAND` (absolute value
+  above `0.3`), and 15,020 coast-domain frames. The replayed and recorded wire-jerk summaries were
+  effectively identical because the vehicle response and planner inputs are frozen; this supports
+  the candidate as the next command-shape arm but is not road evidence for comfort, stopping, or
+  closed-loop transition frequency.
 - **Lateral decision after the retained-route review.** The staging routes used the 2560 range,
   while the current candidate carries the isolated 3840 Odyssey range. Because no new route ran
   the current nested commit, the staging lateral numbers cannot justify changing that arm. Keep
