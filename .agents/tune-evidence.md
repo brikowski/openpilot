@@ -217,7 +217,9 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   -1.76 to -1.16 m/s2 and the wire matched it while the driver braked. That is a lead
   perception/planner timing and/or Honda achieved-response event, not evidence for more port brake
   force. Route 31 still had four brake takeovers and a felt-jerk flag, so these routes do not yet
-  promote the arm or establish radar-quality following.
+  promote the arm or establish radar-quality following. Experimental exposure was zero on routes
+  30 and 32 and only about 0.03 engaged minutes on route 31; the historical route-33 planner A/B
+  therefore cannot substitute for a current-arm Experimental screen.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176
