@@ -220,6 +220,13 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   promote the arm or establish radar-quality following. Experimental exposure was zero on routes
   30 and 32 and only about 0.03 engaged minutes on route 31; the historical route-33 planner A/B
   therefore cannot substitute for a current-arm Experimental screen.
+- **Exact-arm gas versus held-out stock-radar command shape (2026-08-23).** A pooled model fit on
+  stock-radar routes `0000002b--4882f84449` and `0000003b--aeccafe9e4` predicted each held-out
+  route with `R2=0.824/0.904`. Current exact-arm routes 30/31/32 scored `MAE=103/130/63` raw
+  `GAS_COMMAND` counts, with model-minus-OpenPilot bias `-28/+20/-22`; the signs are mixed and
+  do not show a consistent under-command that would explain the uphill report. This is an opaque
+  command-shape shadow, not a gas calibration or closed-loop ride result, so it does not justify
+  changing the retained gasfactor arm.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176
