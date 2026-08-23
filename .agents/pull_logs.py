@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Pull private full-rate rlogs from the comma device and validate them.
 
-Two modes:
+Usage modes:
     uv run python .agents/pull_logs.py --route 0000001f--765ef47daf ["note"]
     uv run python .agents/pull_logs.py --since-hours 48 ["note"]     # everything new
+    uv run python .agents/pull_logs.py --all-new ["note"]             # every retained route not in ledger
 
 SSH preserves private full-rate evidence that is not automatically available through hosted route
 sources. Qlogs are too decimated for transition and jerk metrics.
@@ -96,6 +97,20 @@ def _record_pull_error(rid, attempt, returncode, detail, completed, expected):
 
 def _local_rlog_count(rid):
   return sum(1 for f in LOCAL_ROOT.glob(f"{rid}--*/rlog.zst") if f.is_file())
+
+
+def _select_routes(routes, done, *, since_hours=None, all_new=False):
+  """Select unvalidated device routes, either by age or across the full retained inventory."""
+  if all_new:
+    targets = [(rid, timestamp, segments) for rid, timestamp, segments in routes if rid not in done]
+    skipped = [rid for rid, _, _ in routes if rid in done]
+    return targets, skipped, "retained"
+
+  cutoff = datetime.now().timestamp() - since_hours * 3600
+  targets = [(rid, timestamp, segments) for rid, timestamp, segments in routes
+             if timestamp >= cutoff and rid not in done]
+  skipped = [rid for rid, timestamp, _ in routes if timestamp >= cutoff and rid in done]
+  return targets, skipped, f"within {since_hours:g}h"
 
 
 def _pull_command(rid):
@@ -201,6 +216,7 @@ def main():
   g = ap.add_mutually_exclusive_group(required=True)
   g.add_argument("--route", help="one route: bare log id or dongle/logid")
   g.add_argument("--since-hours", type=float, help="every route newer than N hours not yet in the ledger")
+  g.add_argument("--all-new", action="store_true", help="every retained route not yet in the ledger")
   ap.add_argument("description", nargs="?", default="", help="note for the ledger row(s)")
   ap.add_argument("--redo", action="store_true", help="with --since-hours, include already-validated routes")
   ap.add_argument("--list", action="store_true", help="show what would be pulled, then stop")
@@ -217,13 +233,11 @@ def main():
       sys.exit(f"could not parse a log id out of '{args.route}'")
     targets = [(m.group(0), None, None)]
   else:
-    cutoff = datetime.now().timestamp() - args.since_hours * 3600
     done = set() if args.redo else ledger_routes()
     routes = remote_routes()
-    targets = [(r, ts, n) for r, ts, n in routes if ts >= cutoff and r not in done]
-    skipped = [r for r, ts, _ in routes if ts >= cutoff and r in done]
+    targets, skipped, scope = _select_routes(routes, done, since_hours=args.since_hours, all_new=args.all_new)
     recent = len(targets) + len(skipped)
-    summary = f"device has {len(routes)} route(s); {recent} within {args.since_hours:g}h: "
+    summary = f"device has {len(routes)} route(s); {recent} {scope}: "
     summary += f"{len(targets)} to pull/validate, {len(skipped)} already validated"
     print(summary)
     if not targets:

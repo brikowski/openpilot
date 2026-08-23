@@ -4,7 +4,7 @@
     {
       "label": "Pull and Validate New Logs",
       "type": "shell",
-      "command": "uv run python .agents/pull_logs.py --since-hours 48",
+      "command": "uv run python .agents/pull_logs.py --all-new",
       "problemMatcher": [],
       "presentation": {
         "echo": true,

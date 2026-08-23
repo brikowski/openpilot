@@ -21,7 +21,7 @@ discovery.)
   the compatible local pair rebase and never pushes; inspect source conflicts and the final Honda diff.
 - Keep the recovery/shared-tooling parent and submodule on `ody-op`; keep the active brake child
   paired on `ody-op-test2`. `ody-op-test` is a frozen failed snapshot. The VS Code tasks are intentionally limited to
-  48-hour private log pull, Jotpluggler, Cabana, and explicit guarded deployments for openpilot and
+  all-retained private log pull, Jotpluggler, Cabana, and explicit guarded deployments for openpilot and
   sunnypilot. There are no implicit sync, publish-only, maneuver, or generic validation tasks.
 
 ## Layered Verification Workflow
