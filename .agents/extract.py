@@ -38,7 +38,8 @@ def _enum(held):
 
 
 def _segments(route):
-  segs = sorted((s for s in os.listdir(Paths.log_root()) if route in s),
+  root = Paths.log_root()
+  segs = sorted((s for s in os.listdir(root) if route in s and os.path.isfile(os.path.join(root, s, "rlog.zst"))),
                 key=lambda s: int(s.rsplit("--", 1)[-1]))
   if not segs:
     raise SystemExit(f"no local segments matching '{route}' under {Paths.log_root()}\n"

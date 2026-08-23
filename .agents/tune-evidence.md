@@ -56,7 +56,7 @@ shadow estimator, and replay/log fitting does not establish closed-loop ride qua
 `-30000` inactive sentinel and Honda safety rails; report first-live gas handoffs diagnostically
 rather than treating an uncalibrated slew limit as known-good behavior.
 
-- **Private log retention**: `pull_logs.py` retains full-rate local rlogs by default. Pruning is deliberately opt-in with `--prune-hours`; once both the device and local archive delete a route, new metrics cannot be backfilled. Official maneuver report generators accept these bare local route IDs, so comma connect publication is not required.
+- **Private log retention**: `pull_logs.py` retains full-rate local rlogs by default. Pruning is deliberately opt-in with `--prune-hours`; once both the device and local archive delete a route, new metrics cannot be backfilled. Interrupted rsyncs may leave empty segment directories; the validator, extractor, following inspector, and replay now select only directories containing `rlog.zst`. Official maneuver report generators accept these bare local route IDs, so comma connect publication is not required.
 - **Counterfactual replay boundary**: `replay_carcontroller.py` compares command shape on frozen recorded inputs. It can catch command-fidelity regressions without driving, but cannot predict closed-loop vehicle response or on-road BRAKE_REQUEST counts. Never promote a tuning change from replay alone.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
@@ -74,8 +74,8 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   brake-domain wire-request RMS was 0.0103 m/s2 with no sign-disagreement interval; the first
   divergence is therefore the Honda domain decision as the raw request crosses approximately
   `-0.20`, not planner tracking. This confirms the minimal three-domain candidate remains the
-  correct next road arm, but does not validate it. Route `00000026--8d38fff2db` is still
-  incomplete at 33/57 segments and must not be analyzed or used for promotion.
+  correct next road arm, but does not validate it. Route `00000026--8d38fff2db` was initially
+  incomplete during the interrupted transfer and was recovered after the device returned.
 - **Route-25 frozen-input replay of the current candidate (command evidence only).** Feeding the
   staging route's recorded `carControl` and `carState` through nested `46468be936` reduced
   request-to-returned-command RMS from `0.00815` to `0.00492 m/s2` over 67,328 engaged frames.
@@ -84,6 +84,19 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   effectively identical because the vehicle response and planner inputs are frozen; this supports
   the candidate as the next command-shape arm but is not road evidence for comfort, stopping, or
   closed-loop transition frequency.
+- **Recovered route-26 Alpha-Long attribution (2026-08-23).** The complete route supplied 43.1
+  engaged minutes on `staging` with `radarUnavailable=True`, so it is not road evidence for
+  `46468be936`. It measured 323 physical brake-domain edges, a peak of 36 in 10 seconds, 39
+  downhill edges/min, and 158 direct gas-to-brake plus 158 brake-to-gas handoffs. In the peak
+  10-second window at approximately 70 mph, the request stayed near `-0.20` while
+  `ACCEL_COMMAND` followed within the measured `0.006` m/s2 planner/carControl and `0.007`
+  m/s2 brake-domain wire RMS; `inspect_following` found no sign-disagreement interval. Honda's
+  inactive gas sentinel alternated with small live gas values as `BRAKE_REQUEST` followed each
+  crossing. This is the same first divergence as route 25, now with substantially more exposure.
+  Replaying the current candidate over the frozen route produced request RMS `0.00316` versus
+  recorded `0.00629`, wire-command peak jerk `1.29` versus `1.46` m/s3, and 72 open-loop domain
+  flips. Those figures select the candidate for an exact-source road arm; they do not claim a
+  closed-loop 323-to-72 improvement.
 - **Lateral decision after the retained-route review.** The staging routes used the 2560 range,
   while the current candidate carries the isolated 3840 Odyssey range. Because no new route ran
   the current nested commit, the staging lateral numbers cannot justify changing that arm. Keep

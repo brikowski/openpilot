@@ -1443,6 +1443,20 @@ def _base_route(route):
   return m.group(0) if m else route
 
 
+def _local_segment_names(route, root=None):
+  """Return transferred local segments, excluding empty interrupted-pull directories."""
+  root = Path(root) if root is not None else Path(Paths.log_root())
+
+  def _seg_idx(name):
+    try:
+      return int(name.rsplit("--", 1)[-1])
+    except ValueError:
+      return -1
+
+  return sorted((name for name in os.listdir(root)
+                 if route in name and (root / name / "rlog.zst").is_file()), key=_seg_idx)
+
+
 def append_ledger(route, description, r, v):
   ts = datetime.now(UTC).strftime("%Y-%m-%d")
   row = {"date": ts, "route": route, "description": description or "",
@@ -1531,12 +1545,7 @@ def main():
     # path list in the order given, so the unsorted version fed segments in shuffled order and
     # scrambled the whole timebase - producing negative log durations, absurd passthrough RMS and
     # degenerate 0.00 jerk. A lexical sort is not enough either: "--10" sorts before "--2".
-    def _seg_idx(name):
-      try:
-        return int(name.rsplit("--", 1)[-1])
-      except ValueError:
-        return -1
-    segs = sorted((s for s in os.listdir(Paths.log_root()) if args.route in s), key=_seg_idx)
+    segs = _local_segment_names(args.route)
     if not segs:
       raise SystemExit(f"no local segments matching '{args.route}' under {Paths.log_root()}")
     # RESOLVE the identifier to the full log id before it is ever used as a ledger key. A bare

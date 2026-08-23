@@ -13,6 +13,7 @@ from validate_log import (
   _base_route,
   _domain_model,
   _has_learner_telemetry,
+  _local_segment_names,
   _suggest_status_rows,
   lateral_metrics,
   write_ledger_md,
@@ -34,6 +35,17 @@ from tuning_metrics import (
   sign_disagreement_metrics,
   stop_lurch_metrics,
 )
+
+
+def test_local_segment_names_ignore_empty_interrupted_pull_directories(tmp_path):
+  route = "00000026--8d38fff2db"
+  for index in (10, 2):
+    segment = tmp_path / f"{route}--{index}"
+    segment.mkdir()
+    (segment / "rlog.zst").touch()
+  (tmp_path / f"{route}--4").mkdir()
+
+  assert _local_segment_names(route, tmp_path) == [f"{route}--2", f"{route}--10"]
 
 
 def test_brake_episode_metrics_distinguish_progressive_and_sudden_onsets():
