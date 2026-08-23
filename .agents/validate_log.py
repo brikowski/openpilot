@@ -145,6 +145,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "3169fd4cc3fa": -0.30,  # deployed baseline; preserve the threshold it actually drove with
   "f453a51e0081": -0.30,  # low-speed brake-tracking arm; road-speed domain is unchanged
   "b472c9afe": -0.50,  # isolated road-speed brake-entry arm; road validation pending
+  "41aaf59ee6f2": -0.50,  # same arm plus the isolated road-speed gas re-entry threshold
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -156,6 +157,7 @@ THREE_DOMAIN_COMMITS = {
   "ece147ad7730",  # same candidate with the unproven gas handoff ramp removed
   "f453a51e0081",  # low-speed brake PID arm; source-matched domain model remains three-domain
   "b472c9afe",  # isolated -0.50 road-speed brake-entry arm
+  "41aaf59ee6f2",  # same arm plus the isolated road-speed gas re-entry threshold
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
@@ -171,6 +173,7 @@ LEGACY_LEARNER_TELEMETRY_COMMITS = {
 }
 LOW_SPEED_BRAKE_PID_COMMITS = {
   "f453a51e0081",  # intentional ACCEL_COMMAND divergence below 3 m/s when brake is selected
+  "41aaf59ee6f2",  # current exact-pinned test arm retains the same low-speed correction
 }
 COMPENSATED_DOMAIN_COMMITS = {
   "13cfc73646e1",  # ody-op telemetry cleanup, 0.50 release width

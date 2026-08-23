@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import validate_log
 from validate_log import (
   ODYSSEY,
+  LOW_SPEED_BRAKE_PID_COMMITS,
   THREE_DOMAIN_COMMITS,
   _base_route,
   _domain_model,
@@ -102,6 +103,18 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   np.testing.assert_array_equal(switch, requested)
   np.testing.assert_array_equal(threshold[:100], np.zeros(100))
   np.testing.assert_array_equal(threshold[100:], np.full(100, -0.50))
+
+  # The exact-pinned deployed test arm must stay source-mapped; otherwise its road evidence would
+  # silently lose the domain and low-speed attribution checks.
+  current_commit = "41aaf59ee6f2"
+  assert current_commit in THREE_DOMAIN_COMMITS
+  assert current_commit in LOW_SPEED_BRAKE_PID_COMMITS
+  _, current_threshold, valid, note = _domain_model(
+    current_commit, requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid and note == "raw three-domain coast split"
+  np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+  np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.
