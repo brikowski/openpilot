@@ -61,6 +61,26 @@ rather than treating an uncalibrated slew limit as known-good behavior.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
 ## Current Validation Arm (raw split failed 2026-08-15; three-domain candidate)
+- **Retained radar and Alpha-Long review (2026-08-23).** The newly pulled routes were all
+  `staging` at parent `b2ee22854616` with no resolved `opendbc_commit`; they are not road evidence
+  for the current `ody-op-test2` nested candidate `46468be936`. Stock-radar route
+  `00000029--b43171dfe1` provided 113.0 minutes of Honda `ACC_CONTROL` at 50.1 Hz. Its command
+  stream showed no discrete command or lead-continuity change at 43 mph, so these logs do not
+  support a radar target cutoff there. The OEM target identity is not exposed as a validated
+  `radarState` track, and the 43.5 mph value remains the stock-ACC `minSteerSpeed` configuration,
+  not a proven radar limit. Alpha-Long route `00000025--2db306153b` provided 11.217 engaged
+  minutes and reproduced 60 gas-to-brake and 57 brake-to-gas transitions, 120 physical brake
+  edges, and a 24-per-10-second peak. Planner-to-`carControl` RMS was 0.0078 m/s2 and
+  brake-domain wire-request RMS was 0.0103 m/s2 with no sign-disagreement interval; the first
+  divergence is therefore the Honda domain decision as the raw request crosses approximately
+  `-0.20`, not planner tracking. This confirms the minimal three-domain candidate remains the
+  correct next road arm, but does not validate it. Route `00000026--8d38fff2db` is still
+  incomplete at 33/57 segments and must not be analyzed or used for promotion.
+- **Lateral decision after the retained-route review.** The staging routes used the 2560 range,
+  while the current candidate carries the isolated 3840 Odyssey range. Because no new route ran
+  the current nested commit, the staging lateral numbers cannot justify changing that arm. Keep
+  lateral at 3840 and require a current-candidate logged symptom before reopening it.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
