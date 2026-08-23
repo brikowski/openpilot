@@ -193,6 +193,31 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   route 53's tiny-request pulse, but route 53 retains a separate strong-request transient. The arm
   therefore requires an official controlled screen and an ordinary-road drive; reject it for
   under-acceleration, overspeed, renewed gas pulsing, or any low-speed start/stop regression.
+- **First exact-arm road routes and timestamp attribution (2026-08-23).** Routes
+  `00000030--d288c988eb`, `00000031--781e1d39f2`, and `00000032--3526ec7811` ran parent
+  `62ca2b5745a7` with nested opendbc `41aaf59ee6f2`, the current `-0.50` brake-entry plus
+  `+0.02` gas-re-entry arm. They are thin context, not promotion evidence: 9.7, 4.5, and 4.9
+  engaged minutes. Their combined 36 physical brake edges were 1.9/min with peaks of 3, 4, and
+  2 per 10 s; there were no direct gas-to-brake handoffs and no tiny-request short gas pulses.
+  Request-to-wire RMS stayed 0.005-0.009 m/s2 and sustained sign disagreement was zero. This is
+  a narrow improvement over unmodified master routes 22/24 (9.6/18.3 brake edges/min, peak
+  25/10 s) and the failed raw split routes 41/42 (11.2/30.3 edges/min, peak 26/28 s), but the
+  routes are not terrain-matched and remain too thin to claim overall smoothness.
+  At 11:57 on route 30, the lead was vision-only (`leadOne.radar=false`, model probability
+  0.98-1.00); its dRel/vRel moved through 51-82 m and -2.6/+3.1 m/s while the planner selected
+  a lead source. `aTarget`-to-`carControl` RMS was 0.004 m/s2 and the wire carried the request,
+  so the speed-down/speed-up sequence first diverges upstream in the vision lead/planner path,
+  not in the Honda port. The 12:02 uphill window likewise had a vision-only lead at 20-40 m,
+  lead-source planning, and 0.004 m/s2 planner-to-carControl RMS; gas was available and no rail or
+  driver gas override occurred, so its weak climb is consistent with lead following rather than
+  withheld Honda gas. At 12:00-12:01, driver braking dominated portions of the downhill and
+  stopped-lead approach; when the planner requested the stop, `ACCEL_COMMAND` followed it and
+  low-speed domain conflict stayed zero. At 12:59 on route 31, a vision-only lead closed from
+  about 74 to 39 m at -12.6 to -7.3 m/s relative speed; the planner/carControl request reached
+  -1.76 to -1.16 m/s2 and the wire matched it while the driver braked. That is a lead
+  perception/planner timing and/or Honda achieved-response event, not evidence for more port brake
+  force. Route 31 still had four brake takeovers and a felt-jerk flag, so these routes do not yet
+  promote the arm or establish radar-quality following.
 - **Route 48 first divergence and gas-pulse attribution (2026-08-17).** On
   `00000048--766dc7107b`, planner-to-`carControl` RMS was 0.0097 m/s2 and
   `carControl`-to-`ACCEL_COMMAND` RMS was 0.0082 m/s2, while achieved tracking RMS was 0.4176
