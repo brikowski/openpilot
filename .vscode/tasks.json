@@ -62,9 +62,9 @@
       }
     },
     {
-      "label": "Publish and Deploy ody-sp",
+      "label": "Deploy sunnypilot/staging",
       "type": "shell",
-      "command": "cd /Users/travisbadgley/sunnypilot && CURRENT_BRANCH=ody-sp && test \"$(git branch --show-current)\" = \"$CURRENT_BRANCH\" || { echo \"Refusing to deploy: checkout $CURRENT_BRANCH in sunnypilot first.\"; exit 1; } && test -z \"$(git status --porcelain)\" || { echo 'Refusing to deploy: sunnypilot has uncommitted changes.'; git status --short; exit 1; } && git diff --check && git push origin \"$CURRENT_BRANCH\" && ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote set-url origin https://github.com/brikowski/openpilot.git || git remote add origin https://github.com/brikowski/openpilot.git) && tools/op.sh switch origin $CURRENT_BRANCH && tools/op.sh build && (sudo reboot &) && exit 0\\\"\"",
+      "command": "ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote get-url sunnypilot >/dev/null 2>&1 || git remote add sunnypilot https://github.com/sunnypilot/sunnypilot.git) && tools/op.sh switch sunnypilot staging && tools/op.sh build && (sudo reboot &) && exit 0\\\"\"",
       "problemMatcher": [],
       "presentation": {
         "echo": true,

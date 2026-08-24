@@ -19,8 +19,9 @@ discovery.)
   requested, publish the child commit before the parent gitlink; pushing never implies deployment.
 - Rebase opendbc only onto the commit pinned by openpilot upstream. `.agents/sync_upstream.py` performs
   the compatible local pair rebase and never pushes; inspect source conflicts and the final Honda diff.
-- Keep the recovery/shared-tooling parent and submodule on `ody-op`; keep the active brake child
-  paired on `ody-op-test2`. `ody-op-test` is a frozen failed snapshot. The VS Code tasks are intentionally limited to
+- Keep the recovery/shared-tooling parent and submodule paired on `ody-op`. Temporary mechanism
+  children are deleted after promotion or rejection; `ody-op-test` and `ody-op-test2` are historical
+  snapshots, not active deployment targets. The VS Code tasks are intentionally limited to
   all-retained private log pull, Jotpluggler, Cabana, and explicit guarded deployments for openpilot and
   sunnypilot. There are no implicit sync, publish-only, maneuver, or generic validation tasks.
 
@@ -61,6 +62,20 @@ rather than treating an uncalibrated slew limit as known-good behavior.
 - **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
 ## Current Validation Arm (raw split failed 2026-08-15; three-domain candidate)
+- **Latest mixed-mode drive attribution and baseline decision (2026-08-24).** Routes
+  `00000035--cdd11a0ea4`, `00000037--0c6fc80a62`, and `00000038--c43a0ecf6c` ran the final
+  `ody-op-test2` source at parent `b7980254d7` with nested `opendbc` `41aaf59ee6`; route
+  `00000039--39fdbea04c` is thin context. In the same-drive uphill windows, route 38 requested
+  `+0.174 m/s2` outside Experimental versus `+0.009 m/s2` in Experimental, while achieved
+  acceleration was `+0.086` versus `-0.079`; route 37 showed the same direction (`+0.105` versus
+  approximately `0.000` request). `carControl` to `ACCEL_COMMAND` was effectively passthrough, so
+  the large Experimental slowdown begins in the model/planner/lead path, with additional Honda
+  powertrain grade under-response downstream of an otherwise faithful command. All new software lead
+  tracks reported `radar=false`; the current Honda Bosch path still disables the radar ECU, so radar
+  integration is a separate reverse-engineering and AEB-safety project, not a tune toggle.
+  Lateral used the 3840 range without broad saturation (new-route CAN p95 1535-1918, saturation
+  0-.39%); keep 3840 and reopen only for a repeatable lateral symptom. The device was returned to
+  official `sunnypilot/staging`; the private `ody-sp` overlay is no longer a deployment target.
 - **Retained radar and Alpha-Long review (2026-08-23).** The newly pulled routes were all
   `staging` at parent `b2ee22854616` with no resolved `opendbc_commit`; they are not road evidence
   for the current `ody-op-test2` nested candidate `46468be936`. Stock-radar route
@@ -541,11 +556,12 @@ Apply this order as new logs arrive; do not skip ahead because a later idea is e
 is stock unless a logged symptom reopens it. The onset-shape and custom brake-PID questions are
 closed by removal; do not couple the remaining gasfactor and windfactor work to a new brake arm.
 
-1. **Treat the raw-split `ody-op-test2` reference as failed and the three-domain work as unvalidated.**
-   Before ordinary traffic, run controlled start, set-speed, moderate brake, and lead-free descent
-   maneuvers in a safe empty area. Then compare against `ody-op` using physical `BRAKE_REQUEST`
-   edges, coast exposure, set-speed error, onset timing, interventions, and complete stops. Replay
-   establishes only that the intended CAN shape changed.
+1. **Keep the raw-split `ody-op-test2` reference failed and the promoted three-domain behavior
+   bounded to its measured road-screen result.** Before making another longitudinal change, run
+   controlled start, set-speed, moderate brake, and lead-free descent maneuvers in a safe empty area.
+   Then compare new children against `ody-op` using physical `BRAKE_REQUEST` edges, coast exposure,
+   set-speed error, onset timing, interventions, and complete stops. Replay establishes only that the
+   intended CAN shape changed.
 2. **Evaluate a gas-active-only shadow windfactor as a separate gas-side arm.** First calculate it without changing commands. Learn
    only while `GAS_COMMAND` is live in the gas domain, neither pedal is pressed, the command is away from
    saturation, and speed/grade are sufficiently steady. Compare stability and following error with the
