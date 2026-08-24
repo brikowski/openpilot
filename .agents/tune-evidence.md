@@ -949,3 +949,39 @@ All carcontroller.py files across opendbc were reviewed, then re-verified agains
 - **Target structure**: shared Bosch A logic in `carcontroller.py` (gated on `HONDA_BOSCH` + `openpilotLongitudinalControl`), per-car seed tables in `values.py` (e.g., `BOSCH_LONG_PARAMS[CAR.HONDA_ODYSSEY_5G_MMR]`). The learner adapts from the seed — wrong seeds just mean longer cold-start warmup, not unsafe behavior (gas ramps are hardware-limited by panda safety).
 - **Current gate**: code is gated on `CAR.HONDA_ODYSSEY_5G_MMR` because we can only road-test the Odyssey. Do NOT widen the gate to all Bosch A without per-car seed tables and a volunteer to road-test. If submitting upstream, refactor to the shared + per-car-seed design with Odyssey as the only populated seed; comma or other contributors fill in theirs.
 - **Comma is moving this direction**: PR #38394 (removing per-car stopping tunes) confirms comma is actively removing per-car longitudinal differentiation. Our "shared logic + learning handles car-specific differences" approach aligns with upstream trajectory.
+
+## Bosch MMR radar-track feasibility (measured 2026-08-24)
+
+`inventory_radar_can.py` scanned all 138 full-rate segments from stock-radar routes
+`0000002b--4882f84449` / `0000003b--08f77bc5c3` and OpenPilot-longitudinal routes
+`00000037--0c6fc80a62` / `00000038--5b6729c780`. It inventories received CAN by physical source
+bus and excludes Panda returned/rejected copies (`src >= 0x80`). The comparison found **zero CAN
+messages present in both stock-radar routes and absent from either OpenPilot-longitudinal route**.
+
+The Honda harness topology settles the direction of the interesting traffic: bus 0 is the radar
+side of ACC-CAN, bus 2 is the camera side, and bus 1 is F-CAN B/powertrain. The dense 80-address
+bank at `0x280-0x297` and `0x2C8-0x2FF` runs at about 14.88 Hz on **bus 2**, with grouped sentinel
+payloads and rolling integrity fields. It is structured camera-originated traffic toward the radar,
+not radar measurements. It may be a camera object/fusion input, but that semantic hypothesis is not
+needed for the boundary and must not be presented as decoded.
+
+Only three messages run continuously from the radar side on bus 0 in every cohort:
+
+- `0x400` (4 bytes) at about 50 Hz, with only 8-20 complete payload variants per route;
+- `0x420` (8 bytes) at about 10 Hz, with four counter/checksum variants;
+- `0x410` (6 bytes) at about 1 Hz, with four counter/checksum variants and the stable `THRA0`
+  payload body.
+
+That is status/heartbeat-shaped traffic, not a multi-object feed. The stock-only high-rate changes
+are instead known controller outputs on bus 1: steering `0xE4`, `ACC_CONTROL` `0x1DF`, supplemental
+ACC `0x1EF`, and HUD/control messages `0x30C`/`0x33D`/`0x39F`. Their near-disappearance after the
+radar communication-control request confirms that the logs expose the radar's **commands**, not
+its selected lead or tracks.
+
+**Verdict:** a normal `RadarInterface` implementation cannot recover Bosch MMR tracks from the CAN
+available at this harness. Stock `ACC_CONTROL` remains valuable as an offline smoothness benchmark,
+but it cannot provide a live radar lead after the radar is disabled for OpenPilot longitudinal.
+Keeping the radar active while independently intercepting its powertrain commands would be a
+hardware/safety architecture experiment, not a minimal opendbc parser change, and is out of scope
+until an intercept path is proved. No vehicle or tuning change is justified by this feasibility
+scan.
