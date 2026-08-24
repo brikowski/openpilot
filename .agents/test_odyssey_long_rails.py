@@ -1,18 +1,16 @@
-"""Odyssey active-longitudinal panda-rail and state-machine regressions.
+"""Odyssey active-longitudinal panda-rail and command regressions.
 
 The archived upstream Odyssey route does not exercise openpilot longitudinal. These tests drive
 the active path across accel, speed, and grade; require each ACC_CONTROL frame to pass the Honda TX
-hook; and separately guard domain lifecycle and gas/brake mutual exclusion. They do not grade road
-behavior.
+hook; and separately guard the Odyssey command domains and gas/brake mutual exclusion. They do not
+grade road behavior.
 """
-import math
 import unittest
 
 import numpy as np
 
-from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, DT_CTRL, structs
+from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.honda.carcontroller import BRAKE_DOMAIN_ENTRY, DOMAIN_HYST_EXIT, odyssey_domain_switch_accel
 from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -22,7 +20,6 @@ LongCtrlState = structs.CarControl.Actuators.LongControlState
 # honda_tx_hook / HONDA_BOSCH_LONG_LIMITS, in raw signal counts
 ACCEL_MIN_COUNTS, ACCEL_MAX_COUNTS = -350, 200
 GAS_INACTIVE, GAS_MAX = -30000, 2000
-GAS_RAMP_STEP = 60  # MUST track the Odyssey ramp in honda/carcontroller.py.
 
 
 def _car_params(alpha_long=True):
@@ -40,7 +37,7 @@ def _decode_acc_control(dat):
   return accel, gas, brake_request
 
 
-def _run(long_active, accels, pitch, vego, aegos=None):
+def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid):
   """Drive the active longitudinal path and check every frame against the real safety hook."""
   CP = _car_params()
   CI = interfaces[PLATFORM](CP.copy())
@@ -64,7 +61,7 @@ def _run(long_active, accels, pitch, vego, aegos=None):
     )
     cc = structs.CarControl(
       enabled=True, latActive=False, longActive=bool(active_values[i]),
-      actuators=structs.CarControl.Actuators(accel=float(accel), longControlState=LongCtrlState.pid),
+      actuators=structs.CarControl.Actuators(accel=float(accel), longControlState=long_control_state),
       orientationNED=[0.0, float(pitch), 0.0],
     )
     _, sendcan = CI.apply(cc.as_reader(), int(i * DT_CTRL * 1e9))
@@ -85,17 +82,124 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
-  def test_validator_domain_model_uses_controller_helper(self):
-    requested = np.array([-0.1, -0.1])
-    compensated = np.array([-0.6, -0.6])
-    speed = np.array([4.9, 5.1])
+  def test_brake_command_matches_request_without_supplement_or_shaping(self):
+    for name, vego, state, pitch in (
+      ("road", 20.0, LongCtrlState.pid, 0.0),
+      ("descent", 20.0, LongCtrlState.pid, -0.05),
+      ("low_speed", 8.0, LongCtrlState.pid, 0.0),
+      ("stopping", 20.0, LongCtrlState.stopping, 0.0),
+    ):
+      with self.subTest(name=name):
+        accels = np.array([0.5] * 20 + [-0.6] * 100)
+        # Positive aEgo would make the former supplemental integrator add braking.
+        aegos = np.array([0.0] * 20 + [2.0] * 100)
+        rejects, seen = _run(True, accels, pitch=pitch, vego=vego, aegos=aegos, long_control_state=state)
+        assert not rejects
+        brake = np.array([br for _, _, br in seen], dtype=bool)
+        entry = np.flatnonzero(brake & ~np.roll(brake, 1))[0]
+        assert {accel for accel, _, _ in seen[entry:]} == {-60}, \
+          f"{name} brake command diverged from the -0.60 m/s^2 request"
 
-    assert odyssey_domain_switch_accel(-0.1, -0.6, 4.9) == -0.1
-    assert odyssey_domain_switch_accel(-0.1, -0.6, 5.1) == -0.6
-    np.testing.assert_array_equal(
-      odyssey_domain_switch_accel(requested, compensated, speed),
-      np.array([-0.1, -0.6]),
-    )
+  def test_road_speed_coasts_through_raw_split_chatter(self):
+    """Small negative requests must not alternate Honda's gas and friction-brake domains."""
+    for vego in (5.0, 20.0, 31.0):
+      for pitch in (-0.05, 0.0, 0.05):
+        with self.subTest(vego=vego, pitch=pitch):
+          # These requests bracket the upstream -0.20 split in the failed route. They must remain
+          # neutral; a stronger request still gets immediate brake authority and positive gets gas.
+          accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.31] * 20 + [-0.49] * 20 + [-0.51] * 20 + [0.10] * 20)
+          rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
+          assert not rejects
+          assert {-18, -23, -31, -49, -51, 10}.issubset({accel for accel, _, _ in seen})
+          for accel, gas, brake_request in seen:
+            if accel in (-18, -23):
+              assert gas == GAS_INACTIVE, "negative road request left GAS_COMMAND active"
+              assert brake_request == 0, "raw -0.20 crossing still toggled BRAKE_REQUEST"
+            elif accel == -51:
+              assert gas == GAS_INACTIVE
+              assert brake_request == 1, "stronger road request did not select brake immediately"
+            elif accel in (-31, -49):
+              assert gas == GAS_INACTIVE
+              assert brake_request == 0, "mild road request did not remain in coast"
+            elif accel == 10:
+              assert gas != GAS_INACTIVE, "positive road request did not select gas"
+              assert brake_request == 0
+
+  def test_road_speed_brake_domain_releases_for_positive_request(self):
+    """A settling brake request may cross the coast band, but positive gas releases immediately."""
+    accels = np.array([-0.6] * 20 + [-0.55] * 20 + [0.10] * 20)
+    rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
+    assert not rejects
+    brake = np.array([br for _, _, br in seen], dtype=bool)
+    gas = np.array([gas for _, gas, _ in seen])
+    # The state is intentionally narrow: negative coast requests do not re-arm/release the
+    # friction-brake domain, while a positive request still gets gas on the next command.
+    assert brake[:10].all()
+    assert brake[10:20].all()
+    assert not brake[-10:].any()
+    assert (gas[-10:] != GAS_INACTIVE).all()
+
+  def test_road_speed_gas_domain_does_not_pulse_at_zero(self):
+    """Gas stays active through zero, but re-enters only after a material request following coast."""
+    accels = np.array([0.10] * 20 + [-0.19] * 20 + [-0.21] * 20 + [-0.10] * 20 +
+                      [0.01] * 20 + [0.03] * 20)
+    rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
+    assert not rejects
+    gases = np.array([gas for _, gas, _ in seen])
+    brake = np.array([br for _, _, br in seen], dtype=bool)
+    assert (gases[:20] != GAS_INACTIVE).all(), "stock gas range pulsed inactive"
+    assert (gases[20:40] == GAS_INACTIVE).all(), "gas re-entered for a non-positive request"
+    assert (gases[80:100] == GAS_INACTIVE).all(), "tiny road request re-entered gas"
+    assert (gases[-10:] != GAS_INACTIVE).all(), "material road request did not re-enter gas"
+    assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
+
+  def test_gas_command_does_not_add_unverified_grade_or_drag(self):
+    """The gas wire must not change solely because the recorded pitch changes."""
+    accels = np.full(40, 0.10)
+    _, level = _run(True, accels, pitch=0.0, vego=31.0)
+    _, downhill = _run(True, accels, pitch=-0.05, vego=31.0)
+    level_gas = np.array([gas for _, gas, _ in level])
+    downhill_gas = np.array([gas for _, gas, _ in downhill])
+    np.testing.assert_array_equal(downhill_gas, level_gas)
+
+  def test_low_speed_nonpositive_request_never_selects_gas(self):
+    """A lead-stop request may relax above -0.20 but must keep brake authority below 5 m/s."""
+    for vego in (0.0, 1.0, 4.99):
+      with self.subTest(vego=vego):
+        accels = np.array([-0.21] * 20 + [-0.18] * 20 + [0.0] * 20 + [0.10] * 20)
+        rejects, seen = _run(True, accels, pitch=0.0, vego=vego)
+        assert not rejects
+        for accel, gas, brake_request in seen[:30]:
+          assert accel <= 0
+          assert gas == GAS_INACTIVE, "non-positive low-speed request selected gas"
+          assert brake_request == 1, "non-positive low-speed request released brake"
+        for accel, gas, brake_request in seen[-10:]:
+          assert accel == 10
+          assert gas != GAS_INACTIVE, "positive low-speed start request did not select gas"
+          assert brake_request == 0, "positive low-speed start request left brake active"
+
+  def test_low_speed_brake_pid_adds_only_when_aego_lags(self):
+    """A low-speed negative request gets a bounded correction only when the car under-decelerates."""
+    accels = np.array([-0.21] * 30 + [-0.17] * 50)
+    aegos = np.array([-0.21] * 10 + [0.5] * 70)
+    rejects, seen = _run(True, accels, pitch=0.0, vego=1.0, aegos=aegos)
+    assert not rejects
+    commands = np.array([accel for accel, _, _ in seen])
+    assert set(commands[:5]) == {-21}, "zero tracking error should leave the raw request unchanged"
+    assert commands[5] < -21, "low-speed under-deceleration did not add brake authority"
+    assert commands[-1] < -17, "low-speed brake correction did not follow the relaxed negative request"
+    assert commands.min() >= ACCEL_MIN_COUNTS, "low-speed correction exceeded the Honda safety rail"
+
+  def test_low_speed_brake_pid_resets_when_longitudinal_control_is_inactive(self):
+    """An inactive interval must clear the low-speed integrator before positive re-engagement."""
+    active = np.array([True] * 60 + [False] * 20 + [True] * 20)
+    accels = np.array([-0.21] * 60 + [0.0] * 20 + [0.1] * 20)
+    aegos = np.array([0.5] * 60 + [2.0] * 20 + [0.0] * 20)
+    rejects, seen = _run(active, accels, pitch=0.0, vego=1.0, aegos=aegos)
+    assert not rejects
+    reengaged = seen[-10:]
+    assert {accel for accel, _, _ in reengaged} == {10}
+    assert all(gas != GAS_INACTIVE and brake == 0 for _, gas, brake in reengaged)
 
   def test_alpha_long_available(self):
     """The tune is unreachable if the platform cannot get openpilot longitudinal."""
@@ -104,8 +208,8 @@ class TestOdysseyLongRails(unittest.TestCase):
   def test_acc_control_within_safety_rails(self):
     """Every ACC_CONTROL frame from the active path passes the panda TX hook.
 
-    Swept across grade and speed because both feed the domain decision: switch_accel picks up
-    sin(pitch)*g and the drag curve, and min_gas_accel ramps over 5-10 m/s.
+    Speed affects the Odyssey gas calibration; grade is intentionally diagnostic-only. Sweep both
+    dimensions even though domain selection uses only the raw request and speed.
     """
     for pitch in [0.0, -0.05, -0.02, 0.02, 0.05]:
       for vego in [0.0, 3.0, 8.0, 20.0, 31.0]:
@@ -147,12 +251,11 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert {g for _, g, _ in seen} == {GAS_INACTIVE}, "GAS_COMMAND live while longActive=False"
     assert {br for _, _, br in seen} == {0}, "BRAKE_REQUEST live while longActive=False"
 
-  def test_inactive_path_clears_supplemental_brake_state(self):
-    """Manual acceleration while disengaged must not prime a brake command for re-engagement.
+  def test_positive_reengagement_has_no_stale_brake_command(self):
+    """Manual acceleration while disengaged must not affect the re-engagement command.
 
-    This reproduces route 00000034 at 794.78 s: a brake-domain latch survived disengagement,
-    brake_pid integrated against the driver's acceleration to about -2 m/s^2, and the first
-    re-engaged frames commanded brake while openpilot requested positive acceleration.
+    This preserves the observable route-34 regression guard after removing the stateful domain
+    latch and supplemental integrator that caused it.
     """
     active = np.array([True] * 20 + [False] * 200 + [True] * 10)
     accels = np.array([-0.5] * 20 + [0.0] * 200 + [0.1] * 10)
@@ -161,17 +264,12 @@ class TestOdysseyLongRails(unittest.TestCase):
     rejects, seen = _run(active, accels, pitch=0.0, vego=20.0, aegos=aegos)
     assert not rejects
     accel, gas, brake_request = seen[-1]
-    assert accel == 10, f"stale brake_pid leaked into re-engagement: ACCEL_COMMAND={accel}"
+    assert accel == 10, f"stale braking leaked into re-engagement: ACCEL_COMMAND={accel}"
     assert gas != GAS_INACTIVE, "positive re-engagement request remained in the brake domain"
     assert brake_request == 0, "BRAKE_REQUEST remained latched across disengagement"
 
-  def test_first_live_gas_is_rate_limited_after_brake_and_inactive(self):
-    """Only transmitted gas may advance the ramp state.
-
-    Before this regression guard, the internal ramp advanced while GAS_COMMAND was parked at
-    -30000. The first live command after brake or disengagement could therefore jump past the
-    intended 60-count step even though every frame still passed panda safety.
-    """
+  def test_first_live_gas_is_not_artificially_delayed_after_brake_and_inactive(self):
+    """A positive request must receive its calculated gas command on the first eligible frame."""
     scenarios = {
       "brake_to_gas": (
         np.ones(60, dtype=bool),
@@ -189,18 +287,13 @@ class TestOdysseyLongRails(unittest.TestCase):
         gases = np.array([gas for _, gas, _ in seen])
         handoffs = np.flatnonzero((gases[1:] > GAS_INACTIVE) & (gases[:-1] == GAS_INACTIVE)) + 1
         assert len(handoffs) == 1, f"expected one gas handoff, saw {len(handoffs)}: {gases.tolist()}"
-        first = int(gases[handoffs[0]])
-        assert 0 <= first <= GAS_RAMP_STEP, \
-          f"first live GAS_COMMAND jumped to {first}, above the {GAS_RAMP_STEP}-count ramp"
+        live = gases[handoffs[0]:]
+        assert live[0] > 0, "positive request produced a non-positive first live GAS_COMMAND"
+        assert abs(live[0] - np.median(live[-5:])) <= 10, \
+          f"first live GAS_COMMAND {live[0]} was delayed below the settled command {np.median(live[-5:])}"
 
   def test_engaged_stop_releases_brake_for_positive_start(self):
-    """An engaged stop must not require more than +0.5 m/s^2 merely to release the brake domain.
-
-    With the full 0.50 hysteresis active at zero speed, the -0.5 stop request latched braking and
-    every subsequent +0.1 start request transmitted positive ACCEL_COMMAND with BRAKE_REQUEST=1
-    and GAS_COMMAND inactive. Current-code replay over stop-heavy routes found 1.2-1.3 s episodes.
-    The exit band is now zero below 5 m/s while retaining its full value at road speed.
-    """
+    """A positive start request must immediately select gas after an engaged stop."""
     accels = np.array([-0.5] * 20 + [0.1] * 20)
 
     rejects, seen = _run(True, accels, pitch=0.0, vego=0.0)
@@ -210,38 +303,11 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert gas != GAS_INACTIVE, "positive low-speed start request left GAS_COMMAND inactive"
       assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive start request"
 
-  def test_descent_boundary_uses_compensated_force_hysteresis(self):
-    """Exercise the grade range where raw request and compensated force have opposite signs."""
-    vego = 20.0
-    wind_brake = np.interp(vego, [0.0, 13.4, 22.4, 31.3, 40.2], [0.000, 0.049, 0.136, 0.267, 0.441])
-    for pitch in [-0.023, -0.026, -0.030]:
-      with self.subTest(pitch=pitch):
-        force_offset = wind_brake * 0.5 + math.sin(pitch) * ACCELERATION_DUE_TO_GRAVITY
-        entry_request = BRAKE_DOMAIN_ENTRY - force_offset
-        within_band = entry_request + DOMAIN_HYST_EXIT / 2.0
-        release_request = entry_request + DOMAIN_HYST_EXIT + 0.05
-        accels = np.array([entry_request - 0.05] * 300 + [within_band] * 100 + [release_request] * 100)
-
-        rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
-        assert not rejects
-        # ACC_CONTROL is emitted at 50 Hz, so each 100-frame input phase contributes 50 samples.
-        for _, gas, brake_request in seen[-100:-50]:
-          assert gas == GAS_INACTIVE, "request inside the compensated-force band activated gas"
-          assert brake_request == 1, "raw request sign bypassed compensated-force hysteresis"
-        for _, gas, brake_request in seen[-25:]:
-          assert gas != GAS_INACTIVE, "request above the compensated-force release threshold left gas inactive"
-          assert brake_request == 0, "brake domain did not release above its compensated-force threshold"
-
   def test_lateral_defaults_follow_stock_lka_tune(self):
-    """Keep the Odyssey lateral configuration behaviorally stock.
-
-    Stock LKA sends at most 2560; the 3840 RDM command includes brake drag and is not an
-    equivalent steering-only operating point. The former 0.20 s fallback had no isolated evidence
-    of benefit, so keep the stock 0.15 s actuator delay until a logged symptom justifies tuning.
-    """
+    """Use the Odyssey RDM torque range while keeping the rest of lateral stock."""
     CP = _car_params()
-    self.assertEqual(list(CP.lateralParams.torqueBP), [0.0, 2560.0])
-    self.assertEqual(list(CP.lateralParams.torqueV), [0.0, 2560.0])
+    self.assertEqual(list(CP.lateralParams.torqueBP), [0.0, 3840.0])
+    self.assertEqual(list(CP.lateralParams.torqueV), [0.0, 3840.0])
     self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, 0.9)
     self.assertAlmostEqual(CP.steerActuatorDelay, 0.15)
     self.assertAlmostEqual(CP.steerActuatorDelay + 0.20, 0.35)

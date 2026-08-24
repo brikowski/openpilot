@@ -3,23 +3,43 @@
 Read this before changing the tune or its tooling. This file holds decisions and invariants;
 route history and derivations belong in [`.agents/tune-evidence.md`](.agents/tune-evidence.md).
 
+## Project objective
+
+Make the Odyssey track `carControl.actuators.accel` as smoothly as Honda's stock radar commands the
+vehicle, while keeping the smallest practical delta from current `commaai/openpilot` and
+`commaai/opendbc` master.
+
+- Treat stock radar as the benchmark for actuator transitions, episode shape, and achieved ride
+  response, not for its proprietary target selection.
+- Prefer mechanisms already used on current upstream master. A fork-only mechanism needs a concise,
+  PR-quality physical rationale, focused regression coverage, and an isolated road arm.
+- Minimize production code and change one mechanism per road comparison. Replay establishes command
+  shape only; promotion requires controlled maneuvers and ordinary-road evidence.
+- Preserve honest command attribution. If the vehicle cannot smoothly achieve a request, prefer the
+  narrowest upstream-style limit before `carControl` over hiding the mismatch in Honda CAN shaping.
+
 ## What this branch is
 
 `ody-op` is the recovery baseline and shared tooling/evidence branch for the Honda Bosch A tune on
 `HONDA_ODYSSEY_5G_MMR`. Experimental children inherit their validator, private-log tools, evidence,
-and standards from here; only mechanism-specific controller code and rail assertions belong on a
-test branch. Keep parent and nested opendbc branches paired.
+and standards from here; mechanism-specific controller code and rail assertions are tested on
+temporary child branches and promoted here only after the evidence supports them. Keep parent and
+nested opendbc branches paired.
 
 `ody-op-test` is a frozen failed experiment. Do not add commits to it or treat its coast interlock,
 raw `-0.40` entry, zero brake integral, onset shaper, or direct brake release as accepted knowledge.
-`ody-op-test2` is the active child. Its upstream raw-split reference failed its road screen; the
-current candidate adds only a stateless coast domain at road speed and low-speed stop authority.
-It does not restore the retired brake PID, compensated input, release hysteresis, or onset shaping.
+The former `ody-op-test2` final candidate is now the `ody-op` baseline: it changes only Odyssey
+command-domain selection around the raw `ACCEL_COMMAND` (road-speed brake/coast separation,
+low-speed stop authority, and an OEM-aligned active-gas hold). It does not restore the retired brake
+PID, compensated input, coast interlock, raw-split reference, or onset shaping. New model or radar
+experiments must start from a temporary child of `ody-op` and be deleted or promoted deliberately.
 
-Lateral is **stock and closed**: LKA 2560, `latAccelFactor 0.9`, `steerActuatorDelay 0.15`.
-The former 0.20 s fallback had no isolated road benefit, so it was retired rather than kept as an
-unproven tune. Honda pairs the 3840 RDM range with one-sided brake drag we cannot command. Reopen
-lateral only for a logged symptom. `validate_log` deliberately has no lateral checks.
+Lateral is currently an isolated **3840 command-range arm** with the stock
+`latAccelFactor 0.9` and `steerActuatorDelay 0.15`; it is not yet road-proven. Keep 3840 unless a
+logged or road-tested symptom gives a reason to reduce it. The former 0.20 s fallback had no
+isolated road benefit and remains retired. `extract.py` and `validate_log.py` record lateral
+command/output, torque-controller saturation, steering response, overrides, and faults; these are
+diagnostics and not lane-tracking proof.
 
 ## Attribution boundary
 
@@ -65,10 +85,11 @@ Use that first divergence to choose the work:
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
 - Car-port edits follow `.claude/skills/comma-standards/SKILL.md`. Keep production comments PR-lean:
   explain the invariant or reason; keep route numbers, dates, and experiment history in evidence.
-- `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The current
-  Odyssey use of its `gas`/`brake` fields for learned-factor telemetry is fork-only instrumentation.
-  Before an upstream PR, restore actuator semantics and either reconstruct the learners offline or
-  move them to an explicitly named diagnostic event accepted by the corresponding schema owner.
+- `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The
+  historical deployed child used its `gas`/`brake` fields for learned-factor telemetry; the
+  upstream-rooted port restores actuator semantics. Any future learner telemetry must be
+  reconstructed offline or moved to an explicitly named diagnostic event accepted by the
+  corresponding schema owner.
 - **Never sync opendbc to its own master.** Rebase it to the commit openpilot master pins, or
   `controlsd` crashes on-road from a `car.capnp` schema mismatch.
 - `lefthook run pre-commit` covers focused lint and pure metric tests. `.agents/preflash.py` adds
@@ -104,26 +125,51 @@ relaxed from `-0.21` to `-0.18` below 2 mph, the raw split selected gas, speed r
 took over. The planner also withheld `shouldStop` until near zero; a car-port domain change cannot
 repair that upstream stop decision.
 
-The current candidate keeps `ACCEL_COMMAND` as the clipped raw request and uses three stateless
-domains. At road speed, positive requests select gas, requests from `0` through `-0.30` coast with
-both gas and brake inactive, and stronger requests select brake immediately. Below 5 m/s,
-non-positive requests select brake and any positive start request selects gas immediately. This
-separates the measured `-0.18/-0.23` chatter band without state that can hold brake through a
-positive request. Frozen-input replay reduced route-wide brake-bit edges from 69 to 2 and 167 to
-14, changed the route-42 39 mph pulse window from 36 to 0, and kept brake selected throughout both
-recorded stop approaches. Those are command-shape results only; controlled and ordinary-road
-drives must still reject late onset, excess overspeed, renewed tapping, or incomplete stops.
+The current `-0.50` brake-entry arm keeps `ACCEL_COMMAND` as the clipped raw request and uses state
+only to choose Honda's binary command domains. At road speed, brake enters below `-0.50` and remains
+selected while the request is negative; a positive request releases it immediately. An active gas
+command remains live down to Honda's upstream `-0.20` split, but after coast it re-enters only for a
+positive request. Below 5 m/s, non-positive requests select brake and any positive start request
+selects gas immediately. The earlier `-0.30` replay results on routes 41/42 are retained as command-
+shape evidence for that predecessor, not as validation of this arm. Controlled and ordinary-road
+drives must reject late onset, excess overspeed, renewed tapping, gas pulsing, or incomplete stops.
+
+The `-0.50` arm changes one road-speed entry constant only; it does not change the gasfactor, gas
+handoff semantics, low-speed stop authority, or numeric `ACCEL_COMMAND`. It passed the current
+ordinary-road screen without the raw-split burst pattern and is retained in `ody-op`; controlled
+maneuvers and terrain-matched follow-up drives remain necessary for any further comfort claim.
 
 The retained custom longitudinal behavior outside brake authority is the road-supported Odyssey
 gasfactor calibration. The unproven 60-count handoff ramp is retired: eligible gas now receives the
 calculated command immediately. Gas and brake remain mutually exclusive, disengagement emits no
 longitudinal command, Panda bounds command magnitude, and positive stop-release requests select gas
-immediately. Windfactor remains an explicitly unproven gas-side learner and is not allowed to choose
-the brake domain; audit it separately rather than coupling a powertrain rewrite to this focused gas
-handoff reset.
+immediately. The new route-43 gas arm leaves that gasfactor calibration and the three-domain brake
+candidate unchanged, but removes unverified wind/grade feedforward from the actual `GAS_COMMAND`.
+Windfactor remains logged as diagnostic-only learner state; it cannot choose the brake domain or add
+wire force. The latest full non-Experimental route still had 13 sub-second gas episodes beginning at
+tiny positive cruise requests before crossing the `-0.20` release boundary. That is a separate
+gas-domain re-entry arm; the current `-0.50` brake arm does not claim to resolve it. This is a
+command-path isolation experiment, not a road-proven comfort improvement.
 
-Do not substitute the failed raw-split reference or the unvalidated three-domain candidate for the
-`ody-op` recovery branch. Full-rate master
+The first post-`b472c9afe` ordinary-road uploads were thin: route `00000052--5550e053e9` had 5.7
+engaged minutes and route `00000053--360703793d` had 5.5; route `00000051--f714a28f5f` was
+offroad-only. Both driving routes carried `carControl` to CAN correctly and had no direct gas-to-
+brake handoff. Route 53 still contains one true sub-second coast-to-gas pulse at a tiny positive
+request; route 52 contains no sub-second in-control pulse under the corrected diagnostic, though it
+has shorter gas intervals. A frozen `+0.02 m/s²` re-entry threshold screens those tiny entries but
+does not remove route 53's strong-request transient, so no production gas deadband is promoted from
+these routes alone. Treat route 52's short downhill brake window and both routes' stop-lurch readings
+as thin context, not a brake retune authorization.
+
+The isolated `+0.02 m/s²` Odyssey road-speed gas re-entry arm is retained in the promoted nested
+opendbc baseline after the current road screen. It changes only fresh gas entry after coast; active
+gas, the upstream `-0.20` release split, low-speed start behavior, raw `ACCEL_COMMAND`, and gasfactor
+are unchanged. The screen does not claim that the strong-request transient or Experimental following
+behavior is solved.
+
+The failed raw-split reference and direct-handoff architectures remain historical evidence only.
+The promoted command-domain candidate has current ordinary-road screening, but it does not claim to
+fix Experimental model behavior or provide radar tracks. Full-rate master
 route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s, versus 1.9/min and
 peak 3/10 s on `ody-op` route `00000026--bfe3fd933b`. The current upstream-pinned Honda path still
 uses the same raw request and fixed -0.20 split, so that comparison remains behaviorally relevant.

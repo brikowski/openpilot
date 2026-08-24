@@ -19,17 +19,13 @@ from openpilot.tools.lib.logreader import LogReader
 from opendbc.can.parser import CANParser
 
 from tuning_metrics import hold_last
-from validate_log import FOLLOW_MIN_VEGO, ODYSSEY_PT_DBC, SIGN_DISAGREE_REQUEST, _rate, _series
+from validate_log import (
+  FOLLOW_MIN_VEGO, ODYSSEY_PT_DBC, SIGN_DISAGREE_REQUEST, _local_segment_names, _rate, _series,
+)
 
 
 def _local_reader(route):
-  def segment_index(name):
-    try:
-      return int(name.rsplit("--", 1)[-1])
-    except ValueError:
-      return -1
-
-  segments = sorted((name for name in os.listdir(Paths.log_root()) if route in name), key=segment_index)
+  segments = _local_segment_names(route)
   if not segments:
     raise SystemExit(f"no local segments matching {route!r} under {Paths.log_root()}")
   return LogReader([os.path.join(Paths.log_root(), name, "rlog.zst") for name in segments])

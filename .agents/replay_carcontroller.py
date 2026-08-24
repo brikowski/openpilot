@@ -31,7 +31,7 @@ from opendbc.car.honda.carcontroller import CarController
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tuning_metrics import causal_lpf, windowed_jerk
-from validate_log import GAS_INACTIVE, JERK_SMOOTH_TAU, JERK_WIN_S
+from validate_log import GAS_INACTIVE, JERK_SMOOTH_TAU, JERK_WIN_S, _local_segment_names
 
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"
 
@@ -67,8 +67,7 @@ def main(argv=None):
     import os
     from openpilot.common.hardware.hw import Paths
     root = Paths.log_root()
-    segs = sorted((s for s in os.listdir(root) if s.startswith(seg_range)),
-                  key=lambda x: int(x.rsplit("--", 1)[-1]))
+    segs = _local_segment_names(seg_range, root)
     src = [os.path.join(root, s, "rlog.zst") for s in segs]
     if not src:
       sys.exit(f"no local segments for {seg_range}")

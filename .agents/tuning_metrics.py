@@ -169,6 +169,79 @@ def gas_handoff_values(gas_command, gas_inactive):
   return gas[1:][handoffs]
 
 
+def gas_reentry_pulse_metrics(grid, requested, engaged, vego, brake_request, brake_pressed,
+                              gas_command, *, low_speed_vego, gas_inactive,
+                              entry_request_max, short_duration_s, entry_window_s):
+  """Measure short gas re-entries from a moving coast domain.
+
+  This is a symptom readout, not a tuning rule. A re-entry is counted only when the preceding
+  moving frame was neither gas nor brake, so a normal brake-to-gas handoff is kept separate. The
+  entry request is the largest controller request over one command period after the gas edge;
+  using a short window avoids mistaking the 50 Hz CAN hold for a small controller request.
+  """
+  grid = np.asarray(grid, dtype=float)
+  requested = np.asarray(requested, dtype=float)
+  engaged = np.asarray(engaged, dtype=bool)
+  vego = np.asarray(vego, dtype=float)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  brake_pressed = np.asarray(brake_pressed, dtype=bool)
+  gas_live = np.asarray(gas_command, dtype=float) > gas_inactive
+  empty = {
+    "gas_reentry_pulse_events": 0,
+    "gas_reentry_pulse_short_events": 0,
+    "gas_reentry_pulse_tiny_events": 0,
+    "gas_reentry_pulse_tiny_short_events": 0,
+    "gas_reentry_pulse_duration_median": None,
+    "gas_reentry_pulse_tiny_duration_median": None,
+    "gas_reentry_pulse_entry_request_max": None,
+  }
+  if len(grid) < 3:
+    return empty
+
+  dt = float(np.median(np.diff(grid)))
+  moving = engaged & ~brake_pressed & (vego > low_speed_vego)
+  active_gas = moving & gas_live
+  starts = np.flatnonzero(np.diff(active_gas.astype(np.int8), prepend=0) == 1)
+  ends = np.flatnonzero(np.diff(active_gas.astype(np.int8), append=0) == -1) + 1
+  entry_frames = max(1, int(np.ceil(entry_window_s / max(dt, 1e-6))))
+  rows = []
+  for start in starts:
+    if start == 0 or not (moving[start - 1] and not gas_live[start - 1] and
+                          not brake_request[start - 1]):
+      continue
+    later = ends[ends > start]
+    if not len(later):
+      continue
+    end = int(later[0])
+    # A normal command shutdown is not a gas pulse. Require the vehicle to remain in the moving
+    # control mask when gas ends; this excludes longitudinal disengagement and driver-brake exits.
+    if end >= len(moving) or not moving[end]:
+      continue
+    duration = float(grid[end - 1] - grid[start])
+    entry_end = min(end, start + entry_frames)
+    entry_requests = requested[start:entry_end]
+    if not len(entry_requests) or not np.isfinite(entry_requests).any():
+      continue
+    entry_request = float(np.nanmax(entry_requests))
+    rows.append((duration, entry_request))
+
+  durations = [duration for duration, _ in rows]
+  tiny = [(duration, request) for duration, request in rows if request <= entry_request_max]
+  short = [duration for duration in durations if duration < short_duration_s]
+  tiny_short = [duration for duration, request in tiny if duration < short_duration_s]
+  return {
+    "gas_reentry_pulse_events": len(rows),
+    "gas_reentry_pulse_short_events": len(short),
+    "gas_reentry_pulse_tiny_events": len(tiny),
+    "gas_reentry_pulse_tiny_short_events": len(tiny_short),
+    "gas_reentry_pulse_duration_median": float(np.median(durations)) if durations else None,
+    "gas_reentry_pulse_tiny_duration_median": (
+      float(np.median([duration for duration, _ in tiny])) if tiny else None),
+    "gas_reentry_pulse_entry_request_max": (
+      float(max(request for _, request in rows)) if rows else None),
+  }
+
+
 def gasfactor_breakpoint_metrics(speed, effective, eligible, breakpoints, seed_values, *,
                                  half_width, min_exposure_s, dt):
   """Compare learned gasfactor with the live seed over the same narrow speed windows."""

@@ -9,10 +9,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import validate_log
 from validate_log import (
   ODYSSEY,
+  LOW_SPEED_BRAKE_PID_COMMITS,
   THREE_DOMAIN_COMMITS,
   _base_route,
   _domain_model,
+  _has_learner_telemetry,
+  _local_segment_names,
   _suggest_status_rows,
+  lateral_metrics,
   write_ledger_md,
 )
 from tuning_metrics import (
@@ -23,6 +27,7 @@ from tuning_metrics import (
   command_transition_metrics,
   descent_hold_metrics,
   gasfactor_breakpoint_metrics,
+  gas_reentry_pulse_metrics,
   hold_last,
   max_edges_in_window,
   physical_edges,
@@ -31,6 +36,17 @@ from tuning_metrics import (
   sign_disagreement_metrics,
   stop_lurch_metrics,
 )
+
+
+def test_local_segment_names_ignore_empty_interrupted_pull_directories(tmp_path):
+  route = "00000026--8d38fff2db"
+  for index in (10, 2):
+    segment = tmp_path / f"{route}--{index}"
+    segment.mkdir()
+    (segment / "rlog.zst").touch()
+  (tmp_path / f"{route}--4").mkdir()
+
+  assert _local_segment_names(route, tmp_path) == [f"{route}--2", f"{route}--10"]
 
 
 def test_brake_episode_metrics_distinguish_progressive_and_sudden_onsets():
@@ -86,7 +102,27 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert valid and note == "raw three-domain coast split"
   np.testing.assert_array_equal(switch, requested)
   np.testing.assert_array_equal(threshold[:100], np.zeros(100))
-  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.30))
+  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.50))
+
+  # The exact-pinned deployed test arm must stay source-mapped; otherwise its road evidence would
+  # silently lose the domain and low-speed attribution checks.
+  current_commit = "41aaf59ee6f2"
+  assert current_commit in THREE_DOMAIN_COMMITS
+  assert current_commit in LOW_SPEED_BRAKE_PID_COMMITS
+  _, current_threshold, valid, note = _domain_model(
+    current_commit, requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid and note == "raw three-domain coast split"
+  np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+  np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
+
+  # Historical route provenance must retain the threshold that was actually deployed, even when
+  # the current candidate's default has moved.
+  _, old_threshold, valid, _ = _domain_model(
+    "3169fd4cc3fa", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid
+  np.testing.assert_array_equal(old_threshold[100:], np.full(100, -0.30))
 
   switch, threshold, valid, note = _domain_model(
     "e29fe3dccd09", requested, speed, pitch, windfactor, 0.01,
@@ -101,6 +137,13 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   )
   assert switch is threshold is None
   assert not valid and "unmapped" in note
+
+
+def test_learner_telemetry_is_only_read_from_legacy_caroutput_semantics():
+  assert not _has_learner_telemetry("3169fd4cc3fa")
+  assert not _has_learner_telemetry("f453a51e0081")
+  assert _has_learner_telemetry("e29fe3dccd09")
+  assert not _has_learner_telemetry("future-unknown")
 
 
 def test_gasfactor_breakpoint_uses_same_frame_seed_and_narrow_window():
@@ -310,6 +353,71 @@ def test_transition_mutation_detects_direct_domains_but_accepts_coast_interlock(
   assert direct["direct_brake_to_gas"] == 1
   assert interlocked["direct_gas_to_brake"] == 0
   assert interlocked["direct_brake_to_gas"] == 0
+
+
+def test_gas_reentry_pulse_metric_isolates_tiny_short_coast_reentry():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:190] = 100.0
+  requested = np.zeros(len(grid))
+  requested[150:190] = 0.01
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 1
+  assert metrics["gas_reentry_pulse_short_events"] == 1
+  assert metrics["gas_reentry_pulse_tiny_events"] == 1
+  assert metrics["gas_reentry_pulse_tiny_short_events"] == 1
+  assert np.isclose(metrics["gas_reentry_pulse_duration_median"], 0.39)
+  assert np.isclose(metrics["gas_reentry_pulse_entry_request_max"], 0.01)
+
+
+def test_gas_reentry_pulse_metric_does_not_call_brake_handoff_a_pulse():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_request[100:150] = True
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:260] = 100.0
+  requested = np.full(len(grid), 0.10)
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 0
+
+
+def test_gas_reentry_pulse_metric_ignores_disengagement_exit():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  engaged[190:] = False
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:190] = 100.0
+  requested = np.full(len(grid), 0.01)
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 0
 
 
 def test_sign_disagreement_ignores_transport_and_separates_downhill():
@@ -558,7 +666,40 @@ def test_write_ledger_md_escapes_flag_column_delimiters(monkeypatch, tmp_path):
 
   table_row = ledger.read_text().splitlines()[-1]
   assert "track RMS &#124;aEgo-aTarget&#124;" in table_row
-  assert len(table_row.split("|")) == 19
+  assert len(table_row.split("|")) == 22
+
+
+def test_lateral_metrics_reports_command_output_and_safety_telemetry():
+  n = 100
+  grid = np.arange(n, dtype=float) * 0.01
+  active = np.ones(n, dtype=bool)
+  requested = np.full(n, 0.5)
+  output = requested.copy()
+  output[30:40] -= 0.1
+  output_can = output * 3840.0
+  steering_pressed = np.zeros(n, dtype=bool)
+  steering_pressed[50:55] = True
+  steer_fault_temp = np.zeros(n, dtype=bool)
+  steer_fault_temp[70:72] = True
+  steer_fault_perm = np.zeros(n, dtype=bool)
+  saturated = np.zeros(n, dtype=bool)
+  saturated[80:85] = True
+  actual = np.full(n, 0.8)
+  desired = np.full(n, 1.0)
+
+  metrics = lateral_metrics(
+    grid, active, requested, output, output_can, steering_pressed,
+    steer_fault_temp, steer_fault_perm, saturated, actual, desired,
+    np.full(n, 2.0), np.full(n, 3.0), 0.01,
+  )
+
+  assert np.isclose(metrics["lat_active_sec"], 1.0)
+  assert np.isclose(metrics["lat_follow_mean"], -0.01)
+  assert metrics["lat_output_torque_can_abs_max"] == 1920.0
+  assert np.isclose(metrics["lat_saturated_frac"], 0.05)
+  assert np.isclose(metrics["lat_model_rms"], 0.2)
+  assert metrics["steering_override_events"] == 1
+  assert metrics["steer_fault_events"] == 1
 
 
 def _status_row(route, opendbc_commit, flagged=True):

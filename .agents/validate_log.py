@@ -36,6 +36,7 @@ from tuning_metrics import (
   command_transition_metrics,
   descent_hold_metrics,
   gasfactor_breakpoint_metrics,
+  gas_reentry_pulse_metrics,
   hold_last as _hold_last,
   max_edges_in_window as _max_edges_in_window,
   physical_edges as _physical_edges,
@@ -110,6 +111,9 @@ LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: region where an incorrect handoff can inter
                               # an "is following a meaningful
                               # question" gate at 3.0, and using it here silently blinded the check
                               # to the 3-5 m/s part of the very region the bug lived in.
+GAS_REENTRY_PULSE_ENTRY_MAX = 0.02  # m/s^2: diagnostic boundary for a tiny positive re-entry
+GAS_REENTRY_PULSE_MAX_S = 1.0        # s: short event boundary used by the gas-pulse readout
+GAS_REENTRY_PULSE_ENTRY_WINDOW_S = CAN_COMMAND_PERIOD_S
 STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
                                # deceleration only says the plan asked for braking; excess separates
                                # car-port contribution from Honda actuator bite. STILL REPORTED,
@@ -136,14 +140,40 @@ DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode 
 DOMAIN_PITCH_FILTER_TAU = 0.5  # Legacy ody-op compensated-domain model.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
-THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track ODYSSEY_ROAD_BRAKE_ENTRY in carcontroller.py.
+THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.50  # MUST track the current ODYSSEY_ROAD_BRAKE_ENTRY.
+THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
+  "3169fd4cc3fa": -0.30,  # deployed baseline; preserve the threshold it actually drove with
+  "f453a51e0081": -0.30,  # low-speed brake-tracking arm; road-speed domain is unchanged
+  "b472c9afe": -0.50,  # isolated road-speed brake-entry arm; road validation pending
+  "41aaf59ee6f2": -0.50,  # same arm plus the isolated road-speed gas re-entry threshold
+}
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
   "44f2987cb6ed",  # upstream stock comparison routes
 }
 THREE_DOMAIN_COMMITS = {
+  "3169fd4cc3fa",  # upstream-pinned Odyssey port deployed for route 4c/4b
   "e46e9eaa6885",  # ody-op-test2 stateless coast and low-speed stop candidate
   "ece147ad7730",  # same candidate with the unproven gas handoff ramp removed
+  "f453a51e0081",  # low-speed brake PID arm; source-matched domain model remains three-domain
+  "b472c9afe",  # isolated -0.50 road-speed brake-entry arm
+  "41aaf59ee6f2",  # same arm plus the isolated road-speed gas re-entry threshold
+}
+# Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
+# carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
+# as upstream actuator-output semantics until the source proves otherwise, so a new route cannot
+# silently turn a raw gas command into a fake gasfactor measurement.
+LEGACY_LEARNER_TELEMETRY_COMMITS = {
+  "01df474580bd", "12daafe768b6", "13cfc73646e1", "13d2b66a4d51", "1b6048e980f7",
+  "2ad060f0797b", "2cc9d0df854d", "618dc5995f80", "69ae9bf908dc", "6ad6819a7421",
+  "6d2f79e69d6b", "6e6ca0b25458", "72e099164e11", "76bd3550e9e8", "7962b8b7cad3",
+  "82afd9a22743", "99db0e56c49d", "b21cb2c323fe", "c1ce76fa857a", "d12c1a64a4eb",
+  "d18a8fd538d4", "d1d5eb5c7255", "d8f962bf3189", "e29fe3dccd09", "ebc938710a88",
+  "ec823173de2a", "ece147ad7730", "f53d878a19bf", "f6e4f07bdc61",
+}
+LOW_SPEED_BRAKE_PID_COMMITS = {
+  "f453a51e0081",  # intentional ACCEL_COMMAND divergence below 3 m/s when brake is selected
+  "41aaf59ee6f2",  # current exact-pinned test arm retains the same low-speed correction
 }
 COMPENSATED_DOMAIN_COMMITS = {
   "13cfc73646e1",  # ody-op telemetry cleanup, 0.50 release width
@@ -237,11 +267,85 @@ def _series(msgs, which, extract):
   return np.array(out_t), np.array(out_v, dtype=float)
 
 
+def _torque_state_field(m, field):
+  state = m.controlsState.lateralControlState
+  return float(getattr(state.torqueState, field)) if state.which() == "torqueState" else np.nan
+
+
+def lateral_metrics(grid, lat_active, requested, output, output_can, steering_pressed,
+                    steer_fault_temp, steer_fault_perm, saturated, actual_lat_accel,
+                    desired_lat_accel, steering_angle, steering_rate, dt):
+  """Return lateral command, output, actuator-state, and override telemetry.
+
+  These are bounded telemetry readouts, not a lane-tracking score. The command/output pair shows
+  whether the controller is reaching the CAN range being tested; the torque-controller fields and
+  steering sensors show saturation, faults, overrides, and model-estimated lateral response.
+  """
+  out = {
+    "lat_active_sec": None, "lat_active_frac": None,
+    "lat_request_abs_p95": None, "lat_output_abs_p95": None,
+    "lat_output_torque_can_abs_p95": None, "lat_output_torque_can_abs_max": None,
+    "lat_follow_rms": None, "lat_follow_mean": None,
+    "lat_saturated_frac": None, "lat_model_rms": None, "lat_model_mean": None,
+    "steering_angle_abs_p95": None, "steering_rate_abs_p95": None,
+    "steering_override_events": None, "steering_override_sec": None,
+    "steer_fault_frames": None, "steer_fault_events": None,
+  }
+  if len(grid) == 0:
+    return out
+
+  active = lat_active & np.isfinite(requested)
+  if active.sum() < 10:
+    return out
+
+  out["lat_active_sec"] = float(active.sum() * dt)
+  out["lat_active_frac"] = float(active.mean())
+  out["lat_request_abs_p95"] = float(np.nanpercentile(np.abs(requested[active]), 95))
+
+  following = active & np.isfinite(output)
+  if following.sum() >= 10:
+    error = output[following] - requested[following]
+    out["lat_output_abs_p95"] = float(np.nanpercentile(np.abs(output[following]), 95))
+    out["lat_follow_rms"] = float(np.sqrt(np.nanmean(error ** 2)))
+    out["lat_follow_mean"] = float(np.nanmean(error))
+
+  can = active & np.isfinite(output_can)
+  if can.sum() >= 10:
+    can_abs = np.abs(output_can[can])
+    out["lat_output_torque_can_abs_p95"] = float(np.nanpercentile(can_abs, 95))
+    out["lat_output_torque_can_abs_max"] = float(np.nanmax(can_abs))
+
+  sat = active & saturated
+  out["lat_saturated_frac"] = float(sat.sum() / active.sum())
+
+  model = active & np.isfinite(actual_lat_accel) & np.isfinite(desired_lat_accel)
+  if model.sum() >= 10:
+    error = actual_lat_accel[model] - desired_lat_accel[model]
+    out["lat_model_rms"] = float(np.sqrt(np.nanmean(error ** 2)))
+    out["lat_model_mean"] = float(np.nanmean(error))
+
+  angle = active & np.isfinite(steering_angle)
+  if angle.sum() >= 10:
+    out["steering_angle_abs_p95"] = float(np.nanpercentile(np.abs(steering_angle[angle]), 95))
+  rate = active & np.isfinite(steering_rate)
+  if rate.sum() >= 10:
+    out["steering_rate_abs_p95"] = float(np.nanpercentile(np.abs(steering_rate[rate]), 95))
+
+  override = active & steering_pressed
+  out["steering_override_sec"] = float(override.sum() * dt)
+  out["steering_override_events"] = int(np.sum(np.diff(override.astype(np.int8), prepend=0) == 1))
+  fault = active & (steer_fault_temp | steer_fault_perm)
+  out["steer_fault_frames"] = int(fault.sum())
+  out["steer_fault_events"] = int(np.sum(np.diff(fault.astype(np.int8), prepend=0) == 1))
+  return out
+
+
 def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
   """Return the source-matched Odyssey domain input without importing branch-specific helpers."""
   commit = (opendbc_commit or "")[:12]
   if commit in THREE_DOMAIN_COMMITS:
-    entry_threshold = np.where(speed < LOW_SPEED_DOMAIN_VEGO, 0.0, THREE_DOMAIN_ROAD_BRAKE_ENTRY)
+    road_entry = THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT.get(commit, THREE_DOMAIN_ROAD_BRAKE_ENTRY)
+    entry_threshold = np.where(speed < LOW_SPEED_DOMAIN_VEGO, 0.0, road_entry)
     return requested, entry_threshold, True, "raw three-domain coast split"
   if commit in RAW_DOMAIN_COMMITS:
     return requested, np.full_like(requested, HondaParams.BOSCH_GAS_LOOKUP_BP[0]), True, "raw upstream split"
@@ -253,6 +357,11 @@ def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
     entry_threshold = np.interp(speed, [5.0, 10.0], [0.01, -0.30])
     return switch_accel, entry_threshold, True, "legacy compensated ody-op split"
   return None, None, False, f"unmapped opendbc commit {commit or '?'}"
+
+
+def _has_learner_telemetry(opendbc_commit):
+  """Whether this opendbc revision emitted fork-only learner values in carOutput."""
+  return (opendbc_commit or "")[:12] in LEGACY_LEARNER_TELEMETRY_COMMITS
 
 
 def _jerk(smoothed, dt, active):
@@ -322,14 +431,27 @@ def analyze(msgs, platform):
                       lambda m: 1.0 if str(m.carControl.actuators.longControlState) == "pid" else 0.0)
   _, cc_stopping = _series(msgs, "carControl",
                            lambda m: 1.0 if str(m.carControl.actuators.longControlState) == "stopping" else 0.0)
+  _, cc_lat_active = _series(msgs, "carControl", lambda m: 1.0 if m.carControl.latActive else 0.0)
+  _, cc_lat_torque = _series(msgs, "carControl", lambda m: m.carControl.actuators.torque)
   t_co, co_accel = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.accel)
-  _, co_gasf = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.gas)
-  _, co_windf = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.brake)
+  _, co_gas_output = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.gas)
+  _, co_brake_output = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.brake)
+  _, co_lat_torque = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.torque)
+  _, co_lat_torque_can = _series(msgs, "carOutput", lambda m: m.carOutput.actuatorsOutput.torqueOutputCan)
   t_cs, cs_aego = _series(msgs, "carState", lambda m: m.carState.aEgo)
   _, cs_vego = _series(msgs, "carState", lambda m: m.carState.vEgo)
   _, cs_gaspressed = _series(msgs, "carState", lambda m: 1.0 if m.carState.gasPressed else 0.0)
   _, cs_brakepressed = _series(msgs, "carState", lambda m: 1.0 if m.carState.brakePressed else 0.0)
+  _, cs_steering_angle = _series(msgs, "carState", lambda m: m.carState.steeringAngleDeg)
+  _, cs_steering_rate = _series(msgs, "carState", lambda m: m.carState.steeringRateDeg)
+  _, cs_steering_pressed = _series(msgs, "carState", lambda m: 1.0 if m.carState.steeringPressed else 0.0)
+  _, cs_steer_fault_temp = _series(msgs, "carState", lambda m: 1.0 if m.carState.steerFaultTemporary else 0.0)
+  _, cs_steer_fault_perm = _series(msgs, "carState", lambda m: 1.0 if m.carState.steerFaultPermanent else 0.0)
   t_lp, lp_atarget = _series(msgs, "longitudinalPlan", lambda m: m.longitudinalPlan.aTarget)
+  t_ctl, ctl_lat_active = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "active"))
+  _, ctl_saturated = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "saturated"))
+  _, ctl_actual_lat_accel = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "actualLateralAccel"))
+  _, ctl_desired_lat_accel = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "desiredLateralAccel"))
 
   # Detect a qlog-decimated route by SAMPLE RATE, not frame count. The old count-based check
   # (len(t_cc) < 100) never fired on a real qlog route: qlog keeps 1 carControl in 10, so an hour
@@ -358,15 +480,37 @@ def analyze(msgs, platform):
   aego = onto(t_cs, cs_aego)
   vego = onto(t_cs, cs_vego)
   wire = onto(t_co, co_accel)
-  gasf = onto(t_co, co_gasf)
-  windf = onto(t_co, co_windf)
+  gas_output = onto(t_co, co_gas_output)
+  brake_output = onto(t_co, co_brake_output)
+  lat_active = cc_lat_active > 0.5
+  lat_request = cc_lat_torque
+  lat_output = onto(t_co, co_lat_torque)
+  lat_output_can = onto(t_co, co_lat_torque_can)
+  steering_angle = onto(t_cs, cs_steering_angle)
+  steering_rate = onto(t_cs, cs_steering_rate)
+  steering_pressed = onto(t_cs, cs_steering_pressed) > 0.5
+  steer_fault_temp = onto(t_cs, cs_steer_fault_temp) > 0.5
+  steer_fault_perm = onto(t_cs, cs_steer_fault_perm) > 0.5
+  ctl_active = onto(t_ctl, ctl_lat_active) > 0.5
+  saturated = onto(t_ctl, ctl_saturated) > 0.5
+  actual_lat_accel = onto(t_ctl, ctl_actual_lat_accel)
+  desired_lat_accel = onto(t_ctl, ctl_desired_lat_accel)
   atarget = onto(t_lp, lp_atarget) if len(t_lp) else cc_accel.copy()
   gaspressed = onto(t_cs, cs_gaspressed) > 0.5
   brakepressed = onto(t_cs, cs_brakepressed) > 0.5
   dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
 
+  r.update(lateral_metrics(
+    grid, lat_active, lat_request, lat_output, lat_output_can, steering_pressed,
+    steer_fault_temp, steer_fault_perm, saturated, actual_lat_accel, desired_lat_accel,
+    steering_angle, steering_rate, dt,
+  ))
+  r["lat_controller_active_frac"] = float(np.nanmean(ctl_active)) if len(t_ctl) else None
+
   active = cc_active > 0.5
   pid = (cc_pid > 0.5) & active
+  low_speed_pid_expected = provenance.get("opendbc_commit") in LOW_SPEED_BRAKE_PID_COMMITS
+  r["low_speed_brake_pid_expected"] = low_speed_pid_expected
 
   # === coverage ===
   # How much drive is behind every number below. Never flags - it sets how much this row is worth.
@@ -412,23 +556,26 @@ def analyze(msgs, platform):
     r["passthrough_rms"] = None
 
   is_ody = platform == ODYSSEY
-  if is_ody and active.sum() > 10:
-    g = gasf[active]
+  learner_telemetry = is_ody and _has_learner_telemetry(provenance.get("opendbc_commit"))
+  if learner_telemetry and active.sum() > 10:
+    g = gas_output[active]
     r["gasf_eff_mean"] = float(np.nanmean(g))
     r["gasf_eff_min"] = float(np.nanmin(g))
     r["gasf_eff_max"] = float(np.nanmax(g))
     n = max(1, len(g) // 10)
     r["gasf_drift"] = float(np.nanmean(g[-n:]) - np.nanmean(g[:n]))
-    w = windf[active]
+    w = brake_output[active]
     r["windf_mean"] = float(np.nanmean(w))
     r["windf_max"] = float(np.nanmax(w))
     highway = active & (vego > 20.0)
-    r["windf_floor_frac_highway"] = (float(np.nanmean(windf[highway] <= WINDF_FLOOR + WINDF_FLOOR_EPS))
+    r["windf_floor_frac_highway"] = (float(np.nanmean(brake_output[highway] <= WINDF_FLOOR + WINDF_FLOOR_EPS))
                                      if highway.sum() > 50 else None)
   else:
     for k in ("gasf_eff_mean", "gasf_eff_min", "gasf_eff_max", "gasf_drift", "windf_mean", "windf_max",
               "windf_floor_frac_highway"):
       r[k] = None
+    if is_ody and not learner_telemetry:
+      r["notes"].append("learner state unavailable: carOutput gas/brake are actuator outputs")
 
   # crashes: a managed DRIVING process dying (tune-evidence.md: controlsd death -> relayMalfunction,
   # three layers down). The specific signal is an errorLogMessage whose JSON `msg == "crash"`
@@ -486,7 +633,8 @@ def analyze(msgs, platform):
     r["rail_lo_frac"] = float((active & (wire <= HondaParams.BOSCH_ACCEL_MIN + RAIL_EPS)).sum() / active.sum())
 
   # === watchlist symptoms (Odyssey telemetry semantics) ===
-  # 1. Port-added braking. This should remain zero on the fresh stock-semantics brake path.
+  # 1. Port-added braking. This should remain zero outside the explicitly source-mapped
+  # low-speed brake-tracking arm.
   #    CAREFUL - this must measure OUR controller, not the car's actuator. Naively comparing
   #    aEgo to the planner command flags "Honda's friction-brake actuator biting past our
   #    ACCEL_COMMAND setpoint", which is documented as NOT ours and NOT fixable (we have no
@@ -497,7 +645,18 @@ def analyze(msgs, platform):
   #    The actionable symptom is the port still sending more brake than requested while the car
   #    is already decelerating past target.
   cmd_smooth = _causal_lpf(cc_accel, dt, JERK_SMOOTH_TAU)
-  braking = pid & (cc_accel < -0.3)
+  low_speed_pid_window = (low_speed_pid_expected & pid & (vego > 1e-3) & (vego < 3.0) &
+                          (cc_accel < 0.0))
+  r["low_speed_brake_pid_frames"] = int(low_speed_pid_window.sum())
+  r["low_speed_brake_pid_addon_mean"] = (
+    float(np.nanmean((wire - cc_accel)[low_speed_pid_window]))
+    if low_speed_pid_window.any() else 0.0
+  )
+  r["low_speed_brake_pid_addon_max"] = (
+    float(np.nanmin((wire - cc_accel)[low_speed_pid_window]))
+    if low_speed_pid_window.any() else 0.0
+  )
+  braking = pid & (cc_accel < -0.3) & ~low_speed_pid_window
   brake_addon = wire - cc_accel                       # <0 = the port is adding brake
   adding = brake_addon < -0.05
   already_past = aego < cc_accel - OVERSHOOT_MARGIN    # car already beyond commanded decel
@@ -573,7 +732,10 @@ def analyze(msgs, platform):
     #    These ask the only question the car port is accountable for: did the wire carry what the
     #    CarController was asked? See _following.
     following = _following(msgs, grid, cc_accel, active, pid, cc_pitch, vego, gaspressed,
-                           brakepressed, aego, gasf, windf, dt, (cc_stopping > 0.5) & active,
+                           brakepressed, aego,
+                           gas_output if learner_telemetry else None,
+                           brake_output if learner_telemetry else None,
+                           dt, (cc_stopping > 0.5) & active,
                            provenance.get("opendbc_commit"))
     r.update(following)
     if not following.get("domain_model_valid"):
@@ -652,8 +814,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   it. The wire is decoded from sent ACC_CONTROL on bus 1, not proxied off carOutput.
 
   Deliberately measures the BRAKE domain, which the historical `passthrough_rms` excluded. The
-  fresh brake path should carry the controller request unchanged in both domains, so any material
-  gap is now a regression rather than an intentional supplement.
+  source-mapped low-speed brake-tracking arm is measured separately below 3 m/s; other brake-domain
+  frames must carry the controller request unchanged.
 
   Returns brake-domain following error, sign disagreement, lifecycle regressions, and physical
   BRAKE_REQUEST burst metrics. The fresh path's raw request and fixed upstream threshold supply the
@@ -675,6 +837,12 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "reengagement_events": None, "reengagement_stale_sec": None,
          "reengagement_stale_events": None, "reengagement_stale_worst": None,
          "gas_handoff_events": None, "gas_handoff_max": None,
+         "gas_reentry_pulse_events": None, "gas_reentry_pulse_short_events": None,
+         "gas_reentry_pulse_tiny_events": None,
+         "gas_reentry_pulse_tiny_short_events": None,
+         "gas_reentry_pulse_duration_median": None,
+         "gas_reentry_pulse_tiny_duration_median": None,
+         "gas_reentry_pulse_entry_request_max": None,
          "direct_gas_to_brake": None, "direct_brake_to_gas": None,
          "gasf_by_speed": {}, "gasf_seed_by_speed": {}, "gasf_seconds_by_speed": {},
          "brake_toggle_edges": None, "brake_toggle_per_min": None,
@@ -694,6 +862,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "descent_hold_episodes": None, "descent_hold_sec": None, "descent_hold_longest": None,
          "domain_model_valid": False, "domain_model_note": None,
          "brake_passthrough_expected": False,
+         "low_speed_brake_pid_expected": False, "low_speed_brake_pid_frames": 0,
+         "low_speed_brake_pid_addon_mean": 0.0, "low_speed_brake_pid_addon_max": 0.0,
          "windf_shadow_eligible_min": None, "windf_shadow_start": None,
          "windf_shadow_end": None, "windf_shadow_min": None, "windf_shadow_max": None,
          "windf_shadow_drift": None, "windf_shadow_floor_frac": None,
@@ -728,12 +898,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   eng_all, vego_all = active.copy(), vego     # keep un-gated masks for stop/start metrics
 
   # Use the actual live gas domain and compare against the interpolated live seed over exactly
-  # the same frames. Broad midpoint bins made the old 8 m/s report structurally read high.
-  out.update(gasfactor_breakpoint_metrics(
-    vego_all, gasfactor, pid & ~gaspressed & ~brakepressed & (GAS > GAS_INACTIVE),
-    GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V,
-    half_width=GASF_SEED_HALF_WIDTH, min_exposure_s=GASF_SEED_MIN_ROUTE_S, dt=dt,
-  ))
+  # the same frames. This is available only on older routes whose carOutput field carried the
+  # learner; current upstream actuator semantics intentionally leave the report empty.
+  if gasfactor is not None:
+    out.update(gasfactor_breakpoint_metrics(
+      vego_all, gasfactor, pid & ~gaspressed & ~brakepressed & (GAS > GAS_INACTIVE),
+      GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V,
+      half_width=GASF_SEED_HALF_WIDTH, min_exposure_s=GASF_SEED_MIN_ROUTE_S, dt=dt,
+    ))
 
   # CUSTOM TOOLING: lifecycle metrics live in a pure array function so synthetic golden traces
   # can prove the one-frame transport allowance, stale re-engagement detection, and gas handoff
@@ -745,6 +917,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     command_period_s=CAN_COMMAND_PERIOD_S,
     reengage_window_s=REENGAGE_WINDOW_S,
     gas_inactive=GAS_INACTIVE,
+  ))
+  out.update(gas_reentry_pulse_metrics(
+    grid, requested, eng_all, vego_all, BR, brakepressed, GAS,
+    low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
+    gas_inactive=GAS_INACTIVE,
+    entry_request_max=GAS_REENTRY_PULSE_ENTRY_MAX,
+    short_duration_s=GAS_REENTRY_PULSE_MAX_S,
+    entry_window_s=GAS_REENTRY_PULSE_ENTRY_WINDOW_S,
   ))
   out.update(brake_episode_metrics(
     grid, aego, BR, eng_all, brakepressed, vego_all, pitch,
@@ -791,16 +971,27 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   bd = active & BR
   gd = active & ~BR & (GAS > GAS_INACTIVE)
   cd = active & ~BR & (GAS <= GAS_INACTIVE)
+  source_commit = (opendbc_commit or "")[:12]
+  low_speed_pid_expected = source_commit in LOW_SPEED_BRAKE_PID_COMMITS
+  low_speed_pid_window = (low_speed_pid_expected & active & (vego < 3.0) &
+                           (vego > 1e-3) & (requested < 0.0) & BR)
+  out["low_speed_brake_pid_expected"] = low_speed_pid_expected
+  out["low_speed_brake_pid_frames"] = int(low_speed_pid_window.sum())
+  if low_speed_pid_window.any():
+    low_speed_addon = err[low_speed_pid_window]
+    out["low_speed_brake_pid_addon_mean"] = float(np.nanmean(low_speed_addon))
+    out["low_speed_brake_pid_addon_max"] = float(np.nanmin(low_speed_addon))
   out["brake_domain_frac"] = float(bd.sum() / active.sum())
   out["coast_domain_frac"] = float(cd.sum() / active.sum())
   out["coast_domain_sec"] = float(cd.sum() * dt)
   out["coast_domain_events"] = int(np.sum(np.diff(cd.astype(np.int8), prepend=0) == 1))
   if gd.sum() > 50:
     out["follow_gas_rms"] = float(np.sqrt(np.nanmean(err[gd] ** 2)))
-  if bd.sum() > 50:
-    out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[bd] ** 2)))
+  follow_bd = bd & ~low_speed_pid_window
+  if follow_bd.sum() > 50:
+    out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[follow_bd] ** 2)))
     # Fresh brake semantics are passthrough, so a nonzero mean identifies port-side divergence.
-    out["follow_brake_mean"] = float(np.nanmean(err[bd]))
+    out["follow_brake_mean"] = float(np.nanmean(err[follow_bd]))
 
   # A positive request can lead the held 50 Hz command by one period. Keep transport skew visible
   # while grading only disagreement that survives the command-period grace.
@@ -817,7 +1008,10 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   )
   out["domain_model_valid"] = model_valid
   out["domain_model_note"] = model_note
-  out["brake_passthrough_expected"] = (opendbc_commit or "")[:12] in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
+  out["brake_passthrough_expected"] = (
+    source_commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
+    and source_commit not in LOW_SPEED_BRAKE_PID_COMMITS
+  )
   if model_valid:
     out.update(brake_release_hold_metrics(
       switch_accel, entry_threshold, requested, aego, BR, active,
@@ -925,6 +1119,20 @@ def verdicts(r):
            f"{r['plan_override_rms']:.3f}" if r.get("plan_override_rms") is not None else ""))
   if r["passthrough_rms"] is not None:
     add("passthrough RMS", r["passthrough_rms"] <= PASSTHROUGH_RMS_LIMIT, f"{r['passthrough_rms']:.3f} (<= {PASSTHROUGH_RMS_LIMIT})")
+  if r.get("lat_active_sec") is not None:
+    add("lateral telemetry (diagnostic)", True,
+        f"{r['lat_active_sec'] / 60.0:.1f} active min; request/output abs p95 "
+        f"{r['lat_request_abs_p95']:.3f}/{r.get('lat_output_abs_p95', float('nan')):.3f}; "
+        f"CAN abs p95/max {r.get('lat_output_torque_can_abs_p95', float('nan')):.0f}/"
+        f"{r.get('lat_output_torque_can_abs_max', float('nan')):.0f}; "
+        f"saturated {r['lat_saturated_frac'] * 100.0:.1f}%, "
+        f"steer overrides {r['steering_override_events']}, faults {r['steer_fault_events']}")
+  if r.get("lat_model_rms") is not None:
+    add("lateral model tracking (diagnostic)", True,
+        f"actual-desired lateral accel RMS {r['lat_model_rms']:.3f}, "
+        f"mean {r['lat_model_mean']:+.3f} m/s^2; steering angle/rate abs p95 "
+        f"{r.get('steering_angle_abs_p95', float('nan')):.1f}/"
+        f"{r.get('steering_rate_abs_p95', float('nan')):.1f}")
   if r["gasf_eff_mean"] is not None:
     ok = GASF_EFF_LO <= r["gasf_eff_min"] and r["gasf_eff_max"] <= GASF_EFF_HI and abs(r["gasf_drift"]) <= GASF_DRIFT_LIMIT
     add("gasfactor stability", ok, f"mean {r['gasf_eff_mean']:.2f} [{r['gasf_eff_min']:.2f},{r['gasf_eff_max']:.2f}] drift {r['gasf_drift']:+.2f}")
@@ -973,6 +1181,11 @@ def verdicts(r):
       f"{r['overshoot_frac']*100:.1f}% braking frames still adding past target "
       f"(addon mean {r.get('addon_mean', 0):+.3f}; Honda actuator bite {r.get('honda_bite_frac', 0)*100:.1f}% - NOT ours)",
       status="car port added brake authority" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
+  if r.get("low_speed_brake_pid_expected"):
+    add("low-speed brake tracking arm (diagnostic)", True,
+        f"{r.get('low_speed_brake_pid_frames', 0)} frames below 3 m/s; addon mean "
+        f"{r.get('low_speed_brake_pid_addon_mean', 0.0):+.3f}, most negative "
+        f"{r.get('low_speed_brake_pid_addon_max', 0.0):+.3f} m/s^2 (road validation required)")
   add("creep at stop", r["creep_frames"] < CREEP_MIN_FRAMES,
       f"{r['creep_frames']} frames sustained",
       status="creep comp (NOT Ford subtraction - see tune-evidence.md)" if r["creep_frames"] >= CREEP_MIN_FRAMES else None)
@@ -1033,6 +1246,20 @@ def verdicts(r):
     add("gas handoff command (diagnostic)", True,
         f"{r['gas_handoff_events']} inactive-to-live handoff(s), largest first command "
         f"{r['gas_handoff_max']:.0f} counts (no calibrated handoff limit)")
+  if r.get("gas_reentry_pulse_events") is not None:
+    duration = (f"{r['gas_reentry_pulse_duration_median']:.2f}s"
+                if r.get("gas_reentry_pulse_duration_median") is not None else "n/a")
+    tiny_duration = (f"{r['gas_reentry_pulse_tiny_duration_median']:.2f}s"
+                     if r.get("gas_reentry_pulse_tiny_duration_median") is not None else "n/a")
+    entry_request = (f"{r['gas_reentry_pulse_entry_request_max']:+.3f} m/s^2"
+                     if r.get("gas_reentry_pulse_entry_request_max") is not None else "n/a")
+    add("gas re-entry pulses (diagnostic)", True,
+        f"{r['gas_reentry_pulse_events']} coast re-entry(s), "
+        f"{r['gas_reentry_pulse_short_events']} under {GAS_REENTRY_PULSE_MAX_S:.1f}s, "
+        f"{r['gas_reentry_pulse_tiny_short_events']} tiny-request short pulse(s) "
+        f"(<= {GAS_REENTRY_PULSE_ENTRY_MAX:+.2f} m/s^2); median {duration}, "
+        f"tiny median {tiny_duration}, max entry request {entry_request} "
+        f"(no calibrated limit)")
   if r.get("direct_gas_to_brake") is not None:
     # Diagnostic only. Direct handoffs are observations, not a claimed comfort invariant.
     add("direct gas/brake handoffs (diagnostic)", True,
@@ -1219,6 +1446,20 @@ def _base_route(route):
   return m.group(0) if m else route
 
 
+def _local_segment_names(route, root=None):
+  """Return transferred local segments, excluding empty interrupted-pull directories."""
+  root = Path(root) if root is not None else Path(Paths.log_root())
+
+  def _seg_idx(name):
+    try:
+      return int(name.rsplit("--", 1)[-1])
+    except ValueError:
+      return -1
+
+  return sorted((name for name in os.listdir(root)
+                 if route in name and (root / name / "rlog.zst").is_file()), key=_seg_idx)
+
+
 def append_ledger(route, description, r, v):
   ts = datetime.now(UTC).strftime("%Y-%m-%d")
   row = {"date": ts, "route": route, "description": description or "",
@@ -1264,8 +1505,9 @@ def write_ledger_md(rows):
     "`follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` "
     "counts physical BRAKE_REQUEST edges.\n\n"
     "| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS "
-    "| gasf mean | windf mean | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | FLAGS |\n"
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+    "| legacy gasf | legacy windf | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | "
+    "lat CAN p95/max | lat sat | steer faults | FLAGS |\n"
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
   lines = []
   for x in rows:
     flags = [c["check"] for c in x.get("verdicts", []) if not c["ok"]]
@@ -1274,13 +1516,20 @@ def write_ledger_md(rows):
     flags_text = (", ".join(flags) if flags else "none").replace("|", "&#124;")
     branch = x.get("git_branch") or "-"   # "-" = row predates provenance tracking
     odbc = x.get("opendbc_commit") or "-"
+    lat_can = (f"{x['lat_output_torque_can_abs_p95']:.0f}/{x['lat_output_torque_can_abs_max']:.0f}"
+               if isinstance(x.get('lat_output_torque_can_abs_p95'), (int, float)) else '-')
+    lat_sat = (f"{x['lat_saturated_frac'] * 100:.1f}%"
+               if isinstance(x.get('lat_saturated_frac'), (int, float)) else '-')
+    steer_faults = (str(x['steer_fault_events'])
+                    if isinstance(x.get('steer_fault_events'), (int, float)) else '-')
     lines.append(f"| {x['date']} | {x['route']} | {branch} | {odbc} | {num(x, 'engaged_min')} | "
                  f"{num(x, 'engaged_mi')} | {x.get('crashes', '-')} | "
                  f"{fmt(x.get('track_rms'))} | {fmt(x.get('passthrough_rms'))} | "
                  f"{fmt(x.get('gasf_eff_mean'))} | {fmt(x.get('windf_mean'))} | "
                  f"{fmt(x.get('follow_gas_rms'))} | {fmt(x.get('follow_brake_rms'))} | "
                  f"{num(x, 'brake_toggle_max_10s', 0)} | "
-                 f"{num(x, 'override_rate')} | {num(x, 'takeover_rate')} | "
+                 f"{num(x, 'override_rate')} | {num(x, 'takeover_rate')} | {lat_can} | {lat_sat} | "
+                 f"{steer_faults} | "
                  f"{flags_text} |\n")
   LEDGER_MD.write_text(header + "".join(lines))
 
@@ -1299,12 +1548,7 @@ def main():
     # path list in the order given, so the unsorted version fed segments in shuffled order and
     # scrambled the whole timebase - producing negative log durations, absurd passthrough RMS and
     # degenerate 0.00 jerk. A lexical sort is not enough either: "--10" sorts before "--2".
-    def _seg_idx(name):
-      try:
-        return int(name.rsplit("--", 1)[-1])
-      except ValueError:
-        return -1
-    segs = sorted((s for s in os.listdir(Paths.log_root()) if args.route in s), key=_seg_idx)
+    segs = _local_segment_names(args.route)
     if not segs:
       raise SystemExit(f"no local segments matching '{args.route}' under {Paths.log_root()}")
     # RESOLVE the identifier to the full log id before it is ever used as a ledger key. A bare
@@ -1349,6 +1593,7 @@ def main():
              "brake-domain transition bursts",
              "sign disagreement", "ride harshness (felt)",
              "stop lurch (felt)"}
+  lateral = {"lateral telemetry (diagnostic)", "lateral model tracking (diagnostic)"}
   hardware = {"device thermal"}
   def show(group):
     for c in v:
@@ -1362,12 +1607,15 @@ def main():
     print("\n  DRIVER INTERVENTIONS (ground truth - what the driver overruled)")
     show(driver)
   print("\n  WATCHLIST (cross-brand candidate tweaks)")
-  show({c["check"] for c in v} - conv - driver - quality - hardware)
+  show({c["check"] for c in v} - conv - driver - quality - hardware - lateral)
   print("\n  MODEL FOLLOWING (did the wire carry what CarController was asked?)")
   show(quality)
   if any(c["check"] in hardware for c in v):
     print("\n  DEVICE HARDWARE")
     show(hardware)
+  if any(c["check"] in lateral for c in v):
+    print("\n  LATERAL TELEMETRY (diagnostic, not lane-tracking proof)")
+    show(lateral)
 
   if not args.no_ledger:
     append_ledger(args.route, args.description, r, v)

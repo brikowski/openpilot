@@ -8,6 +8,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pull_logs
 
 
+def test_select_all_new_includes_older_unvalidated_routes():
+  routes = [("00000001--old", 1.0, 2), ("00000002--new", 2.0, 3)]
+
+  targets, skipped, scope = pull_logs._select_routes(routes, {"00000001--done"}, all_new=True)
+
+  assert targets == routes
+  assert skipped == []
+  assert scope == "retained"
+
+
+def test_select_all_new_skips_every_ledgered_route():
+  routes = [("00000001--old", 1.0, 2), ("00000002--new", 2.0, 3)]
+
+  targets, skipped, scope = pull_logs._select_routes(routes, {"00000001--old"}, all_new=True)
+
+  assert targets == [routes[1]]
+  assert skipped == ["00000001--old"]
+  assert scope == "retained"
+
+
 def test_pull_retries_broken_pipe_with_partial_files_and_keepalives(monkeypatch, tmp_path):
   calls = []
 
