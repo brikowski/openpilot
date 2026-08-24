@@ -64,7 +64,7 @@
     {
       "label": "Deploy sunnypilot/staging",
       "type": "shell",
-      "command": "ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote get-url sunnypilot >/dev/null 2>&1 || git remote add sunnypilot https://github.com/sunnypilot/sunnypilot.git) && tools/op.sh switch sunnypilot staging && tools/op.sh build && (sudo reboot &) && exit 0\\\"\"",
+      "command": "ssh comma@192.168.1.200 \"bash -l -c \\\"cd /data/openpilot && (git remote get-url sunnypilot >/dev/null 2>&1 || git remote add sunnypilot https://github.com/sunnypilot/sunnypilot.git) && tools/op.sh switch sunnypilot staging && (sudo reboot &) && exit 0\\\"\"",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
