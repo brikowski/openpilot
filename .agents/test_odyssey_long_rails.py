@@ -162,6 +162,13 @@ class TestOdysseyLongRails(unittest.TestCase):
     downhill_gas = np.array([gas for _, gas, _ in downhill])
     np.testing.assert_array_equal(downhill_gas, level_gas)
 
+  def test_unidentified_windfactor_is_not_production_state(self):
+    """Keep unidentified drag learning offline until it has an attributable command benefit."""
+    CP = _car_params()
+    controller = interfaces[PLATFORM](CP.copy()).CC
+    for attribute in ("windfactor", "windfactor_before_brake", "windfactor_before_gasmax"):
+      assert not hasattr(controller, attribute), f"dead production learner state remains: {attribute}"
+
   def test_low_speed_nonpositive_request_never_selects_gas(self):
     """A lead-stop request may relax above -0.20 but must keep brake authority below 5 m/s."""
     for vego in (0.0, 1.0, 4.99):
@@ -178,20 +185,18 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert gas != GAS_INACTIVE, "positive low-speed start request did not select gas"
           assert brake_request == 0, "positive low-speed start request left brake active"
 
-  def test_low_speed_brake_pid_adds_only_when_aego_lags(self):
-    """A low-speed negative request gets a bounded correction only when the car under-decelerates."""
+  def test_low_speed_brake_command_matches_request(self):
+    """Honda's low-speed brake domain must not reshape the controller request."""
     accels = np.array([-0.21] * 30 + [-0.17] * 50)
     aegos = np.array([-0.21] * 10 + [0.5] * 70)
     rejects, seen = _run(True, accels, pitch=0.0, vego=1.0, aegos=aegos)
     assert not rejects
     commands = np.array([accel for accel, _, _ in seen])
-    assert set(commands[:5]) == {-21}, "zero tracking error should leave the raw request unchanged"
-    assert commands[5] < -21, "low-speed under-deceleration did not add brake authority"
-    assert commands[-1] < -17, "low-speed brake correction did not follow the relaxed negative request"
-    assert commands.min() >= ACCEL_MIN_COUNTS, "low-speed correction exceeded the Honda safety rail"
+    np.testing.assert_array_equal(commands[:15], np.full(15, -21))
+    np.testing.assert_array_equal(commands[15:], np.full(25, -17))
 
-  def test_low_speed_brake_pid_resets_when_longitudinal_control_is_inactive(self):
-    """An inactive interval must clear the low-speed integrator before positive re-engagement."""
+  def test_low_speed_positive_reengagement_has_no_stale_brake(self):
+    """An inactive interval must not leave stale braking on positive re-engagement."""
     active = np.array([True] * 60 + [False] * 20 + [True] * 20)
     accels = np.array([-0.21] * 60 + [0.0] * 20 + [0.1] * 20)
     aegos = np.array([0.5] * 60 + [2.0] * 20 + [0.0] * 20)
@@ -304,10 +309,10 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive start request"
 
   def test_lateral_defaults_follow_stock_lka_tune(self):
-    """Use the Odyssey RDM torque range while keeping the rest of lateral stock."""
+    """Use the Odyssey stock-LKA torque range and stock lateral calibration."""
     CP = _car_params()
-    self.assertEqual(list(CP.lateralParams.torqueBP), [0.0, 3840.0])
-    self.assertEqual(list(CP.lateralParams.torqueV), [0.0, 3840.0])
+    self.assertEqual(list(CP.lateralParams.torqueBP), [0.0, 2560.0])
+    self.assertEqual(list(CP.lateralParams.torqueV), [0.0, 2560.0])
     self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, 0.9)
     self.assertAlmostEqual(CP.steerActuatorDelay, 0.15)
     self.assertAlmostEqual(CP.steerActuatorDelay + 0.20, 0.35)

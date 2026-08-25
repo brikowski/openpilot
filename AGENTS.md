@@ -1,26 +1,34 @@
-# Odyssey longitudinal tune — cold-start rules
+# Odyssey command-following — cold-start rules
 
-Read this before changing the tune or its tooling. This file holds decisions and invariants;
-route history and derivations belong in [`.agents/tune-evidence.md`](.agents/tune-evidence.md).
+Read this before changing lateral or longitudinal behavior or its tooling. This file holds decisions
+and invariants; route history and derivations belong in [`.agents/tune-evidence.md`](.agents/tune-evidence.md).
 
 ## Project objective
 
-Make the Odyssey track `carControl.actuators.accel` as smoothly as Honda's stock radar commands the
-vehicle, while keeping the smallest practical delta from current `commaai/openpilot` and
-`commaai/opendbc` master.
+Make the Odyssey follow the commands produced by OpenPilot as smoothly and accurately as the vehicle
+allows, independently for lateral and longitudinal control, while keeping the smallest practical delta
+from current `commaai/openpilot` and `commaai/opendbc` master.
 
-- Treat stock radar as the benchmark for actuator transitions, episode shape, and achieved ride
-  response, not for its proprietary target selection.
+- Use every comparable private full-rate log, controlled maneuver, and ordinary-road result to find the
+  first repeatable divergence from the upstream plan/controller command through CAN to vehicle response.
+  Make only the smallest change supported by that evidence, then verify the result against a matched
+  baseline.
+- Treat the upstream OpenPilot command path as the primary functional reference. For longitudinal,
+  stock-radar traces remain a benchmark for actuator transitions, episode shape, and achieved ride
+  response, not for proprietary target selection. Lateral and longitudinal quality must be assessed
+  separately.
 - Prefer mechanisms already used on current upstream master. A fork-only mechanism needs a concise,
   PR-quality physical rationale, focused regression coverage, and an isolated road arm.
-- Minimize production code and change one mechanism per road comparison. Replay establishes command
-  shape only; promotion requires controlled maneuvers and ordinary-road evidence.
+- Minimize production code and change one mechanism per comparison. Replay establishes command shape
+  only; promotion requires controlled maneuvers and ordinary-road evidence.
+- Retire or remove tuning that is redundant, irrelevant, unproven, or no longer shows an attributable
+  improvement. Preserve rejected mechanisms as historical evidence, not as active behavior.
 - Preserve honest command attribution. If the vehicle cannot smoothly achieve a request, prefer the
   narrowest upstream-style limit before `carControl` over hiding the mismatch in Honda CAN shaping.
 
 ## What this branch is
 
-`ody-op` is the recovery baseline and shared tooling/evidence branch for the Honda Bosch A tune on
+`ody-op` is the recovery baseline and shared tooling/evidence branch for Honda Bosch command following on
 `HONDA_ODYSSEY_5G_MMR`. Experimental children inherit their validator, private-log tools, evidence,
 and standards from here; mechanism-specific controller code and rail assertions are tested on
 temporary child branches and promoted here only after the evidence supports them. Keep parent and
@@ -34,19 +42,32 @@ low-speed stop authority, and an OEM-aligned active-gas hold). It does not resto
 PID, compensated input, coast interlock, raw-split reference, or onset shaping. New model or radar
 experiments must start from a temporary child of `ody-op` and be deleted or promoted deliberately.
 
-Lateral is currently an isolated **3840 command-range arm** with the stock
-`latAccelFactor 0.9` and `steerActuatorDelay 0.15`; it is not yet road-proven. Keep 3840 unless a
-logged or road-tested symptom gives a reason to reduce it. The former 0.20 s fallback had no
-isolated road benefit and remains retired. `extract.py` and `validate_log.py` record lateral
-command/output, torque-controller saturation, steering response, overrides, and faults; these are
-diagnostics and not lane-tracking proof.
+The former `ody-op-radar` arm is closed after its first engaged route, and both implementation
+branches are deleted. It changed radar availability and published a camera-side object/fusion bank;
+it did not change the retained Honda longitudinal CAN translation. On route
+`00000043--a13083ebb4`, radar-marked lead selection and the planner command changed abruptly while
+physical brake-domain cycling and driver-felt gas/brake behavior worsened. Do not compensate for
+this perception/planner regression with gas or brake tuning. Preserve its route/source findings as
+historical evidence and use the vision-only `ody-op` baseline for future comparisons.
+
+Lateral is returned to the stock **2560 LKA command range**, `latAccelFactor 0.9`, and
+`steerActuatorDelay 0.15`. The isolated 3840 RDM-range arm is retired: it accumulated diagnostic
+exposure without an attributable tracking or lane-keeping improvement, and RDM's extra steering
+range relies on separate braking OpenPilot does not command. The former 0.20 s delay fallback also
+had no isolated road benefit. Reopen either value only for a repeatable logged symptom and a matched
+road comparison. `extract.py` and `validate_log.py` record lateral command/output, torque-controller
+saturation, steering response, overrides, and faults; these are diagnostics and not lane-tracking
+proof.
 
 ## Attribution boundary
 
-Trace questionable behavior in this order:
+Trace questionable lateral and longitudinal behavior independently in this order:
 
 `longitudinalPlan` → `carControl.actuators.accel` → `ACCEL_COMMAND` plus
 `GAS_COMMAND`/`BRAKE_REQUEST` → Honda ECU/vehicle response.
+
+For lateral behavior, trace the upstream lateral plan/controller command → `carControl` steering
+actuator output → Honda steering CAN → Honda ECU/vehicle response.
 
 `carControl.actuators.accel` is the controller input; `longitudinalPlan.aTarget` is upstream and
 `longcontrol` may legitimately override it. Numeric `ACCEL_COMMAND` fidelity is not sufficient if
@@ -61,6 +82,9 @@ Use that first divergence to choose the work:
   Honda translation.
 - If numeric CAN and its domain are correct but `aEgo` bites or lags, calibrate Honda actuator
   response without reshaping the model command.
+- Apply the same boundary to lateral behavior: do not use Honda steering shaping to compensate for an
+  upstream lateral-plan or controller error, and do not retune a correct command path without a
+  repeatable vehicle-response symptom.
 
 ## Evidence rules
 
@@ -75,6 +99,9 @@ Use that first divergence to choose the work:
    event. Name it after the symptom, not a proposed fix.
 5. A threshold flag identifies an event to inspect; it is not permission to tune.
 6. Treat comments and prose as leads. Verify current code, DBC semantics, safety limits, and logs.
+7. Every candidate must have an explicit keep, change, or retire decision after comparing it with a
+   matched baseline and checking the relevant lateral or longitudinal exposure. Do not retain tuning
+   merely because it is historical or already present.
 
 ## Workflow
 
@@ -83,6 +110,8 @@ Use that first divergence to choose the work:
 - Run every drive through `.agents/validate_log.py`, which writes one row per route to
   `.agents/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
+- Review lateral and longitudinal behavior as separate evidence streams; a result on one axis does
+  not authorize a change on the other.
 - Car-port edits follow `.claude/skills/comma-standards/SKILL.md`. Keep production comments PR-lean:
   explain the invariant or reason; keep route numbers, dates, and experiment history in evidence.
 - `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The
@@ -145,11 +174,13 @@ calculated command immediately. Gas and brake remain mutually exclusive, disenga
 longitudinal command, Panda bounds command magnitude, and positive stop-release requests select gas
 immediately. The new route-43 gas arm leaves that gasfactor calibration and the three-domain brake
 candidate unchanged, but removes unverified wind/grade feedforward from the actual `GAS_COMMAND`.
-Windfactor remains logged as diagnostic-only learner state; it cannot choose the brake domain or add
-wire force. The latest full non-Experimental route still had 13 sub-second gas episodes beginning at
-tiny positive cruise requests before crossing the `-0.20` release boundary. That is a separate
-gas-domain re-entry arm; the current `-0.50` brake arm does not claim to resolve it. This is a
-command-path isolation experiment, not a road-proven comfort improvement.
+The unidentifiable production windfactor learner is retired as dead state: it was not published as
+telemetry and could not choose a domain or affect either wire command. The read-only offline shadow
+remains available for future drag identification. The latest full non-Experimental route still had
+13 sub-second gas episodes beginning at tiny positive cruise requests before crossing the `-0.20`
+release boundary. That is a separate gas-domain re-entry arm; the current `-0.50` brake arm does not
+claim to resolve it. This is a command-path isolation experiment, not a road-proven comfort
+improvement.
 
 The first post-`b472c9afe` ordinary-road uploads were thin: route `00000052--5550e053e9` had 5.7
 engaged minutes and route `00000053--360703793d` had 5.5; route `00000051--f714a28f5f` was
@@ -174,11 +205,19 @@ route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s,
 peak 3/10 s on `ody-op` route `00000026--bfe3fd933b`. The current upstream-pinned Honda path still
 uses the same raw request and fixed -0.20 split, so that comparison remains behaviorally relevant.
 
+The supplemental low-speed brake PID is retired. Corrected exact-source metrics proved that the old
+zero-exposure ledger values were caused by an impossible above-3/below-3 m/s mask; exposed routes
+showed small real command additions but no matched road A/B establishing benefit. Their measured
+stop lurches were predominantly downstream of `ACCEL_COMMAND`, and Honda Bosch already closes its
+own acceleration loop. Keep low-speed non-positive requests in the brake domain, but send the raw
+clipped `carControl.actuators.accel` command. Reopen command shaping only for a repeatable first
+divergence at the wire and an isolated controlled-road result.
+
 Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, exposure-qualified,
 per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
 
-The production windfactor learner is not independently identified from the gasfactor learner and
-grade compensation. Do not call it validated or include it among the known-good behavior. It is
-carried unchanged only so the brake-domain candidate does not also become a gas-powertrain
-experiment. Any removal or replacement must be its own arm, with gasfactor frozen or partitioned
-during identification because both learners use the same tracking error.
+The former production windfactor learner was not independently identified from gasfactor and grade,
+never affected commands after wind/grade feedforward was removed, and is now retired. Do not restore
+it merely as diagnostic state. Any future drag replacement must first remain offline and must freeze
+or partition gasfactor during identification because both estimates otherwise use the same tracking
+error; promotion would require its own isolated road arm.

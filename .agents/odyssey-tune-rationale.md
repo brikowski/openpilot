@@ -6,30 +6,29 @@ a substitute for current code, DBC semantics, or full-rate logs.
 
 ## Current design
 
-- Lateral uses the isolated 3840 command-range arm with the stock-derived torque tune.
-  `steerActuatorDelay` is the stock 0.15 s. The former 0.20 s fallback had no isolated evidence of
-  benefit and was retired on 2026-08-11; the 3840 range remains a separate road-screen item.
+- Lateral uses the stock 2560 LKA command range, stock-derived torque tune, and stock 0.15 s
+  `steerActuatorDelay`. The unmatched 3840 RDM-range arm and former 0.20 s delay fallback had no
+  isolated evidence of benefit and are retired.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
 - The active gas arm keeps the speed-scheduled gasfactor calibration but sends `GAS_COMMAND` from
-  the controller request only. Pitch and learned aerodynamic-drag data remain available for
-  diagnostic analysis; the wind/grade terms do not select the brake domain, change
-  `ACCEL_COMMAND`, or add wire force. Command domains use only the raw request and speed.
+  the controller request only. Pitch and aerodynamic-drag estimates remain available in offline
+  diagnostic analysis; the retired production windfactor state and wind/grade terms do not select
+  the brake domain, change `ACCEL_COMMAND`, or add wire force. Command domains use only the raw
+  request and speed.
 - Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. At road speed,
-  the `ody-op-test2` path leaves that request raw and only selects Honda's gas/coast/brake domain.
-  Below 3 m/s, the isolated low-speed stop arm may add a one-sided integral correction
-  (`K_i=0.5`, capped at `-2.0 m/s2`) when the controller is already selecting brake; it resets on
-  disengagement and domain exit and is not part of the road-speed command path.
-- `ody-op` retains `BRAKE_DOMAIN_ENTRY=-0.30`, `DOMAIN_HYST_EXIT=0.20`, compensated road-speed
-  switching, and its one-sided brake integral. `ody-op-test` is frozen after its stacked coast,
-  threshold, integral, onset, and release experiments failed the reported downhill symptom.
+  the current path leaves that request raw and only selects Honda's gas/coast/brake domain. The
+  former one-sided integral correction below 3 m/s is retired for lack of an attributable road
+  benefit; low-speed non-positive requests still retain Honda brake-domain authority.
+- `ody-op-test` is frozen after its stacked coast, threshold, integral, onset, and release
+  experiments failed the reported downhill symptom.
 - The raw upstream-split `ody-op-test2` reference failed its first road screen. The current
   `-0.50` arm still removes the compensated threshold, release hysteresis, and onset shaping. At
   road speed it keeps raw clipped `ACCEL_COMMAND`, coasts for requests from `0` through `-0.50`,
-  brakes below `-0.50`, and retains brake for non-positive requests below 5 m/s. The separate
-  low-speed integral arm is limited to the existing brake domain below 3 m/s. This is a
-  software-validated, road-unvalidated set of arms.
+  brakes below `-0.50`, and retains brake for non-positive requests below 5 m/s. This is a
+  software-validated command path; the latest removals and stock lateral restoration still require
+  controlled and ordinary-road validation.
 - Eligible gas receives the calculated `GAS_COMMAND` immediately once the gas domain is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. Fresh road-speed gas entry is separately withheld for
@@ -99,9 +98,11 @@ a substitute for current code, DBC semantics, or full-rate logs.
   logs. Its value is therefore unproven, not "confirmed not dead" and not part of the known-good set.
   Route 43 also showed the candidate's GAS_COMMAND far above the pooled stock-radar shadow model at
   small positive requests. The smallest isolated arm removes wind/grade feedforward from the wire
-  while retaining the road-supported gasfactor calibration; windfactor remains diagnostic-only so a
-  later identification can be compared without changing the brake path. Freeze or partition
-  gasfactor during any drag identification because the current learners use the same error.
+  while retaining the road-supported gasfactor calibration. The production windfactor learner was
+  subsequently removed because it had no command or telemetry consumer; the read-only offline
+  shadow remains available for later identification without changing the brake path. Freeze or
+  partition gasfactor during any drag identification because both estimates otherwise use the same
+  error.
 - The bounded onset shaper was withdrawn before road validation when the calibration audit found
   that every numeric brake value in that stack was still provisional. Its `-0.10`, `0.60 m/s3`,
   `10 m/s`, and `-1.5 m/s2` values remain historical hypotheses, not retained behavior.

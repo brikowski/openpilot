@@ -38,6 +38,7 @@ from tuning_metrics import (
   gasfactor_breakpoint_metrics,
   gas_reentry_pulse_metrics,
   hold_last as _hold_last,
+  low_speed_brake_pid_metrics,
   max_edges_in_window as _max_edges_in_window,
   physical_edges as _physical_edges,
   sample_rate as _rate,
@@ -146,6 +147,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "f453a51e0081": -0.30,  # low-speed brake-tracking arm; road-speed domain is unchanged
   "b472c9afe": -0.50,  # isolated road-speed brake-entry arm; road validation pending
   "41aaf59ee6f2": -0.50,  # same arm plus the isolated road-speed gas re-entry threshold
+  "507559bc03ba": -0.50,  # tested baseline merge; Honda longitudinal source matches 41aaf59ee6f2
+  "955bd74c3562": -0.50,  # radar-only child; Honda longitudinal source matches its 507559bc03ba parent
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -158,6 +161,8 @@ THREE_DOMAIN_COMMITS = {
   "f453a51e0081",  # low-speed brake PID arm; source-matched domain model remains three-domain
   "b472c9afe",  # isolated -0.50 road-speed brake-entry arm
   "41aaf59ee6f2",  # same arm plus the isolated road-speed gas re-entry threshold
+  "507559bc03ba",  # tested baseline merge, source-identical Honda longitudinal output
+  "955bd74c3562",  # radar-only child, source-identical Honda longitudinal output
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
@@ -174,6 +179,8 @@ LEGACY_LEARNER_TELEMETRY_COMMITS = {
 LOW_SPEED_BRAKE_PID_COMMITS = {
   "f453a51e0081",  # intentional ACCEL_COMMAND divergence below 3 m/s when brake is selected
   "41aaf59ee6f2",  # current exact-pinned test arm retains the same low-speed correction
+  "507559bc03ba",  # tested baseline merge retains the same low-speed correction
+  "955bd74c3562",  # radar-only child retains the same low-speed correction
 }
 COMPENSATED_DOMAIN_COMMITS = {
   "13cfc73646e1",  # ody-op telemetry cleanup, 0.50 release width
@@ -647,15 +654,6 @@ def analyze(msgs, platform):
   cmd_smooth = _causal_lpf(cc_accel, dt, JERK_SMOOTH_TAU)
   low_speed_pid_window = (low_speed_pid_expected & pid & (vego > 1e-3) & (vego < 3.0) &
                           (cc_accel < 0.0))
-  r["low_speed_brake_pid_frames"] = int(low_speed_pid_window.sum())
-  r["low_speed_brake_pid_addon_mean"] = (
-    float(np.nanmean((wire - cc_accel)[low_speed_pid_window]))
-    if low_speed_pid_window.any() else 0.0
-  )
-  r["low_speed_brake_pid_addon_max"] = (
-    float(np.nanmin((wire - cc_accel)[low_speed_pid_window]))
-    if low_speed_pid_window.any() else 0.0
-  )
   braking = pid & (cc_accel < -0.3) & ~low_speed_pid_window
   brake_addon = wire - cc_accel                       # <0 = the port is adding brake
   adding = brake_addon < -0.05
@@ -821,6 +819,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   BRAKE_REQUEST burst metrics. The fresh path's raw request and fixed upstream threshold supply the
   exact domain-decision input below.
   """
+  source_commit = (opendbc_commit or "")[:12]
+  low_speed_pid_expected = source_commit in LOW_SPEED_BRAKE_PID_COMMITS
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
          "brake_domain_frac": None, "coast_domain_frac": None,
          "coast_domain_sec": None, "coast_domain_events": None,
@@ -862,7 +862,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "descent_hold_episodes": None, "descent_hold_sec": None, "descent_hold_longest": None,
          "domain_model_valid": False, "domain_model_note": None,
          "brake_passthrough_expected": False,
-         "low_speed_brake_pid_expected": False, "low_speed_brake_pid_frames": 0,
+         "low_speed_brake_pid_expected": low_speed_pid_expected, "low_speed_brake_pid_frames": 0,
          "low_speed_brake_pid_addon_mean": 0.0, "low_speed_brake_pid_addon_max": 0.0,
          "windf_shadow_eligible_min": None, "windf_shadow_start": None,
          "windf_shadow_end": None, "windf_shadow_min": None, "windf_shadow_max": None,
@@ -896,6 +896,10 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   GAS = _hold_last(grid, t, gas)
   err = AC - requested
   eng_all, vego_all = active.copy(), vego     # keep un-gated masks for stop/start metrics
+  out.update(low_speed_brake_pid_metrics(
+    requested, AC, vego_all, pid, BR,
+    expected=low_speed_pid_expected, min_speed=1e-3, max_speed=3.0,
+  ))
 
   # Use the actual live gas domain and compare against the interpolated live seed over exactly
   # the same frames. This is available only on older routes whose carOutput field carried the
@@ -971,23 +975,13 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   bd = active & BR
   gd = active & ~BR & (GAS > GAS_INACTIVE)
   cd = active & ~BR & (GAS <= GAS_INACTIVE)
-  source_commit = (opendbc_commit or "")[:12]
-  low_speed_pid_expected = source_commit in LOW_SPEED_BRAKE_PID_COMMITS
-  low_speed_pid_window = (low_speed_pid_expected & active & (vego < 3.0) &
-                           (vego > 1e-3) & (requested < 0.0) & BR)
-  out["low_speed_brake_pid_expected"] = low_speed_pid_expected
-  out["low_speed_brake_pid_frames"] = int(low_speed_pid_window.sum())
-  if low_speed_pid_window.any():
-    low_speed_addon = err[low_speed_pid_window]
-    out["low_speed_brake_pid_addon_mean"] = float(np.nanmean(low_speed_addon))
-    out["low_speed_brake_pid_addon_max"] = float(np.nanmin(low_speed_addon))
   out["brake_domain_frac"] = float(bd.sum() / active.sum())
   out["coast_domain_frac"] = float(cd.sum() / active.sum())
   out["coast_domain_sec"] = float(cd.sum() * dt)
   out["coast_domain_events"] = int(np.sum(np.diff(cd.astype(np.int8), prepend=0) == 1))
   if gd.sum() > 50:
     out["follow_gas_rms"] = float(np.sqrt(np.nanmean(err[gd] ** 2)))
-  follow_bd = bd & ~low_speed_pid_window
+  follow_bd = bd
   if follow_bd.sum() > 50:
     out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[follow_bd] ** 2)))
     # Fresh brake semantics are passthrough, so a nonzero mean identifies port-side divergence.

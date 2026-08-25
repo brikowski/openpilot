@@ -29,6 +29,7 @@ from tuning_metrics import (
   gasfactor_breakpoint_metrics,
   gas_reentry_pulse_metrics,
   hold_last,
+  low_speed_brake_pid_metrics,
   max_edges_in_window,
   physical_edges,
   post_edge_window,
@@ -36,6 +37,29 @@ from tuning_metrics import (
   sign_disagreement_metrics,
   stop_lurch_metrics,
 )
+
+
+def test_low_speed_brake_pid_metrics_use_stop_frames_before_following_speed_gate():
+  requested = np.array([-0.2, -0.2, -0.2, -0.2, 0.1, -0.2])
+  wire = np.array([-0.2, -0.3, -0.4, -0.5, 0.1, -0.6])
+  speed = np.array([4.0, 2.5, 1.5, 0.5, 0.5, 0.0])
+  active_pid = np.ones(6, dtype=bool)
+  brake_request = np.array([True, True, True, True, False, True])
+
+  metrics = low_speed_brake_pid_metrics(
+    requested, wire, speed, active_pid, brake_request,
+    expected=True, min_speed=1e-3, max_speed=3.0,
+  )
+  assert metrics["low_speed_brake_pid_expected"]
+  assert metrics["low_speed_brake_pid_frames"] == 3
+  assert np.isclose(metrics["low_speed_brake_pid_addon_mean"], -0.2)
+  assert np.isclose(metrics["low_speed_brake_pid_addon_max"], -0.3)
+
+  inactive = low_speed_brake_pid_metrics(
+    requested, wire, speed, active_pid, brake_request,
+    expected=False, min_speed=1e-3, max_speed=3.0,
+  )
+  assert inactive["low_speed_brake_pid_frames"] == 0
 
 
 def test_local_segment_names_ignore_empty_interrupted_pull_directories(tmp_path):
@@ -104,17 +128,17 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   np.testing.assert_array_equal(threshold[:100], np.zeros(100))
   np.testing.assert_array_equal(threshold[100:], np.full(100, -0.50))
 
-  # The exact-pinned deployed test arm must stay source-mapped; otherwise its road evidence would
-  # silently lose the domain and low-speed attribution checks.
-  current_commit = "41aaf59ee6f2"
-  assert current_commit in THREE_DOMAIN_COMMITS
-  assert current_commit in LOW_SPEED_BRAKE_PID_COMMITS
-  _, current_threshold, valid, note = _domain_model(
-    current_commit, requested, speed, pitch, windfactor, 0.01,
-  )
-  assert valid and note == "raw three-domain coast split"
-  np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
-  np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
+  # Exact-pinned deployed revisions with source-identical Honda longitudinal output must stay mapped;
+  # otherwise their road evidence silently loses the domain and low-speed attribution checks.
+  for current_commit in ("41aaf59ee6f2", "507559bc03ba", "955bd74c3562"):
+    assert current_commit in THREE_DOMAIN_COMMITS
+    assert current_commit in LOW_SPEED_BRAKE_PID_COMMITS
+    _, current_threshold, valid, note = _domain_model(
+      current_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+    assert valid and note == "raw three-domain coast split"
+    np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+    np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.

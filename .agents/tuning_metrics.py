@@ -314,6 +314,22 @@ def command_transition_metrics(grid, requested, engaged, vego, brake_pressed, br
   }
 
 
+def low_speed_brake_pid_metrics(requested, wire_accel, speed, active_pid, brake_request, *,
+                                expected, min_speed, max_speed):
+  """Measure source-mapped low-speed command divergence before any road-speed following gate."""
+  eligible = (active_pid & brake_request & (speed > min_speed) & (speed < max_speed) &
+              (requested < 0.0))
+  if not expected:
+    eligible &= False
+  addon = wire_accel - requested
+  return {
+    "low_speed_brake_pid_expected": bool(expected),
+    "low_speed_brake_pid_frames": int(eligible.sum()),
+    "low_speed_brake_pid_addon_mean": float(np.nanmean(addon[eligible])) if eligible.any() else 0.0,
+    "low_speed_brake_pid_addon_max": float(np.nanmin(addon[eligible])) if eligible.any() else 0.0,
+  }
+
+
 def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitch, *,
                               request_threshold, downhill_pitch, dt, transition_grace_s):
   """Measure sustained brake/accel disagreement and separate grade-owned exposure.
