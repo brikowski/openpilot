@@ -11,7 +11,12 @@ import numpy as np
 
 from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.honda.values import CAR, CarControllerParams
+from opendbc.car.honda.values import (
+  CAR,
+  CarControllerParams,
+  ODYSSEY_GAS_FACTOR_SPEED_BP,
+  ODYSSEY_GAS_FACTOR_SPEED_V,
+)
 from opendbc.safety.tests.libsafety import libsafety_py
 
 PLATFORM = CAR.HONDA_ODYSSEY_5G_MMR
@@ -82,6 +87,14 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_gas_factor_seed_is_per_car_parameter_data(self):
+    """The Odyssey powertrain seed must not remain shared controller-module state."""
+    params = CarControllerParams(_car_params())
+    assert params.GAS_FACTOR_SPEED_BP == ODYSSEY_GAS_FACTOR_SPEED_BP
+    assert params.GAS_FACTOR_SPEED_V == ODYSSEY_GAS_FACTOR_SPEED_V
+    assert not hasattr(CarControllerParams, "GAS_FACTOR_SPEED_BP")
+    assert not hasattr(CarControllerParams, "GAS_FACTOR_SPEED_V")
+
   def test_brake_command_matches_request_without_supplement_or_shaping(self):
     for name, vego, state, pitch in (
       ("road", 20.0, LongCtrlState.pid, 0.0),

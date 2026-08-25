@@ -18,11 +18,11 @@ import numpy as np
 from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.tools.lib.logreader import LogReader
 from openpilot.common.hardware.hw import Paths
-# Compare learned gas factors against the LIVE seed table, so if the seed is retuned this
+# Compare learned gas factors against the live per-car seed table, so if the seed is retuned this
 # metric automatically measures against the new values instead of a stale copy.
-from opendbc.car.honda.carcontroller import (
-  GAS_FACTOR_SPEED_BP,
-  GAS_FACTOR_SPEED_V,
+from opendbc.car.honda.values import (
+  ODYSSEY_GAS_FACTOR_SPEED_BP as GAS_FACTOR_SPEED_BP,
+  ODYSSEY_GAS_FACTOR_SPEED_V as GAS_FACTOR_SPEED_V,
 )
 # Same reason: read the interface accel rails from the live params, not a copied number.
 from opendbc.car.honda.values import CarControllerParams as HondaParams
