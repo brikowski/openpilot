@@ -1100,6 +1100,16 @@ mechanism:
   `0.040 m/s2`, and zero saturation, overrides, or steering faults. It adds no evidence to retain
   the custom 3840 arm and does not independently prove the 2560 restoration's road behavior.
 
+The second engaged radar route `00000042--73aeb05783` ran the same published radar pair for 9.31
+engaged minutes / 6.95 engaged miles. It measured 22 physical brake-domain edges, 3 brake-to-gas
+handoffs above 5 m/s, 18 coast-to-gas re-entries (3 shorter than 1 s), 2 brake takeovers, and felt
+jerk RMS `0.462 m/s3` versus `0.356 m/s3` commanded. Request-to-wire following remained numerically
+close (`0.0098/0.0248 m/s2` gas/brake RMS), while Honda actuator bite appeared on 10.0% of braking
+frames. This reinforces rejecting the radar arm for engaged use, but it is not a radar-only causal
+comparison: the route also exercised the then-current low-speed brake-PID stack (`1,405` eligible
+frames), and terrain/session effects are not controlled. Preserve it as supporting failure evidence,
+not as permission to retune gas, brake, or the planner.
+
 The branch changed only radar availability, the radar DBC, and `RadarInterface`; it did not change
 Honda `carcontroller.py`. The first new divergence is therefore the camera-side object bank feeding
 `radard`/lead selection and the resulting planner command, not direct gas/brake CAN translation.
