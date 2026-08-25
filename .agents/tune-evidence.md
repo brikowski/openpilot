@@ -1090,6 +1090,33 @@ numeric `ACCEL_COMMAND`, and all command shaping. It remains road-unproven becau
 the vehicle response and predicts 12 additional route-wide edges; reject it for renewed tapping,
 excess braking, or incomplete stops.
 
+### Post-`-0.30` route 45 (2026-08-25)
+
+Route `00000045--6774d01fb4` ran parent `7e315df79887` with nested opendbc
+`6ff9761fc72e`, the isolated `-0.30` road-speed brake-entry arm. It logged 40.1 minutes but only
+7.9 engaged minutes / 8.4 engaged miles, so it is thin context rather than a promotion drive. It
+had only 0.009 downhill minutes and therefore does not test the reported descent behavior.
+
+The route produced 16 physical brake-domain edges, 2.02/min overall, peak 2/10 s, minimum gap
+5.46 s, and eight brake episodes with median duration 7.92 s and 80% command depth in 1.15 s.
+All observed road-speed brake entries occurred at approximately `-0.30` to `-0.32 m/s2`; there
+were no direct gas/brake handoffs, no sub-second coast-to-gas re-entries, and no sustained sign
+disagreement. `carControl`-to-wire following remained close in both gas and brake domains
+(`0.0057/0.0055 m/s2` RMS). Achieved jerk remained amplified downstream (`0.240` versus `0.125
+m/s3` commanded, 1.9x; brake `0.291`), so this route does not establish a vehicle-comfort fix.
+
+The two driver brake presses are not clean failures of the new threshold. At `500.539 s`, the
+vehicle had no lead and the request had moved from about `-0.09` to `+0.02 m/s2` with no
+`BRAKE_REQUEST`; at `2214.640 s`, a lead was present, but the request had moved from a prior
+`-0.33` brake request through `+0.16 m/s2`, releasing the brake domain before the press. Both
+events are retained as thin driver-intervention context, not as evidence to add brake authority.
+
+**Decision:** keep `-0.30` as the isolated candidate for a matched descent and lead-stop drive,
+but do not promote it as a comfort improvement. Route 45 does not reject the arm, and its absence
+of downhill exposure cannot answer the active road question. No other lateral or longitudinal
+tuning changes are authorized from this route; lateral remains diagnostic-only at the stock 2560
+range with no saturation or fault evidence.
+
 ### Bosch-A object-bank decoder arm (2026-08-25)
 
 `ody-op-radar` ports the five-file decoder change from `mvl-boston/opendbc#669` at exact source
