@@ -126,7 +126,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert valid and note == "raw three-domain coast split"
   np.testing.assert_array_equal(switch, requested)
   np.testing.assert_array_equal(threshold[:100], np.zeros(100))
-  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.50))
+  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.30))
 
   # Exact-pinned deployed revisions with source-identical Honda longitudinal output must stay mapped;
   # otherwise their road evidence silently loses the domain and low-speed attribution checks.
@@ -139,6 +139,27 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
     assert valid and note == "raw three-domain coast split"
     np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
     np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
+
+  # The command-fidelity baseline keeps the same domain thresholds but deliberately removes the
+  # low-speed supplemental brake PID. Its gas-seed ownership refactor is behavior-identical.
+  for current_commit in ("09a52a2bf003", "e86b4ba94621"):
+    assert current_commit in THREE_DOMAIN_COMMITS
+    assert current_commit not in LOW_SPEED_BRAKE_PID_COMMITS
+    _, current_threshold, valid, note = _domain_model(
+      current_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+    assert valid and note == "raw three-domain coast split"
+    np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+    np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
+
+  _, current_threshold, valid, note = _domain_model(
+    "6ff9761fc72e", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert "6ff9761fc72e" in THREE_DOMAIN_COMMITS
+  assert "6ff9761fc72e" not in LOW_SPEED_BRAKE_PID_COMMITS
+  assert valid and note == "raw three-domain coast split"
+  np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+  np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.30))
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.

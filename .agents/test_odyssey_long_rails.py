@@ -120,18 +120,18 @@ class TestOdysseyLongRails(unittest.TestCase):
         with self.subTest(vego=vego, pitch=pitch):
           # These requests bracket the upstream -0.20 split in the failed route. They must remain
           # neutral; a stronger request still gets immediate brake authority and positive gets gas.
-          accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.31] * 20 + [-0.49] * 20 + [-0.51] * 20 + [0.10] * 20)
+          accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.29] * 20 + [-0.31] * 20 + [0.10] * 20)
           rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
           assert not rejects
-          assert {-18, -23, -31, -49, -51, 10}.issubset({accel for accel, _, _ in seen})
+          assert {-18, -23, -29, -31, 10}.issubset({accel for accel, _, _ in seen})
           for accel, gas, brake_request in seen:
             if accel in (-18, -23):
               assert gas == GAS_INACTIVE, "negative road request left GAS_COMMAND active"
               assert brake_request == 0, "raw -0.20 crossing still toggled BRAKE_REQUEST"
-            elif accel == -51:
+            elif accel == -31:
               assert gas == GAS_INACTIVE
               assert brake_request == 1, "stronger road request did not select brake immediately"
-            elif accel in (-31, -49):
+            elif accel == -29:
               assert gas == GAS_INACTIVE
               assert brake_request == 0, "mild road request did not remain in coast"
             elif accel == 10:

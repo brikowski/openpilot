@@ -185,3 +185,4 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-25 | 00000042--73aeb05783 | ody-op-radar | 955bd74c3562 | 9.3 | 6.9 | 0 | 0.266 | 0.010 | - | - | 0.010 | 0.025 | 3 | 0.0 | 2.1 | 1553/3840 | 0.2% | 0 | ride harshness (felt) |
 | 2026-08-25 | 00000041--72ced284ad | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
 | 2026-08-25 | 00000040--5ba3c4a46c | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-08-25 | 00000044--1f70122a52 | ody-op | 09a52a2bf003 | 12.8 | 9.4 | 0 | 0.233 | 0.006 | - | - | 0.008 | 0.011 | 6 | 0.0 | 4.7 | 1252/2560 | 0.0% | 0 | brake takeovers, brake-domain transition bursts |

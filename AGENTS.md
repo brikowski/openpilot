@@ -154,19 +154,21 @@ relaxed from `-0.21` to `-0.18` below 2 mph, the raw split selected gas, speed r
 took over. The planner also withheld `shouldStop` until near zero; a car-port domain change cannot
 repair that upstream stop decision.
 
-The current `-0.50` brake-entry arm keeps `ACCEL_COMMAND` as the clipped raw request and uses state
-only to choose Honda's binary command domains. At road speed, brake enters below `-0.50` and remains
-selected while the request is negative; a positive request releases it immediately. An active gas
-command remains live down to Honda's upstream `-0.20` split, but after coast it re-enters only for a
-positive request. Below 5 m/s, non-positive requests select brake and any positive start request
-selects gas immediately. The earlier `-0.30` replay results on routes 41/42 are retained as command-
-shape evidence for that predecessor, not as validation of this arm. Controlled and ordinary-road
-drives must reject late onset, excess overspeed, renewed tapping, gas pulsing, or incomplete stops.
+The three-domain arm keeps `ACCEL_COMMAND` as the clipped raw request and uses state only to choose
+Honda's binary command domains. At road speed, brake remains selected while the request is negative
+and a positive request releases it immediately. An active gas command remains live down to Honda's
+upstream `-0.20` split, but after coast it re-enters only for a positive request. Below 5 m/s,
+non-positive requests select brake and any positive start request selects gas immediately.
 
-The `-0.50` arm changes one road-speed entry constant only; it does not change the gasfactor, gas
-handoff semantics, low-speed stop authority, or numeric `ACCEL_COMMAND`. It passed the current
-ordinary-road screen without the raw-split burst pattern and is retained in `ody-op`; controlled
-maneuvers and terrain-matched follow-up drives remain necessary for any further comfort claim.
+The retained `-0.50` entry passed an earlier ordinary-road screen without the raw-split burst
+pattern, but route `00000044--1f70122a52` now rejects its late physical onset. It withheld the brake
+domain for 10.05 s and 2.45 s beyond a `-0.30` entry during the two reported lead approaches, then
+activated Honda at about `-0.50 m/s2`. The same mechanism delayed the six reported downhill entries
+by 0.44-2.85 s versus `-0.30`; achieved acceleration changed from positive to as low as
+`-1.26 m/s2` in the following second. The current isolated arm therefore changes only road-speed
+entry back to `-0.30`. Frozen-input analysis predicts 40 route-wide physical edges versus 28 at
+`-0.50`, while the reported downhill burst peak remains 6/10 s, so this is a road-unproven tradeoff,
+not a comfort fix. Reject it for renewed tapping, excess braking, or incomplete stops.
 
 The retained custom longitudinal behavior outside brake authority is the road-supported Odyssey
 gasfactor calibration. The unproven 60-count handoff ramp is retired: eligible gas now receives the
@@ -178,7 +180,7 @@ The unidentifiable production windfactor learner is retired as dead state: it wa
 telemetry and could not choose a domain or affect either wire command. The read-only offline shadow
 remains available for future drag identification. The latest full non-Experimental route still had
 13 sub-second gas episodes beginning at tiny positive cruise requests before crossing the `-0.20`
-release boundary. That is a separate gas-domain re-entry arm; the current `-0.50` brake arm does not
+release boundary. That is a separate gas-domain re-entry arm; the current brake arm does not
 claim to resolve it. This is a command-path isolation experiment, not a road-proven comfort
 improvement.
 
@@ -221,3 +223,14 @@ never affected commands after wind/grade feedforward was removed, and is now ret
 it merely as diagnostic state. Any future drag replacement must first remain offline and must freeze
 or partition gasfactor during identification because both estimates otherwise use the same tracking
 error; promotion would require its own isolated road arm.
+
+Vision-only route `00000044--1f70122a52` separates two contributors. At the 11:57:35 and 12:00:58
+brake takeovers, the planner kept `shouldStop` false and selected a close lead while planner-to-
+`carControl` and numeric request-to-wire RMS stayed within 0.014 m/s2 and 0.011 m/s2; that stop-
+spacing decision remains upstream. However, numeric `ACCEL_COMMAND` fidelity was incomplete
+actuation fidelity: the `-0.50` port threshold left both gas and brake inactive through earlier mild
+negative requests. At 12:17, 12:24, and 12:25, non-Experimental `cruise` also pulsed the request
+from roughly `-0.53..-0.66` to zero or positive, while the late binary brake entry and Honda's
+achieved-response amplification made those pulses harder. Keep the new `-0.30` entry isolated; do
+not add brake supplement or command shaping unless its road comparison still locates the first
+divergence there.

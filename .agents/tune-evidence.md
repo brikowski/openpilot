@@ -1034,6 +1034,62 @@ hardware/safety architecture experiment, not a minimal opendbc parser change, an
 until an intercept path is proved. No vehicle or tuning change is justified by this feasibility
 scan.
 
+## Vision-only command-fidelity route 44 (2026-08-25)
+
+Route `00000044--1f70122a52` ran parent `78562c509663` with nested opendbc
+`09a52a2bf003`, the vision-only `ody-op` command-fidelity baseline. The later nested
+`e86b4ba94621` commit only moves the unchanged Odyssey gas seed table into per-car parameters, so
+it does not alter the behavior measured here. The route logged 45.1 minutes, 12.8 engaged minutes,
+and 9.4 engaged miles. It produced six driver brake takeovers and 28 physical `BRAKE_REQUEST`
+edges, peaking at 6/10 s; 17 edges occurred over 1.32 downhill minutes (12.85/min).
+
+The two driver-reported late lead stops map to takeovers at 11:57:35.717 and 12:00:58.065 local
+time. Both were non-Experimental, standard-personality, vision-only lead approaches. In the final
+20 seconds before intervention, planner-to-`carControl` RMS was 0.0140 and 0.0080 m/s2, and
+`carControl`-to-wire RMS was 0.0110 and 0.0072 m/s2. The first takeover occurred at 1.2 mph with a
+2.7 m lead distance; the second at 0.9 mph and 3.2 m. `longitudinalPlan.shouldStop` remained false
+through both interventions and became true only after the driver had disengaged longitudinal
+control. The first divergence is therefore the upstream lead/stop-spacing decision, not
+`longcontrol` or radar input. The port nevertheless contributed a second divergence: with the
+numeric negative request already present on `ACCEL_COMMAND`, both gas and brake domains remained
+inactive until the request crossed `-0.50 m/s2`. Against the same frozen request, a `-0.30` entry
+would have selected physical braking 10.05 s and 2.45 s earlier. That does not repair the planner's
+late `shouldStop`, but it does reject treating numeric passthrough alone as complete actuation
+fidelity.
+
+The reported downhill complaints align with four brake episodes at 12:17:01.638-12:17:16.832,
+one at 12:24:12.094-12:24:14.292, and one at 12:25:46.754-12:25:48.652. Every episode was sourced
+from non-Experimental `cruise`; planner requests crossed from minima of -0.53 to -0.66 m/s2 back
+to zero or positive, and the retained domain logic followed those crossings. Episode-local
+planner-to-`carControl` RMS was 0.012-0.018 m/s2 and request-to-wire RMS was 0.011-0.016 m/s2.
+Achieved acceleration ranged as low as -1.26 m/s2 and rebounded as high as +0.44 m/s2, making the
+vehicle response visibly harsher than the already pulsed command. The command-shape divergence is
+upstream cruise planning, but the `-0.50` binary brake entry delayed the six physical applications
+by 0.44-2.85 s versus `-0.30` and then exposed Honda to a deeper initial target. Honda's actuator
+response amplified that combined input.
+
+The exact route-wide result is consistent: achieved-versus-`carControl` RMS 0.233 m/s2,
+request-to-wire passthrough RMS 0.006 m/s2, gas/brake-domain following RMS 0.0077/0.0108 m/s2,
+and no sustained sign disagreement. Felt jerk RMS was 0.331 m/s3 versus 0.192 commanded (1.7x),
+with braking at 0.52 versus gas at 0.30 m/s3. This route is strong evidence that the reported
+symptoms are real and that the current Honda port follows the requests numerically; it is not
+evidence that the request was physically actionable while both domains were inactive.
+
+After mapping the exact historical opendbc revision, the validator also measures 33.03 s over 18
+negative-request brake-release-hold events, longest 6.93 s, with a mean request of -0.24 m/s2. This
+diagnostic is not a frozen-response comfort claim; it confirms that the earlier validation's
+numeric request-to-wire pass omitted meaningful binary-domain exposure.
+
+A frozen-input threshold comparison preserves the closed-loop boundary while selecting the next
+minimal road arm. Replaying the exact request yields 28/40/58 route-wide physical edges for entries
+at `-0.50/-0.30/-0.20`, with the same peak of 6 edges/10 s. The six reported downhill applications
+do not multiply at `-0.30`; they enter at about `-0.30` instead of `-0.50` and begin 0.44-2.85 s
+earlier. The two lead approaches also enter 10.05 s and 2.45 s earlier. `-0.30` is therefore the
+narrower compromise: change that constant only, freeze gasfactor, gas re-entry, low-speed domains,
+numeric `ACCEL_COMMAND`, and all command shaping. It remains road-unproven because replay freezes
+the vehicle response and predicts 12 additional route-wide edges; reject it for renewed tapping,
+excess braking, or incomplete stops.
+
 ### Bosch-A object-bank decoder arm (2026-08-25)
 
 `ody-op-radar` ports the five-file decoder change from `mvl-boston/opendbc#669` at exact source
