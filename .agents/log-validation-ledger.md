@@ -186,3 +186,4 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-08-25 | 00000041--72ced284ad | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
 | 2026-08-25 | 00000040--5ba3c4a46c | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
 | 2026-08-25 | 00000044--1f70122a52 | ody-op | 09a52a2bf003 | 12.8 | 9.4 | 0 | 0.233 | 0.006 | - | - | 0.008 | 0.011 | 6 | 0.0 | 4.7 | 1252/2560 | 0.0% | 0 | brake takeovers, brake-domain transition bursts |
+| 2026-08-25 | 0000003f--d758f4abb7 | staging | - | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | 2560/2560 | 2.0% | 0 | none |
