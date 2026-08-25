@@ -683,7 +683,7 @@ or telemetry consumer. The test for retaining or adding a learner is:
 
 ## Where the constants belong (audited 2026-07-29)
 `tune-evidence.md`'s own Bosch A generalization target is "shared Bosch A logic in `carcontroller.py`, per-car seed tables in `values.py`". **We are not there yet**, and it matters because module-level constants in `carcontroller.py` would silently apply to every Bosch Honda the moment the `CAR.HONDA_ODYSSEY_5G_MMR` gate is widened.
-- **Per-car, should move to `values.py`**: `GAS_FACTOR_SPEED_BP/V` (powertrain) and any future
+- **Per-car, stored in `values.py`**: `ODYSSEY_GAS_FACTOR_SPEED_BP/V` (powertrain) and any future
   evidence-derived fixed drag factor. The former inline `wind_brake_ms2` curve was retired with the
   dead production learner rather than relocated.
 - **Shared Bosch A, correctly module-level**: `DOMAIN_HYST_EXIT`, `BRAKE_PID_KI`,
