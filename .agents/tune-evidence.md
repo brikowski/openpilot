@@ -165,8 +165,7 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   reproduced transparent forwarding on route `0000004e--a1ef2eb048` (54,318 matches, 19.7 ms median
   delay, 0.9935 correlation, 2560/2560 clean max) and attenuation on route `00000051--a362f36904`
   (73,915 matches, 20.8 ms median delay, 0.9512 correlation, median cap gain 0.691). These are
-  attribution diagnostics; neither route is evidence for the current nonlinear arm, which still
-  requires a matched road comparison.
+  attribution diagnostics; neither route is evidence for the nonlinear arm.
 
   The isolated arm was implemented on `ody-op` at nested commit `17e1f614d8b3`. It changes only the
   Odyssey map to `torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`; `latAccelFactor=0.9`,
@@ -185,16 +184,39 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   acceleration RMS/mean was `0.070/-0.016 m/s2`, torque-controller saturation was 2.22%, and the
   route had three steering overrides and zero steering faults. The arm therefore reached the
   physical steering path without an obvious fault or radar clamp, but this short unmatched route
-  does not establish better lane tracking than 2560. Retain it only for the matched 2560 comparison;
-  do not promote it from these aggregate diagnostics.
+  does not establish better lane tracking than 2560. The initial decision held it only for a
+  matched comparison; the later three-independent-example rule reopened the arm for a bounded screen.
 
   The retained same-day stock routes cannot supply that comparison. A conservative 10 Hz GPS
   screen compared 85 clean route-`5d` controller-output samples above 2560 against nine
   `sunnypilot/staging` stock-range routes. None had a stock-route point within 25 m in the same
   direction (15 degree bearing tolerance), before applying the additional speed, desired-lateral-
   acceleration, and stock-2560-command gates. Aggregate RMS differences between those routes are
-  therefore unmatched observations, not arm evidence. The next lateral result must repeat the same
-  road curve with the 2560 baseline and the nonlinear arm while holding Alpha Long mode fixed.
+  therefore unmatched observations, not arm evidence.
+
+  **Nonlinear 3840 decision (2026-08-29): CONTINUE A BOUNDED THREE-EXAMPLE SCREEN.** Route `5d`
+  had four independent sustained episodes above 2560. Their durations were `0.97`, `4.39`, `2.08`,
+  and `0.59 s`; sign-corrected under-response medians were `+0.182`, `+0.207`, `-0.036`, and
+  `-0.095 m/s2`, respectively. Two episodes under-delivered, one was near neutral, and one
+  over-delivered, so this is not three examples of failure. A transparent but unmatched comparison
+  conditioned to route `5d` speed `21.65..23.02 m/s` and desired-lateral-acceleration magnitude
+  `0.218..1.919 m/s2` measured median under-response/RMS `+0.024/0.212 m/s2` over `5.78 s` on the
+  nonlinear arm versus `+0.149/0.236 m/s2` over `2.16 s` across available stock samples. That points
+  toward possible benefit but is too thin and unmatched to prove it. Count route `5d` as one
+  inconclusive-to-promising road example, retain
+  `torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`, and collect at most two more independently
+  exposed routes. Compare actual versus desired lateral acceleration in comparable speed, demand,
+  and authority bins; exact GPS matching strengthens the result but is not required. Retire after
+  three road examples without attributable improvement, or sooner for a safety regression. The
+  temporary stock restoration at nested `659b466e2511` is an audit point, not the active decision.
+
+  Apply the same outcome standard to longitudinal tuning. In Alpha Long routes, compare achieved
+  `aEgo` with `carControl.actuators.accel` separately during live gas and brake domains, conditioned
+  on comparable speed, request, and terrain. Request-to-wire RMS and the Honda domain bits remain
+  attribution checks: they establish whether divergence first appears before CAN or in Honda's
+  achieved response. Do not average gas and brake into one route score, and do not treat a smooth
+  wire as proof of a smooth vehicle response. Each longitudinal mechanism gets the same maximum of
+  three independent, adequately exposed road examples before keep or retirement.
 
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
@@ -207,8 +229,9 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   baseline: 23.4 active minutes, CAN torque abs p95/max 1617/2560, 0.5% torque-controller
   saturation, one steer-fault event, and 69 steering-override events. At that point the Odyssey
   3840 range became an isolated arm; command/output, lateral model error, steering response,
-  overrides, and faults were logged for comparison. The final decision above later retired it for
-  lack of attributable benefit; these diagnostics were never lane-tracking proof.
+  overrides, and faults were logged for comparison. The bounded decision above now treats route
+  `5d` as the first of at most three independent examples; these diagnostics alone remain
+  insufficient lane-tracking proof.
 - **Route 4e is the adjacent full-route non-Experimental comparison (2026-08-17).** On
   `0000004e--b155cb69cc`, Experimental was off for the entire 27.1 engaged minutes. Above 20 m/s
   on positive-pitch sections it held the set-speed error near zero (median +0.07 mph over 18.5

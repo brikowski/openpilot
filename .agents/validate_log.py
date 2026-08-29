@@ -315,7 +315,7 @@ def _torque_state_field(m, field):
   return float(getattr(state.torqueState, field)) if state.which() == "torqueState" else np.nan
 
 
-def lateral_metrics(grid, lat_active, requested, output, output_can, steering_pressed,
+def lateral_metrics(grid, lat_active, requested, output, output_can, vego, steering_pressed,
                     steer_fault_temp, steer_fault_perm, saturated, actual_lat_accel,
                     desired_lat_accel, steering_angle, steering_rate, dt):
   """Return lateral command, output, actuator-state, and override telemetry.
@@ -330,6 +330,9 @@ def lateral_metrics(grid, lat_active, requested, output, output_can, steering_pr
     "lat_output_torque_can_abs_p95": None, "lat_output_torque_can_abs_max": None,
     "lat_follow_rms": None, "lat_follow_mean": None,
     "lat_saturated_frac": None, "lat_model_rms": None, "lat_model_mean": None,
+    "lat_high_authority_sec": None, "lat_high_authority_rms": None,
+    "lat_high_authority_under_median": None, "lat_high_authority_under_frac": None,
+    "lat_high_authority_output_abs_median": None, "lat_high_authority_output_abs_max": None,
     "steering_angle_abs_p95": None, "steering_rate_abs_p95": None,
     "steering_override_events": None, "steering_override_sec": None,
     "steer_fault_frames": None, "steer_fault_events": None,
@@ -367,6 +370,21 @@ def lateral_metrics(grid, lat_active, requested, output, output_can, steering_pr
     out["lat_model_rms"] = float(np.sqrt(np.nanmean(error ** 2)))
     out["lat_model_mean"] = float(np.nanmean(error))
 
+  high_authority = (model & can & np.isfinite(vego) & (vego >= ODYSSEY_STOCK_RADAR_MIN_STEER_SPEED) &
+                    ~steering_pressed & ~steer_fault_temp & ~steer_fault_perm &
+                    (np.abs(output_can) >= ODYSSEY_STOCK_LKA_MAX - 1))
+  if high_authority.sum() >= 10:
+    desired = desired_lat_accel[high_authority]
+    actual = actual_lat_accel[high_authority]
+    output_abs = np.abs(output_can[high_authority])
+    under_response = np.sign(desired) * (desired - actual)
+    out["lat_high_authority_sec"] = float(high_authority.sum() * dt)
+    out["lat_high_authority_rms"] = float(np.sqrt(np.nanmean((actual - desired) ** 2)))
+    out["lat_high_authority_under_median"] = float(np.nanmedian(under_response))
+    out["lat_high_authority_under_frac"] = float(np.nanmean(under_response > 0.0))
+    out["lat_high_authority_output_abs_median"] = float(np.nanmedian(output_abs))
+    out["lat_high_authority_output_abs_max"] = float(np.nanmax(output_abs))
+
   angle = active & np.isfinite(steering_angle)
   if angle.sum() >= 10:
     out["steering_angle_abs_p95"] = float(np.nanpercentile(np.abs(steering_angle[angle]), 95))
@@ -380,6 +398,39 @@ def lateral_metrics(grid, lat_active, requested, output, output_can, steering_pr
   fault = active & (steer_fault_temp | steer_fault_perm)
   out["steer_fault_frames"] = int(fault.sum())
   out["steer_fault_events"] = int(np.sum(np.diff(fault.astype(np.int8), prepend=0) == 1))
+  return out
+
+
+def domain_achieved_following_metrics(requested, achieved, speed, domain, dt):
+  """Compare achieved acceleration with OpenPilot's command in one Honda command domain.
+
+  Wire fidelity and achieved response answer different attribution questions. This diagnostic is
+  intentionally ungraded: route comparisons still need comparable speed, request, and grade
+  exposure before they can support a tune decision.
+  """
+  out = {
+    "achieved_sec": None, "achieved_rms": None, "achieved_error_mean": None,
+    "achieved_under_median": None, "achieved_under_frac": None,
+    "achieved_request_abs_median": None, "achieved_speed_median": None,
+  }
+  valid = domain & np.isfinite(requested) & np.isfinite(achieved) & np.isfinite(speed)
+  if valid.sum() <= 50:
+    return out
+
+  command = requested[valid]
+  response = achieved[valid]
+  error = response - command
+  out["achieved_sec"] = float(valid.sum() * dt)
+  out["achieved_rms"] = float(np.sqrt(np.nanmean(error ** 2)))
+  out["achieved_error_mean"] = float(np.nanmean(error))
+  out["achieved_request_abs_median"] = float(np.nanmedian(np.abs(command)))
+  out["achieved_speed_median"] = float(np.nanmedian(speed[valid]))
+
+  material = np.abs(command) >= 0.05
+  if material.sum() >= 10:
+    under_response = np.sign(command[material]) * (command[material] - response[material])
+    out["achieved_under_median"] = float(np.nanmedian(under_response))
+    out["achieved_under_frac"] = float(np.nanmean(under_response > 0.0))
   return out
 
 
@@ -558,7 +609,7 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   ))
 
   r.update(lateral_metrics(
-    grid, lat_active, lat_request, lat_output, lat_output_can, steering_pressed,
+    grid, lat_active, lat_request, lat_output, lat_output_can, vego, steering_pressed,
     steer_fault_temp, steer_fault_perm, saturated, actual_lat_accel, desired_lat_accel,
     steering_angle, steering_rate, dt,
   ))
@@ -872,6 +923,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   source_commit = (opendbc_commit or "")[:12]
   low_speed_pid_expected = source_commit in LOW_SPEED_BRAKE_PID_COMMITS
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
+         "gas_achieved_sec": None, "gas_achieved_rms": None,
+         "gas_achieved_error_mean": None, "gas_achieved_under_median": None,
+         "gas_achieved_under_frac": None, "gas_achieved_request_abs_median": None,
+         "gas_achieved_speed_median": None,
+         "brake_achieved_sec": None, "brake_achieved_rms": None,
+         "brake_achieved_error_mean": None, "brake_achieved_under_median": None,
+         "brake_achieved_under_frac": None, "brake_achieved_request_abs_median": None,
+         "brake_achieved_speed_median": None,
          "brake_domain_frac": None, "coast_domain_frac": None,
          "coast_domain_sec": None, "coast_domain_events": None,
          "sign_disagree_frac": None, "sign_disagree_worst": None,
@@ -1037,6 +1096,14 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     # Fresh brake semantics are passthrough, so a nonzero mean identifies port-side divergence.
     out["follow_brake_mean"] = float(np.nanmean(err[follow_bd]))
 
+  # The wire checks above locate car-port divergence. These separate achieved-response readouts
+  # answer the road question for each domain without averaging gas and brake together. Driver gas
+  # overrides are excluded; the earlier active gate already excludes driver braking.
+  clean = ~gaspressed
+  for prefix, domain in (("gas", gd & clean), ("brake", bd & clean)):
+    metrics = domain_achieved_following_metrics(requested, aego, vego_all, domain, dt)
+    out.update({f"{prefix}_{name}": value for name, value in metrics.items()})
+
   # A positive request can lead the held 50 Hz command by one period. Keep transport skew visible
   # while grading only disagreement that survives the command-period grace.
   out.update(sign_disagreement_metrics(
@@ -1198,6 +1265,14 @@ def verdicts(r):
         f"mean {r['lat_model_mean']:+.3f} m/s^2; steering angle/rate abs p95 "
         f"{r.get('steering_angle_abs_p95', float('nan')):.1f}/"
         f"{r.get('steering_rate_abs_p95', float('nan')):.1f}")
+  if r.get("lat_high_authority_sec") is not None:
+    add("lateral high-authority following (diagnostic)", True,
+        f"{r['lat_high_authority_sec']:.2f}s at CAN median/max "
+        + f"{r['lat_high_authority_output_abs_median']:.0f}/"
+        + f"{r['lat_high_authority_output_abs_max']:.0f}; actual-desired RMS "
+        + f"{r['lat_high_authority_rms']:.3f} m/s^2; sign-corrected under-response median "
+        + f"{r['lat_high_authority_under_median']:+.3f} m/s^2, "
+        + f"{r['lat_high_authority_under_frac'] * 100.0:.1f}% under")
   if r["gasf_eff_mean"] is not None:
     ok = GASF_EFF_LO <= r["gasf_eff_min"] and r["gasf_eff_max"] <= GASF_EFF_HI and abs(r["gasf_drift"]) <= GASF_DRIFT_LIMIT
     add("gasfactor stability", ok, f"mean {r['gasf_eff_mean']:.2f} [{r['gasf_eff_min']:.2f},{r['gasf_eff_max']:.2f}] drift {r['gasf_drift']:+.2f}")
@@ -1290,6 +1365,19 @@ def verdicts(r):
         f"RMS {r['follow_brake_rms']:.4f}, mean {r['follow_brake_mean']:+.4f} m/s^2 extra brake "
         f"({r['brake_domain_frac']*100:.0f}% of engaged frames in brake domain; <= {brake_limit:.2f})",
         status="brake command diverging beyond its source-matched bound" if r["follow_brake_rms"] > brake_limit else None)
+  for prefix in ("gas", "brake"):
+    if r.get(f"{prefix}_achieved_rms") is not None:
+      under = r.get(f"{prefix}_achieved_under_median")
+      under_detail = (
+        f"; material-command under-response median {under:+.3f}, "
+        + f"{r[f'{prefix}_achieved_under_frac'] * 100.0:.1f}% under"
+        if under is not None else "; insufficient material-command exposure for under-response")
+      add(f"achieved following - {prefix} domain (diagnostic)", True,
+          f"{r[f'{prefix}_achieved_sec']:.2f}s; RMS(aEgo - request) "
+          + f"{r[f'{prefix}_achieved_rms']:.3f}, mean "
+          + f"{r[f'{prefix}_achieved_error_mean']:+.3f} m/s^2; median |request| "
+          + f"{r[f'{prefix}_achieved_request_abs_median']:.3f} at "
+          + f"{r[f'{prefix}_achieved_speed_median']:.1f} m/s{under_detail}")
   if r.get("coast_domain_frac") is not None:
     coast_detail = f"{r['coast_domain_sec']:.2f}s over {r['coast_domain_events']} event(s) "
     coast_detail += f"({r['coast_domain_frac']*100:.1f}% of moving engaged frames); gas inactive, brake released"
@@ -1659,12 +1747,15 @@ def main():
   driver = {"gas overrides", "brake takeovers"}
   configuration = {"Alpha Long mode (diagnostic)"}
   quality = {"following - gas domain", "following - brake domain",
+             "achieved following - gas domain (diagnostic)",
+             "achieved following - brake domain (diagnostic)",
              "low-speed brake/accel conflict", "re-engagement brake lifecycle",
              "brake release hold (diagnostic)",
              "brake-domain transition bursts",
              "sign disagreement", "ride harshness (felt)",
              "stop lurch (felt)"}
-  lateral = {"lateral telemetry (diagnostic)", "lateral model tracking (diagnostic)"}
+  lateral = {"lateral telemetry (diagnostic)", "lateral model tracking (diagnostic)",
+             "lateral high-authority following (diagnostic)"}
   hardware = {"device thermal"}
   def show(group):
     for c in v:

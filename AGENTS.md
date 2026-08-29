@@ -11,8 +11,9 @@ from current `commaai/openpilot` and `commaai/opendbc` master.
 
 - Use every comparable private full-rate log, controlled maneuver, and ordinary-road result to find the
   first repeatable divergence from the upstream plan/controller command through CAN to vehicle response.
-  Make only the smallest change supported by that evidence, then verify the result against a matched
-  baseline.
+  Make only the smallest change supported by that evidence, then verify the result against a baseline
+  with comparable command, speed, domain, and terrain exposure. An exact route match is stronger but
+  is not required to determine whether command following improved.
 - Treat the upstream OpenPilot command path as the primary functional reference. For longitudinal,
   stock-radar traces remain a benchmark for actuator transitions, episode shape, and achieved ride
   response, not for proprietary target selection. Lateral and longitudinal quality must be assessed
@@ -50,31 +51,29 @@ physical brake-domain cycling and driver-felt gas/brake behavior worsened. Do no
 this perception/planner regression with gas or brake tuning. Preserve its route/source findings as
 historical evidence and use the vision-only `ody-op` baseline for future comparisons.
 
-The matched lateral baseline remains the stock **2560 LKA command range**, `latAccelFactor 0.9`,
-and `steerActuatorDelay 0.15`. The current `ody-op` road arm changes only the Odyssey map to
-`torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`; Alpha Long remains independently selectable,
-and the first comparison must use stock radar with Alpha Long off. The former linear 3840 RDM-range
-arm is not promoted: it accumulated unmatched exposure, and RDM's extra steering range relies on
-separate braking OpenPilot does not command. Current stock-radar `sunnypilot/staging` logs provide
-the reason for this isolated arm. Clean sustained 2560 requests sometimes under-track even after
-the radar forwards all 2560 counts, while the radar itself substantially attenuates the same request
-in other windows. Measure actual bus-1 radar output and compare this nonlinear 3840-max map against
-2560 on matched radar curves; do not restore the historical linear 3840 map. The former 0.20 s delay
-fallback remains retired. `extract.py` and `validate_log.py` record controller-side lateral
-command/output, saturation, steering response, overrides, and faults. For full-rate Odyssey
+Lateral retains `latAccelFactor 0.9` and `steerActuatorDelay 0.15`. The current isolated arm preserves
+the stock 2560 LKA map and extends only higher demand with
+`torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`. The former linear 3840 RDM map remains retired:
+RDM's extra steering range relies on separate braking OpenPilot does not command. Stock-radar
+`sunnypilot/staging` logs show both clean sustained 2560 under-response after exact forwarding and
+radar attenuation in other windows, so locate that transport boundary before attributing the vehicle
+response. The nonlinear arm is unproven and may remain only through the three-independent-example
+road screen below. The former 0.20 s delay fallback remains retired. `extract.py` and
+`validate_log.py` record controller-side lateral command/output, saturation, steering response,
+overrides, and faults. For full-rate Odyssey
 stock-radar routes, `validate_log.py` also counter-matches bus-0 `sendcan` to the physical bus-1
 steering frame, so radar forwarding/attenuation is measured separately from controller output. These
 routes also record `CarParams.openpilotLongitudinalControl` as the Odyssey Alpha Long mode, so
 longitudinal A/B rows remain attributable while the lateral map is held fixed. These are diagnostics
 and do not by themselves prove lane tracking or closed-loop road behavior.
 
-The first nonlinear-arm route, `0000005d--ed7df97035`, used stock radar with Alpha Long off and
-supplied 3.05 lateral-active minutes. It exercised controller commands above 2560 for 8.08 s and
-physical bus-1 output above 2560 for 7.01 s, reached 3840 without a steering fault, and measured
-actual-versus-desired lateral-acceleration RMS `0.070 m/s2`. This is enough to show that the arm was
-active and forwarded, but not enough to establish an attributable lane-tracking improvement. Keep
-the nonlinear map as an isolated road arm until a matched 2560 comparison; retire it if that
-comparison does not show repeatable benefit.
+The first nonlinear route, `0000005d--ed7df97035`, used stock radar with Alpha Long off and supplied
+3.05 lateral-active minutes. Its four independent sustained episodes above 2560 were mixed: two
+under-responded, one was near neutral, and one over-responded. A transparent speed/demand-conditioned
+comparison favored the arm over available stock samples, but exposure was thin and roads were
+unmatched. This counts as one inconclusive-to-promising example, not proof. Collect at most two more
+adequately exposed routes, compare actual versus desired lateral acceleration in comparable bins,
+and keep or retire the arm from those independent results. Zero faults only establish clean operation.
 
 ## Attribution boundary
 
@@ -116,9 +115,19 @@ Use that first divergence to choose the work:
    event. Name it after the symptom, not a proposed fix.
 5. A threshold flag identifies an event to inspect; it is not permission to tune.
 6. Treat comments and prose as leads. Verify current code, DBC semantics, safety limits, and logs.
-7. Every candidate must have an explicit keep, change, or retire decision after comparing it with a
-   matched baseline and checking the relevant lateral or longitudinal exposure. Do not retain tuning
-   merely because it is historical or already present.
+7. Compare the outcome OpenPilot requested, not merely whether two drives used the same road. For
+   lateral, compare actual versus desired lateral acceleration in comparable speed, demand, and
+   authority bins. For longitudinal, compare `aEgo` versus `carControl.actuators.accel` separately in
+   gas and brake domains, conditioned on comparable speed, request, and terrain. Use controller-to-
+   wire fidelity and domain bits to locate the first divergence. Exact-route A/B is preferred when
+   available, but unmatched whole-route averages are not evidence.
+8. Every unpromoted custom arm gets at most three independent, adequately exposed road examples of
+   the same mechanism. If three fail to show an attributable improvement in OpenPilot-command
+   following, retire it. Do not count multiple thresholds, metrics, or transitions from one episode
+   as independent examples; a safety regression can retire an arm sooner.
+9. Every candidate must have an explicit keep, change, or retire decision after checking the relevant
+   lateral or longitudinal exposure. Do not retain tuning merely because it is historical or already
+   present.
 
 ## Workflow
 

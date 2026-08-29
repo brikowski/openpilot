@@ -14,7 +14,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
   off and measure bus-1 output. Do not restore the former linear 3840 RDM map. The former 0.20 s
   delay fallback remains retired. `validate_log.py` now counter-matches the full-rate controller
   send to the physical bus-1 steering frame so radar attenuation is not confused with controller
-  output; the arm remains unproven until a matched road comparison.
+  output. Route `5d` is the first independent, adequately exposed example and is mixed; compare at
+  most two more routes by actual-versus-desired lateral acceleration in comparable speed, demand,
+  and authority bins before keeping or retiring the arm. Exact-route matching is preferred but not
+  required.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
@@ -27,14 +30,19 @@ a substitute for current code, DBC semantics, or full-rate logs.
   the current path leaves that request raw and only selects Honda's gas/coast/brake domain. The
   former one-sided integral correction below 3 m/s is retired for lack of an attributable road
   benefit; low-speed non-positive requests still retain Honda brake-domain authority.
+- Longitudinal tune decisions compare achieved `aEgo` with `carControl.actuators.accel` separately in
+  live gas and brake domains, using comparable speed, request, and terrain exposure. Request-to-wire
+  RMS and `GAS_COMMAND`/`BRAKE_REQUEST` first establish whether any divergence belongs to the Honda
+  translation. Each custom mechanism gets at most three independent exposed road examples; no
+  attributable improvement after all three means removal, while a safety regression can end it sooner.
 - `ody-op-test` is frozen after its stacked coast, threshold, integral, onset, and release
   experiments failed the reported downhill symptom.
 - The raw upstream-split `ody-op-test2` reference failed its first road screen. The current
   `-0.50` arm still removes the compensated threshold, release hysteresis, and onset shaping. At
   road speed it keeps raw clipped `ACCEL_COMMAND`, coasts for requests from `0` through `-0.50`,
   brakes below `-0.50`, and retains brake for non-positive requests below 5 m/s. This is a
-  software-validated command path; the latest removals and stock lateral restoration still require
-  controlled and ordinary-road validation.
+  software-validated command path; the latest longitudinal removals and the isolated nonlinear
+  lateral arm still require controlled and ordinary-road validation.
 - Eligible gas receives the calculated `GAS_COMMAND` immediately once the gas domain is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. Fresh road-speed gas entry is separately withheld for

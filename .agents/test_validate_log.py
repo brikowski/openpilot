@@ -16,6 +16,7 @@ from validate_log import (
   _has_learner_telemetry,
   _local_segment_names,
   _suggest_status_rows,
+  domain_achieved_following_metrics,
   lateral_metrics,
   write_ledger_md,
 )
@@ -91,6 +92,27 @@ def test_low_speed_brake_pid_metrics_use_stop_frames_before_following_speed_gate
     expected=False, min_speed=1e-3, max_speed=3.0,
   )
   assert inactive["low_speed_brake_pid_frames"] == 0
+
+
+def test_domain_achieved_following_separates_gas_and_brake_response():
+  requested = np.array([0.5] * 60 + [-0.5] * 60)
+  achieved = np.array([0.3] * 60 + [-0.2] * 60)
+  speed = np.full(120, 20.0)
+  gas = np.arange(120) < 60
+
+  gas_metrics = domain_achieved_following_metrics(requested, achieved, speed, gas, 0.01)
+  brake_metrics = domain_achieved_following_metrics(requested, achieved, speed, ~gas, 0.01)
+
+  assert np.isclose(gas_metrics["achieved_sec"], 0.6)
+  assert np.isclose(gas_metrics["achieved_rms"], 0.2)
+  assert np.isclose(gas_metrics["achieved_error_mean"], -0.2)
+  assert np.isclose(gas_metrics["achieved_under_median"], 0.2)
+  assert gas_metrics["achieved_under_frac"] == 1.0
+  assert np.isclose(brake_metrics["achieved_sec"], 0.6)
+  assert np.isclose(brake_metrics["achieved_rms"], 0.3)
+  assert np.isclose(brake_metrics["achieved_error_mean"], 0.3)
+  assert np.isclose(brake_metrics["achieved_under_median"], 0.3)
+  assert brake_metrics["achieved_under_frac"] == 1.0
 
 
 def test_local_segment_names_ignore_empty_interrupted_pull_directories(tmp_path):
@@ -784,7 +806,7 @@ def test_lateral_metrics_reports_command_output_and_safety_telemetry():
   desired = np.full(n, 1.0)
 
   metrics = lateral_metrics(
-    grid, active, requested, output, output_can, steering_pressed,
+    grid, active, requested, output, output_can, np.full(n, 25.0), steering_pressed,
     steer_fault_temp, steer_fault_perm, saturated, actual, desired,
     np.full(n, 2.0), np.full(n, 3.0), 0.01,
   )
@@ -796,6 +818,35 @@ def test_lateral_metrics_reports_command_output_and_safety_telemetry():
   assert np.isclose(metrics["lat_model_rms"], 0.2)
   assert metrics["steering_override_events"] == 1
   assert metrics["steer_fault_events"] == 1
+
+
+def test_lateral_metrics_reports_high_authority_openpilot_following():
+  n = 200
+  grid = np.arange(n, dtype=float) * 0.01
+  active = np.ones(n, dtype=bool)
+  requested = np.ones(n)
+  output = requested.copy()
+  output_can = np.full(n, 2560.0)
+  vego = np.full(n, 25.0)
+  steering_pressed = np.zeros(n, dtype=bool)
+  steering_pressed[100:120] = True
+  no_fault = np.zeros(n, dtype=bool)
+  saturated = np.zeros(n, dtype=bool)
+  desired = np.concatenate((np.ones(100), -np.ones(100)))
+  actual = np.concatenate((np.full(100, 0.8), np.full(100, -0.7)))
+
+  metrics = lateral_metrics(
+    grid, active, requested, output, output_can, vego, steering_pressed,
+    no_fault, no_fault, saturated, actual, desired,
+    np.full(n, 2.0), np.full(n, 3.0), 0.01,
+  )
+
+  assert np.isclose(metrics["lat_high_authority_sec"], 1.8)
+  assert np.isclose(metrics["lat_high_authority_rms"], np.sqrt((100 * 0.2 ** 2 + 80 * 0.3 ** 2) / 180))
+  assert np.isclose(metrics["lat_high_authority_under_median"], 0.2)
+  assert metrics["lat_high_authority_under_frac"] == 1.0
+  assert metrics["lat_high_authority_output_abs_median"] == 2560.0
+  assert metrics["lat_high_authority_output_abs_max"] == 2560.0
 
 
 def _status_row(route, opendbc_commit, flagged=True):
