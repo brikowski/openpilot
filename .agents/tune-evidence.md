@@ -218,6 +218,18 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   wire as proof of a smooth vehicle response. Each longitudinal mechanism gets the same maximum of
   three independent, adequately exposed road examples before keep or retirement.
 
+  **Alpha Long gas/brake split readout (2026-08-29).** The new diagnostics were re-run on two
+  retained full-rate routes to establish the comparison shape. Custom `ody-op` route
+  `00000044--1f70122a52` measured gas/brake wire RMS `0.0077/0.0108 m/s2` and achieved
+  `aEgo-request` RMS `0.207/0.295 m/s2`; its median request magnitude/speed was `0.088/22.0` for
+  gas and `0.560/15.8` for brake. Staging Alpha Long route `00000046--86d6f4b278` measured wire
+  RMS `0.0055/0.0038 m/s2` and achieved RMS `0.144/0.134 m/s2`; its median request magnitude/speed
+  was `0.068/30.9` for gas and `0.256/30.2` for brake. Both routes passed through the request-to-
+  wire path without a meaningful wire mismatch, but their speed, demand, and terrain exposure are
+  not matched. This is baseline instrumentation, not evidence that either tune is better. Future
+  Alpha Long decisions must compare gas with gas and brake with brake in comparable exposure bins,
+  then inspect first divergence before changing the Honda port.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
