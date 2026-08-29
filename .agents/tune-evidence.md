@@ -176,6 +176,18 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   subtests. This is software/deployment eligibility only; the first road arm is stock radar with
   Alpha Long off.
 
+  Route `0000005d--ed7df97035` is the first road exposure for that exact arm: parent
+  `91bf0ddf3ac9`, nested `17e1f614d8b3`, stock radar, and Alpha Long off. It supplied 3.05
+  lateral-active minutes. Controller-side CAN torque p95/max was `2698/3840`; clean source output
+  exceeded 2560 for 8.08 s and the physical bus-1 output exceeded 2560 for 7.01 s. Counter-matched
+  forwarding measured 26.4 ms median delay, 0.9705 correlation, and unity median gain during stable
+  cap exposure. Request-to-controller-output RMS was `0.038`, actual-versus-desired lateral-
+  acceleration RMS/mean was `0.070/-0.016 m/s2`, torque-controller saturation was 2.22%, and the
+  route had three steering overrides and zero steering faults. The arm therefore reached the
+  physical steering path without an obvious fault or radar clamp, but this short unmatched route
+  does not establish better lane tracking than 2560. Retain it only for the matched 2560 comparison;
+  do not promote it from these aggregate diagnostics.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned

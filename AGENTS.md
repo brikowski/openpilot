@@ -68,6 +68,14 @@ routes also record `CarParams.openpilotLongitudinalControl` as the Odyssey Alpha
 longitudinal A/B rows remain attributable while the lateral map is held fixed. These are diagnostics
 and do not by themselves prove lane tracking or closed-loop road behavior.
 
+The first nonlinear-arm route, `0000005d--ed7df97035`, used stock radar with Alpha Long off and
+supplied 3.05 lateral-active minutes. It exercised controller commands above 2560 for 8.08 s and
+physical bus-1 output above 2560 for 7.01 s, reached 3840 without a steering fault, and measured
+actual-versus-desired lateral-acceleration RMS `0.070 m/s2`. This is enough to show that the arm was
+active and forwarded, but not enough to establish an attributable lane-tracking improvement. Keep
+the nonlinear map as an isolated road arm until a matched 2560 comparison; retire it if that
+comparison does not show repeatable benefit.
+
 ## Attribution boundary
 
 Trace questionable lateral and longitudinal behavior independently in this order:
