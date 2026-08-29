@@ -188,6 +188,14 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   does not establish better lane tracking than 2560. Retain it only for the matched 2560 comparison;
   do not promote it from these aggregate diagnostics.
 
+  The retained same-day stock routes cannot supply that comparison. A conservative 10 Hz GPS
+  screen compared 85 clean route-`5d` controller-output samples above 2560 against nine
+  `sunnypilot/staging` stock-range routes. None had a stock-route point within 25 m in the same
+  direction (15 degree bearing tolerance), before applying the additional speed, desired-lateral-
+  acceleration, and stock-2560-command gates. Aggregate RMS differences between those routes are
+  therefore unmatched observations, not arm evidence. The next lateral result must repeat the same
+  road curve with the 2560 baseline and the nonlinear arm while holding Alpha Long mode fixed.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
