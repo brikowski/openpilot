@@ -50,15 +50,17 @@ physical brake-domain cycling and driver-felt gas/brake behavior worsened. Do no
 this perception/planner regression with gas or brake tuning. Preserve its route/source findings as
 historical evidence and use the vision-only `ody-op` baseline for future comparisons.
 
-Lateral remains on the stock **2560 LKA command range**, `latAccelFactor 0.9`, and
-`steerActuatorDelay 0.15`. The former linear 3840 RDM-range arm is not promoted: it accumulated
-unmatched exposure, and RDM's extra steering range relies on separate braking OpenPilot does not
-command. Current stock-radar `sunnypilot/staging` logs now provide a repeatable reason to reopen
-authority as an isolated road question. Clean sustained 2560 requests sometimes under-track even
-after the radar forwards all 2560 counts, while the radar itself substantially attenuates the same
-request in other windows. Any new arm must measure the actual bus-1 radar output and compare the
-smallest nonlinear 3840-max mapping against 2560 on matched staging/radar curves; do not simply
-restore the historical linear 3840 map. The former 0.20 s delay fallback remains retired. `extract.py`
+The matched lateral baseline remains the stock **2560 LKA command range**, `latAccelFactor 0.9`,
+and `steerActuatorDelay 0.15`. The current `ody-op` road arm changes only the Odyssey map to
+`torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`; Alpha Long remains independently selectable,
+and the first comparison must use stock radar with Alpha Long off. The former linear 3840 RDM-range
+arm is not promoted: it accumulated unmatched exposure, and RDM's extra steering range relies on
+separate braking OpenPilot does not command. Current stock-radar `sunnypilot/staging` logs provide
+the reason for this isolated arm. Clean sustained 2560 requests sometimes under-track even after
+the radar forwards all 2560 counts, while the radar itself substantially attenuates the same request
+in other windows. Measure actual bus-1 radar output and compare this nonlinear 3840-max map against
+2560 on matched radar curves; do not restore the historical linear 3840 map. The former 0.20 s delay
+fallback remains retired. `extract.py`
 and `validate_log.py` record controller-side lateral command/output, saturation, steering response,
 overrides, and faults; those are diagnostics and do not by themselves prove downstream radar output
 or lane tracking.

@@ -157,6 +157,14 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   bus-1 forwarded torque, model tracking, saturation, faults, and interventions, then keep or retire
   it. This is authorization for a controlled road arm, not promotion evidence.
 
+  The isolated arm was implemented on `ody-op` at nested commit `17e1f614d8b3`. It changes only the
+  Odyssey map to `torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`; `latAccelFactor=0.9`,
+  `steerActuatorDelay=0.15`, and Alpha Long selection remain unchanged. Focused parameter assertions
+  cover Alpha Long both off and on and were mutation-verified against the 2560 mapping. Preflash
+  passed seven Odyssey model/interface/radar/safety checks plus 18 command/parameter tests and 43
+  subtests. This is software/deployment eligibility only; the first road arm is stock radar with
+  Alpha Long off.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
