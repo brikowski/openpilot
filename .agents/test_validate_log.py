@@ -35,8 +35,39 @@ from tuning_metrics import (
   post_edge_window,
   shadow_windfactor_metrics,
   sign_disagreement_metrics,
+  steering_forwarding_metrics,
   stop_lurch_metrics,
 )
+
+
+def test_steering_forwarding_matches_counter_and_measures_radar_extension():
+  t = np.arange(100, dtype=float) * 0.01
+  torque = np.concatenate((np.zeros(20), np.full(40, 2560.0), np.full(40, 3000.0)))
+  request = np.ones(100)
+  counter = np.arange(100) % 4
+  sent = np.column_stack((t, torque, request, counter))
+  forwarded_torque = torque.copy()
+  forwarded_torque[-40:] = 2800.0
+  received = np.column_stack((t + 0.02, forwarded_torque, request, counter))
+  # Same counter but outside the bounded transport window must not match a stale source frame.
+  received = np.vstack((received, [1.20, 100.0, 1.0, 0.0]))
+  state_t = np.arange(0.0, 1.3, 0.01)
+  state_count = len(state_t)
+
+  metrics = steering_forwarding_metrics(
+    sent, received, state_t, np.full(state_count, 25.0), np.zeros(state_count),
+    np.zeros(state_count), np.zeros(state_count),
+    min_speed=70.0 / 3.6, cap_command=2559, extended_command=2560,
+    settle_s=0.20, max_delay_s=0.10,
+  )
+
+  assert metrics["lat_radar_forward_matched_frames"] == 100
+  assert np.isclose(metrics["lat_radar_forward_delay_ms_median"], 20.0)
+  assert metrics["lat_radar_forward_source_max_abs"] == 3000.0
+  assert metrics["lat_radar_forward_output_max_abs"] == 2800.0
+  assert np.isclose(metrics["lat_radar_forward_extended_source_sec"], 0.40)
+  assert np.isclose(metrics["lat_radar_forward_extended_output_sec"], 0.40)
+  assert np.isclose(metrics["lat_radar_forward_extended_gain_median"], 2800.0 / 3000.0)
 
 
 def test_low_speed_brake_pid_metrics_use_stop_frames_before_following_speed_gate():

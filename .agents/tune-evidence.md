@@ -157,6 +157,15 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   bus-1 forwarded torque, model tracking, saturation, faults, and interventions, then keep or retire
   it. This is authorization for a controlled road arm, not promotion evidence.
 
+  The validator now records that bus-1 forwarding diagnostic directly for full-rate Odyssey
+  stock-radar routes: equal-counter bus-0 to bus-1 matches, transport delay, controller-to-radar
+  error/correlation, clean cap exposure, and any source/output exposure above 2560. A smoke check
+  reproduced transparent forwarding on route `0000004e--a1ef2eb048` (54,318 matches, 19.7 ms median
+  delay, 0.9935 correlation, 2560/2560 clean max) and attenuation on route `00000051--a362f36904`
+  (73,915 matches, 20.8 ms median delay, 0.9512 correlation, median cap gain 0.691). These are
+  attribution diagnostics; neither route is evidence for the current nonlinear arm, which still
+  requires a matched road comparison.
+
   The isolated arm was implemented on `ody-op` at nested commit `17e1f614d8b3`. It changes only the
   Odyssey map to `torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`; `latAccelFactor=0.9`,
   `steerActuatorDelay=0.15`, and Alpha Long selection remain unchanged. Focused parameter assertions

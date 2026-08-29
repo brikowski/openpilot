@@ -44,6 +44,7 @@ from tuning_metrics import (
   sample_rate as _rate,
   shadow_windfactor_metrics,
   sign_disagreement_metrics,
+  steering_forwarding_metrics,
   stop_lurch_metrics,
   windowed_jerk,
 )
@@ -53,6 +54,9 @@ LEDGER_JSONL = LEDGER_DIR / "log-validation-ledger.jsonl"
 LEDGER_MD = LEDGER_DIR / "log-validation-ledger.md"
 ODYSSEY = "HONDA_ODYSSEY_5G_MMR"
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # GEARBOX_AUTO/TRANS_TARGET_GEAR on bus 1
+STEERING_CONTROL = 0xE4
+ODYSSEY_STOCK_RADAR_MIN_STEER_SPEED = 70.0 / 3.6
+ODYSSEY_STOCK_LKA_MAX = 2560
 
 # ---- thresholds (grounded in the converged baselines recorded in tune-evidence.md) ----
 # Convergence regression guards. Baselines: track RMS ~0.22, passthrough RMS ~0.11
@@ -278,6 +282,32 @@ def _series(msgs, which, extract):
       out_t.append(m.logMonoTime / 1e9)
       out_v.append(extract(m))
   return np.array(out_t), np.array(out_v, dtype=float)
+
+
+def _steering_forwarding_series(msgs):
+  """Decode controller-side bus-0 steering and the stock radar's physical bus-1 output."""
+  from opendbc.can.parser import CANParser
+
+  sent_parser = CANParser(ODYSSEY_PT_DBC, [("STEERING_CONTROL", 0)], 0)
+  forwarded_parser = CANParser(ODYSSEY_PT_DBC, [("STEERING_CONTROL", 0)], 1)
+  sent = []
+  forwarded = []
+  for msg in msgs:
+    if msg.which() == "sendcan":
+      frames = [(frame.address, frame.dat, frame.src) for frame in msg.sendcan
+                if frame.address == STEERING_CONTROL and frame.src == 0]
+      if frames and STEERING_CONTROL in sent_parser.update([(msg.logMonoTime, frames)]):
+        values = sent_parser.vl["STEERING_CONTROL"]
+        sent.append((msg.logMonoTime / 1e9, values["STEER_TORQUE"],
+                     values["STEER_TORQUE_REQUEST"], values["COUNTER"]))
+    elif msg.which() == "can":
+      frames = [(frame.address, frame.dat, frame.src) for frame in msg.can
+                if frame.address == STEERING_CONTROL and frame.src == 1]
+      if frames and STEERING_CONTROL in forwarded_parser.update([(msg.logMonoTime, frames)]):
+        values = forwarded_parser.vl["STEERING_CONTROL"]
+        forwarded.append((msg.logMonoTime / 1e9, values["STEER_TORQUE"],
+                          values["STEER_TORQUE_REQUEST"], values["COUNTER"]))
+  return np.asarray(sent, dtype=float), np.asarray(forwarded, dtype=float)
 
 
 def _torque_state_field(m, field):
@@ -512,6 +542,20 @@ def analyze(msgs, platform):
   gaspressed = onto(t_cs, cs_gaspressed) > 0.5
   brakepressed = onto(t_cs, cs_brakepressed) > 0.5
   dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
+
+  if platform == ODYSSEY and not r["qlog_fallback"]:
+    steering_sent, steering_forwarded = _steering_forwarding_series(msgs)
+  else:
+    steering_sent = steering_forwarded = np.empty((0, 4), dtype=float)
+  r.update(steering_forwarding_metrics(
+    steering_sent, steering_forwarded, t_cs, cs_vego, cs_steering_pressed,
+    cs_steer_fault_temp, cs_steer_fault_perm,
+    min_speed=ODYSSEY_STOCK_RADAR_MIN_STEER_SPEED,
+    cap_command=ODYSSEY_STOCK_LKA_MAX - 1,
+    extended_command=ODYSSEY_STOCK_LKA_MAX,
+    settle_s=0.20,
+    max_delay_s=0.10,
+  ))
 
   r.update(lateral_metrics(
     grid, lat_active, lat_request, lat_output, lat_output_can, steering_pressed,
@@ -1123,10 +1167,27 @@ def verdicts(r):
     add("lateral telemetry (diagnostic)", True,
         f"{r['lat_active_sec'] / 60.0:.1f} active min; request/output abs p95 "
         f"{r['lat_request_abs_p95']:.3f}/{r.get('lat_output_abs_p95', float('nan')):.3f}; "
-        f"CAN abs p95/max {r.get('lat_output_torque_can_abs_p95', float('nan')):.0f}/"
+        f"controller CAN abs p95/max {r.get('lat_output_torque_can_abs_p95', float('nan')):.0f}/"
         f"{r.get('lat_output_torque_can_abs_max', float('nan')):.0f}; "
         f"saturated {r['lat_saturated_frac'] * 100.0:.1f}%, "
         f"steer overrides {r['steering_override_events']}, faults {r['steer_fault_events']}")
+  if r.get("lat_radar_forward_matched_frames"):
+    corr = r.get("lat_radar_forward_corr")
+    mae = r.get("lat_radar_forward_mae")
+    cap_sec = r.get("lat_radar_forward_cap_stable_sec") or 0.0
+    cap_gain = r.get("lat_radar_forward_cap_gain_median")
+    source_extended = r.get("lat_radar_forward_extended_source_sec") or 0.0
+    output_extended = r.get("lat_radar_forward_extended_output_sec") or 0.0
+    add("lateral radar forwarding (diagnostic)", True,
+        f"{r['lat_radar_forward_matched_frames']} counter-matched frames, median delay "
+        f"{r['lat_radar_forward_delay_ms_median']:.1f} ms; active MAE "
+        f"{mae:.1f} counts, corr {corr:.4f}; clean controller/radar max "
+        f"{r['lat_radar_forward_source_max_abs']:.0f}/{r['lat_radar_forward_output_max_abs']:.0f}; "
+        f"stable >=2559 {cap_sec:.2f}s, median gain "
+        f"{cap_gain:.3f}; >2560 controller/radar {source_extended:.2f}/{output_extended:.2f}s"
+        if mae is not None and corr is not None and cap_gain is not None else
+        f"{r['lat_radar_forward_matched_frames']} counter-matched frames; insufficient clean "
+        "high-command exposure for forwarding gain")
   if r.get("lat_model_rms") is not None:
     add("lateral model tracking (diagnostic)", True,
         f"actual-desired lateral accel RMS {r['lat_model_rms']:.3f}, "

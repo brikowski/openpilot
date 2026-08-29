@@ -60,10 +60,11 @@ the reason for this isolated arm. Clean sustained 2560 requests sometimes under-
 the radar forwards all 2560 counts, while the radar itself substantially attenuates the same request
 in other windows. Measure actual bus-1 radar output and compare this nonlinear 3840-max map against
 2560 on matched radar curves; do not restore the historical linear 3840 map. The former 0.20 s delay
-fallback remains retired. `extract.py`
-and `validate_log.py` record controller-side lateral command/output, saturation, steering response,
-overrides, and faults; those are diagnostics and do not by themselves prove downstream radar output
-or lane tracking.
+fallback remains retired. `extract.py` and `validate_log.py` record controller-side lateral
+command/output, saturation, steering response, overrides, and faults. For full-rate Odyssey
+stock-radar routes, `validate_log.py` also counter-matches bus-0 `sendcan` to the physical bus-1
+steering frame, so radar forwarding/attenuation is measured separately from controller output. These
+are diagnostics and do not by themselves prove lane tracking or closed-loop road behavior.
 
 ## Attribution boundary
 

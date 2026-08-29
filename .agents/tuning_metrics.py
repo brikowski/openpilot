@@ -45,6 +45,113 @@ def after_grace(mask, dt, grace_s):
   return sustained
 
 
+def steering_forwarding_metrics(sent, received, state_t, speed, steering_pressed,
+                                steer_fault_temp, steer_fault_perm, *, min_speed,
+                                cap_command, extended_command, settle_s, max_delay_s):
+  """Compare camera/radar-bus steering sends with the radar-forwarded powertrain-bus frames.
+
+  Honda's two-bit counter repeats every four frames, so each received frame is matched to the
+  latest earlier sent frame with the same counter and a bounded transport delay. The caller passes
+  decoded ``[time, torque, request, counter]`` arrays and native car-state arrays; this function
+  remains independent from route I/O and DBC parsing for mutation-tested attribution.
+  """
+  keys = (
+    "lat_radar_forward_matched_frames", "lat_radar_forward_active_frames",
+    "lat_radar_forward_clean_frames", "lat_radar_forward_dropped_request_frames",
+    "lat_radar_forward_delay_ms_median", "lat_radar_forward_delay_ms_p99",
+    "lat_radar_forward_mae", "lat_radar_forward_corr",
+    "lat_radar_forward_source_max_abs", "lat_radar_forward_output_max_abs",
+    "lat_radar_forward_cap_stable_sec", "lat_radar_forward_cap_gain_median",
+    "lat_radar_forward_cap_exact_frac", "lat_radar_forward_extended_source_sec",
+    "lat_radar_forward_extended_output_sec", "lat_radar_forward_extended_gain_median",
+    "lat_radar_forward_extended_output_max_abs",
+  )
+  out = dict.fromkeys(keys)
+  sent = np.asarray(sent, dtype=float)
+  received = np.asarray(received, dtype=float)
+  state_t = np.asarray(state_t, dtype=float)
+  if sent.ndim != 2 or received.ndim != 2 or sent.shape[1:] != (4,) or received.shape[1:] != (4,):
+    return out
+  if not len(sent) or not len(received) or not len(state_t):
+    return out
+
+  source_rows = []
+  received_rows = []
+  for counter in np.unique(received[:, 3]):
+    sent_idx = np.flatnonzero(sent[:, 3] == counter)
+    recv_idx = np.flatnonzero(received[:, 3] == counter)
+    if not len(sent_idx) or not len(recv_idx):
+      continue
+    source_pos = np.searchsorted(sent[sent_idx, 0], received[recv_idx, 0], side="right") - 1
+    valid = source_pos >= 0
+    source_idx = sent_idx[np.clip(source_pos, 0, len(sent_idx) - 1)]
+    delay = received[recv_idx, 0] - sent[source_idx, 0]
+    valid &= (delay >= 0.0) & (delay <= max_delay_s)
+    source_rows.extend(source_idx[valid])
+    received_rows.extend(recv_idx[valid])
+
+  if not source_rows:
+    return out
+  source_rows = np.asarray(source_rows, dtype=int)
+  received_rows = np.asarray(received_rows, dtype=int)
+  order = np.argsort(received[received_rows, 0])
+  source = sent[source_rows[order]]
+  forwarded = received[received_rows[order]]
+  delay = forwarded[:, 0] - source[:, 0]
+
+  state_idx = np.searchsorted(state_t, forwarded[:, 0], side="right") - 1
+  state_valid = state_idx >= 0
+  state_idx = np.clip(state_idx, 0, len(state_t) - 1)
+  speed = np.asarray(speed, dtype=float)[state_idx]
+  steering_pressed = np.asarray(steering_pressed, dtype=bool)[state_idx]
+  steer_fault_temp = np.asarray(steer_fault_temp, dtype=bool)[state_idx]
+  steer_fault_perm = np.asarray(steer_fault_perm, dtype=bool)[state_idx]
+
+  source_request = source[:, 2] > 0.5
+  forwarded_request = forwarded[:, 2] > 0.5
+  active = source_request & forwarded_request
+  clean = (active & state_valid & (speed >= min_speed) & ~steering_pressed &
+           ~steer_fault_temp & ~steer_fault_perm)
+  dropped = source_request & ~forwarded_request
+  source_torque = source[:, 1]
+  forwarded_torque = forwarded[:, 1]
+  out.update({
+    "lat_radar_forward_matched_frames": int(len(source)),
+    "lat_radar_forward_active_frames": int(active.sum()),
+    "lat_radar_forward_clean_frames": int(clean.sum()),
+    "lat_radar_forward_dropped_request_frames": int(dropped.sum()),
+    "lat_radar_forward_delay_ms_median": float(np.median(delay) * 1e3),
+    "lat_radar_forward_delay_ms_p99": float(np.percentile(delay, 99) * 1e3),
+    "lat_radar_forward_source_max_abs": float(np.max(np.abs(source_torque[clean]))) if clean.any() else None,
+    "lat_radar_forward_output_max_abs": float(np.max(np.abs(forwarded_torque[clean]))) if clean.any() else None,
+  })
+  if active.sum() > 1:
+    out["lat_radar_forward_mae"] = float(np.mean(np.abs(source_torque[active] - forwarded_torque[active])))
+    if np.std(source_torque[active]) > 0.0 and np.std(forwarded_torque[active]) > 0.0:
+      out["lat_radar_forward_corr"] = float(np.corrcoef(source_torque[active], forwarded_torque[active])[0, 1])
+
+  dt = float(np.median(np.diff(forwarded[:, 0]))) if len(forwarded) > 1 else 0.01
+  high = clean & (np.abs(source_torque) >= cap_command)
+  stable_high = after_grace(high, dt, settle_s)
+  if stable_high.any():
+    gain = np.abs(forwarded_torque[stable_high]) / np.maximum(np.abs(source_torque[stable_high]), 1.0)
+    out["lat_radar_forward_cap_stable_sec"] = float(stable_high.sum() * dt)
+    out["lat_radar_forward_cap_gain_median"] = float(np.median(gain))
+    out["lat_radar_forward_cap_exact_frac"] = float(np.mean(source_torque[stable_high] == forwarded_torque[stable_high]))
+  else:
+    out["lat_radar_forward_cap_stable_sec"] = 0.0
+
+  extended = clean & (np.abs(source_torque) > extended_command)
+  extended_output = extended & (np.abs(forwarded_torque) > extended_command)
+  out["lat_radar_forward_extended_source_sec"] = float(extended.sum() * dt)
+  out["lat_radar_forward_extended_output_sec"] = float(extended_output.sum() * dt)
+  if extended.any():
+    gain = np.abs(forwarded_torque[extended]) / np.maximum(np.abs(source_torque[extended]), 1.0)
+    out["lat_radar_forward_extended_gain_median"] = float(np.median(gain))
+    out["lat_radar_forward_extended_output_max_abs"] = float(np.max(np.abs(forwarded_torque[extended])))
+  return out
+
+
 def physical_edges(signal, mask):
   """Indices of real adjacent-sample edges wholly inside a mask."""
   if len(signal) < 2:

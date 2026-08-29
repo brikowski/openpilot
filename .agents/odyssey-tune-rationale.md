@@ -12,7 +12,9 @@ a substitute for current code, DBC semantics, or full-rate logs.
   authority because the radar variably filters controller-side steering and clean sustained requests
   still sometimes under-track when all 2560 counts reach bus 1. Test the arm first with Alpha Long
   off and measure bus-1 output. Do not restore the former linear 3840 RDM map. The former 0.20 s
-  delay fallback remains retired.
+  delay fallback remains retired. `validate_log.py` now counter-matches the full-rate controller
+  send to the physical bus-1 steering frame so radar attenuation is not confused with controller
+  output; the arm remains unproven until a matched road comparison.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
