@@ -127,6 +127,36 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   `latAccelFactor 0.9` and `steerActuatorDelay 0.15`, and reopen only for a repeatable symptom plus
   an isolated road comparison.
 
+- **Stock-radar lateral authority question reopened (2026-08-28), baseline remains 2560.** All 13
+  newly pulled `sunnypilot/staging` routes (`0000004b`, `4d`-`58`) used stock radar and had zero
+  OpenPilot-longitudinal exposure; eight supplied 33.4 lateral-active minutes. After removing low
+  speed, steering override/fault, tiny-demand, and fast-demand-change frames, the controller held
+  2560 for 24.9 seconds. Twenty-seven sustained episodes remained, with median sign-corrected
+  actual-versus-desired under-response of `+0.122 m/s2`; 18 of 27 episode medians under-responded.
+  Retained unmatched 3840 routes had near-zero median error above 2560, so the old absence of a
+  repeatable 2560-bound symptom is no longer true. That historical comparison remains observational:
+  it primarily used OpenPilot longitudinal and a different steering path.
+
+  Full-rate `sendcan` bus 0 to physical CAN bus 1 matching located an additional first divergence
+  inside the stock radar. Nearest equal-counter matches had median `20-25 ms` latency and
+  controller/radar torque correlation near `0.997` on transparent routes. Across all eight routes,
+  21.7 seconds of clean sustained controller-side 2560 command remained. Six routes forwarded those
+  sustained frames at 2560 essentially exactly. Routes `0000004d` and `00000051` instead contained
+  clean sustained attenuation without steering override or reported fault: below-2400 forwarded
+  frames had median output `695` and `1339` counts and median tracking under-response `+0.309` and
+  `+0.109 m/s2`. The same two routes' exactly forwarded subsets slightly over-responded, so their
+  first divergence is the radar filter, not the 2560 port cap. On the six transparent routes,
+  exactly forwarded sustained-cap windows still had positive per-route median under-response on
+  every route (`+0.010` to `+0.285 m/s2`), which is the evidence for a separate authority question.
+
+  Keep 2560 as the road baseline. Do not restore the historical linear `[[0,3840],[0,3840]]` map:
+  it changes gain throughout the range, Honda documents only a small nonlinear motor-torque increase
+  above the 2560 LKA range, and the 3840 RDM behavior includes brake drag OpenPilot does not command.
+  If tested, isolate the existing source-documented nonlinear candidate
+  `torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`; run matched staging/radar curves, record actual
+  bus-1 forwarded torque, model tracking, saturation, faults, and interventions, then keep or retire
+  it. This is authorization for a controlled road arm, not promotion evidence.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
@@ -634,8 +664,9 @@ new brake arm.
   selection, and both the supplemental low-speed PID and former production windfactor learner are
   removed. See the concise rationale and current code before using this historical archive.
 - **Review-sized design record**: `.agents/odyssey-tune-rationale.md` is the concise durable rationale removed from production comments; use the longer history here only when investigating a regression.
-- **Current tune status:** lateral follows the stock-LKA baseline: 2560 maximum command,
-  `latAccelFactor 0.9`, and `steerActuatorDelay=0.15`. Longitudinal retains the road-screened
+- **Current tune status:** lateral keeps the stock-LKA baseline: 2560 maximum command,
+  `latAccelFactor 0.9`, and `steerActuatorDelay=0.15`; maximum authority is reopened only for the
+  matched stock-radar/nonlinear road arm defined above. Longitudinal retains the road-screened
   Odyssey gasfactor and three-domain selector while sending the raw clipped controller request as
   `ACCEL_COMMAND`; the custom low-speed PID and production windfactor learner are retired. These
   source changes are software-validated only until controlled maneuvers and an ordinary-road drive

@@ -50,14 +50,18 @@ physical brake-domain cycling and driver-felt gas/brake behavior worsened. Do no
 this perception/planner regression with gas or brake tuning. Preserve its route/source findings as
 historical evidence and use the vision-only `ody-op` baseline for future comparisons.
 
-Lateral is returned to the stock **2560 LKA command range**, `latAccelFactor 0.9`, and
-`steerActuatorDelay 0.15`. The isolated 3840 RDM-range arm is retired: it accumulated diagnostic
-exposure without an attributable tracking or lane-keeping improvement, and RDM's extra steering
-range relies on separate braking OpenPilot does not command. The former 0.20 s delay fallback also
-had no isolated road benefit. Reopen either value only for a repeatable logged symptom and a matched
-road comparison. `extract.py` and `validate_log.py` record lateral command/output, torque-controller
-saturation, steering response, overrides, and faults; these are diagnostics and not lane-tracking
-proof.
+Lateral remains on the stock **2560 LKA command range**, `latAccelFactor 0.9`, and
+`steerActuatorDelay 0.15`. The former linear 3840 RDM-range arm is not promoted: it accumulated
+unmatched exposure, and RDM's extra steering range relies on separate braking OpenPilot does not
+command. Current stock-radar `sunnypilot/staging` logs now provide a repeatable reason to reopen
+authority as an isolated road question. Clean sustained 2560 requests sometimes under-track even
+after the radar forwards all 2560 counts, while the radar itself substantially attenuates the same
+request in other windows. Any new arm must measure the actual bus-1 radar output and compare the
+smallest nonlinear 3840-max mapping against 2560 on matched staging/radar curves; do not simply
+restore the historical linear 3840 map. The former 0.20 s delay fallback remains retired. `extract.py`
+and `validate_log.py` record controller-side lateral command/output, saturation, steering response,
+overrides, and faults; those are diagnostics and do not by themselves prove downstream radar output
+or lane tracking.
 
 ## Attribution boundary
 

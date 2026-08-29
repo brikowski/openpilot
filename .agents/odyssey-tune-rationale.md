@@ -6,9 +6,12 @@ a substitute for current code, DBC semantics, or full-rate logs.
 
 ## Current design
 
-- Lateral uses the stock 2560 LKA command range, stock-derived torque tune, and stock 0.15 s
-  `steerActuatorDelay`. The unmatched 3840 RDM-range arm and former 0.20 s delay fallback had no
-  isolated evidence of benefit and are retired.
+- Lateral keeps the stock 2560 LKA command range, stock-derived torque tune, and stock 0.15 s
+  `steerActuatorDelay` as the baseline. New stock-radar staging evidence reopens maximum authority
+  only as a matched road question: the radar variably filters controller-side steering, and clean
+  sustained requests still sometimes under-track when all 2560 counts reach bus 1. Do not restore
+  the former linear 3840 RDM map; compare the source-documented nonlinear 3840-max candidate against
+  2560 while measuring bus-1 output. The former 0.20 s delay fallback remains retired.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
