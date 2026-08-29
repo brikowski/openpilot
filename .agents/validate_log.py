@@ -460,8 +460,8 @@ def _provenance(msgs):
           "git_dirty": None, "op_version": None}
 
 
-def analyze(msgs, platform):
-  r = {"platform": platform, "notes": []}
+def analyze(msgs, platform, alpha_longitudinal=None):
+  r = {"platform": platform, "alpha_longitudinal": alpha_longitudinal, "notes": []}
   provenance = _provenance(msgs)
   r.update(provenance)
 
@@ -1156,6 +1156,10 @@ def verdicts(r):
 
   add("controlsd crashes", r["crashes"] == 0,
       f"{r['crashes']}" + (f" ({', '.join(r.get('crashed_procs', []))})" if r["crashes"] else ""))
+  if r.get("alpha_longitudinal") is not None:
+    add("Alpha Long mode (diagnostic)", True,
+        "enabled (OpenPilot longitudinal)" if r["alpha_longitudinal"]
+        else "disabled (stock radar longitudinal)")
   if r["track_rms"] is not None:
     add("track RMS |aEgo-carControl|", r["track_rms"] <= TRACK_RMS_LIMIT,
         f"{r['track_rms']:.3f} (<= {TRACK_RMS_LIMIT})"
@@ -1631,7 +1635,9 @@ def main():
       break
   platform = cp.carFingerprint if cp else "UNKNOWN"
 
-  r = analyze(msgs, platform)
+  alpha_longitudinal = (bool(cp.openpilotLongitudinalControl)
+                        if cp is not None and platform == ODYSSEY else None)
+  r = analyze(msgs, platform, alpha_longitudinal)
   v = verdicts(r)
 
   print(f"\n=== validate_log: {args.route}  [{platform}] ===")
@@ -1642,12 +1648,16 @@ def main():
         f"max {r['vego_max']*2.237:.0f} mph")
   print(f"  code:     {r.get('git_branch') or '?'} @ {r.get('git_commit') or '?'}"
         f"{' (DIRTY)' if r.get('git_dirty') else ''}")
+  if r.get("alpha_longitudinal") is not None:
+    print("  mode:     Alpha Long enabled (OpenPilot longitudinal)" if r["alpha_longitudinal"]
+          else "  mode:     Alpha Long disabled (stock radar longitudinal)")
   for note in r["notes"]:
     print(f"  ! {note}")
   conv = {"controlsd crashes", "track RMS |aEgo-carControl|", "passthrough RMS",
           "gasfactor stability", "windfactor rail exposure", "windfactor shadow (offline)",
           "accel rail saturation"}
   driver = {"gas overrides", "brake takeovers"}
+  configuration = {"Alpha Long mode (diagnostic)"}
   quality = {"following - gas domain", "following - brake domain",
              "low-speed brake/accel conflict", "re-engagement brake lifecycle",
              "brake release hold (diagnostic)",
@@ -1668,7 +1678,7 @@ def main():
     print("\n  DRIVER INTERVENTIONS (ground truth - what the driver overruled)")
     show(driver)
   print("\n  WATCHLIST (cross-brand candidate tweaks)")
-  show({c["check"] for c in v} - conv - driver - quality - hardware - lateral)
+  show({c["check"] for c in v} - conv - driver - quality - hardware - lateral - configuration)
   print("\n  MODEL FOLLOWING (did the wire carry what CarController was asked?)")
   show(quality)
   if any(c["check"] in hardware for c in v):

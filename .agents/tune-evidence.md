@@ -159,7 +159,9 @@ rather than treating an uncalibrated slew limit as known-good behavior.
 
   The validator now records that bus-1 forwarding diagnostic directly for full-rate Odyssey
   stock-radar routes: equal-counter bus-0 to bus-1 matches, transport delay, controller-to-radar
-  error/correlation, clean cap exposure, and any source/output exposure above 2560. A smoke check
+  error/correlation, clean cap exposure, and any source/output exposure above 2560. It also records
+  whether `CarParams.openpilotLongitudinalControl` selected Alpha Long for Odyssey, without grading
+  that mode. A smoke check
   reproduced transparent forwarding on route `0000004e--a1ef2eb048` (54,318 matches, 19.7 ms median
   delay, 0.9935 correlation, 2560/2560 clean max) and attenuation on route `00000051--a362f36904`
   (73,915 matches, 20.8 ms median delay, 0.9512 correlation, median cap gain 0.691). These are

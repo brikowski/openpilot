@@ -319,6 +319,26 @@ def test_verdict_reports_direct_gas_handoff_without_inventing_a_limit():
   assert "no calibrated handoff limit" in handoff["detail"]
 
 
+def test_verdict_records_alpha_long_mode_without_grading_the_mode():
+  route = {
+    "crashes": 0,
+    "track_rms": None,
+    "passthrough_rms": None,
+    "gasf_eff_mean": None,
+    "windf_mean": None,
+    "alpha_longitudinal": False,
+    "overshoot_frac": 0.0,
+    "creep_frames": 0,
+  }
+
+  mode = next(v for v in validate_log.verdicts(route)
+              if v["check"] == "Alpha Long mode (diagnostic)")
+
+  assert mode["ok"]
+  assert mode["status"] is None
+  assert mode["detail"] == "disabled (stock radar longitudinal)"
+
+
 def test_causal_lpf_can_reproduce_a_zero_initialized_controller_filter():
   samples = np.ones(3)
 

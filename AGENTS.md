@@ -64,7 +64,9 @@ fallback remains retired. `extract.py` and `validate_log.py` record controller-s
 command/output, saturation, steering response, overrides, and faults. For full-rate Odyssey
 stock-radar routes, `validate_log.py` also counter-matches bus-0 `sendcan` to the physical bus-1
 steering frame, so radar forwarding/attenuation is measured separately from controller output. These
-are diagnostics and do not by themselves prove lane tracking or closed-loop road behavior.
+routes also record `CarParams.openpilotLongitudinalControl` as the Odyssey Alpha Long mode, so
+longitudinal A/B rows remain attributable while the lateral map is held fixed. These are diagnostics
+and do not by themselves prove lane tracking or closed-loop road behavior.
 
 ## Attribution boundary
 
