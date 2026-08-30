@@ -51,34 +51,22 @@ physical brake-domain cycling and driver-felt gas/brake behavior worsened. Do no
 this perception/planner regression with gas or brake tuning. Preserve its route/source findings as
 historical evidence and use the vision-only `ody-op` baseline for future comparisons.
 
-Lateral retains `latAccelFactor 0.9` and `steerActuatorDelay 0.15`. The current isolated arm preserves
-the stock 2560 LKA map and extends only higher demand with
-`torqueBP=[0,2560,3072]`, `torqueV=[0,2560,3840]`. The former linear 3840 RDM map remains retired:
-RDM's extra steering range relies on separate braking OpenPilot does not command. Stock-radar
-`sunnypilot/staging` logs show both clean sustained 2560 under-response after exact forwarding and
-radar attenuation in other windows, so locate that transport boundary before attributing the vehicle
-response. The nonlinear arm is unproven and may remain only through the three-independent-example
-road screen below. The former 0.20 s delay fallback remains retired. `extract.py` and
-`validate_log.py` record controller-side lateral command/output, saturation, steering response,
-overrides, and faults. For full-rate Odyssey
-stock-radar routes, `validate_log.py` also counter-matches bus-0 `sendcan` to the physical bus-1
-steering frame, so radar forwarding/attenuation is measured separately from controller output. These
-routes also record `CarParams.openpilotLongitudinalControl` as the Odyssey Alpha Long mode, so
-longitudinal A/B rows remain attributable while the lateral map is held fixed. These are diagnostics
-and do not by themselves prove lane tracking or closed-loop road behavior.
+Lateral uses the stock 2560 LKA command map with `latAccelFactor 0.9` and
+`steerActuatorDelay 0.15`. The isolated nonlinear 3840 arm is retired after its bounded three-route
+screen failed to establish an attributable improvement. Route `0000005d--ed7df97035` was mixed and
+only favored the arm in a thin unmatched comparison; route `00000061--b8f07e1ca7` supplied 15.61
+high-authority seconds but still had `0.245 m/s2` actual-desired RMS and three steering-fault events;
+route `00000064--898a884741` was clean for 5.09 seconds at 3840 but its `+0.009 m/s2` median
+under-response was effectively the same as the comparable stock-2560 readout. Clean operation is not
+proof of benefit, and the custom range no longer meets the PR-minimal retention burden. The former
+linear 3840 RDM map and 0.20 s delay fallback remain retired. Reopen steering authority only for a
+repeatable logged lateral symptom and an isolated matched-road comparison.
 
-The first nonlinear route, `0000005d--ed7df97035`, used stock radar with Alpha Long off and supplied
-3.05 lateral-active minutes. Its four independent sustained episodes above 2560 were mixed: two
-under-responded, one was near neutral, and one over-responded. A transparent speed/demand-conditioned
-comparison favored the arm over available stock samples, but exposure was thin and roads were
-unmatched. This counts as one inconclusive-to-promising example, not proof. Collect at most two more
-adequately exposed routes, compare actual versus desired lateral acceleration in comparable bins,
-and keep or retire the arm from those independent results. The second exposure, Alpha Long route
-`00000061--b8f07e1ca7`, supplied 15.61 clean high-authority seconds with actual-desired RMS
-`0.245 m/s2`, median sign-corrected under-response `+0.070 m/s2`, and 74.4% under-response; the
-overall route also had 3 steering-fault events, 14 overrides, and one brake takeover. Count it as a
-mixed second example, not a 3840 failure or proof of benefit. One more adequately exposed route is
-allowed; safety regressions can end the arm sooner. Zero faults only establish clean operation.
+`extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,
+steering response, overrides, and fault diagnostics. For full-rate Odyssey stock-radar routes,
+`validate_log.py` also counter-matches bus-0 `sendcan` to the physical bus-1 steering frame, so radar
+forwarding or attenuation is measured separately from the stock 2560 controller cap. These
+diagnostics do not by themselves prove lane tracking or closed-loop road behavior.
 
 ## Attribution boundary
 

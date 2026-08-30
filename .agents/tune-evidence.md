@@ -310,6 +310,28 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   transient device scheduling/IPC load alerts rather than a radar, Honda command, or CAN-braking
   fault.
 
+  **Final nonlinear 3840 decision (2026-08-30): RETIRE TO STOCK 2560.** Route `64` closes the
+  predeclared three-independent-example screen. Its nested `843b22ab0a74` lateral production code
+  is behavior-identical to routes `5d`/`61` at `17e1f614d8b3`; the only intervening lateral diff is
+  the explanatory comment. Route `64` supplied 5.09 clean high-authority seconds at a median/max
+  3840 command, actual-versus-desired RMS `0.084 m/s2`, median sign-corrected under-response
+  `+0.009 m/s2`, 54.0% under-response, 33 steering overrides, and zero steering faults. Its two
+  sustained episodes measured 3.80 s at `+0.045 m/s2` median under-response and 1.18 s at
+  `-0.103 m/s2`; clean operation therefore proves exposure, not a consistent tracking gain.
+
+  Across the three arm routes, the same high-authority readout measured RMS/median under-response
+  `0.201/+0.122`, `0.245/+0.070`, and `0.084/+0.009 m/s2` for routes `5d`, `61`, and `64`.
+  Resolved 2560 Alpha Long routes `44`, `45`, and `46` measured `0.036/+0.028`,
+  `0.162/-0.037`, and `0.146/+0.008 m/s2`; their exposure is limited or fault-confounded, so this
+  is not a matched superiority claim. A speed/demand nearest-slice check likewise produced no
+  repeatable arm advantage, and route `64`'s full-route median is effectively identical to route
+  `46`'s stock-2560 median. The first route's thin unmatched promising comparison, the second
+  route's mixed response, and the third route's stock-like response do not meet the burden for a
+  custom production range after the bounded screen. Nested commit `2dcbb30f5` restores only
+  `torqueBP/torqueV=[[0,2560],[0,2560]]`; `latAccelFactor=0.9`,
+  `steerActuatorDelay=0.15`, longitudinal behavior, and lateral diagnostics remain unchanged.
+  Reopen authority only for a repeatable logged lateral symptom and an isolated matched road A/B.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned

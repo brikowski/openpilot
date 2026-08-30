@@ -321,11 +321,11 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert gas != GAS_INACTIVE, "positive low-speed start request left GAS_COMMAND inactive"
       assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive start request"
 
-  def test_nonlinear_lateral_arm_preserves_stock_authority_then_extends_range(self):
-    """Preserve the stock map through 2560 and extend only the isolated high-authority arm."""
+  def test_stock_lateral_range_retained_after_bounded_arm(self):
+    """Retire the unproven high-authority arm without changing the retained torque tune or delay."""
     CP = _car_params()
-    self.assertEqual(list(CP.lateralParams.torqueBP), [0.0, 2560.0, 3072.0])
-    self.assertEqual(list(CP.lateralParams.torqueV), [0.0, 2560.0, 3840.0])
+    self.assertEqual(list(CP.lateralParams.torqueBP), [0.0, 2560.0])
+    self.assertEqual(list(CP.lateralParams.torqueV), [0.0, 2560.0])
     self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, 0.9)
     self.assertAlmostEqual(CP.steerActuatorDelay, 0.15)
     self.assertAlmostEqual(CP.steerActuatorDelay + 0.20, 0.35)
