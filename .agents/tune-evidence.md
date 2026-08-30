@@ -243,6 +243,13 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   achieved-response measurements remain attributable. Count route `61` as example two; one more
   adequately exposed 3840 route is allowed before keep or retirement.
 
+  Route `61` also contains the `+0.02 m/s2` road-speed gas re-entry behavior: its nested history
+  includes the equivalent cherry-picked change `41aaf59ee6f2` (the relevant `carcontroller.py`
+  blob matches `46468be93`). It recorded 7 coast re-entries, no sub-second re-entry pulses, and no
+  tiny-request short pulses; median re-entry duration was 17.85 s and the largest entry request
+  was `+0.042 m/s2`. This is one unpaired exposure, not evidence of improvement versus the prior
+  behavior; retain it as a road readout and do not further tune the threshold from this route.
+
   **Additional new routes (2026-08-30).** Routes `0000005f--aaf45a0905` and
   `00000060--26ccab4b8f` ran the same parent `19e658584ec9` and nested `17e1f614d8b3` with Alpha
   Long disabled, so neither adds longitudinal command-following exposure. They exercised the

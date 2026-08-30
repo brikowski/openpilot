@@ -47,8 +47,9 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - Eligible gas receives the calculated `GAS_COMMAND` immediately once the gas domain is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. Fresh road-speed gas entry is separately withheld for
-  requests at or below `+0.02 m/s2` after coast by nested commit `46468be93`; active gas still
-  follows Honda's upstream `-0.20` release split and low-speed positive starts remain immediate.
+  requests at or below `+0.02 m/s2` after coast by the relevant `carcontroller.py` change from
+  `46468be93` (carried into the tested route history as `41aaf59ee6f2`); active gas still follows
+  Honda's upstream `-0.20` release split and low-speed positive starts remain immediate.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
   other Honda interfaces in the same process.
 - `.agents/analyze_radar_commands.py` is the offline stock-radar reverse-engineering tool. It
@@ -103,9 +104,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
   both recorded stop windows in brake. Those results establish command shape only.
 - Routes `00000052--5550e053e9` and `00000053--360703793d` exercised the preceding `b472c9afe`
   brake arm, not nested `46468be93`. They exposed tiny-positive coast-to-gas intervals, including
-  one true sub-second pulse, which motivated the isolated `+0.02 m/s2` arm. Because no route has
-  yet run with `46468be93`, its effect on closed-loop speed, gas re-entry, and overspeed remains
-  unmeasured.
+  one true sub-second pulse, which motivated the isolated `+0.02 m/s2` arm. At that time no retained
+  road route had run the new gas re-entry behavior, so its effect on closed-loop speed, gas
+  re-entry, and overspeed remained unmeasured. Route 61 later supplied one unpaired exposure through
+  the equivalent `41aaf59ee6f2` history; it did not establish improvement versus the prior arm.
 - Late lead approaches and traffic-light non-commitment have first diverged in `aTarget`/`shouldStop`,
   upstream of the Honda port. Low-speed excess decel has primarily appeared after correct CAN output,
   in Honda's actuator response. Neither symptom justifies more port brake authority.
