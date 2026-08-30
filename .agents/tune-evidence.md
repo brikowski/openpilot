@@ -229,6 +229,10 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   not matched. This is baseline instrumentation, not evidence that either tune is better. Future
   Alpha Long decisions must compare gas with gas and brake with brake in comparable exposure bins,
   then inspect first divergence before changing the Honda port.
+  A direct speed/request-bin audit found no shared speed band with material gas or brake exposure:
+  route `46` was concentrated at 25-35 m/s, while route `61` was concentrated at 15-25 m/s.
+  Therefore route `46`'s lower achieved error cannot be treated as an A/B result against route `61`;
+  the apparent gap remains exposure-confounded.
 
   **Second nonlinear 3840 exposure (2026-08-30).** Route `00000061--b8f07e1ca7` ran parent
   `19e658584ec9`, nested `17e1f614d8b3`, with Alpha Long enabled and supplied 5.9 engaged minutes
