@@ -28,6 +28,14 @@ def test_select_all_new_skips_every_ledgered_route():
   assert scope == "retained"
 
 
+def test_selection_summary_distinguishes_validated_routes_from_no_recorded_routes():
+  summary = pull_logs._selection_summary(24, 24, "retained", [], ["00000061--b8f07e1ca7"] * 24)
+
+  assert "0 not yet validated" in summary
+  assert "24 already validated" in summary
+  assert "device has 24 route(s)" in summary
+
+
 def test_pull_retries_broken_pipe_with_partial_files_and_keepalives(monkeypatch, tmp_path):
   calls = []
 

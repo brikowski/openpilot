@@ -113,6 +113,13 @@ def _select_routes(routes, done, *, since_hours=None, all_new=False):
   return targets, skipped, f"within {since_hours:g}h"
 
 
+def _selection_summary(route_count, recent, scope, targets, skipped, *, redo=False):
+  """Describe selected versus already-validated routes without implying no routes were recorded."""
+  selected_label = "selected" if redo else "not yet validated"
+  return (f"device has {route_count} route(s); {recent} {scope}: "
+          f"{len(targets)} {selected_label}, {len(skipped)} already validated")
+
+
 def _pull_command(rid):
   return ["rsync", "-a", "--partial", "--partial-dir=.rsync-partial", "--timeout=60", "--prune-empty-dirs",
           "--include=*/", "--include=rlog.zst", "--exclude=*",
@@ -237,11 +244,10 @@ def main():
     routes = remote_routes()
     targets, skipped, scope = _select_routes(routes, done, since_hours=args.since_hours, all_new=args.all_new)
     recent = len(targets) + len(skipped)
-    summary = f"device has {len(routes)} route(s); {recent} {scope}: "
-    summary += f"{len(targets)} to pull/validate, {len(skipped)} already validated"
-    print(summary)
+    print(_selection_summary(len(routes), recent, scope, targets, skipped, redo=args.redo))
     if not targets:
-      print("nothing to do.")
+      print(f"no unvalidated routes to pull in this scope; {len(skipped)} already-validated "
+            "route(s) remain on the device.")
       return
     est = sum(n for _, _, n in targets) * 9.5
     print(f"  to pull: {sum(n for _, _, n in targets)} segments, ~{est:.0f} MB")
