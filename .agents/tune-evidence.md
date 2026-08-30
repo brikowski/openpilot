@@ -293,11 +293,27 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   `31.7 mph` at `11:47:11.467`. During that episode the request reached `-0.470 m/s2` and measured
   `aEgo` reached `-0.816 m/s2`. Route-wide carControl-to-plan, request-to-wire, and brake-domain
   wire RMS were `0.0078`, `0.0062`, and `0.0096 m/s2`; there was no meaningful port-added braking.
-  The first unexpected decision is therefore the upstream stateful no-lead cruise command becoming
-  increasingly negative during the descent; Honda domain selection and CAN carried that request,
-  while the achieved response supplied the remaining amplification. This is not radar evidence and
-  does not authorize compensating gas/brake tuning; investigate the upstream cruise-plan episode
-  against a matched road baseline before changing the port.
+  The first unexpected decision is the upstream no-lead cruise candidate, and the exact mechanism is
+  now resolved. `controlsState.forceDecel` and
+  `driverMonitoringState.noResponseForceDecel` were false throughout the event, with selfdrived in
+  `enabled`/`overriding`, so this was not driver-monitoring or soft-disable deceleration. Instead,
+  model gas-press probability crossed below the upstream `0.4` threshold and published
+  `allowThrottle=false`. `get_cruise_accel()` then capped maximum acceleration at
+  `get_coast_accel(pitch)`: as pitch changed from about `-0.034` to `+0.030 rad`, that cap became
+  increasingly negative, from about `-0.11` to `-0.47 m/s2`. Because the plan source was `cruise`,
+  this negative coast estimate remained the requested acceleration even after speed fell below the
+  set point. The driver restored throttle at `31.7 mph`.
+
+  Routes `44`, `45`, `61`, `62`, `63`, and `64` all resolve to the same upstream longitudinal-
+  planner blob (`cc1345a6ae20`). Under the matched diagnostic—active Alpha Long, no lead, source
+  `cruise`, `allowThrottle=false`, more than `1 mph` below set, request below `-0.05 m/s2`, no gas
+  override, and at least `0.5 s` duration—only route `64` had an episode: `4.08 s`, median
+  speed error `-3.4 mph`, median pitch `+0.0108 rad`, minimum request `-0.459 m/s2`, and minimum
+  achieved acceleration `-0.783 m/s2`. Honda domain selection and CAN carried the request while
+  achieved response supplied the remaining amplification. This is an isolated upstream
+  model/planner coast-limit event, not radar evidence or a Honda tune regression; do not compensate
+  for it with gas/brake thresholds or command shaping. A port change is rejected unless a future
+  route first diverges after `carControl` under a comparable request.
 
   The same route logged two large system alerts. At `12:08:04.550`, selfdrived raised `TAKE CONTROL
   IMMEDIATELY / System Lagging`, followed at the same instant by `TAKE CONTROL IMMEDIATELY /

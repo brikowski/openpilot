@@ -253,3 +253,14 @@ from roughly `-0.53..-0.66` to zero or positive, while the late binary brake ent
 achieved-response amplification made those pulses harder. Keep the new `-0.30` entry isolated; do
 not add brake supplement or command shaping unless its road comparison still locates the first
 divergence there.
+
+Route `00000064--898a884741` resolves the reported no-lead drop from 39 to 31 mph without a Honda
+change. Driver-monitoring/soft-disable `forceDecel` was false. The upstream model instead held
+`allowThrottle=false`; `get_cruise_accel()` capped the no-lead `cruise` candidate at the grade-based
+coast estimate, which became increasingly negative to about `-0.47 m/s2` even after speed fell below
+set. `carControl` and CAN followed that request, and Honda amplified the achieved response to about
+`-0.78 m/s2`. Across comparable Alpha Long routes `44`, `45`, `61`, `62`, `63`, and `64` using the
+same planner source, only route `64` had a sustained no-lead, throttle-disallowed braking episode
+while more than 1 mph below set. Treat this as an isolated upstream model/planner coast-limit event;
+do not hide it with Honda thresholds or command shaping. Reopen the port only for a repeatable first
+divergence after `carControl`.
