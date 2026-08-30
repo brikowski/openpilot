@@ -282,6 +282,34 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   route `61` remains example two and one adequately exposed route remains allowed before keep or
   retirement.
 
+  **Route 64 command and alert attribution (2026-08-30).** Route `00000064--898a884741` ran
+  `ody-op` at parent `7e3fb6fc6fd6`, nested `843b22ab0a74`, with Alpha Long enabled. At
+  `11:46:58.574`, the vehicle was at `39.5 mph` against a `38.8 mph` set speed with no lead;
+  `longitudinalPlan` selected `cruise`, `shouldStop` was false, and `aTarget` was `-0.314 m/s2`.
+  `carControl.actuators.accel` was `-0.310`, `ACCEL_COMMAND` was `-0.310`, and the `-0.30`
+  road-speed domain threshold selected `BRAKE_REQUEST`. The brief release at `11:47:00.482`
+  occurred at the set speed, but a second no-lead cruise-braking episode began at `11:47:03.175`
+  at `39.5 mph` with request `-0.303`; it remained active until the driver pressed the gas at
+  `31.7 mph` at `11:47:11.467`. During that episode the request reached `-0.470 m/s2` and measured
+  `aEgo` reached `-0.816 m/s2`. Route-wide carControl-to-plan, request-to-wire, and brake-domain
+  wire RMS were `0.0078`, `0.0062`, and `0.0096 m/s2`; there was no meaningful port-added braking.
+  The first unexpected decision is therefore the upstream stateful no-lead cruise command becoming
+  increasingly negative during the descent; Honda domain selection and CAN carried that request,
+  while the achieved response supplied the remaining amplification. This is not radar evidence and
+  does not authorize compensating gas/brake tuning; investigate the upstream cruise-plan episode
+  against a matched road baseline before changing the port.
+
+  The same route logged two large system alerts. At `12:08:04.550`, selfdrived raised `TAKE CONTROL
+  IMMEDIATELY / System Lagging`, followed at the same instant by `TAKE CONTROL IMMEDIATELY /
+  Communication Issue Between Processes`; the recorded comm issue listed invalid
+  `driverMonitoringState` and missing/not-frequency-OK `alertDebug` and `lateralManeuverPlan`.
+  At `12:10:59.027`, it raised `TAKE CONTROL IMMEDIATELY / System Lagging` without a comm issue.
+  `carControl` and `longitudinalPlan` remained at normal local rates, manager state showed no missing
+  required process, controlsd had no crash, and there was no active Panda CAN fault or bus-off. CPU
+  reached 100% with 89-90% memory use while thermal status remained normal, so treat these as
+  transient device scheduling/IPC load alerts rather than a radar, Honda command, or CAN-braking
+  fault.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
