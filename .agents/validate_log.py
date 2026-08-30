@@ -36,6 +36,7 @@ from tuning_metrics import (
   command_transition_metrics,
   descent_hold_metrics,
   gasfactor_breakpoint_metrics,
+  negative_request_gas_metrics,
   gas_reentry_pulse_metrics,
   hold_last as _hold_last,
   low_speed_brake_pid_metrics,
@@ -119,6 +120,7 @@ LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: region where an incorrect handoff can inter
 GAS_REENTRY_PULSE_ENTRY_MAX = 0.02  # m/s^2: diagnostic boundary for a tiny positive re-entry
 GAS_REENTRY_PULSE_MAX_S = 1.0        # s: short event boundary used by the gas-pulse readout
 GAS_REENTRY_PULSE_ENTRY_WINDOW_S = CAN_COMMAND_PERIOD_S
+NEGATIVE_REQUEST_GAS_THRESHOLD = -0.02  # m/s^2: diagnostic boundary; not a brake-domain rule
 STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
                                # deceleration only says the plan asked for braking; excess separates
                                # car-port contribution from Honda actuator bite. STILL REPORTED,
@@ -952,6 +954,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "gas_reentry_pulse_duration_median": None,
          "gas_reentry_pulse_tiny_duration_median": None,
          "gas_reentry_pulse_entry_request_max": None,
+         "negative_request_gas_sec": None, "negative_request_gas_events": None,
+         "negative_request_gas_longest": None, "negative_request_gas_request_min": None,
          "direct_gas_to_brake": None, "direct_brake_to_gas": None,
          "gasf_by_speed": {}, "gasf_seed_by_speed": {}, "gasf_seconds_by_speed": {},
          "brake_toggle_edges": None, "brake_toggle_per_min": None,
@@ -1038,6 +1042,13 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     entry_request_max=GAS_REENTRY_PULSE_ENTRY_MAX,
     short_duration_s=GAS_REENTRY_PULSE_MAX_S,
     entry_window_s=GAS_REENTRY_PULSE_ENTRY_WINDOW_S,
+  ))
+  out.update(negative_request_gas_metrics(
+    grid, requested, eng_all, vego_all, brakepressed, BR, GAS,
+    low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
+    request_threshold=NEGATIVE_REQUEST_GAS_THRESHOLD,
+    gas_inactive=GAS_INACTIVE,
+    dt=dt,
   ))
   out.update(brake_episode_metrics(
     grid, aego, BR, eng_all, brakepressed, vego_all, pitch,
@@ -1413,6 +1424,13 @@ def verdicts(r):
         f"(<= {GAS_REENTRY_PULSE_ENTRY_MAX:+.2f} m/s^2); median {duration}, "
         f"tiny median {tiny_duration}, max entry request {entry_request} "
         f"(no calibrated limit)")
+  if r.get("negative_request_gas_sec") is not None:
+    request_min = (f"{r['negative_request_gas_request_min']:+.3f} m/s^2"
+                   if r.get("negative_request_gas_request_min") is not None else "n/a")
+    add("negative-request live gas (diagnostic)", True,
+        f"{r['negative_request_gas_sec']:.2f}s over {r['negative_request_gas_events']} event(s), "
+        f"longest {r['negative_request_gas_longest']:.2f}s; request min {request_min} "
+        f"(threshold < {NEGATIVE_REQUEST_GAS_THRESHOLD:+.2f} m/s^2; no calibrated limit)")
   if r.get("direct_gas_to_brake") is not None:
     # Diagnostic only. Direct handoffs are observations, not a claimed comfort invariant.
     add("direct gas/brake handoffs (diagnostic)", True,
@@ -1751,6 +1769,7 @@ def main():
              "achieved following - brake domain (diagnostic)",
              "low-speed brake/accel conflict", "re-engagement brake lifecycle",
              "brake release hold (diagnostic)",
+             "negative-request live gas (diagnostic)",
              "brake-domain transition bursts",
              "sign disagreement", "ride harshness (felt)",
              "stop lurch (felt)"}

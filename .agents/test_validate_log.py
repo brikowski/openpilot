@@ -32,6 +32,7 @@ from tuning_metrics import (
   hold_last,
   low_speed_brake_pid_metrics,
   max_edges_in_window,
+  negative_request_gas_metrics,
   physical_edges,
   post_edge_window,
   shadow_windfactor_metrics,
@@ -536,6 +537,49 @@ def test_gas_reentry_pulse_metric_ignores_disengagement_exit():
   )
 
   assert metrics["gas_reentry_pulse_events"] == 0
+
+
+def test_negative_request_gas_metric_measures_upstream_domain_split():
+  grid = np.arange(0.0, 2.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[50:120] = 100.0
+  requested = np.zeros(len(grid))
+  requested[50:120] = -0.10
+
+  metrics = negative_request_gas_metrics(
+    grid, requested, engaged, vego, brake_pressed, brake_request, gas,
+    low_speed_vego=5.0, request_threshold=-0.02, gas_inactive=-30000,
+  )
+
+  assert np.isclose(metrics["negative_request_gas_sec"], 0.70)
+  assert metrics["negative_request_gas_events"] == 1
+  assert np.isclose(metrics["negative_request_gas_longest"], 0.70)
+  assert np.isclose(metrics["negative_request_gas_request_min"], -0.10)
+
+
+def test_negative_request_gas_metric_excludes_brake_domain_and_threshold_boundary():
+  grid = np.arange(0.0, 1.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_request[20:40] = True
+  gas = np.full(len(grid), 100.0)
+  requested = np.full(len(grid), -0.01)
+  requested[40:60] = -0.10
+
+  metrics = negative_request_gas_metrics(
+    grid, requested, engaged, vego, brake_pressed, brake_request, gas,
+    low_speed_vego=5.0, request_threshold=-0.02, gas_inactive=-30000,
+  )
+
+  assert np.isclose(metrics["negative_request_gas_sec"], 0.20)
+  assert metrics["negative_request_gas_events"] == 1
+  assert np.isclose(metrics["negative_request_gas_request_min"], -0.10)
 
 
 def test_sign_disagreement_ignores_transport_and_separates_downhill():

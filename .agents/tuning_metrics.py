@@ -349,6 +349,50 @@ def gas_reentry_pulse_metrics(grid, requested, engaged, vego, brake_request, bra
   }
 
 
+def negative_request_gas_metrics(grid, requested, engaged, vego, brake_pressed,
+                                 brake_request, gas_command, *, low_speed_vego,
+                                 request_threshold, gas_inactive, dt=None):
+  """Measure live gas while the controller requests a mild negative acceleration.
+
+  This is a diagnostic readout of the upstream-domain split, not a tuning rule or a comfort
+  verdict. It intentionally excludes the low-speed stop/start region, driver-brake frames, and
+  any frame where Honda's brake domain is live.
+  """
+  grid = np.asarray(grid, dtype=float)
+  requested = np.asarray(requested, dtype=float)
+  engaged = np.asarray(engaged, dtype=bool)
+  vego = np.asarray(vego, dtype=float)
+  brake_pressed = np.asarray(brake_pressed, dtype=bool)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  gas_live = np.asarray(gas_command, dtype=float) > gas_inactive
+  empty = {
+    "negative_request_gas_sec": 0.0,
+    "negative_request_gas_events": 0,
+    "negative_request_gas_longest": 0.0,
+    "negative_request_gas_request_min": None,
+  }
+  if not len(grid):
+    return empty
+  if dt is None:
+    dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
+  if not np.isfinite(dt) or dt <= 0.0:
+    dt = 0.01
+
+  eligible = (engaged & ~brake_pressed & (vego >= low_speed_vego) &
+              (requested < request_threshold) & gas_live & ~brake_request)
+  transitions = np.diff(eligible.astype(np.int8), prepend=0, append=0)
+  starts = np.flatnonzero(transitions == 1)
+  ends = np.flatnonzero(transitions == -1)
+  durations = (ends - starts) * dt
+  return {
+    "negative_request_gas_sec": float(eligible.sum() * dt),
+    "negative_request_gas_events": int(len(starts)),
+    "negative_request_gas_longest": float(np.max(durations)) if len(durations) else 0.0,
+    "negative_request_gas_request_min": (
+      float(np.nanmin(requested[eligible])) if eligible.any() else None),
+  }
+
+
 def gasfactor_breakpoint_metrics(speed, effective, eligible, breakpoints, seed_values, *,
                                  half_width, min_exposure_s, dt):
   """Compare learned gasfactor with the live seed over the same narrow speed windows."""
