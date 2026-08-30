@@ -34,17 +34,16 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - `ody-op-test` is frozen after its stacked coast, threshold, integral, onset, and release
   experiments failed the reported downhill symptom.
 - The raw upstream-split `ody-op-test2` reference failed its first road screen. The current
-  `-0.50` arm still removes the compensated threshold, release hysteresis, and onset shaping. At
-  road speed it keeps raw clipped `ACCEL_COMMAND`, coasts for requests from `0` through `-0.50`,
-  brakes below `-0.50`, and retains brake for non-positive requests below 5 m/s. This is a
-  software-validated command path; the latest longitudinal removals and the isolated nonlinear
-  lateral arm still require controlled and ordinary-road validation.
+  three-domain path removes the compensated threshold, release hysteresis, and onset shaping. At
+  road speed it keeps raw clipped `ACCEL_COMMAND`, coasts for requests from `0` through `-0.30`,
+  brakes below `-0.30`, and retains brake for non-positive requests below 5 m/s. The isolated
+  `-0.30` entry still requires a matched descent comparison before it can claim a comfort benefit.
 - Eligible gas receives the calculated `GAS_COMMAND` immediately once the gas domain is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
-  comparison established a road benefit. Fresh road-speed gas entry is separately withheld for
-  requests at or below `+0.02 m/s2` after coast by the relevant `carcontroller.py` change from
-  `46468be93` (carried into the tested route history as `41aaf59ee6f2`); active gas still follows
-  Honda's upstream `-0.20` release split and low-speed positive starts remain immediate.
+  comparison established a road benefit. The former `+0.02 m/s2` fresh-gas re-entry gate is also
+  retired after three exact-arm routes showed no attributable command-following or comfort gain.
+  Any fresh positive road-speed request now selects gas; active gas still follows Honda's upstream
+  `-0.20` release split and low-speed positive starts remain immediate.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
   other Honda interfaces in the same process.
 - `.agents/analyze_radar_commands.py` is the offline stock-radar reverse-engineering tool. It
@@ -100,9 +99,11 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - Routes `00000052--5550e053e9` and `00000053--360703793d` exercised the preceding `b472c9afe`
   brake arm, not nested `46468be93`. They exposed tiny-positive coast-to-gas intervals, including
   one true sub-second pulse, which motivated the isolated `+0.02 m/s2` arm. At that time no retained
-  road route had run the new gas re-entry behavior, so its effect on closed-loop speed, gas
-  re-entry, and overspeed remained unmeasured. Route 61 later supplied one unpaired exposure through
-  the equivalent `41aaf59ee6f2` history; it did not establish improvement versus the prior arm.
+  road route had run the new gas re-entry behavior. Exact-arm routes `30`, `31`, and `32` later
+  supplied 20/14/10 coast re-entries plus 13/8/9 intervals where the gate withheld a positive
+  request, but route-wide gas jerk was mixed versus the pre-arm routes and total short re-entries
+  did not improve consistently. Later routes repeated the implementation without establishing a
+  benefit, so the threshold is retired rather than retained for its tautological zero-tiny count.
 - Late lead approaches and traffic-light non-commitment have first diverged in `aTarget`/`shouldStop`,
   upstream of the Honda port. Low-speed excess decel has primarily appeared after correct CAN output,
   in Honda's actuator response. Neither symptom justifies more port brake authority.

@@ -326,6 +326,27 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   transient device scheduling/IPC load alerts rather than a radar, Honda command, or CAN-braking
   fault.
 
+  **Final `+0.02 m/s2` fresh-gas re-entry decision (2026-08-30): RETIRE.** The candidate was
+  introduced from frozen-input projection and then ran on exact-arm routes
+  `00000030--d288c988eb`, `00000031--781e1d39f2`, and `00000032--3526ec7811` at nested
+  `41aaf59ee6f2`. They supplied 20/14/10 coast re-entries and independently exposed 13/8/9
+  sustained intervals where a positive request at or below `+0.02 m/s2` remained in coast for
+  3.02/0.65/1.19 total seconds. Their gas-domain jerk RMS was `0.291/0.349/0.262 m/s3`, mixed
+  against `0.299/0.349 m/s3` on pre-arm routes `52`/`53`, and they still produced 2/1/1 short
+  coast-to-gas re-entries. No driver report or first-divergence trace attributed an improvement to
+  the threshold.
+
+  Routes `61`-`64` carried behavior-identical gas re-entry code and add current full-rate exposure.
+  Across all seven retained arm routes, the threshold withheld 67 positive-request intervals for
+  10.29 s; 55 were followed by gas entry within 0.25 s and 14 ended as the request reversed. The
+  arm's zero tiny-request entries are therefore an expected consequence of forbidding the category,
+  not evidence that achieved response became smoother or more accurate. Under the predeclared
+  three-example and PR-minimal rules, remove only the `+0.02` fresh-entry gate. Fresh positive
+  road-speed requests select gas again; active gas continuity to `-0.20`, the `-0.30` brake entry,
+  low-speed domains, raw `ACCEL_COMMAND`, and gasfactor remain unchanged. Nested commit
+  `929540bbc` contains only that production removal. The corrected 50 Hz rail assertion was
+  mutation-verified against the old gate before the production change.
+
   **Final nonlinear 3840 decision (2026-08-30): RETIRE TO STOCK 2560.** Route `64` closes the
   predeclared three-independent-example screen. Its nested `843b22ab0a74` lateral production code
   is behavior-identical to routes `5d`/`61` at `17e1f614d8b3`; the only intervening lateral diff is

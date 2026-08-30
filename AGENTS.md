@@ -213,11 +213,16 @@ does not remove route 53's strong-request transient, so no production gas deadba
 these routes alone. Treat route 52's short downhill brake window and both routes' stop-lurch readings
 as thin context, not a brake retune authorization.
 
-The isolated `+0.02 m/s²` Odyssey road-speed gas re-entry arm is retained in the promoted nested
-opendbc baseline after the current road screen. It changes only fresh gas entry after coast; active
-gas, the upstream `-0.20` release split, low-speed start behavior, raw `ACCEL_COMMAND`, and gasfactor
-are unchanged. The screen does not claim that the strong-request transient or Experimental following
-behavior is solved.
+The isolated `+0.02 m/s²` Odyssey road-speed gas re-entry arm is retired after its bounded road
+screen. Exact-arm routes `00000030--d288c988eb`, `00000031--781e1d39f2`, and
+`00000032--3526ec7811` supplied 20/14/10 coast re-entries and independently exposed 13/8/9 intervals
+where the gate withheld a positive OpenPilot request. Gas-domain jerk was mixed at
+`0.291/0.349/0.262 m/s3` versus `0.299/0.349` on the two pre-arm routes, and the arm still produced
+2/1/1 short re-entries. Across those routes plus `61`-`64`, the gate withheld 67 intervals for
+10.29 s; 55 entered gas within 0.25 s anyway. Eliminating the tiny-request classification by
+forbidding those entries is not an attributable ride or tracking improvement. Fresh positive
+road-speed requests therefore select gas again. Active-gas continuity to `-0.20`, the `-0.30` brake
+entry, low-speed domains, raw `ACCEL_COMMAND`, and gasfactor are unchanged.
 
 The failed raw-split reference and direct-handoff architectures remain historical evidence only.
 The promoted command-domain candidate has current ordinary-road screening, but it does not claim to
