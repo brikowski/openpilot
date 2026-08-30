@@ -262,6 +262,10 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   tiny-request short pulses; median re-entry duration was 17.85 s and the largest entry request
   was `+0.042 m/s2`. This is one unpaired exposure, not evidence of improvement versus the prior
   behavior; retain it as a road readout and do not further tune the threshold from this route.
+  The validator's full-route negative-request/live-gas diagnostic measured 94.57 s over 52
+  episodes, with a 17.36 s longest episode and a minimum request of `-0.208 m/s2`. This is the
+  expected upstream gas-domain split measured across the complete drive, not a comfort verdict or
+  evidence to change the `-0.20` release boundary.
 
   **Additional new routes (2026-08-30).** Routes `0000005f--aaf45a0905` and
   `00000060--26ccab4b8f` ran the same parent `19e658584ec9` and nested `17e1f614d8b3` with Alpha
