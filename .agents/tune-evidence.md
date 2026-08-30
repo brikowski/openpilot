@@ -247,6 +247,15 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   timestamps still require separate review. Count route `61` as example two; one more adequately
   exposed 3840 route is allowed before keep or retirement.
 
+  The single brake takeover occurred at relative `272.39 s`. During the preceding `0.67 s`, speed
+  was about `22.3 m/s`, the request ranged down to `-0.138 m/s2`, `GAS_COMMAND` remained live, and
+  `BRAKE_REQUEST` remained off because active gas follows the upstream `-0.20` release split; the
+  selected lead was roughly `105 m` away and `shouldStop` was false. The same live-gas/mild-negative
+  condition is present in retained stock-radar routes `25` and `26` (`177.8`/`449.1 s`) and custom
+  route `44` (`197.8 s`), so it is not unique to route `61` or the `-0.30` brake-entry arm. The
+  takeover frame itself has already dropped `longActive`, so this event does not authorize changing
+  the domain split; review future close-lead events separately from this high-speed intervention.
+
   Route `61` also contains the `+0.02 m/s2` road-speed gas re-entry behavior: its nested history
   includes the equivalent cherry-picked change `41aaf59ee6f2` (the relevant `carcontroller.py`
   blob matches `46468be93`). It recorded 7 coast re-entries, no sub-second re-entry pulses, and no
