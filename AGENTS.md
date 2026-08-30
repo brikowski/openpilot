@@ -73,7 +73,12 @@ under-responded, one was near neutral, and one over-responded. A transparent spe
 comparison favored the arm over available stock samples, but exposure was thin and roads were
 unmatched. This counts as one inconclusive-to-promising example, not proof. Collect at most two more
 adequately exposed routes, compare actual versus desired lateral acceleration in comparable bins,
-and keep or retire the arm from those independent results. Zero faults only establish clean operation.
+and keep or retire the arm from those independent results. The second exposure, Alpha Long route
+`00000061--b8f07e1ca7`, supplied 15.61 clean high-authority seconds with actual-desired RMS
+`0.245 m/s2`, median sign-corrected under-response `+0.070 m/s2`, and 74.4% under-response; the
+overall route also had 3 steering-fault events, 14 overrides, and one brake takeover. Count it as a
+mixed second example, not a 3840 failure or proof of benefit. One more adequately exposed route is
+allowed; safety regressions can end the arm sooner. Zero faults only establish clean operation.
 
 ## Attribution boundary
 

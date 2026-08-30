@@ -14,10 +14,11 @@ a substitute for current code, DBC semantics, or full-rate logs.
   off and measure bus-1 output. Do not restore the former linear 3840 RDM map. The former 0.20 s
   delay fallback remains retired. `validate_log.py` now counter-matches the full-rate controller
   send to the physical bus-1 steering frame so radar attenuation is not confused with controller
-  output. Route `5d` is the first independent, adequately exposed example and is mixed; compare at
-  most two more routes by actual-versus-desired lateral acceleration in comparable speed, demand,
-  and authority bins before keeping or retiring the arm. Exact-route matching is preferred but not
-  required.
+  output. Routes `5d` and `61` are the first two independent examples and are mixed; compare at most
+  one more route by actual-versus-desired lateral acceleration in comparable speed, demand, and
+  authority bins before keeping or retiring the arm. Route `61` had 3 steering-fault events and 14
+  overrides, so its result is not a clean 3840 success or failure. Exact-route matching is preferred
+  but not required.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
   `[0, 8, 15, 22] m/s`, with a per-drive residual learner.

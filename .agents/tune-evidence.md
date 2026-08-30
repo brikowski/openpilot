@@ -230,6 +230,19 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   Alpha Long decisions must compare gas with gas and brake with brake in comparable exposure bins,
   then inspect first divergence before changing the Honda port.
 
+  **Second nonlinear 3840 exposure (2026-08-30).** Route `00000061--b8f07e1ca7` ran parent
+  `19e658584ec9`, nested `17e1f614d8b3`, with Alpha Long enabled and supplied 5.9 engaged minutes
+  at native rates. The nonlinear map reached 15.61 clean high-authority seconds; actual-versus-
+  desired lateral RMS was `0.245 m/s2`, sign-corrected under-response median `+0.070 m/s2`, and
+  74.4% of frames under-responded. The route had 3 steering-fault events, 14 steering overrides,
+  and one brake takeover, so it is a mixed second example rather than a clean arm success or a
+  mechanism-specific failure. Longitudinal command-to-wire RMS was `0.0071/0.0119 m/s2` for gas /
+  brake; achieved `aEgo-request` RMS was `0.185/0.348 m/s2`, with material-command under-response
+  medians `+0.089/-0.165 m/s2`. These are baseline rows with different exposure from route `44`,
+  not an A/B result. The domain model is suppressed for nested `17e1f614d8b3`, but raw wire and
+  achieved-response measurements remain attributable. Count route `61` as example two; one more
+  adequately exposed 3840 route is allowed before keep or retirement.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
