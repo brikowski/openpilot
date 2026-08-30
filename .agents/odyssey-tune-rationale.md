@@ -15,9 +15,12 @@ a substitute for current code, DBC semantics, or full-rate logs.
   `validate_log.py` continues to counter-match full-rate controller sends to the physical bus-1
   steering frame so stock-radar attenuation is not confused with the controller cap.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
-- `GAS_COMMAND` uses a speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
-  `[0, 8, 15, 22] m/s`, with a per-drive residual learner.
-- The active gas arm keeps the speed-scheduled gasfactor calibration but sends `GAS_COMMAND` from
+- `GAS_COMMAND` uses a deterministic speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
+  `[0, 8, 15, 22] m/s`. The live per-drive residual learner is removed in the current isolated
+  road arm because retained logs show material command adaptation but no isolated learner-on/off
+  road benefit. Reject this arm for repeatable gas under-response, excess set-speed loss, or driver
+  gas overrides; fixed-input replay cannot establish that closed-loop result.
+- The active gas arm keeps the static speed-scheduled gasfactor calibration and sends `GAS_COMMAND` from
   the controller request only. Pitch and aerodynamic-drag estimates remain available in offline
   diagnostic analysis; the retired production windfactor state and wind/grade terms do not select
   the brake domain, change `ACCEL_COMMAND`, or add wire force. Command domains use only the raw

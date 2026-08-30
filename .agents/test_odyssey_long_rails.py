@@ -175,6 +175,15 @@ class TestOdysseyLongRails(unittest.TestCase):
     downhill_gas = np.array([gas for _, gas, _ in downhill])
     np.testing.assert_array_equal(downhill_gas, level_gas)
 
+  def test_gas_command_has_no_unproven_live_residual_learner(self):
+    """Identical requests and speed must use the static per-car map regardless of tracking error."""
+    accels = np.full(400, 0.50)
+    _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20)
+    _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20)
+    under_gas = np.array([gas for _, gas, _ in under_response])
+    over_gas = np.array([gas for _, gas, _ in over_response])
+    np.testing.assert_array_equal(under_gas, over_gas)
+
   def test_unidentified_windfactor_is_not_production_state(self):
     """Keep unidentified drag learning offline until it has an attributable command benefit."""
     CP = _car_params()

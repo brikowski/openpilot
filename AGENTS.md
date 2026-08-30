@@ -257,6 +257,16 @@ divergence at the wire and an isolated controlled-road result.
 Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, exposure-qualified,
 per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
 
+The current isolated gas arm removes only the live per-drive residual multiplier and leaves the
+static speed map `[0.72, 0.54, 0.56, 0.60]`, gas lookup ceiling, raw request, command domains,
+brake entry, and lateral behavior unchanged. Deterministic reconstruction of exact current-source
+routes `45`, `61`, `62`, `63`, `64`, `66`, and `68` reproduced recorded `GAS_COMMAND` within
+4-7 counts RMS and showed that the learner added a median 52-133 counts, but its within-drive
+tracking trend was inconsistent and no retained route supplies an isolated learner-on/off A/B.
+This is therefore a road-unproven one-mechanism arm, not a proven reduction. Reject it for
+repeatable gas under-response, excess set-speed loss, or driver gas overrides; do not infer
+closed-loop benefit from fixed-input replay.
+
 The former production windfactor learner was not independently identified from gasfactor and grade,
 never affected commands after wind/grade feedforward was removed, and is now retired. Do not restore
 it merely as diagnostic state. Any future drag replacement must first remain offline and must freeze

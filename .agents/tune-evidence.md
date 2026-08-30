@@ -883,7 +883,7 @@ new brake arm.
 - **opendbc PR #2165** (github.com/commaai/opendbc/pull/2165): wind drag + hill/pitch compensation for Bosch gas pedal force. Still draft upstream, parked pending a broader drivetrain-torque refactor.
 - **opendbc PR #2347** (github.com/commaai/opendbc/pull/2347): documents that Honda Bosch's own ECU already runs an internal brake PID. Stock `kp=0, ki=0` (pure feedforward) in `interface.py` is deliberate - adding openpilot's own closed-loop kp/ki on top "doubles up... and causes oscillating braking/acceleration strength." Check this before adding closed-loop longitudinal gain on a Honda Bosch car.
 - **opendbc PR #2767** (github.com/commaai/opendbc/pull/2767, closed): a comma engineer tried pitch-compensation on the gas pedal and hit "will need to switch the gas actuator from accel-based to torque-based first." Bosch A has no writable torque CAN signal (`ACC_CONTROL.ACCEL_COMMAND` is a real m/s2 value Honda's ECU closes its own loop on; `ACC_CONTROL.GAS_COMMAND` is opaque/unitless). A torque-based redesign would mean reverse-engineering a speed-dependent `GAS_COMMAND`-to-torque calibration using the car's own `GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE` telemetry as ground truth.
-- **Current longitudinal design on this branch**: `ody-op` runs a speed-scheduled, live-trimmed
+- **Current longitudinal design on this branch**: `ody-op` runs a deterministic speed-scheduled
   gasfactor and a raw-request three-domain gas/coast/brake selector. `ACCEL_COMMAND` follows the raw
   controller request at all speeds. Wind and grade do not affect either wire command or domain
   selection, and both the supplemental low-speed PID and former production windfactor learner are
@@ -923,13 +923,33 @@ new brake arm.
   - **Removed — charging diagnostics**: route logs do not replace a mechanic's battery/alternator test, so `validate_log` no longer extracts, grades, or reports `pandaState.voltage`. Historical ledger rows keep their old fields for provenance, but future validation is limited to driving behavior and comma-device thermal health.
   - **Result**: `00000015` (47.3 min / 54.8 mi engaged) all-green. `00000016` (43.0 min / 47.7 mi) flagged brake_pid overshoot 7.3%, 4 jerk binds (peak 3.8 m/s³), and forceful domain chatter — **with zero driver interventions**, which is exactly the contrast coverage + intervention tracking was added to expose. Those three flags are telemetry symptoms on a drive the driver never once overruled; treat them as evidence to accumulate, not a mandate to change the converged tune.
 
-## Live-learn or constant? (decided 2026-07-29; windfactor retired 2026-08-25)
-Only `gasfactor` trim remains live-learned in production, with direct supporting evidence. The
-unidentified windfactor learner failed this retention test and was removed once it had no command
-or telemetry consumer. The test for retaining or adding a learner is:
+## Live-learn or constant? (reopened 2026-08-30; learner-off road arm)
+The earlier aggregate justified the static speed-map seeds, but it did not isolate the additional
+live per-drive residual multiplier against the same static map. The current road arm removes that
+multiplier only. The unidentified windfactor learner remains retired. The test for retaining or
+adding a learner is:
 1. **Is it a physical property of the plant, with an unambiguous per-frame error signal?** `gas_error = self.accel - aEgo` gives the gas/drag learners a signed error every frame. A crossing RATE or a chatter statistic is not that - it is a measurement over minutes.
 2. **Is a wrong value merely degraded, or unstable?** Wrong `gasfactor` = sluggish or eager, self-correcting. Wrong hysteresis width = a behavioral failure mode, and the degenerate direction is dangerous.
+
 3. **Can it converge inside one drive?** **Persistence is deliberately dropped** (no openpilot `Params` from opendbc, see the carcontroller note), so every learned value resets at each ignition. Anything that cannot converge in minutes must be a constant, because it will never be right when it is needed.
+
+**Current live-learner audit.** A deterministic reconstruction over exact current-source routes
+`00000045--6774d01fb4`, `61--b8f07e1ca7`, `62--e38819678c`, `63--fafa9ef1e1`,
+`64--898a884741`, `66--a1ef887d10`, and `68--bbbfad9947` reproduced the recorded
+`GAS_COMMAND` within 4-7 counts RMS. The residual multiplier ended at
+`1.861/1.794/1.817/0.967/2.226/1.968/2.662`; relative to the static map it added a median
+`122/84/99/52/133/119/105` command counts. It is active and material, not dead state.
+
+That movement does not itself prove benefit because the same tracking error drives the update.
+Positive-gas tracking split into route thirds was mixed: some routes improved late (`64`, `66`),
+while others worsened or reversed (`45`, `61`, `62`, `63`, `68`). No retained full-rate route is
+an isolated learner-on/off road comparison. A mutation check using identical request/speed with
+opposite achieved-acceleration error failed under the learner (200/200 commands differed, maximum
+245 counts) and passes with the static map. Fixed-input replays of routes `61`, `64`, and `68`
+confirm raw `ACCEL_COMMAND`, brake/domain selection, and wire jerk are unchanged, but cannot prove
+closed-loop gas response. The arm is accepted only if a road comparison preserves or improves
+gas-domain `aEgo-request` at comparable speed/request/grade, set-speed recovery, and driver gas
+overrides; reject it for repeatable under-response or excess speed loss.
 - **`DOMAIN_HYST_EXIT` must stay a constant.** It is a state-selection parameter, not a plant
   estimate, and descents are only 2-5% of driving (0.17-2.09 min per drive measured), so a learner
   would spend every drive re-converging. Size it offline from road evidence rather than adapting it
