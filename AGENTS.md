@@ -190,8 +190,19 @@ activated Honda at about `-0.50 m/s2`. The same mechanism delayed the six report
 by 0.44-2.85 s versus `-0.30`; achieved acceleration changed from positive to as low as
 `-1.26 m/s2` in the following second. The current isolated arm therefore changes only road-speed
 entry back to `-0.30`. Frozen-input analysis predicts 40 route-wide physical edges versus 28 at
-`-0.50`, while the reported downhill burst peak remains 6/10 s, so this is a road-unproven tradeoff,
-not a comfort fix. Reject it for renewed tapping, excess braking, or incomplete stops.
+`-0.50`, while the reported downhill burst peak remains 6/10 s. Route 44 therefore selected the
+next isolated arm but did not prove a comfort improvement; the current retention decision follows.
+
+Current-code route `00000068--bbbfad9947` retains `-0.30` after the first substantial post-promotion
+descent screen. It produced 40 physical edges, peak 9/10 s, including 27 over 0.90 downhill minutes;
+the worst no-lead window was an upstream `cruise` request oscillation from about
+`-0.31..-0.44 m/s2` to small positive requests. All 20 brake entries occurred below `-0.30`, all 20
+releases occurred at nonnegative requests, and entry request-to-wire error was at most `0.005
+m/s2`. A fixed-input selector comparison predicts 72 edges and 36 direct gas-to-brake handoffs at
+`-0.20`; `-0.50` predicts only six edges by withholding brake for 88 s and remains rejected by route
+44's late-onset evidence. Keep `-0.30` for its attributable domain-separation benefit, not as a
+comfort claim. Do not tune the Honda threshold around the route-68 planner pulse; investigate a
+repeatable upstream no-lead cruise trajectory or a downstream Honda-response divergence separately.
 
 The retained custom longitudinal behavior outside brake authority is the road-supported Odyssey
 gasfactor calibration. The unproven 60-count handoff ramp is retired: eligible gas now receives the

@@ -37,7 +37,11 @@ a substitute for current code, DBC semantics, or full-rate logs.
   three-domain path removes the compensated threshold, release hysteresis, and onset shaping. At
   road speed it keeps raw clipped `ACCEL_COMMAND`, coasts for requests from `0` through `-0.30`,
   brakes below `-0.30`, and retains brake for non-positive requests below 5 m/s. The isolated
-  `-0.30` entry still requires a matched descent comparison before it can claim a comfort benefit.
+  `-0.30` entry is retained after current-code route `68`: it kept every entry request-to-wire error
+  within `0.005 m/s2` and eliminated direct gas-to-brake handoffs, while a fixed-input `-0.20`
+  selector would increase 40 physical edges to 72 and add 36 direct handoffs. This is an
+  attributable domain-separation benefit, not a comfort claim; the route's worst burst originated
+  in an upstream no-lead `cruise` request oscillation and Honda amplified the achieved response.
 - Eligible gas receives the calculated `GAS_COMMAND` immediately once the gas domain is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. The former `+0.02 m/s2` fresh-gas re-entry gate is also
@@ -96,6 +100,17 @@ a substitute for current code, DBC semantics, or full-rate logs.
   `-0.18 m/s2` below 2 mph during a lead stop. The current three-domain candidate changes the
   frozen-input edge counts to 14/2, removes all 36 edges from the exact pulse window, and keeps
   both recorded stop windows in brake. Those results establish command shape only.
+- Current-code route `00000068--bbbfad9947` supplied 8.71 engaged minutes and 0.90 downhill minutes.
+  It produced 40 physical brake edges, peak 9/10 s, with 27 downhill edges. All 20 entries followed
+  requests below `-0.30`, all 20 releases followed nonnegative requests, and the entry
+  request-to-wire error was `0.003/0.005 m/s2` median/max. The worst five-entry window had no lead:
+  upstream `cruise` repeatedly requested about `-0.31..-0.44 m/s2` and then `+0.00..+0.05`, while
+  achieved acceleration swung roughly `+0.4..+0.5` to `-0.55..-0.73 m/s2`. Replaying only the
+  state selector on the recorded inputs gives 72/40/6 edges at entries `-0.20/-0.30/-0.50`, with
+  36/0/0 direct gas-to-brake handoffs and 0.01/47.78/88.06 s of coast. Route 44 already rejects the
+  apparent `-0.50` edge reduction because it delayed real lead/downhill braking. Retain `-0.30` as
+  the smallest supported separation from the upstream `-0.20` gas split; do not claim it fixes the
+  upstream pulse or Honda's downstream amplification.
 - Routes `00000052--5550e053e9` and `00000053--360703793d` exercised the preceding `b472c9afe`
   brake arm, not nested `46468be93`. They exposed tiny-positive coast-to-gas intervals, including
   one true sub-second pulse, which motivated the isolated `+0.02 m/s2` arm. At that time no retained

@@ -1373,6 +1373,43 @@ of downhill exposure cannot answer the active road question. No other lateral or
 tuning changes are authorized from this route; lateral remains diagnostic-only at the stock 2560
 range with no saturation or fault evidence.
 
+### Current-code `-0.30` descent screen: route 68 (2026-08-30)
+
+Route `00000068--bbbfad9947` ran parent `533f4cd91ef8` and nested opendbc
+`929540bbcf79`, the current three-domain source after retirement of the independent `+0.02 m/s2`
+gas re-entry gate. It logged 24.76 minutes, 8.71 engaged minutes / 7.13 miles, and 0.903 downhill
+minutes. It produced 40 physical `BRAKE_REQUEST` edges, peak 9/10 s, including 27 downhill edges
+(29.9/min), so it supplies the substantial descent exposure route 45 lacked.
+
+The worst window ran from `1270.62` through `1280.17 s` and contained five brake entries plus four
+releases. It had no lead, `shouldStop=false`, `allowThrottle=true`, and the upstream source was
+`cruise`. The planner repeatedly reversed from approximately `-0.31..-0.44 m/s2` to
+`+0.00..+0.05`; `carControl` and `ACCEL_COMMAND` followed. Achieved acceleration was commonly
+`+0.4..+0.5 m/s2` at entry and then reached `-0.55..-0.73 m/s2`, so Honda amplified an already
+pulsed request. Across the route, planner-to-`carControl` RMS was `0.0090 m/s2`, brake-domain wire
+RMS was `0.0126 m/s2`, all 20 physical entries occurred below `-0.30`, all 20 releases occurred at
+nonnegative requests, and entry request-to-wire error was `0.003/0.005 m/s2` median/max. Seventeen
+entries were `cruise`-sourced, fourteen were downhill, and there were no direct gas-to-brake
+handoffs. The single brake takeover at `1466.44 s` occurred with no lead, no `BRAKE_REQUEST`, and a
+request/wire of about `-0.03 m/s2`; it is not a late-brake failure of the threshold.
+
+A fixed-input selector comparison isolates domain timing without claiming closed-loop response. On
+the exact recorded inputs, entries at `-0.20/-0.30/-0.50` produce `72/40/6` physical edges, peaks of
+`10/9/2` per 10 s, `30/27/0` downhill edges, `0.01/47.78/88.06 s` of coast, and `36/0/0` direct
+gas-to-brake handoffs. Moving to `-0.20` would therefore increase transitions and collapse the
+deliberate separation from Honda's active-gas release split. The apparent `-0.50` improvement comes
+from withholding requested brake for substantially longer; route 44 already rejects that mechanism
+for 10.05/2.45 s late lead entries and 0.44-2.85 s late downhill entries.
+
+**Decision: KEEP `-0.30`.** It now has an attributable command-domain benefit: current road routes
+avoid direct gas-to-brake handoffs, and route 68's exact inputs predict a material regression if the
+entry returns to the upstream `-0.20` split. This does not claim a comfort improvement. Route 68's
+worst burst first diverges in the upstream no-lead `cruise` trajectory, while the additional bite is
+downstream of a faithful wire command. Do not compensate either contributor with a new Honda
+threshold, brake supplement, release hold, gas deadband, or command shaper. Reopen `-0.30` only if a
+matched road result contradicts its domain-separation benefit or shows a repeatable first divergence
+at the selector itself.
+
 ### Bosch-A object-bank decoder arm (2026-08-25)
 
 `ody-op-radar` ports the five-file decoder change from `mvl-boston/opendbc#669` at exact source
