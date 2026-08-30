@@ -243,6 +243,17 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   achieved-response measurements remain attributable. Count route `61` as example two; one more
   adequately exposed 3840 route is allowed before keep or retirement.
 
+  **Additional new routes (2026-08-30).** Routes `0000005f--aaf45a0905` and
+  `00000060--26ccab4b8f` ran the same parent `19e658584ec9` and nested `17e1f614d8b3` with Alpha
+  Long disabled, so neither adds longitudinal command-following exposure. They exercised the
+  lateral arm, but route `5f` supplied only 4.51 high-authority seconds and its counter-matched
+  bus-1 output reached 3135 counts for only 0.06 seconds above 2560; route `60` supplied 2.75
+  seconds and bus-1 output reached only 1455 counts. The corresponding forwarding attenuation
+  makes these transport/arm diagnostics rather than clean independent 3840 road examples. Both
+  had no steering faults, but each had seven steering overrides. They do not change the decision:
+  route `61` remains example two and one adequately exposed route remains allowed before keep or
+  retirement.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned
