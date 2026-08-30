@@ -369,6 +369,18 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   `steerActuatorDelay=0.15`, longitudinal behavior, and lateral diagnostics remain unchanged.
   Reopen authority only for a repeatable logged lateral symptom and an isolated matched road A/B.
 
+  **Passive stock-camera confirmation (2026-08-30).** Route `00000069--eab494ffc4` logged 8.23
+  minutes with zero engaged time and zero `sendcan` `0xE4` frames, so its camera-side bus-2
+  `STEERING_CONTROL` is an OEM source rather than an OpenPilot command. Of 49,625 checksum-valid
+  source frames, 18,922 carried a nonzero request in DBC `CONTROL_STATE=2` (`lka_active`). Their
+  absolute maximum was exactly 2560; 216 frames (2.16 s at 100 Hz) were exactly at that cap and none
+  exceeded it. The 1,362 request-bit frames labeled `CONTROL_STATE=5` (`rdm_active`) all carried zero
+  torque and `HAPTIC_WARNING=1`; nonzero corrections surrounding those phases remained in state 2
+  and within 2560. The labels are provisional signal semantics, but the raw command bound is not:
+  this route directly confirms the stock camera's nonzero steering wire range as 2560 and supplies
+  no evidence for a stock 3840 command. It supports retaining the restored 2560 map, while remaining
+  a command-range observation rather than lane-tracking or matched-road proof.
+
 - **Route 4f uphill Experimental attribution and lateral arm (2026-08-17).** On
   `0000004f--2cf5bde88e`, positive-pitch Experimental windows contained 15.5 engaged minutes.
   `longitudinalPlan.aTarget` to `carControl.actuators.accel` to `ACCEL_COMMAND` remained aligned

@@ -60,7 +60,11 @@ route `00000064--898a884741` was clean for 5.09 seconds at 3840 but its `+0.009 
 under-response was effectively the same as the comparable stock-2560 readout. Clean operation is not
 proof of benefit, and the custom range no longer meets the PR-minimal retention burden. The former
 linear 3840 RDM map and 0.20 s delay fallback remain retired. Reopen steering authority only for a
-repeatable logged lateral symptom and an isolated matched-road comparison.
+repeatable logged lateral symptom and an isolated matched-road comparison. Passive route
+`00000069--eab494ffc4` independently captured the stock camera source with no OpenPilot steering
+frames: every nonzero steering request stayed within 2560, including 216 full-rate frames exactly at
+the cap, while the DBC-labeled RDM/haptic state carried zero torque. This confirms the stock LKA wire
+range; it does not establish a separate 3840 RDM range or prove lane-tracking quality.
 
 `extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,
 steering response, overrides, and fault diagnostics. For full-rate Odyssey stock-radar routes,

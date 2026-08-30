@@ -206,14 +206,18 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
     np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
     np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
 
-  _, current_threshold, valid, note = _domain_model(
-    "6ff9761fc72e", requested, speed, pitch, windfactor, 0.01,
-  )
-  assert "6ff9761fc72e" in THREE_DOMAIN_COMMITS
-  assert "6ff9761fc72e" not in LOW_SPEED_BRAKE_PID_COMMITS
-  assert valid and note == "raw three-domain coast split"
-  np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
-  np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.30))
+  # The -0.30 arm and its lateral-only descendants keep source-identical brake-domain behavior.
+  # The current revision removes only the independent gas re-entry gate.
+  for current_commit in ("6ff9761fc72e", "17e1f614d8b3", "843b22ab0a74",
+                         "2dcbb30f5a53", "929540bbcf79"):
+    _, current_threshold, valid, note = _domain_model(
+      current_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+    assert current_commit in THREE_DOMAIN_COMMITS
+    assert current_commit not in LOW_SPEED_BRAKE_PID_COMMITS
+    assert valid and note == "raw three-domain coast split"
+    np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+    np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.30))
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.
