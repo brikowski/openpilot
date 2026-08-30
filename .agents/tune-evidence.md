@@ -240,8 +240,12 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   brake; achieved `aEgo-request` RMS was `0.185/0.348 m/s2`, with material-command under-response
   medians `+0.089/-0.165 m/s2`. These are baseline rows with different exposure from route `44`,
   not an A/B result. The domain model is suppressed for nested `17e1f614d8b3`, but raw wire and
-  achieved-response measurements remain attributable. Count route `61` as example two; one more
-  adequately exposed 3840 route is allowed before keep or retirement.
+  achieved-response measurements remain attributable. Event-level inspection measured
+  `carControl`-to-plan RMS `0.0076 m/s2`, brake-domain wire RMS `0.0119 m/s2`, and no sustained
+  interval with `BRAKE_REQUEST` active while the controller requested acceleration. The takeover
+  therefore does not identify a car-port command mismatch by itself; its stop/vehicle-response
+  timestamps still require separate review. Count route `61` as example two; one more adequately
+  exposed 3840 route is allowed before keep or retirement.
 
   Route `61` also contains the `+0.02 m/s2` road-speed gas re-entry behavior: its nested history
   includes the equivalent cherry-picked change `41aaf59ee6f2` (the relevant `carcontroller.py`
