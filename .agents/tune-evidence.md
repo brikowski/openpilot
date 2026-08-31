@@ -961,6 +961,18 @@ gasfactor mechanism while retaining the upstream Odyssey ceiling, raw `ACCEL_COM
 domains, brake behavior, and lateral behavior. Accept only after ordinary-road gas following is at
 least as smooth and accurate; reject for repeatable eager acceleration, surge, or driver overrides.
 
+Fixed-input current-code replay establishes that this is a material command arm, but changes its
+primary risk from the static-map intuition. On common positive-gas frames from routes `61`, `64`,
+and `68`, upstream direct `GAS_COMMAND` was lower than the recorded learner-on command by median
+`59/125/85` counts. Recorded versus direct median commands were `320/252`, `374/245`, and
+`364/257`; their 95th percentiles were `1117/1009`, `1311/935`, and `1545/905`. Where direct replay
+was at least 50 counts lower, the recorded stronger command still had median `request-aEgo`
+`+0.063/+0.074/+0.084 m/s2`, with `64.8/71.3/69.9%` under-response. This is not a causal response
+prediction: the replay freezes the old `aEgo`, and the old learner increased gas from that same
+tracking error. It does prove that the direct arm is commonly weaker than recent driven output and
+must be rejected for repeatable sluggishness or set-speed loss, not screened only for eager
+acceleration, surge, and gas overrides.
+
 The remaining fresh-negative road-speed gas suppression is a separate unresolved mechanism. On
 exact-source routes `45`, `61`-`64`, `66`, and `68`, a settled-window audit of requests from
 `-0.18` to `-0.02 m/s2` found 33 coast windows from 14 physical episodes and 714 active-gas windows

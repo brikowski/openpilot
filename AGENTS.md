@@ -263,9 +263,11 @@ stable positive-gas exposure with the multiplier at or below 1.10 had median und
 comparison can reject the seed as a proven standalone map but cannot prove the replacement on-road.
 The current isolated arm therefore removes the entire custom gasfactor mechanism and restores
 upstream direct gas mapping. Raw `ACCEL_COMMAND`, command domains, brake entry, low-speed behavior,
-and lateral behavior remain unchanged. Reject the arm for repeatable eager acceleration, surge,
-or driver gas overrides; accept it only after ordinary-road gas-domain following is at least as
-smooth and accurate as the retained history.
+and lateral behavior remain unchanged. Fixed-input replay over routes `61`, `64`, and `68` shows
+that direct mapping is usually lower than their recorded learned command, so reject the arm for
+repeatable under-response or set-speed loss as well as eager acceleration, surge, or driver gas
+overrides. Accept it only after ordinary-road gas-domain following is at least as smooth and
+accurate as the retained history; replay cannot establish that response.
 
 Fresh negative road-speed gas entry remains a separate unresolved mechanism: exact-source history
 contains coast and active-gas exposure but no within-route episodes matched closely enough on
