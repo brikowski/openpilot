@@ -1466,6 +1466,35 @@ threshold, brake supplement, release hold, gas deadband, or command shaper. Reop
 matched road result contradicts its domain-separation benefit or shows a repeatable first divergence
 at the selector itself.
 
+### Direct-mapping pre-sync context: routes 6a/6b/6c/6d/6e/70 (2026-08-31)
+
+The six newly pulled full-rate routes all predate the master merge and ran parent
+`0cdcc917185a` with nested opendbc `f52c828fdf49`. Routes `00000070--16f597b10c`,
+`0000006e--a6330d5491`, `0000006d--f3475cee48`, and `0000006b--6f4ad5c4f2`
+provided only 5.6, 4.2, 2.8, and 2.6 engaged minutes respectively; routes
+`0000006a--82ebb3e2e6` and `0000006c--e03f45c15b` had no engagement. All are thin context,
+not independent adequately exposed road examples.
+
+Across the four engaged routes, planner-to-`carControl` RMS was `0.0074-0.0105 m/s2`, gas-domain
+request-to-wire RMS was `0.0069-0.0097 m/s2`, and brake-domain RMS was `0.0076-0.0185 m/s2`.
+There was no sustained sign disagreement, no gas-to-brake handoff above 5 m/s, no rail saturation,
+and no `controlsd` crash. Route 6e still produced 25 physical brake edges, peak 6/10 s, and 2.0x
+achieved-versus-commanded jerk amplification; route 6b measured 1.7x amplification. Those flags
+remain driver-felt context downstream of a close numeric command path, not authority for a new
+Honda threshold or command shaper. The validator suppressed domain-model-specific conclusions
+because `f52c828fdf49` is not yet mapped, so do not infer coast/release semantics from those fields.
+
+Route 6d supplied 11.01 s of lateral high-authority exposure at the stock 2560 CAN limit. Its
+actual-versus-desired lateral-acceleration RMS was `0.092 m/s2`, with median sign-corrected
+under-response `+0.030 m/s2`, but the route had only 2.8 engaged minutes and 5.2% saturation. That
+is insufficient to reopen the retired 3840 arm.
+
+**Decision: NO CHANGE.** Preserve these routes as pre-sync direct-mapping context. None is an
+adequately exposed example for the three-example retirement rule, and none moves the first
+repeatable divergence into the Honda wire translation. The next useful evidence is an ordinary-road
+route on parent `6681d1e9e856` and nested `f52c828fdf49`, with the new big model explicitly selected
+or not selected in provenance.
+
 ### Bosch-A object-bank decoder arm (2026-08-25)
 
 `ody-op-radar` ports the five-file decoder change from `mvl-boston/opendbc#669` at exact source
