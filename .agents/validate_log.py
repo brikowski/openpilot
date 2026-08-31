@@ -160,6 +160,9 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "843b22ab0a74": -0.30,  # lateral comment only; Honda longitudinal source remains unchanged
   "2dcbb30f5a53": -0.30,  # stock-lateral restoration; Honda longitudinal source remains unchanged
   "929540bbcf79": -0.30,  # removes only the independent fresh-gas re-entry gate
+  "5144f8b2fe94": -0.30,  # removes only the unproven Odyssey gasfactor calibration
+  "9d6f42dd4fce": -0.30,  # adopts upstream gas mapping; command-domain selection is unchanged
+  "f52c828fdf49": -0.30,  # scalar simplification preserves the same runtime domain thresholds
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -181,6 +184,9 @@ THREE_DOMAIN_COMMITS = {
   "843b22ab0a74",  # lateral comment only; Honda longitudinal source remains unchanged
   "2dcbb30f5a53",  # stock-lateral restoration; Honda longitudinal source remains unchanged
   "929540bbcf79",  # removes only the independent fresh-gas re-entry gate
+  "5144f8b2fe94",  # removes only the unproven Odyssey gasfactor calibration
+  "9d6f42dd4fce",  # adopts upstream gas mapping; command-domain selection is unchanged
+  "f52c828fdf49",  # scalar simplification preserves the same runtime domain thresholds
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated

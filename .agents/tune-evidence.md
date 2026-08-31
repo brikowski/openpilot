@@ -1481,8 +1481,34 @@ There was no sustained sign disagreement, no gas-to-brake handoff above 5 m/s, n
 and no `controlsd` crash. Route 6e still produced 25 physical brake edges, peak 6/10 s, and 2.0x
 achieved-versus-commanded jerk amplification; route 6b measured 1.7x amplification. Those flags
 remain driver-felt context downstream of a close numeric command path, not authority for a new
-Honda threshold or command shaper. The validator suppressed domain-model-specific conclusions
-because `f52c828fdf49` is not yet mapped, so do not infer coast/release semantics from those fields.
+Honda threshold or command shaper. Exact-source review proves `5144f8b2fe94`, `9d6f42dd4fce`, and
+`f52c828fdf49` retain the same scalar three-domain selector and `-0.30` road-speed entry as
+`929540bbcf79`; they only retire gas calibration, adopt upstream gas mapping, and simplify the
+helper. Revalidation therefore enables the source-matched domain checks. The four engaged routes
+had no sustained positive-request/brake-domain disagreement. Their expected stateful negative-
+request brake holds were 10.04, 0.19, 27.61, and 1.87 s on routes 6b, 6d, 6e, and 70 respectively.
+
+The reported 07:15 lead approach is route 6d at `379.5-383.0 s`. OpenPilot remained in non-
+Experimental standard-personality lead MPC control and never asserted planner or model
+`shouldStop`. It reduced speed from 2.8 to 1.2 mph, but relaxed the plan/controller/CAN command from
+about `-1.03/-1.05/-1.05` to `-0.21/-0.21/-0.21 m/s2` as the logged lead distance fell to about
+2.8 m. Achieved acceleration was near zero during the final rolling second. The driver pressed the
+brake at `382.97 s` with speed about 1.2 mph and logged lead distance about 2.6 m; that press ended
+OpenPilot control before a counterfactual full stop can be observed. The first actionable
+divergence is the upstream stop-spacing/stop-state decision and its mild command, not Honda command
+translation. The low-speed brake domain, Honda `COMPUTER_BRAKING`, and numeric CAN command were all
+active before takeover.
+
+The reported no-lead braking is route 70 at `1088.5-1091.9 s` (13:44:47-13:44:50). There was no
+lead, set speed was 39.8 mph, and speed fell from about 40.1 to 35.8 mph. This was a real upstream
+`cruise` request: the standard model's horizon-1 gas-press probability was mostly below the 0.40
+threshold, making `allowThrottle` false for most of the interval. On the logged positive pitch,
+the upstream coast formula then capped cruise acceleration near `-0.35..-0.50 m/s2`, even after
+speed dropped below the set speed. Direct model desired acceleration was only `+0.03..-0.13`, but
+the model's throttle gate indirectly selected the stronger negative cruise request. `carControl`
+and `ACCEL_COMMAND` followed it at about `-0.33..-0.50`, and Honda `COMPUTER_BRAKING` followed the
+wire. The brief brake after re-engagement at `1097.9 s` instead came from planner state initialized
+to the vehicle's existing deceleration while `allowThrottle` was true.
 
 Route 6d supplied 11.01 s of lateral high-authority exposure at the stock 2560 CAN limit. Its
 actual-versus-desired lateral-acceleration RMS was `0.092 m/s2`, with median sign-corrected
@@ -1491,9 +1517,11 @@ is insufficient to reopen the retired 3840 arm.
 
 **Decision: NO CHANGE.** Preserve these routes as pre-sync direct-mapping context. None is an
 adequately exposed example for the three-example retirement rule, and none moves the first
-repeatable divergence into the Honda wire translation. The next useful evidence is an ordinary-road
-route on parent `6681d1e9e856` and nested `f52c828fdf49`, with the new big model explicitly selected
-or not selected in provenance.
+repeatable divergence into the Honda wire translation. Do not compensate either reported event in
+the Honda port. The next useful evidence is an ordinary-road route on a parent containing upstream
+merge `6681d1e9e856` and nested `f52c828fdf49`, using the standard model. This C3X has no Chestnut,
+so the big-model-only payload from `commaai/openpilot#38681` is not a road-test variable on this
+device.
 
 ### Bosch-A object-bank decoder arm (2026-08-25)
 

@@ -206,10 +206,11 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
     np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
     np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
 
-  # The -0.30 arm and its lateral-only descendants keep source-identical brake-domain behavior.
-  # The current revision removes only the independent gas re-entry gate.
+  # The -0.30 arm and its descendants keep source-identical brake-domain behavior. Later revisions
+  # retire independent gas calibration, adopt upstream gas mapping, and simplify scalar code only.
   for current_commit in ("6ff9761fc72e", "17e1f614d8b3", "843b22ab0a74",
-                         "2dcbb30f5a53", "929540bbcf79"):
+                         "2dcbb30f5a53", "929540bbcf79", "5144f8b2fe94",
+                         "9d6f42dd4fce", "f52c828fdf49"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
