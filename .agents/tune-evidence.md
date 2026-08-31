@@ -957,7 +957,7 @@ screen: over 24.6 s of stable requests with multiplier at or below 1.10, median 
 This is endogenous and not a matched A/B, but it disproves treating the seed as a proven standalone
 calibration. A mutation-verified regression failed all 15 speed/request cases under the static map
 and now requires the exact upstream direct interpolation. The current arm removes the whole custom
-gasfactor mechanism while retaining the instance-scoped upstream ceiling, raw `ACCEL_COMMAND`,
+gasfactor mechanism while retaining the upstream Odyssey ceiling, raw `ACCEL_COMMAND`,
 domains, brake behavior, and lateral behavior. Accept only after ordinary-road gas following is at
 least as smooth and accurate; reject for repeatable eager acceleration, surge, or driver overrides.
 - **`DOMAIN_HYST_EXIT` must stay a constant.** It is a state-selection parameter, not a plant
@@ -974,8 +974,8 @@ explicitly fingerprint-gated so it cannot silently affect every Bosch Honda.
   tooling so old telemetry remains interpretable. It is no longer production parameter data.
 - **Odyssey-only**: `ODYSSEY_LOW_SPEED_DOMAIN_VEGO` and `ODYSSEY_ROAD_BRAKE_ENTRY` are module-level
   physical/domain constants used only inside the Odyssey fingerprint branch.
-- **Instance-scoped upstream behavior**: `BOSCH_GAS_LOOKUP_V = [0, 2000]` remains an instance
-  attribute in `values.py`, not a class mutation, so it does not leak across cars.
+- **Upstream behavior**: Odyssey retains `BOSCH_GAS_LOOKUP_V = [0, 2000]` through the existing
+  `interface.py` parameter path; this branch no longer relocates that behavior.
 
 ## What the replay can and cannot predict (learned the hard way, three times)
 `replay_carcontroller.py` feeds the controller **recorded** `aTarget` and `aEgo`. Those are inputs, frozen. So the replay can answer "given this exact input trajectory, what would the new code command?" and nothing more.

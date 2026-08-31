@@ -205,8 +205,8 @@ comfort claim. Do not tune the Honda threshold around the route-68 planner pulse
 repeatable upstream no-lead cruise trajectory or a downstream Honda-response divergence separately.
 
 The former custom gasfactor calibration is retired. Eligible gas now uses upstream's direct
-request mapping with upstream's Odyssey 2000-count ceiling, retained as an instance attribute so it
-cannot contaminate another Honda interface. The unproven 60-count handoff ramp is also retired:
+request mapping with upstream's Odyssey 2000-count ceiling. The unproven 60-count handoff ramp is
+also retired:
 eligible gas receives the calculated command immediately. Gas and brake remain mutually exclusive,
 disengagement emits no longitudinal command, Panda bounds command magnitude, and positive
 stop-release requests select gas immediately. The route-43 gas arm removed unverified wind/grade

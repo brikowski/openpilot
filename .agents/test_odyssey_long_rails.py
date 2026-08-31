@@ -82,12 +82,10 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
-  def test_odyssey_upstream_gas_ceiling_is_instance_scoped(self):
-    """Keep upstream's Odyssey ceiling without leaking calibration into other Honda interfaces."""
+  def test_odyssey_uses_upstream_gas_ceiling(self):
+    """Keep upstream's Odyssey request-to-gas endpoint."""
     params = CarControllerParams(_car_params())
     assert params.BOSCH_GAS_LOOKUP_V == [0, 2000]
-    assert not hasattr(CarControllerParams, "GAS_FACTOR_SPEED_BP")
-    assert not hasattr(CarControllerParams, "GAS_FACTOR_SPEED_V")
 
   def test_brake_command_matches_request_without_supplement_or_shaping(self):
     for name, vego, state, pitch in (

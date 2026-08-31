@@ -16,10 +16,9 @@ a substitute for current code, DBC semantics, or full-rate logs.
   steering frame so stock-radar attenuation is not confused with the controller cap.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
 - `GAS_COMMAND` uses upstream's direct request mapping and upstream Odyssey ceiling:
-  `[-0.2, 2.0] m/s2 -> [0, 2000]` counts. The ceiling remains instance-scoped to prevent cross-car
-  mutation. The former speed map and live residual multiplier are both retired: the map was an
-  adaptive seed, and keeping it alone permanently attenuated upstream gas to 54-72% without an
-  isolated road benefit.
+  `[-0.2, 2.0] m/s2 -> [0, 2000]` counts. The former speed map and live residual multiplier are
+  both retired: the map was an adaptive seed, and keeping it alone permanently attenuated upstream
+  gas to 54-72% without an isolated road benefit.
 - The active gas arm sends `GAS_COMMAND` from the controller request only. Pitch and
   aerodynamic-drag estimates remain available in offline diagnostic analysis; the retired
   production windfactor state and wind/grade terms do not select the brake domain, change
