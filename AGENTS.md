@@ -267,6 +267,14 @@ and lateral behavior remain unchanged. Reject the arm for repeatable eager accel
 or driver gas overrides; accept it only after ordinary-road gas-domain following is at least as
 smooth and accurate as the retained history.
 
+Fresh negative road-speed gas entry remains a separate unresolved mechanism: exact-source history
+contains coast and active-gas exposure but no within-route episodes matched closely enough on
+request, speed, and grade, and the failed raw-split routes also changed feedforward and gas handoff
+shape. Do not stack that change onto the unroad-tested upstream-direct gas arm. First screen the
+current mapping on an engaged ordinary-road route; then isolate whether fresh requests above the
+upstream `-0.20` split should select gas while preserving the nonnegative release requirement for an
+already-active brake domain.
+
 The former production windfactor learner was not independently identified from gasfactor and grade,
 never affected commands after wind/grade feedforward was removed, and is now retired. Do not restore
 it merely as diagnostic state. Any future drag replacement must first remain offline and hold the

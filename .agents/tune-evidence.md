@@ -960,6 +960,20 @@ and now requires the exact upstream direct interpolation. The current arm remove
 gasfactor mechanism while retaining the upstream Odyssey ceiling, raw `ACCEL_COMMAND`,
 domains, brake behavior, and lateral behavior. Accept only after ordinary-road gas following is at
 least as smooth and accurate; reject for repeatable eager acceleration, surge, or driver overrides.
+
+The remaining fresh-negative road-speed gas suppression is a separate unresolved mechanism. On
+exact-source routes `45`, `61`-`64`, `66`, and `68`, a settled-window audit of requests from
+`-0.18` to `-0.02 m/s2` found 33 coast windows from 14 physical episodes and 714 active-gas windows
+from 102 episodes. No coast/gas episode pair within the same route matched within `0.025 m/s2`
+request, `2.0 m/s` speed, and `0.010 rad` pitch; unmatched route medians were mixed rather than
+repeatably favoring either domain. The older raw-split routes `41`/`42` are not an isolated
+counterfactual because their source also added wind/grade feedforward, rate-limited gas handoffs,
+and used different learner gates. This history therefore cannot establish that suppressing fresh
+negative gas improves achieved command following. Do not stack its removal onto the unroad-tested
+upstream-direct gas arm: first collect an engaged ordinary-road route on the current mapping, then
+change only fresh road-speed requests above the upstream `-0.20` split if a matched road comparison
+is available. Active brake release must remain at a nonnegative request during that test.
+
 - **`DOMAIN_HYST_EXIT` must stay a constant.** It is a state-selection parameter, not a plant
   estimate, and descents are only 2-5% of driving (0.17-2.09 min per drive measured), so a learner
   would spend every drive re-converging. Size it offline from road evidence rather than adapting it
