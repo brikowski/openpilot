@@ -883,8 +883,8 @@ new brake arm.
 - **opendbc PR #2165** (github.com/commaai/opendbc/pull/2165): wind drag + hill/pitch compensation for Bosch gas pedal force. Still draft upstream, parked pending a broader drivetrain-torque refactor.
 - **opendbc PR #2347** (github.com/commaai/opendbc/pull/2347): documents that Honda Bosch's own ECU already runs an internal brake PID. Stock `kp=0, ki=0` (pure feedforward) in `interface.py` is deliberate - adding openpilot's own closed-loop kp/ki on top "doubles up... and causes oscillating braking/acceleration strength." Check this before adding closed-loop longitudinal gain on a Honda Bosch car.
 - **opendbc PR #2767** (github.com/commaai/opendbc/pull/2767, closed): a comma engineer tried pitch-compensation on the gas pedal and hit "will need to switch the gas actuator from accel-based to torque-based first." Bosch A has no writable torque CAN signal (`ACC_CONTROL.ACCEL_COMMAND` is a real m/s2 value Honda's ECU closes its own loop on; `ACC_CONTROL.GAS_COMMAND` is opaque/unitless). A torque-based redesign would mean reverse-engineering a speed-dependent `GAS_COMMAND`-to-torque calibration using the car's own `GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE` telemetry as ground truth.
-- **Current longitudinal design on this branch**: `ody-op` runs a deterministic speed-scheduled
-  gasfactor and a raw-request three-domain gas/coast/brake selector. `ACCEL_COMMAND` follows the raw
+- **Current longitudinal design on this branch**: `ody-op` uses upstream's direct Odyssey gas
+  mapping and a raw-request three-domain gas/coast/brake selector. `ACCEL_COMMAND` follows the raw
   controller request at all speeds. Wind and grade do not affect either wire command or domain
   selection, and both the supplemental low-speed PID and former production windfactor learner are
   removed. See the concise rationale and current code before using this historical archive.
@@ -892,7 +892,7 @@ new brake arm.
 - **Current tune status:** lateral keeps the stock-LKA baseline: 2560 maximum command,
   `latAccelFactor 0.9`, and `steerActuatorDelay=0.15`; maximum authority is reopened only for the
   matched stock-radar/nonlinear road arm defined above. Longitudinal retains the road-screened
-  Odyssey gasfactor and three-domain selector while sending the raw clipped controller request as
+  three-domain selector while using upstream direct gas mapping and sending the raw clipped request as
   `ACCEL_COMMAND`; the custom low-speed PID and production windfactor learner are retired. These
   source changes are software-validated only until controlled maneuvers and an ordinary-road drive
   exercise the exact candidate.
@@ -914,8 +914,8 @@ new brake arm.
 - **Run `.agents/validate_log.py <route>` on every pulled log** (the pull task does this automatically). It computes coverage, convergence/safety, driver interventions, model-following and lifecycle diagnostics, ride-quality indicators, and device thermal health. It prints a PASS/FLAG verdict and appends one idempotent row to the evidence ledger.
 - **Ledger**: `.agents/log-validation-ledger.jsonl` (authoritative, one JSON row per log) + `.agents/log-validation-ledger.md` (human table). The script reads accumulated Odyssey rows and **suggests status transitions** (a symptom flagged in ≥2 of the last 5 logs → promote watch→CANDIDATE; any flag against a check whose status is PARKED → revisit it). It never edits this file — a human applies suggestions to the statuses below, so the prose stays curated.
 - **Metric integrity note (learned 2026-07-22)**: the brake-onset jerk metric MUST differentiate the command over a ~0.1s window with heavy pre-smoothing, NOT frame-to-frame. The command updates at 50Hz (`carcontroller` frame%2) but `carControl` logs at 100Hz; a naive `np.gradient` aliases that into phantom jerk. First real run (route `0000000e`) showed **15 phantom binds** with frame-diff vs **1 marginal bind (peak 2.1 m/s²/s, cap 2.0)** with the windowed metric — the same aliasing that faked the earlier "clipped live" claims. If you touch the jerk check, preserve the windowed differentiation.
-- **How the gasfactor seed was derived (2026-07-24, the first tuning change the ledger produced)**: the cross-drive "GASFACTOR vs SEED" report over 4 drives, confirmed by a narrow ±1.5 m/s per-breakpoint check, showed the low-cruise dip in `GAS_FACTOR_SPEED_V` was over-fit to the single original drive (00000088). Converged effective gasfactor is **0.54 at 8 m/s** (tight spread 0.52-0.56, implied trim ~1.55) and 0.57 at 15 m/s — the seed under-gassed low cruise so the trim re-clawed it 1.55x from 1.0 every cold start (persistence dropped) = the low-cruise sluggishness the baseline is meant to kill. Raised **8→0.54, 15→0.56** (opendbc `ec2e5a1b1`); 22 m/s (0.60, trim 0.94) confirmed good and left as-is. The 0 m/s seed was 0.90 at the time and was **later lowered to 0.72** (the "0 m/s gasfactor seed change" referenced under Ledger Comparability Rules); the shipping table is now `GAS_FACTOR_SPEED_V = [0.72, 0.54, 0.56, 0.60]`. **Read the constant, not this paragraph** — the individual seed commits were squashed into opendbc `ed78a3f1b`, so this history is not recoverable from the log. **This only changes cold-start ramp — converged steady-state is identical** (the trim compensated either way), so it's low-risk and doesn't reopen the converged tune. (Three checks added alongside it — domain chatter, stop-approach quality, post-kickdown surge — were all removed again 2026-07-29; see "Model Following" for why.)
-- **Gasfactor report correction (2026-08-09):** the later `8 m/s: seed 0.54 learned 0.63 (n=46)` suggestion is invalid. That report averaged a 4.0-11.5 m/s midpoint bin, compared it to the single 8 m/s point, accepted ~0.21 s of exposure, mixed code versions, and weighted every drive equally. The validator now uses ±1.5 m/s live-gas frames, compares learned and interpolated seed on identical frames, requires 30 s per route plus 300 s/3 routes, excludes thin/qlog/route 5 data, exposure-weights, and groups by exact `opendbc_commit`. Keep the 8 m/s seed at 0.54 until the corrected report earns new evidence.
+- **How the historical gasfactor seed was derived (2026-07-24):** the cross-drive "GASFACTOR vs SEED" report over 4 drives, confirmed by a narrow ±1.5 m/s per-breakpoint check, showed the low-cruise dip in `GAS_FACTOR_SPEED_V` was over-fit to the single original drive (00000088). Converged effective gasfactor was **0.54 at 8 m/s** (tight spread 0.52-0.56, implied trim ~1.55) and 0.57 at 15 m/s. The seed under-gassed low cruise so the trim re-clawed it 1.55x from 1.0 every cold start. The historical table became `[0.72, 0.54, 0.56, 0.60]`; its individual commits were squashed into opendbc `ed78a3f1b`. This history now exists only to interpret old telemetry: the later retention audit removed both the live trim and its seed table from production.
+- **Gasfactor report correction (2026-08-09):** the later `8 m/s: seed 0.54 learned 0.63 (n=46)` suggestion is invalid. That report averaged a 4.0-11.5 m/s midpoint bin, compared it to the single 8 m/s point, accepted ~0.21 s of exposure, mixed code versions, and weighted every drive equally. The validator now uses ±1.5 m/s live-gas frames, compares learned and interpolated seed on identical frames, requires 30 s per route plus 300 s/3 routes, excludes thin/qlog/route 5 data, exposure-weights, and groups by exact `opendbc_commit`. This corrected report remains historical route evidence; it no longer authorizes a production seed.
 - **Test-suite audit (2026-07-26, routes `00000015`/`00000016`)**: audited every check against the 8 accumulated rows and cut what could never fire or could never *stop* firing, then added what was missing.
   - **Added — coverage** (`engaged_min`, `engaged_mi`, `engaged_frac`, `vego_max`; never flags). The ledger previously could not distinguish a clean row earned over 45 engaged minutes from one earned over 30 seconds, yet every cross-drive aggregate weighted them equally. It now also gates `suggest_status`, so a thin drive can't cast a vote in a "2 of the last 5" promotion.
   - **Added — driver interventions** (gas overrides, brake takeovers, per 10 engaged min). The only checks graded by what the *driver* did rather than by telemetry we chose how to interpret. Note the Honda-specific trap: the brake switch drops `longActive` on the same frame, so `active & brakePressed` reads ~0 on every drive — attribute a press to OP if it was engaged within the preceding 0.5 s. Reported as "N of M brake presses" so a 0 with a healthy M means the driver never braked out, while 0 of 0 means the signal never arrived and the metric proved nothing.
@@ -923,17 +923,16 @@ new brake arm.
   - **Removed — charging diagnostics**: route logs do not replace a mechanic's battery/alternator test, so `validate_log` no longer extracts, grades, or reports `pandaState.voltage`. Historical ledger rows keep their old fields for provenance, but future validation is limited to driving behavior and comma-device thermal health.
   - **Result**: `00000015` (47.3 min / 54.8 mi engaged) all-green. `00000016` (43.0 min / 47.7 mi) flagged brake_pid overshoot 7.3%, 4 jerk binds (peak 3.8 m/s³), and forceful domain chatter — **with zero driver interventions**, which is exactly the contrast coverage + intervention tracking was added to expose. Those three flags are telemetry symptoms on a drive the driver never once overruled; treat them as evidence to accumulate, not a mandate to change the converged tune.
 
-## Live-learn or constant? (reopened 2026-08-30; learner-off road arm)
-The earlier aggregate justified the static speed-map seeds, but it did not isolate the additional
-live per-drive residual multiplier against the same static map. The current road arm removes that
-multiplier only. The unidentified windfactor learner remains retired. The test for retaining or
-adding a learner is:
+## Live-learn or constant? (closed 2026-08-30; upstream-direct road arm)
+The earlier aggregate tuned adaptive seed values but did not isolate either the live multiplier or
+the seed map against upstream direct gas. Both are now retired. The unidentified windfactor learner
+remains retired. The test for retaining or adding a learner is:
 1. **Is it a physical property of the plant, with an unambiguous per-frame error signal?** `gas_error = self.accel - aEgo` gives the gas/drag learners a signed error every frame. A crossing RATE or a chatter statistic is not that - it is a measurement over minutes.
 2. **Is a wrong value merely degraded, or unstable?** Wrong `gasfactor` = sluggish or eager, self-correcting. Wrong hysteresis width = a behavioral failure mode, and the degenerate direction is dangerous.
 
 3. **Can it converge inside one drive?** **Persistence is deliberately dropped** (no openpilot `Params` from opendbc, see the carcontroller note), so every learned value resets at each ignition. Anything that cannot converge in minutes must be a constant, because it will never be right when it is needed.
 
-**Current live-learner audit.** A deterministic reconstruction over exact current-source routes
+**Final live-learner audit.** A deterministic reconstruction over exact current-source routes
 `00000045--6774d01fb4`, `61--b8f07e1ca7`, `62--e38819678c`, `63--fafa9ef1e1`,
 `64--898a884741`, `66--a1ef887d10`, and `68--bbbfad9947` reproduced the recorded
 `GAS_COMMAND` within 4-7 counts RMS. The residual multiplier ended at
@@ -945,11 +944,22 @@ Positive-gas tracking split into route thirds was mixed: some routes improved la
 while others worsened or reversed (`45`, `61`, `62`, `63`, `68`). No retained full-rate route is
 an isolated learner-on/off road comparison. A mutation check using identical request/speed with
 opposite achieved-acceleration error failed under the learner (200/200 commands differed, maximum
-245 counts) and passes with the static map. Fixed-input replays of routes `61`, `64`, and `68`
+245 counts) and passes without it. Fixed-input replays of routes `61`, `64`, and `68`
 confirm raw `ACCEL_COMMAND`, brake/domain selection, and wire jerk are unchanged, but cannot prove
-closed-loop gas response. The arm is accepted only if a road comparison preserves or improves
-gas-domain `aEgo-request` at comparable speed/request/grade, set-speed recovery, and driver gas
-overrides; reject it for repeatable under-response or excess speed loss.
+closed-loop gas response.
+
+The intermediate static-seed arm was committed and deployed at parent `2ae03668e1` / nested
+`5144f8b2f` but had no post-deployment route. Exact upstream inspection then showed that the
+Odyssey 2000-count ceiling is already upstream behavior; the remaining custom map alone scaled
+eligible gas to 54-72% of that direct request. Actual learner-on cold-start exposure supplied a
+screen: over 24.6 s of stable requests with multiplier at or below 1.10, median under-response was
+`+0.177 m/s2` and 82.4% of samples under-responded, versus `+0.084 m/s2` over 551.3 s above 1.50.
+This is endogenous and not a matched A/B, but it disproves treating the seed as a proven standalone
+calibration. A mutation-verified regression failed all 15 speed/request cases under the static map
+and now requires the exact upstream direct interpolation. The current arm removes the whole custom
+gasfactor mechanism while retaining the instance-scoped upstream ceiling, raw `ACCEL_COMMAND`,
+domains, brake behavior, and lateral behavior. Accept only after ordinary-road gas following is at
+least as smooth and accurate; reject for repeatable eager acceleration, surge, or driver overrides.
 - **`DOMAIN_HYST_EXIT` must stay a constant.** It is a state-selection parameter, not a plant
   estimate, and descents are only 2-5% of driving (0.17-2.09 min per drive measured), so a learner
   would spend every drive re-converging. Size it offline from road evidence rather than adapting it
@@ -957,15 +967,15 @@ overrides; reject it for repeatable under-response or excess speed loss.
 - **Historical `hill_brake` gravity-gain candidate — NOT worth learning.** It is physical and has a clean error signal, so it passes tests 1 and 2. But measured over 328k learner-eligible gas-domain frames across 5 drives, the residual `gas_error` regressed on the hill term gives slope +0.092, r = +0.145, implying a correction of only **0.91x** - about 9%, or 0.02 m/s^2 on a typical -0.22 hill term. The residual is dominated by a **pitch-independent** intercept (-0.069) that gasfactor already absorbs. Note the trap: run this regression over ALL historical frames rather than gas-domain-only and the slope inflates, because the former road-speed `brake_pid` made the wire more negative exactly on descents where the hill term was also negative - manufacturing a correlation that had nothing to do with gravity.
 - **Never learn**: `BRAKE_PID_KI` (adapting a gain against Honda's own brake loop is the #2347 instability by construction), `min_gas_accel` or any domain threshold, and the learn divisors themselves.
 
-## Where the constants belong (audited 2026-07-29)
-`tune-evidence.md`'s own Bosch A generalization target is "shared Bosch A logic in `carcontroller.py`, per-car seed tables in `values.py`". **We are not there yet**, and it matters because module-level constants in `carcontroller.py` would silently apply to every Bosch Honda the moment the `CAR.HONDA_ODYSSEY_5G_MMR` gate is widened.
-- **Per-car, stored in `values.py`**: `ODYSSEY_GAS_FACTOR_SPEED_BP/V` (powertrain) and any future
-  evidence-derived fixed drag factor. The former inline `wind_brake_ms2` curve was retired with the
-  dead production learner rather than relocated.
-- **Shared Bosch A, correctly module-level**: `DOMAIN_HYST_EXIT`, `BRAKE_PID_KI`,
-  `BRAKE_DOMAIN_ENTRY` and its `min_gas_accel` speed ramp (PR #2342 behavior), and the learn divisors
-  (convergence rates, not plant properties). The Odyssey fingerprint gate currently limits their use.
-- **Already correct**: `BOSCH_GAS_LOOKUP_V = [0, 2000]` is an INSTANCE attribute in `values.py`, not a class mutation. Upstream still mutates the class for `ACURA_RDX_3G_MMR`; ours does not, which is why it does not leak across cars in `test_car_interfaces`.
+## Where the constants belong (updated 2026-08-30)
+Custom gas calibration constants are removed from production. Remaining Odyssey behavior must stay
+explicitly fingerprint-gated so it cannot silently affect every Bosch Honda.
+- **Historical only**: the former Odyssey gasfactor seed table now lives only in offline validation
+  tooling so old telemetry remains interpretable. It is no longer production parameter data.
+- **Odyssey-only**: `ODYSSEY_LOW_SPEED_DOMAIN_VEGO` and `ODYSSEY_ROAD_BRAKE_ENTRY` are module-level
+  physical/domain constants used only inside the Odyssey fingerprint branch.
+- **Instance-scoped upstream behavior**: `BOSCH_GAS_LOOKUP_V = [0, 2000]` remains an instance
+  attribute in `values.py`, not a class mutation, so it does not leak across cars.
 
 ## What the replay can and cannot predict (learned the hard way, three times)
 `replay_carcontroller.py` feeds the controller **recorded** `aTarget` and `aEgo`. Those are inputs, frozen. So the replay can answer "given this exact input trajectory, what would the new code command?" and nothing more.

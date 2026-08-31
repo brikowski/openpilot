@@ -11,12 +11,7 @@ import numpy as np
 
 from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.honda.values import (
-  CAR,
-  CarControllerParams,
-  ODYSSEY_GAS_FACTOR_SPEED_BP,
-  ODYSSEY_GAS_FACTOR_SPEED_V,
-)
+from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
 PLATFORM = CAR.HONDA_ODYSSEY_5G_MMR
@@ -87,11 +82,10 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
-  def test_gas_factor_seed_is_per_car_parameter_data(self):
-    """The Odyssey powertrain seed must not remain shared controller-module state."""
+  def test_odyssey_upstream_gas_ceiling_is_instance_scoped(self):
+    """Keep upstream's Odyssey ceiling without leaking calibration into other Honda interfaces."""
     params = CarControllerParams(_car_params())
-    assert params.GAS_FACTOR_SPEED_BP == ODYSSEY_GAS_FACTOR_SPEED_BP
-    assert params.GAS_FACTOR_SPEED_V == ODYSSEY_GAS_FACTOR_SPEED_V
+    assert params.BOSCH_GAS_LOOKUP_V == [0, 2000]
     assert not hasattr(CarControllerParams, "GAS_FACTOR_SPEED_BP")
     assert not hasattr(CarControllerParams, "GAS_FACTOR_SPEED_V")
 
@@ -175,8 +169,19 @@ class TestOdysseyLongRails(unittest.TestCase):
     downhill_gas = np.array([gas for _, gas, _ in downhill])
     np.testing.assert_array_equal(downhill_gas, level_gas)
 
+  def test_gas_command_matches_upstream_direct_request_mapping(self):
+    """Odyssey domain selection must not attenuate upstream's request-to-gas calibration."""
+    params = CarControllerParams(_car_params())
+    for vego in (1.0, 8.0, 15.0, 22.0, 31.0):
+      for accel in (0.10, 0.50, 1.00):
+        with self.subTest(vego=vego, accel=accel):
+          _, seen = _run(True, np.full(20, accel), pitch=0.0, vego=vego)
+          gas = {command for _, command, _ in seen}
+          expected = round(np.interp(accel, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V))
+          assert gas == {expected}
+
   def test_gas_command_has_no_unproven_live_residual_learner(self):
-    """Identical requests and speed must use the static per-car map regardless of tracking error."""
+    """Identical requests and speed must keep upstream gas mapping regardless of tracking error."""
     accels = np.full(400, 0.50)
     _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20)
     _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20)

@@ -18,12 +18,6 @@ import numpy as np
 from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.tools.lib.logreader import LogReader
 from openpilot.common.hardware.hw import Paths
-# Compare learned gas factors against the live per-car seed table, so if the seed is retuned this
-# metric automatically measures against the new values instead of a stale copy.
-from opendbc.car.honda.values import (
-  ODYSSEY_GAS_FACTOR_SPEED_BP as GAS_FACTOR_SPEED_BP,
-  ODYSSEY_GAS_FACTOR_SPEED_V as GAS_FACTOR_SPEED_V,
-)
 # Same reason: read the interface accel rails from the live params, not a copied number.
 from opendbc.car.honda.values import CarControllerParams as HondaParams
 
@@ -58,6 +52,10 @@ ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # GEARBOX_AUTO/TRANS_TARGET_GE
 STEERING_CONTROL = 0xE4
 ODYSSEY_STOCK_RADAR_MIN_STEER_SPEED = 70.0 / 3.6
 ODYSSEY_STOCK_LKA_MAX = 2560
+# Historical learner telemetry used this seed table. Keep it in offline tooling after the
+# production gasfactor mechanism is retired so old full-rate routes remain interpretable.
+HISTORICAL_GAS_FACTOR_SPEED_BP = [0.0, 8.0, 15.0, 22.0]
+HISTORICAL_GAS_FACTOR_SPEED_V = [0.72, 0.54, 0.56, 0.60]
 
 # ---- thresholds (grounded in the converged baselines recorded in tune-evidence.md) ----
 # Convergence regression guards. Baselines: track RMS ~0.22, passthrough RMS ~0.11
@@ -1028,7 +1026,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   if gasfactor is not None:
     out.update(gasfactor_breakpoint_metrics(
       vego_all, gasfactor, pid & ~gaspressed & ~brakepressed & (GAS > GAS_INACTIVE),
-      GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V,
+      HISTORICAL_GAS_FACTOR_SPEED_BP, HISTORICAL_GAS_FACTOR_SPEED_V,
       half_width=GASF_SEED_HALF_WIDTH, min_exposure_s=GASF_SEED_MIN_ROUTE_S, dt=dt,
     ))
 
@@ -1879,7 +1877,7 @@ def report_gasf_seed(opendbc_commit):
   if not ody:
     return
   print(f"\n  GASFACTOR vs SEED ({opendbc_commit[:12]}, narrow live-gas windows):")
-  for bp, seed in zip(GAS_FACTOR_SPEED_BP, GAS_FACTOR_SPEED_V, strict=False):
+  for bp, seed in zip(HISTORICAL_GAS_FACTOR_SPEED_BP, HISTORICAL_GAS_FACTOR_SPEED_V, strict=False):
     key = str(float(bp))
     samples = [(d["gasf_by_speed"].get(key), d["gasf_seed_by_speed"].get(key),
                 d["gasf_seconds_by_speed"].get(key, 0.0)) for d in ody]

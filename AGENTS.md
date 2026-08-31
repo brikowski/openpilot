@@ -204,12 +204,13 @@ m/s2`. A fixed-input selector comparison predicts 72 edges and 36 direct gas-to-
 comfort claim. Do not tune the Honda threshold around the route-68 planner pulse; investigate a
 repeatable upstream no-lead cruise trajectory or a downstream Honda-response divergence separately.
 
-The retained custom longitudinal behavior outside brake authority is the road-supported Odyssey
-gasfactor calibration. The unproven 60-count handoff ramp is retired: eligible gas now receives the
-calculated command immediately. Gas and brake remain mutually exclusive, disengagement emits no
-longitudinal command, Panda bounds command magnitude, and positive stop-release requests select gas
-immediately. The new route-43 gas arm leaves that gasfactor calibration and the three-domain brake
-candidate unchanged, but removes unverified wind/grade feedforward from the actual `GAS_COMMAND`.
+The former custom gasfactor calibration is retired. Eligible gas now uses upstream's direct
+request mapping with upstream's Odyssey 2000-count ceiling, retained as an instance attribute so it
+cannot contaminate another Honda interface. The unproven 60-count handoff ramp is also retired:
+eligible gas receives the calculated command immediately. Gas and brake remain mutually exclusive,
+disengagement emits no longitudinal command, Panda bounds command magnitude, and positive
+stop-release requests select gas immediately. The route-43 gas arm removed unverified wind/grade
+feedforward from the actual `GAS_COMMAND` before the remaining gasfactor mechanism was retired.
 The unidentifiable production windfactor learner is retired as dead state: it was not published as
 telemetry and could not choose a domain or affect either wire command. The read-only offline shadow
 remains available for future drag identification. The latest full non-Experimental route still had
@@ -237,7 +238,7 @@ where the gate withheld a positive OpenPilot request. Gas-domain jerk was mixed 
 10.29 s; 55 entered gas within 0.25 s anyway. Eliminating the tiny-request classification by
 forbidding those entries is not an attributable ride or tracking improvement. Fresh positive
 road-speed requests therefore select gas again. Active-gas continuity to `-0.20`, the `-0.30` brake
-entry, low-speed domains, raw `ACCEL_COMMAND`, and gasfactor are unchanged.
+entry, low-speed domains, and raw `ACCEL_COMMAND` are unchanged.
 
 The failed raw-split reference and direct-handoff architectures remain historical evidence only.
 The promoted command-domain candidate has current ordinary-road screening, but it does not claim to
@@ -254,24 +255,22 @@ own acceleration loop. Keep low-speed non-positive requests in the brake domain,
 clipped `carControl.actuators.accel` command. Reopen command shaping only for a repeatable first
 divergence at the wire and an isolated controlled-road result.
 
-Keep the 8 m/s gasfactor seed at `0.54` until the corrected narrow-window, exposure-qualified,
-per-`opendbc_commit` report accumulates enough evidence. Legacy broad-bin suggestions are invalid.
-
-The current isolated gas arm removes only the live per-drive residual multiplier and leaves the
-static speed map `[0.72, 0.54, 0.56, 0.60]`, gas lookup ceiling, raw request, command domains,
-brake entry, and lateral behavior unchanged. Deterministic reconstruction of exact current-source
-routes `45`, `61`, `62`, `63`, `64`, `66`, and `68` reproduced recorded `GAS_COMMAND` within
-4-7 counts RMS and showed that the learner added a median 52-133 counts, but its within-drive
-tracking trend was inconsistent and no retained route supplies an isolated learner-on/off A/B.
-This is therefore a road-unproven one-mechanism arm, not a proven reduction. Reject it for
-repeatable gas under-response, excess set-speed loss, or driver gas overrides; do not infer
-closed-loop benefit from fixed-input replay.
+The brief static-seed arm is superseded before road exposure. Exact upstream source inspection
+showed Odyssey already uses a 2000-count ceiling; retaining only the custom speed map permanently
+reduced otherwise eligible upstream gas to 54-72%. In historical learner-on routes, 24.6 s of
+stable positive-gas exposure with the multiplier at or below 1.10 had median under-response
+`+0.177 m/s2` on 82.4% of samples, versus `+0.084 m/s2` after it exceeded 1.50. That endogenous
+comparison can reject the seed as a proven standalone map but cannot prove the replacement on-road.
+The current isolated arm therefore removes the entire custom gasfactor mechanism and restores
+upstream direct gas mapping. Raw `ACCEL_COMMAND`, command domains, brake entry, low-speed behavior,
+and lateral behavior remain unchanged. Reject the arm for repeatable eager acceleration, surge,
+or driver gas overrides; accept it only after ordinary-road gas-domain following is at least as
+smooth and accurate as the retained history.
 
 The former production windfactor learner was not independently identified from gasfactor and grade,
 never affected commands after wind/grade feedforward was removed, and is now retired. Do not restore
-it merely as diagnostic state. Any future drag replacement must first remain offline and must freeze
-or partition gasfactor during identification because both estimates otherwise use the same tracking
-error; promotion would require its own isolated road arm.
+it merely as diagnostic state. Any future drag replacement must first remain offline and hold the
+upstream gas mapping fixed during identification; promotion would require its own isolated road arm.
 
 Vision-only route `00000044--1f70122a52` separates two contributors. At the 11:57:35 and 12:00:58
 brake takeovers, the planner kept `shouldStop` false and selected a close lead while planner-to-

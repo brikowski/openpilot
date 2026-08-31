@@ -15,16 +15,15 @@ a substitute for current code, DBC semantics, or full-rate logs.
   `validate_log.py` continues to counter-match full-rate controller sends to the physical bus-1
   steering frame so stock-radar attenuation is not confused with the controller cap.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
-- `GAS_COMMAND` uses a deterministic speed-scheduled baseline `[0.72, 0.54, 0.56, 0.60]` at
-  `[0, 8, 15, 22] m/s`. The live per-drive residual learner is removed in the current isolated
-  road arm because retained logs show material command adaptation but no isolated learner-on/off
-  road benefit. Reject this arm for repeatable gas under-response, excess set-speed loss, or driver
-  gas overrides; fixed-input replay cannot establish that closed-loop result.
-- The active gas arm keeps the static speed-scheduled gasfactor calibration and sends `GAS_COMMAND` from
-  the controller request only. Pitch and aerodynamic-drag estimates remain available in offline
-  diagnostic analysis; the retired production windfactor state and wind/grade terms do not select
-  the brake domain, change `ACCEL_COMMAND`, or add wire force. Command domains use only the raw
-  request and speed.
+- `GAS_COMMAND` uses upstream's direct request mapping and upstream Odyssey ceiling:
+  `[-0.2, 2.0] m/s2 -> [0, 2000]` counts. The ceiling remains instance-scoped to prevent cross-car
+  mutation. The former speed map and live residual multiplier are both retired: the map was an
+  adaptive seed, and keeping it alone permanently attenuated upstream gas to 54-72% without an
+  isolated road benefit.
+- The active gas arm sends `GAS_COMMAND` from the controller request only. Pitch and
+  aerodynamic-drag estimates remain available in offline diagnostic analysis; the retired
+  production windfactor state and wind/grade terms do not select the brake domain, change
+  `ACCEL_COMMAND`, or add wire force. Command domains use only the raw request and speed.
 - Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. At road speed,
   the current path leaves that request raw and only selects Honda's gas/coast/brake domain. The
   former one-sided integral correction below 3 m/s is retired for lack of an attributable road
@@ -125,15 +124,13 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - Late lead approaches and traffic-light non-commitment have first diverged in `aTarget`/`shouldStop`,
   upstream of the Honda port. Low-speed excess decel has primarily appeared after correct CAN output,
   in Honda's actuator response. Neither symptom justifies more port brake authority.
-- Windfactor is speed-adaptive but not independently identifiable from gasfactor and grade in ordinary
-  logs. Its value is therefore unproven, not "confirmed not dead" and not part of the known-good set.
-  Route 43 also showed the candidate's GAS_COMMAND far above the pooled stock-radar shadow model at
-  small positive requests. The smallest isolated arm removes wind/grade feedforward from the wire
-  while retaining the road-supported gasfactor calibration. The production windfactor learner was
-  subsequently removed because it had no command or telemetry consumer; the read-only offline
-  shadow remains available for later identification without changing the brake path. Freeze or
-  partition gasfactor during any drag identification because both estimates otherwise use the same
-  error.
+- Windfactor was speed-adaptive but not independently identifiable from gasfactor and grade in
+  ordinary logs. Its value was therefore unproven, not "confirmed not dead" and not part of the
+  known-good set. Route 43 also showed the candidate's `GAS_COMMAND` far above the pooled stock-radar
+  shadow model at small positive requests. The first isolated arm removed wind/grade feedforward
+  while retaining the then-current gasfactor calibration; the later audit retired that calibration
+  too. The read-only offline shadow remains available for later identification without changing the
+  brake path. Hold upstream gas mapping fixed during any future drag identification.
 - The bounded onset shaper was withdrawn before road validation when the calibration audit found
   that every numeric brake value in that stack was still provisional. Its `-0.10`, `0.60 m/s3`,
   `10 m/s`, and `-1.5 m/s2` values remain historical hypotheses, not retained behavior.
