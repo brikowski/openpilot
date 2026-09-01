@@ -1599,6 +1599,12 @@ hygiene, not a tuning candidate: it changes no Odyssey command, domain transitio
 response, and creates no new replay or road claim. Exact-source comparisons may treat
 `f52c828fdf49` and `b5b9f861aa18` as behavior-identical for command following.
 
+The retained road-entry assertion is mutation-verified. Temporarily changing
+`ODYSSEY_ROAD_BRAKE_ENTRY` from `-0.30` to `-0.50` made
+`test_road_speed_coasts_through_raw_split_chatter` fail in all nine speed/pitch subcases because a
+`-0.31 m/s2` request no longer selected braking. Restoring the published `-0.30` source passed the
+test and all nine subcases.
+
 **Decision: REMOVE the dead fork differences; KEEP the evidence-backed command-domain delta.** No
 further behaviorally dead production difference was found in this audit. Revisit the remaining
 two-file delta only when a new full-rate route moves the first divergence into that selector or its
