@@ -671,6 +671,17 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   new command-fidelity or upstream-PR burden. Remove it while retaining low-speed brake-domain
   selection, positive start release, Honda safety rails, and historical source mapping in the
   validator.
+- **Retired-PID tooling cleanup (2026-08-31).** The dedicated four-field low-speed PID reconstruction
+  and its always-OK verdict are removed from current validation. They could not flag a symptom or
+  influence status promotion after the production loop was retired, while the active source-matched
+  request-to-wire, low-speed conflict, stop-lurch, and domain checks already preserve the actionable
+  evidence. Existing JSONL rows remain historical records. `LOW_SPEED_BRAKE_PID_COMMITS` remains
+  deliberately mapped because it still excludes those revisions' intentional low-speed additions
+  from the general port-overshoot metric and selects their correct legacy brake-following threshold.
+  The exact-source mapping test failed when `41aaf59ee6f2` was deliberately mistyped and passed after
+  restoration. No-ledger validation then kept the current `f52c828fdf49` brake-following limit at
+  `0.05 m/s2` on route 70 and the historical `41aaf59ee6f2` limit at `0.15 m/s2` on route 39, while
+  neither output emitted the retired PID fields or verdict.
 
 - **Minimal upstream port (2026-08-17, software evidence only).** The deployed `f53d878a1` child
   was based on the older `b0685818f` Honda architecture. The active behavior was ported onto the

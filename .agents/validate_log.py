@@ -32,7 +32,6 @@ from tuning_metrics import (
   negative_request_gas_metrics,
   gas_reentry_pulse_metrics,
   hold_last as _hold_last,
-  low_speed_brake_pid_metrics,
   max_edges_in_window as _max_edges_in_window,
   physical_edges as _physical_edges,
   sample_rate as _rate,
@@ -623,7 +622,6 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   active = cc_active > 0.5
   pid = (cc_pid > 0.5) & active
   low_speed_pid_expected = provenance.get("opendbc_commit") in LOW_SPEED_BRAKE_PID_COMMITS
-  r["low_speed_brake_pid_expected"] = low_speed_pid_expected
 
   # === coverage ===
   # How much drive is behind every number below. Never flags - it sets how much this row is worth.
@@ -917,16 +915,15 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   the wire. Any gap between those exact handoff signals is ours and nothing upstream can explain
   it. The wire is decoded from sent ACC_CONTROL on bus 1, not proxied off carOutput.
 
-  Deliberately measures the BRAKE domain, which the historical `passthrough_rms` excluded. The
-  source-mapped low-speed brake-tracking arm is measured separately below 3 m/s; other brake-domain
-  frames must carry the controller request unchanged.
+  Deliberately measures the BRAKE domain, which the historical `passthrough_rms` excluded. Exact
+  source mapping retains the wider legacy threshold for revisions that intentionally modified the
+  command below 3 m/s; current brake-domain frames must carry the controller request unchanged.
 
   Returns brake-domain following error, sign disagreement, lifecycle regressions, and physical
   BRAKE_REQUEST burst metrics. The fresh path's raw request and fixed upstream threshold supply the
   exact domain-decision input below.
   """
   source_commit = (opendbc_commit or "")[:12]
-  low_speed_pid_expected = source_commit in LOW_SPEED_BRAKE_PID_COMMITS
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
          "gas_achieved_sec": None, "gas_achieved_rms": None,
          "gas_achieved_error_mean": None, "gas_achieved_under_median": None,
@@ -977,8 +974,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "descent_hold_episodes": None, "descent_hold_sec": None, "descent_hold_longest": None,
          "domain_model_valid": False, "domain_model_note": None,
          "brake_passthrough_expected": False,
-         "low_speed_brake_pid_expected": low_speed_pid_expected, "low_speed_brake_pid_frames": 0,
-         "low_speed_brake_pid_addon_mean": 0.0, "low_speed_brake_pid_addon_max": 0.0,
          "windf_shadow_eligible_min": None, "windf_shadow_start": None,
          "windf_shadow_end": None, "windf_shadow_min": None, "windf_shadow_max": None,
          "windf_shadow_drift": None, "windf_shadow_floor_frac": None,
@@ -1011,10 +1006,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   GAS = _hold_last(grid, t, gas)
   err = AC - requested
   eng_all, vego_all = active.copy(), vego     # keep un-gated masks for stop/start metrics
-  out.update(low_speed_brake_pid_metrics(
-    requested, AC, vego_all, pid, BR,
-    expected=low_speed_pid_expected, min_speed=1e-3, max_speed=3.0,
-  ))
 
   # CUSTOM TOOLING: lifecycle metrics live in a pure array function so synthetic golden traces
   # can prove the one-frame transport allowance, stale re-engagement detection, and gas handoff
@@ -1324,11 +1315,6 @@ def verdicts(r):
       f"{r['overshoot_frac']*100:.1f}% braking frames still adding past target "
       f"(addon mean {r.get('addon_mean', 0):+.3f}; Honda actuator bite {r.get('honda_bite_frac', 0)*100:.1f}% - NOT ours)",
       status="car port added brake authority" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
-  if r.get("low_speed_brake_pid_expected"):
-    add("low-speed brake tracking arm (diagnostic)", True,
-        f"{r.get('low_speed_brake_pid_frames', 0)} frames below 3 m/s; addon mean "
-        f"{r.get('low_speed_brake_pid_addon_mean', 0.0):+.3f}, most negative "
-        f"{r.get('low_speed_brake_pid_addon_max', 0.0):+.3f} m/s^2 (road validation required)")
   add("creep at stop", r["creep_frames"] < CREEP_MIN_FRAMES,
       f"{r['creep_frames']} frames sustained",
       status="creep comp (NOT Ford subtraction - see tune-evidence.md)" if r["creep_frames"] >= CREEP_MIN_FRAMES else None)

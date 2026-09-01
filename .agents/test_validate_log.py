@@ -29,7 +29,6 @@ from tuning_metrics import (
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
   hold_last,
-  low_speed_brake_pid_metrics,
   max_edges_in_window,
   negative_request_gas_metrics,
   physical_edges,
@@ -69,29 +68,6 @@ def test_steering_forwarding_matches_counter_and_measures_radar_extension():
   assert np.isclose(metrics["lat_radar_forward_extended_source_sec"], 0.40)
   assert np.isclose(metrics["lat_radar_forward_extended_output_sec"], 0.40)
   assert np.isclose(metrics["lat_radar_forward_extended_gain_median"], 2800.0 / 3000.0)
-
-
-def test_low_speed_brake_pid_metrics_use_stop_frames_before_following_speed_gate():
-  requested = np.array([-0.2, -0.2, -0.2, -0.2, 0.1, -0.2])
-  wire = np.array([-0.2, -0.3, -0.4, -0.5, 0.1, -0.6])
-  speed = np.array([4.0, 2.5, 1.5, 0.5, 0.5, 0.0])
-  active_pid = np.ones(6, dtype=bool)
-  brake_request = np.array([True, True, True, True, False, True])
-
-  metrics = low_speed_brake_pid_metrics(
-    requested, wire, speed, active_pid, brake_request,
-    expected=True, min_speed=1e-3, max_speed=3.0,
-  )
-  assert metrics["low_speed_brake_pid_expected"]
-  assert metrics["low_speed_brake_pid_frames"] == 3
-  assert np.isclose(metrics["low_speed_brake_pid_addon_mean"], -0.2)
-  assert np.isclose(metrics["low_speed_brake_pid_addon_max"], -0.3)
-
-  inactive = low_speed_brake_pid_metrics(
-    requested, wire, speed, active_pid, brake_request,
-    expected=False, min_speed=1e-3, max_speed=3.0,
-  )
-  assert inactive["low_speed_brake_pid_frames"] == 0
 
 
 def test_domain_achieved_following_separates_gas_and_brake_response():
