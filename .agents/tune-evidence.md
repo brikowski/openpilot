@@ -1560,12 +1560,12 @@ Route `00000070--16f597b10c` is a checked negative example. It never recorded
 `0.061/0.062/0.060 m/s2`, so its low command reflects negligible speed error rather than the
 reported Experimental uphill symptom.
 
-The four newly pulled official Sunnypilot staging routes (`00000002--c58fa1b391` through
-`00000005--47b7f9af6b`) ran commit `70bf4f1791cd` with Alpha Long disabled. They are stock-radar
-longitudinal traces even if Experimental UI features are selected, and cannot validate OpenPilot
-Experimental gas command following. Two older device routes were not transferred before the device
-went offline. They belong to the same reset route sequence, but their exact mode remains unverified
-until the device is reachable and their full-rate logs are pulled.
+All eight retained device routes were pulled from official Sunnypilot staging commit
+`70bf4f1791cd`. The six usable Odyssey routes (`00000000--12e3cbba46` through
+`00000005--47b7f9af6b`) all confirm Alpha Long disabled. They are stock-radar longitudinal traces
+even if Experimental UI features are selected, and cannot validate OpenPilot Experimental gas
+command following. Routes `00000006--9c514718e2` and `00000007--378414eda0` are sparse boot/offroad
+logs with no usable driving exposure.
 
 **Decision: NO HONDA CHANGE.** Experimental adds the model's direct desired-acceleration candidate
 and the planner selects the minimum candidate. In all five uphill examples, that E2E candidate won
