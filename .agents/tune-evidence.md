@@ -1523,6 +1523,59 @@ merge `6681d1e9e856` and nested `f52c828fdf49`, using the standard model. This C
 so the big-model-only payload from `commaai/openpilot#38681` is not a road-test variable on this
 device.
 
+### Experimental uphill under-power archive audit (2026-08-31)
+
+The retained local full-rate archive was screened across all 22 engaged Alpha-Long-capable routes,
+not just the initially reported drives. Seven routes actually recorded Experimental mode while
+longitudinal control was active. Routes `00000026--8d38fff2db` and
+`00000044--1f70122a52` had no comparable uphill/no-lead exposure. The other five supplied 958.42 s
+with speed above 5 m/s, pitch above 0.01 rad, at least 1 m/s below the set speed, no selected lead,
+and no driver pedal override:
+
+- Route `00000031--781e1d39f2` had 14.15 s at a median 35.5 mph set-speed deficit and 2.06 degree
+  uphill pitch. The E2E/plan/`carControl`/CAN medians were
+  `-0.571/-0.570/-0.564/-0.560 m/s2`; gas was inactive and achieved acceleration was
+  `-0.346 m/s2`.
+- Route `00000035--cdd11a0ea4` had 9.92 s at a 30.1 mph deficit and 3.25 degrees. The same medians
+  were `0.000/-0.008/-0.008/-0.010 m/s2`, `GAS_COMMAND` was 188, and achieved acceleration was
+  `-0.362 m/s2`.
+- Routes `00000037--0c6fc80a62`, `00000038--c43a0ecf6c`, and
+  `00000039--39fdbea04c` supplied 261.90, 466.66, and 205.79 s. Their median deficits were
+  17.0, 7.7, and 23.6 mph, while E2E/plan/`carControl`/CAN stayed near
+  `0.038/0.038/0.038/0.040`, `0.054/0.053/0.053/0.050`, and
+  `0.106/0.106/0.106/0.110 m/s2`. Median `GAS_COMMAND` was only 203, 212, and 245; achieved
+  acceleration was `-0.059`, `-0.044`, and `+0.063 m/s2`.
+
+The planner selected `e2e` for 92.6-100% of those samples. Planner-to-`carControl` RMS was
+`0.0065-0.0140 m/s2` and `carControl`-to-CAN RMS was `0.0065-0.0194 m/s2`, so neither
+`longcontrol` nor the Honda translation created the weak request. Same-route non-Experimental
+uphill/no-lead windows on routes 31, 35, 37, and 38 instead requested median acceleration of
+`1.151`, `0.915`, `0.797`, and `0.858 m/s2`, producing median gas commands of 1227, 664, 989,
+and 1391. This is a mode-dependent command difference, not evidence that the Odyssey gas map failed
+to carry a stronger command.
+
+Route `00000070--16f597b10c` is a checked negative example. It never recorded
+`selfdriveState.experimentalMode=true`. Segment 22 stayed `cruise`-sourced at about 69.5 mph with a
+69.6 mph set speed; its median plan/`carControl`/CAN request was approximately
+`0.061/0.062/0.060 m/s2`, so its low command reflects negligible speed error rather than the
+reported Experimental uphill symptom.
+
+The four newly pulled official Sunnypilot staging routes (`00000002--c58fa1b391` through
+`00000005--47b7f9af6b`) ran commit `70bf4f1791cd` with Alpha Long disabled. They are stock-radar
+longitudinal traces even if Experimental UI features are selected, and cannot validate OpenPilot
+Experimental gas command following. Two older device routes were not transferred before the device
+went offline. They belong to the same reset route sequence, but their exact mode remains unverified
+until the device is reachable and their full-rate logs are pulled.
+
+**Decision: NO HONDA CHANGE.** Experimental adds the model's direct desired-acceleration candidate
+and the planner selects the minimum candidate. In all five uphill examples, that E2E candidate won
+and was already near zero or negative despite the large speed deficit; downstream stages followed
+it closely. Increasing gasfactor, adding grade feedforward, or otherwise inflating `GAS_COMMAND`
+would intentionally diverge from OpenPilot's command and would also disturb standard-mode behavior.
+Treat this as an upstream Experimental model/planner limitation. Any future mitigation must be an
+isolated, upstream-style planner guard or fallback on a temporary child branch with matched
+Experimental road evidence; do not compensate in the Honda controller.
+
 ### Bosch-A object-bank decoder arm (2026-08-25)
 
 `ody-op-radar` ports the five-file decoder change from `mvl-boston/opendbc#669` at exact source
