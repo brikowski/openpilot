@@ -29,7 +29,6 @@ from tuning_metrics import (
   causal_lpf as _causal_lpf,
   command_transition_metrics,
   descent_hold_metrics,
-  gasfactor_breakpoint_metrics,
   negative_request_gas_metrics,
   gas_reentry_pulse_metrics,
   hold_last as _hold_last,
@@ -52,10 +51,6 @@ ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # GEARBOX_AUTO/TRANS_TARGET_GE
 STEERING_CONTROL = 0xE4
 ODYSSEY_STOCK_RADAR_MIN_STEER_SPEED = 70.0 / 3.6
 ODYSSEY_STOCK_LKA_MAX = 2560
-# Historical learner telemetry used this seed table. Keep it in offline tooling after the
-# production gasfactor mechanism is retired so old full-rate routes remain interpretable.
-HISTORICAL_GAS_FACTOR_SPEED_BP = [0.0, 8.0, 15.0, 22.0]
-HISTORICAL_GAS_FACTOR_SPEED_V = [0.72, 0.54, 0.56, 0.60]
 
 # ---- thresholds (grounded in the converged baselines recorded in tune-evidence.md) ----
 # Convergence regression guards. Baselines: track RMS ~0.22, passthrough RMS ~0.11
@@ -64,10 +59,6 @@ TRACK_RMS_LIMIT = 0.35        # RMS(aEgo - aTarget) over active pid frames
 PASSTHROUGH_RMS_LIMIT = 0.25  # RMS(wire accel - CarController input) over gas-domain frames
 GASF_EFF_LO, GASF_EFF_HI = 0.05, 1.5   # effective gasfactor sane band (base 0.35-0.9 * trim)
 GASF_DRIFT_LIMIT = 0.30       # within-drive drift (last10% mean - first10% mean); instability
-GASF_SEED_HALF_WIDTH = 1.5    # m/s around each breakpoint; midpoint bins bias sloped seeds
-GASF_SEED_MIN_ROUTE_S = 30.0  # reject drive-level samples too brief to represent a breakpoint
-GASF_SEED_MIN_DRIVES = 3
-GASF_SEED_MIN_TOTAL_S = 300.0
 WINDF_CLIP = 3.0              # windfactor upper clip rail (pinned = learner starved)
 WINDF_FLOOR = 0.1             # lower clip rail; evaluate only at highway speed where aero matters
 WINDF_FLOOR_EPS = 0.005
@@ -969,7 +960,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "negative_request_gas_sec": None, "negative_request_gas_events": None,
          "negative_request_gas_longest": None, "negative_request_gas_request_min": None,
          "direct_gas_to_brake": None, "direct_brake_to_gas": None,
-         "gasf_by_speed": {}, "gasf_seed_by_speed": {}, "gasf_seconds_by_speed": {},
          "brake_toggle_edges": None, "brake_toggle_per_min": None,
          "brake_toggle_max_10s": None, "brake_toggle_min_gap": None,
          "brake_episode_count": None, "brake_episode_duration_median": None,
@@ -1025,16 +1015,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     requested, AC, vego_all, pid, BR,
     expected=low_speed_pid_expected, min_speed=1e-3, max_speed=3.0,
   ))
-
-  # Use the actual live gas domain and compare against the interpolated live seed over exactly
-  # the same frames. This is available only on older routes whose carOutput field carried the
-  # learner; current upstream actuator semantics intentionally leave the report empty.
-  if gasfactor is not None:
-    out.update(gasfactor_breakpoint_metrics(
-      vego_all, gasfactor, pid & ~gaspressed & ~brakepressed & (GAS > GAS_INACTIVE),
-      HISTORICAL_GAS_FACTOR_SPEED_BP, HISTORICAL_GAS_FACTOR_SPEED_V,
-      half_width=GASF_SEED_HALF_WIDTH, min_exposure_s=GASF_SEED_MIN_ROUTE_S, dt=dt,
-    ))
 
   # CUSTOM TOOLING: lifecycle metrics live in a pure array function so synthetic golden traces
   # can prove the one-frame transport allowance, stale re-engagement detection, and gas handoff
@@ -1819,7 +1799,6 @@ def main():
       for s in sugg:
         print(f"    * {s}")
     report_thermal_advisory()
-    report_gasf_seed(r.get("opendbc_commit"))
 
 
 def report_thermal_advisory():
@@ -1869,38 +1848,6 @@ def report_thermal_advisory():
   else:
     print(f"    OK - hottest cold start is {worst['temp_start']:.0f}C, under the "
           f"{SOAK_ADVISORY_C:.0f}C advisory line. Leaving it in the car is fine for now.")
-
-
-def report_gasf_seed(opendbc_commit):
-  """Report exposure-weighted gasfactor deltas for one exact opendbc version."""
-  if not LEDGER_JSONL.exists() or not opendbc_commit:
-    return
-  rows = [json.loads(l) for l in LEDGER_JSONL.read_text().splitlines() if l.strip()]
-  ody = [r for r in rows if r.get("platform") == ODYSSEY and
-         r.get("opendbc_commit") == opendbc_commit and not r.get("thin_sample") and
-         not r.get("qlog_fallback") and r.get("gasf_seed_by_speed") and
-         r.get("gasf_seconds_by_speed") and "00000005--" not in r.get("route", "")]
-  if not ody:
-    return
-  print(f"\n  GASFACTOR vs SEED ({opendbc_commit[:12]}, narrow live-gas windows):")
-  for bp, seed in zip(HISTORICAL_GAS_FACTOR_SPEED_BP, HISTORICAL_GAS_FACTOR_SPEED_V, strict=False):
-    key = str(float(bp))
-    samples = [(d["gasf_by_speed"].get(key), d["gasf_seed_by_speed"].get(key),
-                d["gasf_seconds_by_speed"].get(key, 0.0)) for d in ody]
-    samples = [(learned, expected, seconds) for learned, expected, seconds in samples
-               if learned is not None and expected is not None and seconds >= GASF_SEED_MIN_ROUTE_S]
-    total_s = sum(x[2] for x in samples)
-    if len(samples) < GASF_SEED_MIN_DRIVES or total_s < GASF_SEED_MIN_TOTAL_S:
-      print(f"    {bp:>4.0f} m/s: point seed {seed:.2f}  ({len(samples)} drives, {total_s:.0f}s; "
-            f"need {GASF_SEED_MIN_DRIVES} drives/{GASF_SEED_MIN_TOTAL_S:.0f}s)")
-      continue
-    weights = np.array([x[2] for x in samples])
-    deltas = np.array([x[0] - x[1] for x in samples])
-    delta = float(np.average(deltas, weights=weights))
-    hint = (f" -> point seed {'low' if delta > 0 else 'high'} by {abs(delta):.2f}, "
-            f"consider {seed + delta:.2f}") if abs(delta) > 0.08 else " (seed good)"
-    print(f"    {bp:>4.0f} m/s: point seed {seed:.2f}, delta {delta:+.2f} "
-          f"(n={len(samples)}, {total_s:.0f}s){hint}")
 
 
 if __name__ == "__main__":

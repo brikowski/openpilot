@@ -393,33 +393,6 @@ def negative_request_gas_metrics(grid, requested, engaged, vego, brake_pressed,
   }
 
 
-def gasfactor_breakpoint_metrics(speed, effective, eligible, breakpoints, seed_values, *,
-                                 half_width, min_exposure_s, dt):
-  """Compare learned gasfactor with the live seed over the same narrow speed windows."""
-  speed = np.asarray(speed, dtype=float)
-  effective = np.asarray(effective, dtype=float)
-  eligible = np.asarray(eligible, dtype=bool)
-  breakpoints = np.asarray(breakpoints, dtype=float)
-  seed_values = np.asarray(seed_values, dtype=float)
-  finite = np.isfinite(speed) & np.isfinite(effective)
-  learned, expected, exposure = {}, {}, {}
-  for bp in breakpoints:
-    key = str(float(bp))
-    mask = eligible & finite & (np.abs(speed - bp) <= half_width)
-    seconds = float(mask.sum() * dt)
-    exposure[key] = seconds
-    if seconds < min_exposure_s:
-      learned[key] = expected[key] = None
-      continue
-    learned[key] = float(np.mean(effective[mask]))
-    expected[key] = float(np.mean(np.interp(speed[mask], breakpoints, seed_values)))
-  return {
-    "gasf_by_speed": learned,
-    "gasf_seed_by_speed": expected,
-    "gasf_seconds_by_speed": exposure,
-  }
-
-
 def command_transition_metrics(grid, requested, engaged, vego, brake_pressed, brake_request,
                                gas_command, wire_accel, *, low_speed_vego, request_threshold,
                                command_period_s, reengage_window_s, gas_inactive):

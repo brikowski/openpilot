@@ -915,7 +915,7 @@ new brake arm.
 - **Ledger**: `.agents/log-validation-ledger.jsonl` (authoritative, one JSON row per log) + `.agents/log-validation-ledger.md` (human table). The script reads accumulated Odyssey rows and **suggests status transitions** (a symptom flagged in ≥2 of the last 5 logs → promote watch→CANDIDATE; any flag against a check whose status is PARKED → revisit it). It never edits this file — a human applies suggestions to the statuses below, so the prose stays curated.
 - **Metric integrity note (learned 2026-07-22)**: the brake-onset jerk metric MUST differentiate the command over a ~0.1s window with heavy pre-smoothing, NOT frame-to-frame. The command updates at 50Hz (`carcontroller` frame%2) but `carControl` logs at 100Hz; a naive `np.gradient` aliases that into phantom jerk. First real run (route `0000000e`) showed **15 phantom binds** with frame-diff vs **1 marginal bind (peak 2.1 m/s²/s, cap 2.0)** with the windowed metric — the same aliasing that faked the earlier "clipped live" claims. If you touch the jerk check, preserve the windowed differentiation.
 - **How the historical gasfactor seed was derived (2026-07-24):** the cross-drive "GASFACTOR vs SEED" report over 4 drives, confirmed by a narrow ±1.5 m/s per-breakpoint check, showed the low-cruise dip in `GAS_FACTOR_SPEED_V` was over-fit to the single original drive (00000088). Converged effective gasfactor was **0.54 at 8 m/s** (tight spread 0.52-0.56, implied trim ~1.55) and 0.57 at 15 m/s. The seed under-gassed low cruise so the trim re-clawed it 1.55x from 1.0 every cold start. The historical table became `[0.72, 0.54, 0.56, 0.60]`; its individual commits were squashed into opendbc `ed78a3f1b`. This history now exists only to interpret old telemetry: the later retention audit removed both the live trim and its seed table from production.
-- **Gasfactor report correction (2026-08-09):** the later `8 m/s: seed 0.54 learned 0.63 (n=46)` suggestion is invalid. That report averaged a 4.0-11.5 m/s midpoint bin, compared it to the single 8 m/s point, accepted ~0.21 s of exposure, mixed code versions, and weighted every drive equally. The validator now uses ±1.5 m/s live-gas frames, compares learned and interpolated seed on identical frames, requires 30 s per route plus 300 s/3 routes, excludes thin/qlog/route 5 data, exposure-weights, and groups by exact `opendbc_commit`. This corrected report remains historical route evidence; it no longer authorizes a production seed.
+- **Gasfactor report correction (2026-08-09):** the later `8 m/s: seed 0.54 learned 0.63 (n=46)` suggestion is invalid. That report averaged a 4.0-11.5 m/s midpoint bin, compared it to the single 8 m/s point, accepted ~0.21 s of exposure, mixed code versions, and weighted every drive equally. The corrected historical analysis used ±1.5 m/s live-gas frames, compared learned and interpolated seed on identical frames, required 30 s per route plus 300 s/3 routes, excluded thin/qlog/route 5 data, exposure-weighted, and grouped by exact `opendbc_commit`. Its results remain historical route evidence. The active validator retired this report on 2026-08-31 after production removed both the learner and its seed table.
 - **Test-suite audit (2026-07-26, routes `00000015`/`00000016`)**: audited every check against the 8 accumulated rows and cut what could never fire or could never *stop* firing, then added what was missing.
   - **Added — coverage** (`engaged_min`, `engaged_mi`, `engaged_frac`, `vego_max`; never flags). The ledger previously could not distinguish a clean row earned over 45 engaged minutes from one earned over 30 seconds, yet every cross-drive aggregate weighted them equally. It now also gates `suggest_status`, so a thin drive can't cast a vote in a "2 of the last 5" promotion.
   - **Added — driver interventions** (gas overrides, brake takeovers, per 10 engaged min). The only checks graded by what the *driver* did rather than by telemetry we chose how to interpret. Note the Honda-specific trap: the brake switch drops `longActive` on the same frame, so `active & brakePressed` reads ~0 on every drive — attribute a press to OP if it was engaged within the preceding 0.5 s. Reported as "N of M brake presses" so a 0 with a healthy M means the driver never braked out, while 0 of 0 means the signal never arrived and the metric proved nothing.
@@ -996,8 +996,9 @@ is available. Active brake release must remain at a nonnegative request during t
 ## Where the constants belong (updated 2026-08-30)
 Custom gas calibration constants are removed from production. Remaining Odyssey behavior must stay
 explicitly fingerprint-gated so it cannot silently affect every Bosch Honda.
-- **Historical only**: the former Odyssey gasfactor seed table now lives only in offline validation
-  tooling so old telemetry remains interpretable. It is no longer production parameter data.
+- **Historical only**: the former Odyssey gasfactor seed table remains in this evidence and old
+  ledger rows. The active validator no longer computes or recommends it, and it is not production
+  parameter data.
 - **Odyssey-only**: `ODYSSEY_LOW_SPEED_DOMAIN_VEGO` and `ODYSSEY_ROAD_BRAKE_ENTRY` are module-level
   physical/domain constants used only inside the Odyssey fingerprint branch.
 - **Upstream behavior**: Odyssey retains `BOSCH_GAS_LOOKUP_V = [0, 2000]` through the existing
@@ -1609,6 +1610,29 @@ test and all nine subcases.
 further behaviorally dead production difference was found in this audit. Revisit the remaining
 two-file delta only when a new full-rate route moves the first divergence into that selector or its
 CAN-domain translation.
+
+### Retired gasfactor seed reporter removed from active validation (2026-08-31)
+
+The production gasfactor learner and its Odyssey seed table were already retired, but
+`validate_log.py` still calculated per-breakpoint learned-versus-seed fields for legacy telemetry
+and automatically printed a cross-route seed recommendation after every ledger update. A complete
+reference trace found that the report fed no current verdict, no status suggestion, no command-
+following metric, and no production parameter. Its breakpoint helper had no other caller, and its
+three tests only proved the retired report's own aggregation policy. Current routes cannot populate
+the input because `carOutput.actuatorsOutput` again carries actuator output rather than fork-only
+learner state.
+
+The active reporter, its seed constants, breakpoint helper, empty current-route fields, automatic
+call, and three self-tests are removed. Historical JSONL rows retain their original
+`gasf_by_speed`, `gasf_seed_by_speed`, and `gasf_seconds_by_speed` fields, and the derivation remains
+in this evidence file, so no historical result is rewritten or lost. Legacy route-level learner
+telemetry decoding remains available where exact source provenance proves those old `carOutput`
+semantics.
+
+The focused validator suite passes 37 tests after the removal; the broader tooling group passes 50.
+**Decision: RETIRE this report.** A future gas calibration must begin as a new offline identification
+question with current actuator semantics and its own evidence, not by reviving a recommendation for
+a production mechanism that no longer exists.
 
 ### Bosch-A object-bank decoder arm (2026-08-25)
 
