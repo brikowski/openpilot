@@ -1576,6 +1576,34 @@ Treat this as an upstream Experimental model/planner limitation. Any future miti
 isolated, upstream-style planner guard or fallback on a temporary child branch with matched
 Experimental road evidence; do not compensate in the Honda controller.
 
+### Current-production delta hygiene audit (2026-08-31)
+
+After parent `ody-op` advanced to upstream master `da8ce858ec`, openpilot still pinned opendbc
+`b4ef5e1cf406`. The retained nested `f52c828fdf49` correctly descended from that pin, but its net
+Honda production diff still touched three files. The `interface.py` difference only deleted three
+upstream comments beside the already-stock 2560 map; it changed no parameter or executable code.
+`carcontroller.py` also calculated the Bosch-only `stopping` state before the Bosch/Nidec branch,
+making Nidec evaluate an unused value. Neither difference supported or changed a road decision.
+
+Nested `b5b9f861aa18` removes those behaviorally dead fork differences. `interface.py` is now byte-
+identical to the upstream pin, and `stopping` is again evaluated only in the Bosch branch. The net
+production delta is limited to `carcontroller.py` and `hondacan.py`: 46 insertions and 4 deletions.
+Those remaining lines are all active behavior or state required by the road-supported Odyssey
+domain selector: the 5 m/s low-speed split, `-0.30 m/s2` road-speed brake entry, active-gas and
+active-brake continuity, disengagement reset, Odyssey-only gas masking, and optional CAN-domain
+arguments whose defaults preserve every other Honda platform.
+
+Ruff passed on all three audited Honda files. The post-cleanup pre-flash gate passed seven Odyssey
+model/interface/radar/safety tests plus 20 command-rail tests and 58 subtests. This is source-delta
+hygiene, not a tuning candidate: it changes no Odyssey command, domain transition, or vehicle
+response, and creates no new replay or road claim. Exact-source comparisons may treat
+`f52c828fdf49` and `b5b9f861aa18` as behavior-identical for command following.
+
+**Decision: REMOVE the dead fork differences; KEEP the evidence-backed command-domain delta.** No
+further behaviorally dead production difference was found in this audit. Revisit the remaining
+two-file delta only when a new full-rate route moves the first divergence into that selector or its
+CAN-domain translation.
+
 ### Bosch-A object-bank decoder arm (2026-08-25)
 
 `ody-op-radar` ports the five-file decoder change from `mvl-boston/opendbc#669` at exact source
