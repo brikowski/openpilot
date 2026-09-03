@@ -895,19 +895,21 @@ new brake arm.
 - **opendbc PR #2347** (github.com/commaai/opendbc/pull/2347): documents that Honda Bosch's own ECU already runs an internal brake PID. Stock `kp=0, ki=0` (pure feedforward) in `interface.py` is deliberate - adding openpilot's own closed-loop kp/ki on top "doubles up... and causes oscillating braking/acceleration strength." Check this before adding closed-loop longitudinal gain on a Honda Bosch car.
 - **opendbc PR #2767** (github.com/commaai/opendbc/pull/2767, closed): a comma engineer tried pitch-compensation on the gas pedal and hit "will need to switch the gas actuator from accel-based to torque-based first." Bosch A has no writable torque CAN signal (`ACC_CONTROL.ACCEL_COMMAND` is a real m/s2 value Honda's ECU closes its own loop on; `ACC_CONTROL.GAS_COMMAND` is opaque/unitless). A torque-based redesign would mean reverse-engineering a speed-dependent `GAS_COMMAND`-to-torque calibration using the car's own `GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE` telemetry as ground truth.
 - **Current longitudinal design on this branch**: `ody-op` uses upstream's direct Odyssey gas
-  mapping and a raw-request three-domain gas/coast/brake selector. `ACCEL_COMMAND` follows the raw
-  controller request at all speeds. Wind and grade do not affect either wire command or domain
-  selection, and both the supplemental low-speed PID and former production windfactor learner are
-  removed. See the concise rationale and current code before using this historical archive.
+  mapping and a raw-request three-domain gas/coast/brake selector. For the current isolated road arm,
+  only moderate downward road-speed brake steps are limited to 3.0 m/s3; easing, release, low-speed
+  commands, and firm requests below -1.5 m/s2 follow the raw controller request. Wind and grade do
+  not affect either wire command or domain selection, and both the supplemental low-speed PID and
+  former production windfactor learner are removed. See the concise rationale and current code
+  before using this historical archive.
 - **Review-sized design record**: `.agents/odyssey-tune-rationale.md` is the concise durable rationale removed from production comments; use the longer history here only when investigating a regression.
 - **Current tune status:** lateral keeps the stock-LKA baseline: 2560 maximum command,
   `latAccelFactor 0.9`, and `steerActuatorDelay=0.15`; maximum authority is reopened only for the
   matched stock-radar/nonlinear road arm defined above. Longitudinal retains the road-screened
-  three-domain selector while using upstream direct gas mapping and sending the raw clipped request as
-  `ACCEL_COMMAND`; the custom low-speed PID and production windfactor learner are retired. These
-  source changes are software-validated only until controlled maneuvers and an ordinary-road drive
-  exercise the exact candidate.
-- **Historical brake-onset experiment (`DOMAIN_HYST` 0.06 + symmetric 2.0 m/s³ jerk limit): CLOSED 2026-07-27, both branches DELETED.** Do not recreate that combined architecture: its functional change and failed isolation remain useful history. The current `ody-op-test2` candidate does not shape `ACCEL_COMMAND`; it adds a stateless coast domain and low-speed brake selection only. Retired tips in case the historical commits are still reachable: `ody-brake-onset` = parent `cb03c32b4` / opendbc `1b6048e98`; `ody-op-long2` = parent `9f73e6205` / opendbc `57fe3a908`.
+  three-domain selector while using upstream direct gas mapping. The isolated 3.0 m/s3 asymmetric
+  road-speed brake-command arm is active for evaluation; the custom low-speed PID and production
+  windfactor learner are retired. These source changes are software-validated only until controlled
+  maneuvers and an ordinary-road drive exercise the exact candidate.
+- **Historical brake-onset experiment (`DOMAIN_HYST` 0.06 + symmetric 2.0 m/s³ jerk limit): CLOSED 2026-07-27, both branches DELETED.** Do not recreate that combined architecture: its functional change and failed isolation remain useful history. The retained three-domain selector itself does not shape `ACCEL_COMMAND`; the current asymmetric road arm is a separate mechanism with immediate easing and firm-brake bypass. Retired tips in case the historical commits are still reachable: `ody-brake-onset` = parent `cb03c32b4` / opendbc `1b6048e98`; `ody-op-long2` = parent `9f73e6205` / opendbc `57fe3a908`.
     ```python
     DOMAIN_HYST = 0.06                     # module scope
     self.in_brake_domain = False           # __init__
@@ -1312,7 +1314,7 @@ All carcontroller.py files across opendbc were reviewed, then re-verified agains
 - **Toyota's predictive-error / jerk-based integral winddown** (`toyota/carcontroller.py` L214-238): Toyota computes `j_ego` (jerk) from filtered `aEgo`, projects `a_ego_future = aEgo + j_ego * future_t`, and feeds `error_future = cmd - a_ego_future` into the PID instead of raw error. This reduces overshoot when aEgo is trending toward target. **Watch for**: if logs show our `brake_pid` overshooting (contributing more braking than needed as `aEgo` catches up to `aTarget`), Toyota's future-error pattern is the fix. Current routes show no overshoot — this is "watch for" only.
 - **Toyota's high-pass pitch compensation** (`toyota/carcontroller.py` L229-233): a `HighPassFilter` on pitch that transiently amplifies the accel command on sudden grade changes, compensating for the PCM's slow pitch response. Capped at ±1.5 m/s². **Watch for**: sluggish response on sudden grade transitions (flat→steep hill). If seen, apply high-pass pitch on the **brake side only** (`self.accel` / `ACCEL_COMMAND`). The gas side (`GAS_COMMAND`) is blocked because it's opaque/unitless (PR #2767 confirmed).
 - **Ford's creep compensation** (`ford/carcontroller.py` L28-32): subtracts engine creep torque at 0-3 m/s, and crucially *accel-gates* it — `creep_accel = interp(v_ego, [1,3], [0.6,0])` then `interp(accel, [0,0.2], [creep,0])`, so it only fires when the car is nearly coasting and tapers to zero as commanded accel rises. **Do NOT port this to Bosch as-is.** Honda Bosch's `ACCEL_COMMAND` is a real m/s² the ECU closes its own loop on — it already accounts for its own creep — so subtracting creep openpilot-side would **double-count**. (Ford applies it on their brake/ABS path, which does *not* self-compensate; Honda Nidec has its own creep comp; Bosch's ECU handles it internally.) **Watch for**: the Odyssey physically creeping forward when the planner wants to hold position in the 0-5 m/s gas-domain hold-at-stop window. Only if that symptom is *seen in logs* consider creep subtraction. Current low-speed switch (planner accel holds brake through a stop) likely already covers it.
-- **Rate-limited / jerk-limited ACCEL_COMMAND** (Toyota does `rate_limit(pcm_accel_cmd, prev, ±0.12/frame)`; **Ford** does a brake-jerk limit `accel = max(accel, self.accel - 3.5*step*DT)` = 3.5 m/s³ on the ACCEL/brake side, `ford/carcontroller.py` L124-126): we rate-limit gas (60 units/frame) but not `self.accel`. The old symmetric 2.0 m/s³ experiment and the later onset-only candidate are both closed without road proof. The current three-domain candidate changes only gas/brake/coast selection and leaves `ACCEL_COMMAND` unshaped.
+- **Rate-limited / jerk-limited ACCEL_COMMAND** (Toyota does `rate_limit(pcm_accel_cmd, prev, ±0.12/frame)`; **Ford** does a brake-jerk limit `accel = max(accel, self.accel - 3.5*step*DT)` = 3.5 m/s³ on the ACCEL/brake side, `ford/carcontroller.py` L124-126): the old symmetric 2.0 m/s³ experiment remains closed. The current isolated arm instead limits only moderate downward road-speed brake steps to 3.0 m/s³, preserves immediate easing/release, bypasses requests below -1.5 m/s², and leaves low speed unshaped. This upstream-style pattern is a rationale for an experiment, not road evidence for its value or threshold.
 - **`longitudinalActuatorDelay = 0.5s` (Bosch, interface.py L86) is conventional, NOT a lever**: checked because it's a tempting knob. GM/Hyundai/VW all use 0.5; Toyota's 0.05 (`toyota/interface.py` L121) is **hybrid-only** ("Hybrids have much quicker longitudinal actuator response") — a physical-response fact, not a byproduct of their future-error winddown. 0.5 is correct for a Bosch ECU that closes its own accel loop. Do not lower it hoping for snappier braking; that just makes the planner less anticipatory (later braking). Noted here so a future session doesn't re-derive it as a "tweak."
 - **Patterns we correctly avoid**: full closed-loop PID on ACCEL_COMMAND (Toyota pattern - their PCM is dumb, Honda's isn't, stacking causes #2347 oscillation); GM's direct lookup with no learning (they have direct brake/regen actuators, we don't); Hyundai's explicit jerk signal (Honda has no writable jerk field in ACC_CONTROL).
 
@@ -1727,3 +1729,48 @@ Honda `carcontroller.py`. The first new divergence is therefore the camera-side 
 Keep vision-only `ody-op` as the road baseline. Both `ody-op-radar` implementation branches are
 deleted; retain this route/source record as failed historical evidence, and do not alter gasfactor,
 brake thresholds, or command shaping to compensate for it.
+
+### Asymmetric road-speed brake-command arm (2026-09-02)
+
+The former `ody-op-onset` pair is integrated into `ody-op` as one bounded road candidate: parent
+`a73515428b5c` and nested opendbc `871b98a64f6e` before the 2026-09-02 upstream merge. It changes
+only downward moderate `ACCEL_COMMAND` steps while Odyssey's road-speed brake domain is selected.
+The command can deepen by at most `0.06 m/s2` per 50 Hz Honda ACC command (`3.0 m/s3`), but easing
+and release remain immediate, commands below `-1.5 m/s2` bypass the limiter, and low-speed stop
+authority remains raw. Gas mapping, domain thresholds, lateral behavior, planner, and `longcontrol`
+are unchanged.
+
+The physical rationale is narrow: prior exact-source routes located some bite downstream of a
+correct request/domain transition, and current Ford/Toyota ports demonstrate asymmetric brake or
+ACC command-rate limits. This does not revive the rejected symmetric 2.0 m/s3 plus domain-hysteresis
+stack, and those peer mechanisms do not prove that 3.0 m/s3 is correct for the Odyssey. Focused
+rail/safety tests cover the ramp, exact steady state, immediate firm-brake bypass, low-speed raw
+commands, release, mutual exclusion, and disengagement; the onset assertion is mutation-verified.
+Frozen-input replay may establish only the changed command shape, never hydraulic timing or comfort.
+
+Both new invariants are mutation-verified. Raising the downward limit from `3.0` to `30.0 m/s3`
+made all four road-speed ramp subcases fail because the first `-0.60 m/s2` command was no longer
+limited. Moving the firm-brake floor from `-1.5` to `-3.5 m/s2` made the panic test fail because a
+`-2.0 m/s2` request was delayed to `-0.06 m/s2`; restoring the candidate source passes both tests.
+
+Frozen-input replay over baseline route `00000068--bbbfad9947` processed 147,908 controller frames,
+including 52,391 engaged frames. Candidate-versus-recorded wire RMS was `0.00845 m/s2`; candidate
+request-to-wire RMS was `0.00486 m/s2` versus `0.00985 m/s2` for the resampled recording. The
+windowed command-jerk maximum was effectively unchanged (`0.990` versus `0.993 m/s3`), with 15
+detected onsets in each and 3,442 versus 3,446 deep-brake frames. That verifies a bounded command
+delta and shows that this historical request stream only weakly exercises it; it is not evidence of
+closed-loop comfort, onset timing, or improvement.
+
+Eight newly pulled full-rate routes (`00000008--2d8415b010` through
+`0000000f--8cf83efeea`) resolve to Sunnypilot `staging` parents `70bf4f1791cd`, `4d54539482d9`, or
+`5345c80b8b3f`, with Alpha Long disabled and no nested opendbc provenance. They contain zero engaged
+OpenPilot-longitudinal exposure, so none counts toward this arm. Route `00000009` has one isolated
+steering-fault event; route `0000000e` records one `micd` crash; route `0000000f` peaks at 91 C and
+supplies 9.72 s of stock-2560 high-authority lateral exposure with no steering faults. These are
+separate software/device/lateral observations and do not authorize a lateral or longitudinal tune.
+
+**Decision: CHANGE `ody-op` to carry this isolated arm for evaluation; road verdict pending.** The
+road question is whether comparable moderate road-speed brake entries reduce downstream Honda onset
+bite and achieved jerk without delayed braking, worse `aEgo` versus `carControl` tracking, longer
+stops, or takeovers. Retire immediately for a safety or clear drivability regression, or after three
+independent adequately exposed current-source routes without attributable improvement.

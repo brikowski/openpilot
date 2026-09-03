@@ -40,7 +40,10 @@ raw `-0.40` entry, zero brake integral, onset shaper, or direct brake release as
 The former `ody-op-test2` final candidate is now the `ody-op` baseline: it changes only Odyssey
 command-domain selection around the raw `ACCEL_COMMAND` (road-speed brake/coast separation,
 low-speed stop authority, and an OEM-aligned active-gas hold). It does not restore the retired brake
-PID, compensated input, coast interlock, raw-split reference, or onset shaping. New model or radar
+PID, compensated input, coast interlock, raw-split reference, or historical symmetric onset stack.
+For its current bounded road evaluation, `ody-op` additionally carries one isolated asymmetric
+command mechanism: moderate downward road-speed brake steps are limited to `3.0 m/s3`, while easing,
+release, low-speed commands, and firm requests below `-1.5 m/s2` remain unshaped. New model or radar
 experiments must start from a temporary child of `ody-op` and be deleted or promoted deliberately.
 
 The former `ody-op-radar` arm is closed after its first engaged route, and both implementation
@@ -182,6 +185,16 @@ Honda's binary command domains. At road speed, brake remains selected while the 
 and a positive request releases it immediately. An active gas command remains live down to Honda's
 upstream `-0.20` split, but after coast it re-enters only for a positive request. Below 5 m/s,
 non-positive requests select brake and any positive start request selects gas immediately.
+
+The current isolated onset arm changes only moderate downward `ACCEL_COMMAND` steps while the
+road-speed brake domain is selected. It uses a `3.0 m/s3` downward limit, immediate easing/release,
+and an immediate firm-brake bypass below `-1.5 m/s2`; low-speed stop commands remain raw. This is an
+upstream-style actuator limit between `carControl` and Honda CAN, patterned after asymmetric brake
+limits in Ford and rate-limited ACC commands in Toyota, but it is not yet road-proven on this car.
+The road question is whether it reduces Honda's downstream onset bite and achieved jerk without
+late braking, increased command-following error, longer stops, or takeovers. Count only independent
+adequately exposed current-source routes, retire it after three without attributable improvement,
+and retire it immediately for a safety or clear drivability regression.
 
 The retained `-0.50` entry passed an earlier ordinary-road screen without the raw-split burst
 pattern, but route `00000044--1f70122a52` now rejects its late physical onset. It withheld the brake
