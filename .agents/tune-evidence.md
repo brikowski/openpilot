@@ -1774,3 +1774,75 @@ road question is whether comparable moderate road-speed brake entries reduce dow
 bite and achieved jerk without delayed braking, worse `aEgo` versus `carControl` tracking, longer
 stops, or takeovers. Retire immediately for a safety or clear drivability regression, or after three
 independent adequately exposed current-source routes without attributable improvement.
+
+### First two asymmetric-onset road examples (2026-09-03)
+
+Routes `00000010--2b60bf438c` and `00000011--dc727a0bb7` both resolve to the exact current source:
+parent `678bfa0bc5dc`, nested opendbc `0bd54951753f`, clean `ody-op`, and Alpha Long enabled. A
+source diff proves `871b98a64f6e..0bd54951753f` changes only comments in Honda longitudinal code;
+the immediate no-limiter source is `b5b9f861aa18`. The validator now maps all three exact onset-arm
+revisions to the retained `-0.30 m/s2` three-domain selector while excluding them from raw brake-
+passthrough expectations. Changing the deployed hash in that map made
+`test_domain_model_selects_exact_opendbc_source_semantics` fail; restoration passes all 36 focused
+validator tests.
+
+The independent command traces locate no new planner, domain, or transport divergence:
+
+- Route 10 logged 38.0 minutes / 7.47 engaged minutes / 5.81 engaged miles. Route 11 logged 28.2 /
+  8.72 minutes / 8.53 miles. Each supplied seven road-speed brake episodes and 11/7 wire onsets;
+  both had zero managed-process crashes and zero rail saturation.
+- Planner-to-`carControl` RMS was `0.0088/0.0068 m/s2`. Gas-domain request-to-wire RMS was
+  `0.0081/0.0065 m/s2`, brake-domain RMS `0.0141/0.0139 m/s2`, and sustained sign disagreement was
+  zero. Each produced 13 physical brake edges with peaks of 4/3 per 10 seconds and zero direct
+  gas-to-brake handoffs. The retained domain selector, not the onset limiter, accounts for those
+  domain results.
+- Brake-domain achieved-response RMS was `0.206/0.251 m/s2`, with mean `aEgo-request`
+  `-0.055/-0.160 m/s2`; Honda bite appeared on 4.8/8.7% of braking frames. Route-wide achieved jerk
+  was `0.317/0.276 m/s3`, split to `0.453/0.345 m/s3` in brake. Route 10's seven brake takeovers and
+  route 11's four did not occur within 1.5 seconds of a shaped fresh brake entry, so they are not
+  attributable onset-arm regressions.
+
+The arm had narrow but real exposure. On route 10, controller output withheld more than
+`0.03 m/s2` from the raw request for 0.48 s across four fresh road-speed brake entries; route 11 had
+0.24 s and one substantial fresh entry. The two largest started at 10.5 and 16.7 m/s: requests were
+`-0.35/-0.48 m/s2`, the selected brake command began near `-0.03 m/s2`, and the ramp lasted
+0.11/0.13 s. Neither event had a gas or brake pedal edge in the following two seconds. This is the
+intended hydraulic-onset mechanism, but it is also measurable delayed braking that must earn a
+closed-loop benefit.
+
+Replaying the exact current controller reproduced the recorded command with `0.00885/0.00772 m/s2`
+RMS. Replaying the immediate no-limiter source on the same frozen inputs showed no command-shape
+benefit: route 10's candidate/no-limiter peak wire jerk was `1.720/1.705 m/s3`, and route 11's was
+`1.262/1.019 m/s3`; p99 and onset counts were effectively unchanged. Forceful edge counts fell by
+one on each fixed-input replay only because the ramp held the first command shallower, which is not
+a closed-loop transition prediction or comfort improvement. Five nearest historical brake-entry
+matches conditioned on speed, request, pitch, lead state, and planner source were mixed: two favored
+the arm, two were worse, and one was effectively equal. Route-level achieved onset jerk medians
+`-1.35/-0.57 m/s3` and 80%-depth times `0.60/2.27 s` likewise do not establish a repeatable gain.
+
+The gas domain separately supplies the first ordinary-road result for the upstream-direct mapping,
+which the onset arm cannot affect. Routes 10/11 provided 372.6/460.7 clean gas-domain seconds,
+achieved RMS `0.216/0.200 m/s2`, material-command under-response medians `+0.096/+0.083 m/s2`, and
+gas jerk `0.302/0.267 m/s3`. Against routes 61-64 and 68, 348 one-second samples matched on command,
+speed, pitch, and lead state had current-minus-prior achieved-error median/mean
+`-0.010/-0.007 m/s2`; route 10 was slightly worse (`+0.007` mean) and route 11 better (`-0.021`).
+There were no sub-second coast-to-gas re-entries. **KEEP upstream direct gas mapping**: it is at
+least as smooth and accurate as the retained custom mapping in this exposure and removes fork-only
+calibration.
+
+Lateral remains independent and stock-2560. Request-to-controller-output RMS was `0.0525/0.0511`;
+after Honda sign normalization, output-to-CAN RMS was `0.00021/0.00021`. Actual-versus-desired
+lateral-acceleration RMS was `0.068/0.083 m/s2`, with 9.80/10.65 high-authority seconds. Route 11's
+single active steering-fault frame occurred at the stock 2560 cap while the driver was overriding
+the wheel; route 10 had none. **KEEP stock lateral**; neither route supports reopening authority.
+
+Hardware is separate: route 11 began at 70 C, had a 72 C median, and peaked at 87 C. It stayed below
+the 94 C on-road critical threshold, but three of the latest five cold starts were at or above 70 C;
+remove or shade the device while parked in this heat.
+
+**Onset decision after examples 1 and 2: KEEP only for the final bounded road example, not as a
+promotion.** Neither route shows attributable improvement, but neither has an onset-adjacent safety
+or driver-intervention regression. The third route must contain several fresh moderate road-speed
+brake entries, preferably both flat and downhill, and answer whether achieved onset bite/jerk falls
+without extra response delay or stopping distance. If it does not, retire the rate limiter and
+restore raw `ACCEL_COMMAND`; do not add another threshold or shaper.

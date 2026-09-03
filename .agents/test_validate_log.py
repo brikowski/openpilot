@@ -8,10 +8,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import validate_log
 from validate_log import (
+  BRAKE_ONSET_RATE_LIMIT_COMMITS,
   ODYSSEY,
   LOW_SPEED_BRAKE_PID_COMMITS,
   THREE_DOMAIN_COMMITS,
   _base_route,
+  _brake_passthrough_expected,
   _domain_model,
   _has_learner_telemetry,
   _local_segment_names,
@@ -185,7 +187,8 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   # retire independent gas calibration, adopt upstream gas mapping, and simplify scalar code only.
   for current_commit in ("6ff9761fc72e", "17e1f614d8b3", "843b22ab0a74",
                          "2dcbb30f5a53", "929540bbcf79", "5144f8b2fe94",
-                         "9d6f42dd4fce", "f52c828fdf49"):
+                         "9d6f42dd4fce", "f52c828fdf49", "871b98a64f6e",
+                         "aa8a2e60fbad", "0bd54951753f"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -194,6 +197,11 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
     assert valid and note == "raw three-domain coast split"
     np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
     np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.30))
+
+  assert _brake_passthrough_expected("f52c828fdf49")
+  for onset_commit in ("871b98a64f6e", "aa8a2e60fbad", "0bd54951753f"):
+    assert onset_commit in BRAKE_ONSET_RATE_LIMIT_COMMITS
+    assert not _brake_passthrough_expected(onset_commit)
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.

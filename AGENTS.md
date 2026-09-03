@@ -268,27 +268,29 @@ own acceleration loop. Keep low-speed non-positive requests in the brake domain,
 clipped `carControl.actuators.accel` command. Reopen command shaping only for a repeatable first
 divergence at the wire and an isolated controlled-road result.
 
-The brief static-seed arm is superseded before road exposure. Exact upstream source inspection
+The brief static-seed arm is superseded. Exact upstream source inspection
 showed Odyssey already uses a 2000-count ceiling; retaining only the custom speed map permanently
 reduced otherwise eligible upstream gas to 54-72%. In historical learner-on routes, 24.6 s of
 stable positive-gas exposure with the multiplier at or below 1.10 had median under-response
 `+0.177 m/s2` on 82.4% of samples, versus `+0.084 m/s2` after it exceeded 1.50. That endogenous
 comparison can reject the seed as a proven standalone map but cannot prove the replacement on-road.
-The current isolated arm therefore removes the entire custom gasfactor mechanism and restores
+The retained path therefore removes the entire custom gasfactor mechanism and restores
 upstream direct gas mapping. Raw `ACCEL_COMMAND`, command domains, brake entry, low-speed behavior,
 and lateral behavior remain unchanged. Fixed-input replay over routes `61`, `64`, and `68` shows
-that direct mapping is usually lower than their recorded learned command, so reject the arm for
-repeatable under-response or set-speed loss as well as eager acceleration, surge, or driver gas
-overrides. Accept it only after ordinary-road gas-domain following is at least as smooth and
-accurate as the retained history; replay cannot establish that response.
+that direct mapping is usually lower than their recorded learned command. Current-source routes
+`00000010--2b60bf438c` and `00000011--dc727a0bb7` now supply 372.6 and 460.7 gas-domain seconds;
+gas jerk was `0.302/0.267 m/s3`, and 348 one-second samples matched on request, speed, pitch, and
+lead state had combined current-minus-prior achieved-error median/mean `-0.010/-0.007 m/s2`.
+Route 10 was slightly worse and route 11 better, so there is no repeatable regression. **Keep the
+upstream direct mapping** for its ordinary-road parity and smaller production delta, not as a claim
+that it increases Odyssey authority.
 
 Fresh negative road-speed gas entry remains a separate unresolved mechanism: exact-source history
 contains coast and active-gas exposure but no within-route episodes matched closely enough on
 request, speed, and grade, and the failed raw-split routes also changed feedforward and gas handoff
-shape. Do not stack that change onto the unroad-tested upstream-direct gas arm. First screen the
-current mapping on an engaged ordinary-road route; then isolate whether fresh requests above the
-upstream `-0.20` split should select gas while preserving the nonnegative release requirement for an
-already-active brake domain.
+shape. Do not stack that change onto the current brake-onset road arm. Resolve the onset arm first;
+then isolate whether fresh requests above the upstream `-0.20` split should select gas while
+preserving the nonnegative release requirement for an already-active brake domain.
 
 The former production windfactor learner was not independently identified from gasfactor and grade,
 never affected commands after wind/grade feedforward was removed, and is now retired. Do not restore
@@ -316,3 +318,17 @@ same planner source, only route `64` had a sustained no-lead, throttle-disallowe
 while more than 1 mph below set. Treat this as an isolated upstream model/planner coast-limit event;
 do not hide it with Honda thresholds or command shaping. Reopen the port only for a repeatable first
 divergence after `carControl`.
+
+Current-source routes `00000010--2b60bf438c` and `00000011--dc727a0bb7` are the first two road
+examples for the asymmetric brake-onset arm. Both ran parent `678bfa0bc5dc`, nested opendbc
+`0bd54951753f`, and Alpha Long. They supplied 7 brake episodes each and fresh road-speed ramp
+exposure, though only 7.47/8.72 engaged minutes. The arm withheld more than `0.03 m/s2` for only
+0.48/0.24 s; the two largest fresh entries ramped from about zero toward `-0.35/-0.48 m/s2` for
+0.11/0.13 s with no nearby pedal intervention. Exact fixed-input counterfactual replay against the
+immediate no-limiter source did not reduce wire jerk: route 10 peak was `1.720` versus `1.705 m/s3`,
+and route 11 was `1.262` versus `1.019 m/s3`. Closed-loop achieved onset and matched historical
+events were mixed, while request-to-wire and domain behavior remained correct and no safety event
+was attributable to the arm. **Keep only for one final independent, adequately exposed route; this
+is not promotion.** If the third example does not show an attributable reduction in brake-onset
+bite or achieved jerk without delayed braking, retire the limiter and return to raw
+`ACCEL_COMMAND`.

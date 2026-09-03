@@ -153,6 +153,9 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "5144f8b2fe94": -0.30,  # removes only the unproven Odyssey gasfactor calibration
   "9d6f42dd4fce": -0.30,  # adopts upstream gas mapping; command-domain selection is unchanged
   "f52c828fdf49": -0.30,  # scalar simplification preserves the same runtime domain thresholds
+  "871b98a64f6e": -0.30,  # isolated asymmetric brake-onset rate limiter; domains are unchanged
+  "aa8a2e60fbad": -0.30,  # comment-only descendant; runtime behavior matches 871b98a64f6e
+  "0bd54951753f": -0.30,  # exact deployed comment-only descendant
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -177,6 +180,14 @@ THREE_DOMAIN_COMMITS = {
   "5144f8b2fe94",  # removes only the unproven Odyssey gasfactor calibration
   "9d6f42dd4fce",  # adopts upstream gas mapping; command-domain selection is unchanged
   "f52c828fdf49",  # scalar simplification preserves the same runtime domain thresholds
+  "871b98a64f6e",  # isolated asymmetric brake-onset rate limiter; domains are unchanged
+  "aa8a2e60fbad",  # comment-only descendant; runtime behavior matches 871b98a64f6e
+  "0bd54951753f",  # exact deployed comment-only descendant
+}
+BRAKE_ONSET_RATE_LIMIT_COMMITS = {
+  "871b98a64f6e",
+  "aa8a2e60fbad",
+  "0bd54951753f",
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
@@ -460,6 +471,13 @@ def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
 def _has_learner_telemetry(opendbc_commit):
   """Whether this opendbc revision emitted fork-only learner values in carOutput."""
   return (opendbc_commit or "")[:12] in LEGACY_LEARNER_TELEMETRY_COMMITS
+
+
+def _brake_passthrough_expected(opendbc_commit):
+  """Whether every brake-domain frame should carry the raw controller request."""
+  commit = (opendbc_commit or "")[:12]
+  return (commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
+          and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS)
 
 
 def _jerk(smoothed, dt, active):
@@ -916,8 +934,9 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   it. The wire is decoded from sent ACC_CONTROL on bus 1, not proxied off carOutput.
 
   Deliberately measures the BRAKE domain, which the historical `passthrough_rms` excluded. Exact
-  source mapping retains the wider legacy threshold for revisions that intentionally modified the
-  command below 3 m/s; current brake-domain frames must carry the controller request unchanged.
+  source mapping retains the wider legacy threshold for revisions that intentionally modify the
+  command below 3 m/s or during the bounded road-speed onset arm; only raw revisions are held to
+  the tighter passthrough threshold.
 
   Returns brake-domain following error, sign disagreement, lifecycle regressions, and physical
   BRAKE_REQUEST burst metrics. The fresh path's raw request and fixed upstream threshold supply the
@@ -1113,10 +1132,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   )
   out["domain_model_valid"] = model_valid
   out["domain_model_note"] = model_note
-  out["brake_passthrough_expected"] = (
-    source_commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
-    and source_commit not in LOW_SPEED_BRAKE_PID_COMMITS
-  )
+  out["brake_passthrough_expected"] = _brake_passthrough_expected(source_commit)
   if model_valid:
     out.update(brake_release_hold_metrics(
       switch_accel, entry_threshold, requested, aego, BR, active,
