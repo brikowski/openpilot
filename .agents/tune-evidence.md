@@ -1932,3 +1932,21 @@ with a lead stop and sustained uphill exposure, verify separately whether `shoul
 before crawl, whether raw `carControl` reaches CAN without shaping, and whether a positive uphill
 request still under-responds after controlling for command, speed, and grade. Do not substitute more
 replay or another threshold for that road evidence.
+
+### Unroaded combined agile package audit (2026-09-04)
+
+Nested commit `4dc05c99cf7a` briefly added three simultaneous Odyssey command changes: positive-gas
+ pitch feedforward, a `0.85` moderate road-speed brake scale, and a `-0.35 m/s2` crawl floor below
+ `2 m/s`. The package had no route exposure, no isolated comparison, and no attributable first-
+ divergence evidence. Existing route 1a uphill failures first diverged in Experimental planning;
+ existing route 12 stop-roll evidence first diverged in upstream `shouldStop`; and the Honda
+ `GAS_COMMAND` field is opaque/unitless. The peer-brand review permits pitch compensation only on
+ the real `ACCEL_COMMAND` brake side, not by inflating Honda gas counts.
+
+ **Decision: RETIRE the combined package from active `ody-op`.** Nested `825642c421` is an explicit
+ revert to the raw-command baseline; parent validator and rail expectations were reverted with it.
+ The original package remains reachable in backup refs `backup/ody-op-agile-20260904-4dc` and
+ `backup/ody-op-agile-upstream-merge-20260904-904b6027cb` for historical comparison, but it is not
+ a road candidate. Any future brake-scale or low-speed authority work must be split into its own
+ candidate with a first-divergence hypothesis, mutation check, replay shape check, and closed-loop
+ exposure.
