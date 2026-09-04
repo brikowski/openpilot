@@ -12,5 +12,11 @@
     "**/.git": true,
     "**/.venv": true,
     "**/__pycache__": true
-  }
+  },
+  "python.analysis.extraPaths": [
+    ".agents"
+  ],
+  "python.autoComplete.extraPaths": [
+    ".agents"
+  ]
 }
