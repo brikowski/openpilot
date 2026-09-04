@@ -20,8 +20,11 @@ from current `commaai/openpilot` and `commaai/opendbc` master.
   separately.
 - Prefer mechanisms already used on current upstream master. A fork-only mechanism needs a concise,
   PR-quality physical rationale, focused regression coverage, and an isolated road arm.
-- Minimize production code and change one mechanism per comparison. Replay establishes command shape
-  only; promotion requires controlled maneuvers and ordinary-road evidence.
+- Minimize production code while advancing tuning in a timely manner. Multiple mechanisms and candidate
+  changes may be researched, developed, and deployed together when they are proven changes supported by
+  clear physical reasoning and peer-brand precedent. Replay establishes command shape only; promotion
+  requires controlled maneuvers and ordinary-road evidence. Do not promote an inseparable stack of
+  unproven, blind changes.
 - Retire or remove tuning that is redundant, irrelevant, unproven, or no longer shows an attributable
   improvement. Preserve rejected mechanisms as historical evidence, not as active behavior.
 - Preserve honest command attribution. If the vehicle cannot smoothly achieve a request, prefer the
@@ -41,10 +44,10 @@ The former `ody-op-test2` final candidate is now the `ody-op` baseline: it chang
 command-domain selection around the raw `ACCEL_COMMAND` (road-speed brake/coast separation,
 low-speed stop authority, and an OEM-aligned active-gas hold). It does not restore the retired brake
 PID, compensated input, coast interlock, raw-split reference, or historical symmetric onset stack.
-For its current bounded road evaluation, `ody-op` additionally carries one isolated asymmetric
-command mechanism: moderate downward road-speed brake steps are limited to `3.0 m/s3`, while easing,
-release, low-speed commands, and firm requests below `-1.5 m/s2` remain unshaped. New model or radar
-experiments must start from a temporary child of `ody-op` and be deleted or promoted deliberately.
+The unproven asymmetric onset limiter is fully retired: `ACCEL_COMMAND` delivers raw clipped
+acceleration while the three-domain selector, direct gas mapping, and low-speed stop authority remain
+active. New model or radar experiments must start from a temporary child of `ody-op` and be deleted
+or promoted deliberately.
 
 The former `ody-op-radar` arm is closed after its first engaged route, and both implementation
 branches are deleted. It changed radar availability and published a camera-side object/fusion bank;
