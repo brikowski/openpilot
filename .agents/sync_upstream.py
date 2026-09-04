@@ -46,6 +46,12 @@ def rebase_in_progress():
   return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
 
 
+def opendbc_needs_rebase(pinned_sha, branch):
+  return run(
+    ["git", "merge-base", "--is-ancestor", pinned_sha, branch], cwd=OPENDBC, check=False,
+  ).returncode != 0
+
+
 def resolve_parent_gitlinks(new_opendbc):
   env = {**os.environ, "GIT_EDITOR": "true"}
   while rebase_in_progress():
@@ -96,11 +102,14 @@ def main(argv=None):
     sys.exit("could not resolve the opendbc commit pinned by openpilot upstream/master")
   pinned_sha = pinned[2]
 
-  print(f"Rebasing opendbc_repo onto openpilot's pinned {pinned_sha[:12]}...")
-  child_rebase = run(["git", "rebase", pinned_sha], cwd=OPENDBC, check=False)
-  if child_rebase.returncode:
-    run(["git", "rebase", "--abort"], cwd=OPENDBC, check=False)
-    sys.exit("opendbc source conflict; rebase aborted and nothing was pushed")
+  if not opendbc_needs_rebase(pinned_sha, branch):
+    print(f"opendbc_repo already contains openpilot's pinned {pinned_sha[:12]}; preserving its history...")
+  else:
+    print(f"Rebasing opendbc_repo onto openpilot's pinned {pinned_sha[:12]}...")
+    child_rebase = run(["git", "rebase", pinned_sha], cwd=OPENDBC, check=False)
+    if child_rebase.returncode:
+      run(["git", "rebase", "--abort"], cwd=OPENDBC, check=False)
+      sys.exit("opendbc source conflict; rebase aborted and nothing was pushed")
   new_opendbc = output(["git", "rev-parse", "HEAD"], cwd=OPENDBC)
 
   # Temporarily detach the submodule worktree at the pointer recorded by the parent. The rebased
@@ -128,7 +137,7 @@ def main(argv=None):
     sys.exit(f"rebased parent pins {recorded}, but opendbc_repo is {new_opendbc}")
 
   print("\nLocal rebase complete; nothing was pushed.")
-  print("Run `lefthook run pre-commit` and `.agents/preflash.py`, inspect the net tune diff, "
+  print("Run `lefthook run pre-commit` and `.agents/preflash.py`, inspect the net tune diff, " +
         "then explicitly publish or deploy.")
   run(["git", "diff", "--stat", f"{pinned_sha}..{branch}"], cwd=OPENDBC)
 
