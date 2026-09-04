@@ -46,6 +46,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
   selector would increase 40 physical edges to 72 and add 36 direct handoffs. This is an
   attributable domain-separation benefit, not a comfort claim; the route's worst burst originated
   in an upstream no-lead `cruise` request oscillation and Honda amplified the achieved response.
+- The later isolated `3.0 m/s3` asymmetric brake-onset limiter is also retired. Five exact-source
+  road routes produced only one fixed-input peak-jerk improvement, while four were unchanged or
+  worse and no closed-loop benefit was attributable to the limiter. Current source again keeps raw
+  clipped `ACCEL_COMMAND`; historical limiter revisions remain mapped only to interpret old logs.
 - Eligible gas receives the calculated `GAS_COMMAND` immediately once the gas domain is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. The former `+0.02 m/s2` fresh-gas re-entry gate is also
@@ -141,8 +145,8 @@ a substitute for current code, DBC semantics, or full-rate logs.
 
 - `ody-op` remains the recovery and shared-tooling branch; stock Honda radar remains the road
   fallback. `ody-op-test` is a frozen failed snapshot. The raw-split `ody-op-test2` reference is
-  road-failed, and its three-domain successor is a software-only candidate rather than a presumed
-  improvement. Compare future evidence on the same terrain against radar and `ody-op`, grouped by
+  road-failed; its three-domain successor is the retained command-domain baseline, not a claim of
+  complete comfort improvement. Compare future evidence on the same terrain against radar and `ody-op`, grouped by
   resolved `opendbc_commit`.
 - Keep the official lateral and longitudinal maneuver routes plus ordinary-road full-rate rlogs
   private and retained. `.agents/log-validation-ledger.jsonl` is the compact evidence index.

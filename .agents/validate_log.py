@@ -156,6 +156,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "871b98a64f6e": -0.30,  # isolated asymmetric brake-onset rate limiter; domains are unchanged
   "aa8a2e60fbad": -0.30,  # comment-only descendant; runtime behavior matches 871b98a64f6e
   "0bd54951753f": -0.30,  # exact deployed comment-only descendant
+  "31a1776c7bf4": -0.30,  # retires the unproven onset limiter; raw command domains are unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -183,6 +184,7 @@ THREE_DOMAIN_COMMITS = {
   "871b98a64f6e",  # isolated asymmetric brake-onset rate limiter; domains are unchanged
   "aa8a2e60fbad",  # comment-only descendant; runtime behavior matches 871b98a64f6e
   "0bd54951753f",  # exact deployed comment-only descendant
+  "31a1776c7bf4",  # restores raw ACCEL_COMMAND after the bounded onset screen
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",

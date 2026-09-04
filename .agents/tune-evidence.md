@@ -1846,3 +1846,89 @@ or driver-intervention regression. The third route must contain several fresh mo
 brake entries, preferably both flat and downhill, and answer whether achieved onset bite/jerk falls
 without extra response delay or stopping distance. If it does not, retire the rate limiter and
 restore raw `ACCEL_COMMAND`; do not add another threshold or shaper.
+
+### Final asymmetric-onset screen and 2026-09-04 driver notes
+
+Ten newly pulled private full-rate routes, `00000012--9ea63a15e3` through
+`0000001b--3ae9413062`, all resolve from their own logs to clean parent `5838b4b0c5d0`, nested
+opendbc `0bd54951753f`, branch `ody-op`, and Alpha Long enabled. Routes `12`, `19`, and `1a` supply
+71.78/11.77/58.78 engaged minutes; routes `14`-`18` and `1b` have zero engagement, and sparse route
+`13` has no usable car-control stream. The no-engagement routes are provenance and device context,
+not lateral or longitudinal evidence.
+
+The driver-note clock times map through the last NTP-corrected `clocks` sample, not the device's
+unsynchronised boot RTC:
+
+- **08:38, route 12 at 4735.7 s, rolling through the stop.** A lead-sourced approach progressed
+  from `-0.38` to `-2.29 m/s2`; planner, `carControl`, and CAN agreed. Below 2 mph the request relaxed
+  from `-0.49` to `-0.13 m/s2` while both planner and model `shouldStop` remained false. The Odyssey
+  low-speed brake domain stayed selected, but `aEgo` reached zero and the van remained near 1 mph
+  until the driver braked; `shouldStop` became true only afterward. First divergence is the upstream
+  stop decision, with downstream Honda response to the relaxed command as a secondary contributor.
+  The road-speed onset limiter is bypassed at this speed and cannot explain the roll.
+- **09:43, route 12 at 8635.7 s.** A tracked lead moved from roughly 93 m to 43 m while closing, the
+  planner selected `lead0` and requested about `-0.64 m/s2`, and `carControl`/CAN followed. Honda
+  reached about `-0.90 m/s2` and speed fell from 77 to 62 mph before the planner requested up to
+  `+0.76 m/s2` to recover. The limiter changed brake entry by only `0.014 m/s2`. The braking request
+  originated upstream; the excess achieved deceleration is downstream of CAN.
+- **09:45, route 12 at 8755.7 s.** No friction-brake request occurred in the noted window. The lead
+  planner later relaxed gas/coasted at about `-0.21 m/s2` on a positive-grade section; achieved
+  deceleration reached about `-0.44 m/s2` and speed fell toward 69 mph before a positive recovery
+  request. This is a planner-plus-plant response event, not a brake-domain or onset event.
+- **12:55, route 19 at 339.6 s.** The lead planner stepped from `-0.17` to `-0.53 m/s2`; request,
+  controller output, and CAN agreed, then Honda reached `-0.83 m/s2` as the request relaxed near
+  zero. A similar lead-sourced cycle had occurred about 36 s earlier. The limiter changed the entry
+  by only `0.007 m/s2`, so it neither caused nor improved the reported behavior.
+- **13:34-13:52, route 1a.** Experimental became true at 13:33:43 and false at 13:51:50. On 4-8%
+  positive-grade sections, the e2e planner repeatedly requested only about `-0.09..+0.15 m/s2` while
+  speed fell as much as 10 mph below set. The port carried those requests to CAN. Near the end the
+  driver used gas and disengaged; after Experimental was disabled, ordinary cruise requested up to
+  `+0.74 m/s2`. The dominant terrible-uphill divergence is Experimental planning. Current gas
+  mapping also shows ordinary downstream grade under-response, but that is present outside
+  Experimental and does not justify restoring the retired learner or feedforward from this event.
+- **14:12-14:13, route 1a.** Two `lead0` brake/recovery cycles dropped roughly 71 to 62 mph and 66
+  to 61 mph. Planner-to-`carControl` and request-to-CAN remained aligned; the limiter changed their
+  entries by only `0.002` and `0.014 m/s2`. These are upstream lead requests with downstream Honda
+  amplification, not invented braking in the port.
+
+Across routes 12/19/1a, planner-to-`carControl` RMS was `0.0053/0.0055/0.0046 m/s2`; gas-domain
+request-to-wire RMS was `0.0054/0.0054/0.0049`, brake-domain RMS was
+`0.0127/0.0076/0.0193`, and sustained sign disagreement was zero. They contained 18/12/17 brake
+episodes and 33/21/33 physical edges. Brake-domain achieved RMS was `0.245/0.227/0.230 m/s2`, with
+mean `aEgo-request` `-0.085/-0.134/-0.142`; achieved brake jerk RMS was
+`0.422/0.347/0.286 m/s3`. Numeric transport was correct, while Honda commonly amplified braking.
+
+The same routes add 4,133.6/612.1/3,427.8 seconds of gas-domain exposure. Achieved RMS was
+`0.143/0.200/0.123 m/s2`, and material-command under-response medians were
+`+0.085/+0.113/+0.069 m/s2` on 87.3/84.3/79.8% of samples. **KEEP upstream direct gas mapping for
+now**: this is a repeatable downstream residual, but the reported uphill failure first diverged in
+Experimental planning and there is no isolated mapping A/B here. Reopen gas calibration only with a
+non-Experimental, command/speed/grade-controlled comparison.
+
+Lateral remains independent. Routes 12/19/1a had request-to-controller-output RMS
+`0.0347/0.0352/0.0250`; controller-output-to-CAN RMS after Honda sign normalization was
+`0.000209/0.000210/0.000210`, and actual-versus-desired lateral-acceleration RMS was
+`0.070/0.092/0.082 m/s2`. Routes 12/1a supplied 9.35/5.84 high-authority seconds at the stock 2560
+cap with RMS `0.356/0.445`. Route 12's three temporary steering-fault events all occurred under a
+driver steering override at 2511-2560 counts; actual lateral acceleration remained close to desired
+at those instants. **KEEP stock-2560 lateral**; these routes show no isolated lateral mechanism to
+change.
+
+Exact fixed-input replay reproduced the deployed controller with `0.00449/0.00564/0.00377 m/s2`
+RMS on routes 12/19/1a. Candidate versus raw-no-limiter peak command jerk was
+`1.398/1.393`, `0.706/0.735`, and `1.297/0.984 m/s3`; p99 was effectively unchanged. The new routes
+contained real shaped exposure, including four fresh route-1a entries that initially withheld
+`0.270-0.507 m/s2`, but no repeatable closed-loop benefit appeared and the reported events were
+almost untouched. **Final onset decision: RETIRE.** Route 12 is the third independent adequately
+exposed example without attributable improvement after routes 10/11; routes 19/1a independently
+corroborate the rejection. Nested commit `31a1776c7bf4` removes only the limiter constants/state and
+restores raw clipped `ACCEL_COMMAND`; the retained three-domain selector, direct gas map, low-speed
+domains, and lateral behavior are unchanged. The focused raw-command rail check was mutation-
+verified by reintroducing a shaped entry and observing all four road/descent/low-speed/stopping
+subcases fail.
+
+The post-deployment road question is deliberately narrow: on one ordinary non-Experimental route
+with a lead stop and sustained uphill exposure, verify separately whether `shouldStop` becomes true
+before crawl, whether raw `carControl` reaches CAN without shaping, and whether a positive uphill
+request still under-responds after controlling for command, speed, and grade. Do not substitute more
+replay or another threshold for that road evidence.

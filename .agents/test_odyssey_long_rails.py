@@ -87,8 +87,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     params = CarControllerParams(_car_params())
     assert params.BOSCH_GAS_LOOKUP_V == [0, 2000]
 
-  def test_brake_command_onset_ramp_and_steady_state(self):
-    """Road-speed friction brake onset ramps smoothly; steady state and panic decel are unshaped."""
+  def test_brake_command_matches_request_without_onset_shaping(self):
+    """Honda ACCEL_COMMAND must carry the raw clipped request at every selected brake entry."""
     for name, vego, state, pitch in (
       ("road", 20.0, LongCtrlState.pid, 0.0),
       ("descent", 20.0, LongCtrlState.pid, -0.05),
@@ -96,30 +96,15 @@ class TestOdysseyLongRails(unittest.TestCase):
       ("stopping", 20.0, LongCtrlState.stopping, 0.0),
     ):
       with self.subTest(name=name):
-        accels = np.array([0.5] * 20 + [-0.6] * 100)
+        accels = np.array([0.5] * 20 + [-0.31] * 20 + [-0.6] * 20 + [-2.0] * 20)
         # Positive aEgo would make a supplemental integrator add braking.
-        aegos = np.array([0.0] * 20 + [2.0] * 100)
+        aegos = np.array([0.0] * 20 + [2.0] * 60)
         rejects, seen = _run(True, accels, pitch=pitch, vego=vego, aegos=aegos, long_control_state=state)
         assert not rejects
-        brake = np.array([br for _, _, br in seen], dtype=bool)
-        entry = np.flatnonzero(brake & ~np.roll(brake, 1))[0]
-        # First entry frame begins smooth ramp shallower than full -0.60 m/s^2 request
-        assert seen[entry][0] > -60, f"{name} did not rate-limit initial brake entry"
-        # Ramps monotonically down to target
-        ramp = [seen[entry + k][0] for k in range(10)]
-        assert all(ramp[k] >= ramp[k + 1] for k in range(len(ramp) - 1))
-        # Converges to exact target within 10 CAN frames (200 ms) and holds without drift
-        steady_state = {accel for accel, _, _ in seen[entry + 10:]}
-        assert steady_state == {-60}, f"{name} steady-state brake command diverged from {-60}: {steady_state}"
-
-  def test_panic_braking_bypasses_onset_rate_limiter(self):
-    """Emergency braking below -1.5 m/s^2 must never be delayed by onset rate limiting."""
-    accels = np.array([0.5] * 20 + [-2.0] * 50)
-    rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
-    assert not rejects
-    brake = np.array([br for _, _, br in seen], dtype=bool)
-    entry = np.flatnonzero(brake & ~np.roll(brake, 1))[0]
-    assert seen[entry][0] == -200, f"panic braking was rate-limited on entry: {seen[entry][0]}"
+        np.testing.assert_array_equal(
+          np.array([accel for accel, _, _ in seen]),
+          np.array([50] * 10 + [-31] * 10 + [-60] * 10 + [-200] * 10),
+        )
 
   def test_road_speed_coasts_through_raw_split_chatter(self):
     """Small negative requests must not alternate Honda's gas and friction-brake domains."""

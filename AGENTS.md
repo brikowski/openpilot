@@ -186,15 +186,12 @@ and a positive request releases it immediately. An active gas command remains li
 upstream `-0.20` split, but after coast it re-enters only for a positive request. Below 5 m/s,
 non-positive requests select brake and any positive start request selects gas immediately.
 
-The current isolated onset arm changes only moderate downward `ACCEL_COMMAND` steps while the
-road-speed brake domain is selected. It uses a `3.0 m/s3` downward limit, immediate easing/release,
-and an immediate firm-brake bypass below `-1.5 m/s2`; low-speed stop commands remain raw. This is an
-upstream-style actuator limit between `carControl` and Honda CAN, patterned after asymmetric brake
-limits in Ford and rate-limited ACC commands in Toyota, but it is not yet road-proven on this car.
-The road question is whether it reduces Honda's downstream onset bite and achieved jerk without
-late braking, increased command-following error, longer stops, or takeovers. Count only independent
-adequately exposed current-source routes, retire it after three without attributable improvement,
-and retire it immediately for a safety or clear drivability regression.
+The isolated asymmetric brake-onset arm is retired. Five exact-source routes supplied independent
+road exposure, and its fixed-input peak command jerk improved on only one while remaining unchanged
+or worsening on four. The third adequately exposed example therefore met the retirement rule; two
+additional routes corroborated it. Current source again sends the raw clipped `carControl` request
+as `ACCEL_COMMAND` while retaining the three-domain selector. Do not replace the rejected limiter
+with another shaper or threshold without a new repeatable first divergence at the wire.
 
 The retained `-0.50` entry passed an earlier ordinary-road screen without the raw-split burst
 pattern, but route `00000044--1f70122a52` now rejects its late physical onset. It withheld the brake
@@ -283,14 +280,19 @@ gas jerk was `0.302/0.267 m/s3`, and 348 one-second samples matched on request, 
 lead state had combined current-minus-prior achieved-error median/mean `-0.010/-0.007 m/s2`.
 Route 10 was slightly worse and route 11 better, so there is no repeatable regression. **Keep the
 upstream direct mapping** for its ordinary-road parity and smaller production delta, not as a claim
-that it increases Odyssey authority.
+that it increases Odyssey authority. Exact-source routes `12`, `19`, and `1a` add 136.2 gas-domain
+minutes with achieved RMS `0.143/0.200/0.123 m/s2` and material-command under-response medians
+`+0.085/+0.113/+0.069 m/s2`. That repeatable residual is a plant-response question, but the reported
+13:34-13:52 uphill failure first diverged in Experimental planning and is not evidence to restore
+the retired learner or grade feedforward. Keep direct mapping until an isolated non-Experimental
+road comparison shows a downstream mapping regression under comparable command, speed, and grade.
 
 Fresh negative road-speed gas entry remains a separate unresolved mechanism: exact-source history
 contains coast and active-gas exposure but no within-route episodes matched closely enough on
 request, speed, and grade, and the failed raw-split routes also changed feedforward and gas handoff
-shape. Do not stack that change onto the current brake-onset road arm. Resolve the onset arm first;
-then isolate whether fresh requests above the upstream `-0.20` split should select gas while
-preserving the nonnegative release requirement for an already-active brake domain.
+shape. The onset arm is now resolved, but the new driver reports still do not isolate this gas-entry
+mechanism. Change it only in its own road arm, preserving the nonnegative release requirement for
+an already-active brake domain.
 
 The former production windfactor learner was not independently identified from gasfactor and grade,
 never affected commands after wind/grade feedforward was removed, and is now retired. Do not restore
@@ -319,16 +321,18 @@ while more than 1 mph below set. Treat this as an isolated upstream model/planne
 do not hide it with Honda thresholds or command shaping. Reopen the port only for a repeatable first
 divergence after `carControl`.
 
-Current-source routes `00000010--2b60bf438c` and `00000011--dc727a0bb7` are the first two road
-examples for the asymmetric brake-onset arm. Both ran parent `678bfa0bc5dc`, nested opendbc
-`0bd54951753f`, and Alpha Long. They supplied 7 brake episodes each and fresh road-speed ramp
-exposure, though only 7.47/8.72 engaged minutes. The arm withheld more than `0.03 m/s2` for only
-0.48/0.24 s; the two largest fresh entries ramped from about zero toward `-0.35/-0.48 m/s2` for
-0.11/0.13 s with no nearby pedal intervention. Exact fixed-input counterfactual replay against the
-immediate no-limiter source did not reduce wire jerk: route 10 peak was `1.720` versus `1.705 m/s3`,
-and route 11 was `1.262` versus `1.019 m/s3`. Closed-loop achieved onset and matched historical
-events were mixed, while request-to-wire and domain behavior remained correct and no safety event
-was attributable to the arm. **Keep only for one final independent, adequately exposed route; this
-is not promotion.** If the third example does not show an attributable reduction in brake-onset
-bite or achieved jerk without delayed braking, retire the limiter and return to raw
-`ACCEL_COMMAND`.
+Routes `00000010--2b60bf438c` and `00000011--dc727a0bb7` were the first two asymmetric-onset road
+examples; neither showed attributable improvement. Exact-source routes
+`00000012--9ea63a15e3`, `00000019--51c121c792`, and `0000001a--936af9eafa` add
+71.78/11.77/58.78 engaged minutes and 18/12/17 brake episodes. Fixed-input candidate/raw peak
+command jerk was `1.398/1.393`, `0.706/0.735`, and `1.297/0.984 m/s3`; p99 was effectively
+unchanged. The arm changed the reported entries by only `0.001-0.019 m/s2`, except for separate
+unreported fresh steps. **Final onset decision: RETIRE and restore raw `ACCEL_COMMAND`.** Route 12
+is the third independent adequately exposed example without an attributable improvement; routes 19
+and 1a independently reinforce the decision.
+
+The next road question is post-retirement verification, not another tuning arm: on one ordinary
+non-Experimental route containing a lead stop and a sustained uphill, does the raw three-domain
+baseline carry `carControl` to CAN without shaping, does `shouldStop` become true before the crawl,
+and does any positive uphill request still under-respond after controlling for speed and grade?
+Keep the stop/planner, gas-response, and brake-domain answers separate.
