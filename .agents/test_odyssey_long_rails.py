@@ -88,7 +88,7 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert params.BOSCH_GAS_LOOKUP_V == [0, 2000]
 
   def test_brake_command_matches_request_without_onset_shaping(self):
-    """Honda ACCEL_COMMAND must carry the raw clipped request at every selected brake entry."""
+    """Honda ACCEL_COMMAND scales moderate road-speed braking by 0.85 and keeps emergency raw."""
     for name, vego, state, pitch in (
       ("road", 20.0, LongCtrlState.pid, 0.0),
       ("descent", 20.0, LongCtrlState.pid, -0.05),
@@ -101,9 +101,10 @@ class TestOdysseyLongRails(unittest.TestCase):
         aegos = np.array([0.0] * 20 + [2.0] * 60)
         rejects, seen = _run(True, accels, pitch=pitch, vego=vego, aegos=aegos, long_control_state=state)
         assert not rejects
+        # Moderate braking (-0.31 -> -26, -0.60 -> -51) scaled by 0.85; emergency (-2.0 -> -200) raw.
         np.testing.assert_array_equal(
           np.array([accel for accel, _, _ in seen]),
-          np.array([50] * 10 + [-31] * 10 + [-60] * 10 + [-200] * 10),
+          np.array([50] * 10 + [-26] * 10 + [-51] * 10 + [-200] * 10),
         )
 
   def test_road_speed_coasts_through_raw_split_chatter(self):
@@ -116,12 +117,13 @@ class TestOdysseyLongRails(unittest.TestCase):
           accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.29] * 20 + [-0.31] * 20 + [0.10] * 20)
           rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
           assert not rejects
-          assert {-18, -23, -29, -31, 10}.issubset({accel for accel, _, _ in seen})
+          # -0.31 is in brake domain and scaled by 0.85 -> -26
+          assert {-18, -23, -29, -26, 10}.issubset({accel for accel, _, _ in seen})
           for accel, gas, brake_request in seen:
             if accel in (-18, -23):
               assert gas == GAS_INACTIVE, "negative road request left GAS_COMMAND active"
               assert brake_request == 0, "raw -0.20 crossing still toggled BRAKE_REQUEST"
-            elif accel == -31:
+            elif accel == -26:
               assert gas == GAS_INACTIVE
               assert brake_request == 1, "stronger road request did not select brake immediately"
             elif accel == -29:
@@ -160,13 +162,22 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
 
   def test_gas_command_does_not_add_unverified_grade_or_drag(self):
-    """The gas wire must not change solely because the recorded pitch changes."""
+    """The gas wire must not increase solely because the recorded pitch is downhill."""
     accels = np.full(40, 0.10)
     _, level = _run(True, accels, pitch=0.0, vego=31.0)
     _, downhill = _run(True, accels, pitch=-0.05, vego=31.0)
     level_gas = np.array([gas for _, gas, _ in level])
     downhill_gas = np.array([gas for _, gas, _ in downhill])
     np.testing.assert_array_equal(downhill_gas, level_gas)
+
+  def test_gas_command_adds_pitch_feedforward_on_uphills(self):
+    """Positive gas commands on an incline must add gravitational pitch feedforward."""
+    accels = np.full(40, 0.10)
+    _, level = _run(True, accels, pitch=0.0, vego=31.0)
+    _, uphill = _run(True, accels, pitch=0.05, vego=31.0)
+    level_gas = np.array([gas for _, gas, _ in level])
+    uphill_gas = np.array([gas for _, gas, _ in uphill])
+    assert (uphill_gas > level_gas).all(), "uphill pitch did not increase gas command"
 
   def test_gas_command_matches_upstream_direct_request_mapping(self):
     """Odyssey domain selection must not attenuate upstream's request-to-gas calibration."""
@@ -212,14 +223,27 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert brake_request == 0, "positive low-speed start request left brake active"
 
   def test_low_speed_brake_command_matches_request(self):
-    """Honda's low-speed brake domain must not reshape the controller request."""
+    """Honda's low-speed brake domain floors mild crawl requests to overcome creep, preserving firm braking."""
+    # Below 2.0 m/s (vego=1.0), requests above -0.35 are floored to -0.35
     accels = np.array([-0.21] * 30 + [-0.17] * 50)
     aegos = np.array([-0.21] * 10 + [0.5] * 70)
     rejects, seen = _run(True, accels, pitch=0.0, vego=1.0, aegos=aegos)
     assert not rejects
     commands = np.array([accel for accel, _, _ in seen])
-    np.testing.assert_array_equal(commands[:15], np.full(15, -21))
-    np.testing.assert_array_equal(commands[15:], np.full(25, -17))
+    np.testing.assert_array_equal(commands[:15], np.full(15, -35))
+    np.testing.assert_array_equal(commands[15:], np.full(25, -35))
+
+    # Firmer requests below -0.35 remain unfloored
+    rejects, seen_firm = _run(True, np.full(20, -0.60), pitch=0.0, vego=1.0)
+    assert not rejects
+    commands_firm = np.array([accel for accel, _, _ in seen_firm])
+    np.testing.assert_array_equal(commands_firm, np.full(10, -60))
+
+    # Above crawl speed (vego=3.5), requests above -0.30 remain in low-speed brake domain without floor
+    rejects, seen_mid = _run(True, np.full(20, -0.21), pitch=0.0, vego=3.5)
+    assert not rejects
+    commands_mid = np.array([accel for accel, _, _ in seen_mid])
+    np.testing.assert_array_equal(commands_mid, np.full(10, -21))
 
   def test_low_speed_positive_reengagement_has_no_stale_brake(self):
     """An inactive interval must not leave stale braking on positive re-engagement."""
