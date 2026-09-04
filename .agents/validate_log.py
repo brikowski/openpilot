@@ -86,6 +86,7 @@ JERK_BIND_MIN_RUN = 5         # consecutive frames (~50ms) sustained over cap = 
 FOLLOW_GAS_RMS_LIMIT = 0.05   # RMS(ACCEL_COMMAND - carControl accel) in gas domain (measured ~0.011)
 FOLLOW_BRAKE_RMS_PASSTHROUGH = 0.05  # Fresh test2 has no port-added brake authority.
 FOLLOW_BRAKE_RMS_LEGACY = 0.15       # ody-op intentionally carries its historical supplement.
+FOLLOW_BRAKE_RMS_SCALED = 0.25       # agile package applies intentional 0.85x moderate brake scale.
 SIGN_DISAGREE_REQUEST = 0.02  # m/s^2 above which the controller input genuinely asks acceleration
 SIGN_DISAGREE_NON_GRADE_FLAG = 0.01  # >1% sustained away from descents = unexplained domain hold
 SIGN_DISAGREE_MAG_FLAG = 0.50  # m/s^2: route 34 stale-state failure was -2.04; healthy grade holds
@@ -157,6 +158,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "aa8a2e60fbad": -0.30,  # comment-only descendant; runtime behavior matches 871b98a64f6e
   "0bd54951753f": -0.30,  # exact deployed comment-only descendant
   "31a1776c7bf4": -0.30,  # retires the unproven onset limiter; raw command domains are unchanged
+  "4dc05c99cf7a": -0.30,  # agile package: 0.85x brake scale, -0.35 crawl floor, pitch feedforward
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -185,11 +187,15 @@ THREE_DOMAIN_COMMITS = {
   "aa8a2e60fbad",  # comment-only descendant; runtime behavior matches 871b98a64f6e
   "0bd54951753f",  # exact deployed comment-only descendant
   "31a1776c7bf4",  # restores raw ACCEL_COMMAND after the bounded onset screen
+  "4dc05c99cf7a",  # agile longitudinal package
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
   "aa8a2e60fbad",
   "0bd54951753f",
+}
+BRAKE_SCALED_COMMITS = {
+  "4dc05c99cf7a",  # agile package: intentional 0.85x moderate brake scale and -0.35 stop creep floor
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
@@ -479,7 +485,7 @@ def _brake_passthrough_expected(opendbc_commit):
   """Whether every brake-domain frame should carry the raw controller request."""
   commit = (opendbc_commit or "")[:12]
   return (commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
-          and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS)
+          and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS | BRAKE_SCALED_COMMITS)
 
 
 def _jerk(smoothed, dt, active):
@@ -1366,8 +1372,14 @@ def verdicts(r):
         status="wire diverging from the controller input where nothing should diverge"
                if r["follow_gas_rms"] > FOLLOW_GAS_RMS_LIMIT else None)
   if r.get("follow_brake_rms") is not None:
+    source_commit = (r.get("opendbc_commit") or "")[:12]
     passthrough = r.get("brake_passthrough_expected", False)
-    brake_limit = FOLLOW_BRAKE_RMS_PASSTHROUGH if passthrough else FOLLOW_BRAKE_RMS_LEGACY
+    if source_commit in BRAKE_SCALED_COMMITS:
+      brake_limit = FOLLOW_BRAKE_RMS_SCALED
+    elif passthrough:
+      brake_limit = FOLLOW_BRAKE_RMS_PASSTHROUGH
+    else:
+      brake_limit = FOLLOW_BRAKE_RMS_LEGACY
     add("following - brake domain", r["follow_brake_rms"] <= brake_limit,
         f"RMS {r['follow_brake_rms']:.4f}, mean {r['follow_brake_mean']:+.4f} m/s^2 extra brake "
         f"({r['brake_domain_frac']*100:.0f}% of engaged frames in brake domain; <= {brake_limit:.2f})",
