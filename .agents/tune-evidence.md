@@ -2100,3 +2100,10 @@ compare against the route-12 stopped-lead context before changing thresholds.
 The lead-acceleration field does not separate the contexts cleanly: route 1d had `aLeadK` near
 `-0.03 m/s2` before the lead accelerated, while route 12 also passed through near-zero `aLeadK`
 as its lead settled. Do not add an `aLeadK` gate from these frozen inputs alone.
+
+The same route's downhill brake-domain cycling remains upstream-request driven. Representative
+edges near route-relative `669.33-678.18 s` had no lead, `cruise` plan source, and
+`allowThrottle=true`: `longitudinalPlan`/`carControl` swung from about `-0.33` to `+0.01 m/s2`
+and back, while decoded `ACCEL_COMMAND` followed at about `-0.33` to `+0.01 m/s2` with the
+corresponding `BRAKE_REQUEST` transitions. This is command/domain fidelity through the Honda port,
+not a carControl-to-CAN divergence; do not use opendbc shaping to hide the upstream cruise pulse.
