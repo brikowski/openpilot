@@ -2454,7 +2454,7 @@ parent's public-opendbc pin. No `ody-op-onset` ref remains.
 
 The private ledger contains 261 historical rows. Forty additional rows were backfilled from their
 retained full-rate segments without changing any behavior metric, bringing exact parent,
-nested-source, model, mode, and selected-setting provenance to 47 rows. The remaining 214 rows stay
+nested-source, model, mode, and selected-setting provenance to 48 rows. The remaining 213 rows stay
 historical: 156 route rows have no matching local full-rate segments, 57 retained rows lack
 resolvable source objects or metadata (most are staging captures), and one locally retained source
 route has mixed longitudinal personality. No row is treated as exact when its source or
@@ -2589,3 +2589,15 @@ transition/quantization boundary, not a repeatable opendbc divergence.
 **Decision: KEEP the current command-domain implementation and make no Honda change from route
 70.** Retain the transition frames as a diagnostic boundary; reopen only if a full-rate route shows
 the same mismatch beyond the command-period transition or with measurable withheld acceleration.
+
+### Route 00000044 ledger provenance refresh (2026-09-05)
+
+The retained route `00000044--1f70122a52` was revalidated from all local full-rate segments after
+its older ledger row was found to lack source fields. Its `initData` resolves a clean parent
+`78562c509663722bc77bdef5747f1d6f0008cbb0`, nested opendbc
+`09a52a2bf00317ae1a26255058eec0e4b164703b`, small model
+`f0672eab48566d395e49407293579b817f3e9d22`, Alpha Long enabled, and mixed Experimental/personality
+state. The refreshed metrics are unchanged (`0.0077/0.0108 m/s2` gas/brake wire RMS, 28 physical
+brake edges, and six driver brake takeovers); this is a provenance correction, not a new behavioral
+result. The ledger now has 48 exact-provenance rows; no comparison is pooled across the mixed
+operating-state route without conditioning on those settings.
