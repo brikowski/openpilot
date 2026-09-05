@@ -1951,6 +1951,17 @@ Nested commit `4dc05c99cf7a` briefly added three simultaneous Odyssey command ch
  candidate with a first-divergence hypothesis, mutation check, replay shape check, and closed-loop
 exposure.
 
+### Upstream model and baseline refresh (2026-09-05)
+
+After the previous sync, `upstream/master` advanced to `675ff569818f` (`tools: add op docs command`);
+the change is documentation tooling only and was cherry-picked into `ody-op` as `287eaddf86`.
+The current `driving_supercombo.onnx` blob is `f0672eab4856`, identical on the route-12 parent,
+current `ody-op`, and `upstream/master`. The latest small driving-model change remains
+`93f5aa469a` (Rebellious Hope), which was reverted by `b361e952c9` on 2026-08-04; no newer small
+model release is present through `675ff569818f`. Model selection therefore supplies no new
+candidate for the stopped-lead symptom; keep the planner-side experiment isolated from model and
+opendbc changes.
+
 ### Route 0000001c--ca2ae44633 provenance (2026-09-05)
 
 The newly pulled 55-segment route resolves to parent `cc87e07f4a3b` (`Odyssey: retire unproven
