@@ -2341,3 +2341,180 @@ driver intervention. Reject immediately for a false stop on a moving lead, extra
 stale stopping after lead release, late stop, or clear drivability regression. Keep or retire only
 after the candidate has stationary-lead, no-lead crawl-stop, and moving-lead-release exposure;
 this deployment itself is not a road result.
+
+A post-deployment inventory check on 2026-09-05 still found 14 device routes, all already validated,
+with no route recorded after the candidate switch. The candidate therefore remains road-pending;
+the last available routes (`1d`, `1e`, and `1f`) ran on the baseline before deployment and cannot
+count as candidate exposure.
+
+### Current repository and device audit (2026-09-05)
+
+At the latest audit, local and `origin/ody-op` both resolve to parent
+`307b50adcff96c8f75968c84769cdb6543f15b17`, whose `opendbc_repo` gitlink and clean nested checkout
+resolve to `825642c4218b3c71f74053264882e40971cc10f5`. `upstream/master` is
+`0ec3a082c7ca3302c171b03ff5cd43be61309f13` and still pins public opendbc
+`b4ef5e1cf406ff143fa67bdbfb154739d43279c9`; the nested tuned branch remains based on that pin.
+The published branch is clean, and no `ody-op-onset` ref remains.
+
+The device intentionally remains on the supervised child
+`tmp/ody-op-stop-intent-road-20260905` at parent `71b708453fb4564be21da783cb2036776dcc3573`,
+nested `825642c4218b3c71f74053264882e40971cc10f5`, with `UpdaterState=idle`,
+`UpdateAvailable=0`, no `LastUpdateException`, Alpha Long enabled, Experimental mode disabled, and
+no failed services. The 14-route private inventory is fully validated and contains no route after
+the candidate switch. The latest parent changes are tooling/documentation only; no source rebuild
+or device replacement was performed, and no new road conclusion is claimed.
+
+### Upstream PR and model refresh (2026-09-05)
+
+The live upstream refs were refreshed before this audit. Parent `upstream/master` is
+`0ec3a082c7ca3302c171b03ff5cd43be61309f13`; `ody-op` is `ca3337d11e0b55e9cb47aa8adc48580604343c17`,
+with zero commits missing from the parent upstream history. The parent still pins public opendbc
+`b4ef5e1cf406ff143fa67bdbfb154739d43279c9`. Standalone opendbc `upstream/master` is
+`3e92d112129507debe45364891954db70238997a`, three commits beyond tuned nested `825642c4218b3c71f74053264882e40971cc10f5`.
+Those commits add 2027 HR-V fingerprints/docs and VW MEB harness work; the Honda diff also removes
+the Odyssey command-domain selector. Do not advance the nested gitlink independently: it would
+discard the retained Odyssey domain behavior and violate the parent pin/schema invariant.
+
+Three relevant openpilot PR heads were fetched for exact, read-only comparison. PR [#38658](https://github.com/commaai/openpilot/pull/38658)
+(`1aa815ed08`) changes shared `should_stop()` from `vEgo < 0.30` to `0.25 m/s` and reduces the
+`LongCtrlState.stopping` ramp from `1.0` to `0.3 m/s2/s`. Its own replay report shows stop-intent
+rises lagging by 1--2 frames on the tested Hyundai route. That is a generic comfort/stop-state
+change, not a Honda CAN divergence; the later threshold and slower ramp are not an evidence-based
+response to the Odyssey's missed stopped-lead approaches. Do not merge it into `ody-op` without a
+separate matched road arm.
+
+PR [#38726](https://github.com/commaai/openpilot/pull/38726) (`5a658611a8`) is a big-model/spatial-feature
+change (including `LAT_SMOOTH_SECONDS=0.1`), not a small-model release. PR [#38098](https://github.com/commaai/openpilot/pull/38098)
+(`82ed2b4ffd`) is a broad big-model fallback/router architecture, also not a small-model release
+or an Odyssey command-path change. The current upstream small driving-model blob remains
+`f0672eab4856`; the prior `93f5aa469a` Rebellious Hope release was reverted by `b361e952c9`, and
+no newer small-model release is present in the refreshed upstream master. **Decision: KEEP the
+current parent/nested pins and Odyssey baseline; do not import these open PRs or a model change.**
+
+### Repository and device recheck after provenance backfill (2026-09-05)
+
+The current published parent is `efbac937c76871f6b28caf46067ee426c8c8cf44` on `ody-op`, with a
+clean checkout and `origin/ody-op` at the same commit. Its gitlink and clean nested checkout are
+both `825642c4218b3c71f74053264882e40971cc10f5`; nested `origin/ody-op` matches. The parent is
+`196/0` ahead/behind the freshly fetched `upstream/master` `0ec3a082c7ca3302c171b03ff5cd43be61309f13`.
+Nested `upstream/master` is `3e92d112129507debe45364891954db70238997a`, three commits beyond the
+tuned checkout; those commits are unrelated VW/HR-V/docs changes and must not be merged
+independently of the parent pin. `ody-op-onset` and the superseded stop-intent refs are absent from
+both remotes; only the supervised road-arm ref `tmp/ody-op-stop-intent-road-20260905` remains.
+
+The fresh SSH check to `192.168.1.200` timed out; a network-layer ping had 100% loss and the local
+ARP entry remained incomplete. The device's present checkout, updater state, services, and road-arm
+route inventory are therefore not claimed current. The last successful probe remains
+the supervised road arm at parent `71b708453fb4564be21da783cb2036776dcc3573`, nested
+`825642c4218b`, with Alpha Long enabled and Experimental mode disabled. Reverify that state before
+any further drive or deployment; no device change was made for this documentation-only backfill.
+
+### Latest repository, provenance, and cleanup audit (2026-09-05)
+
+This entry supersedes the earlier same-day snapshots above. The last source-bearing production
+snapshot in this audit was clean `ody-op` parent `0b3e4a1d279b66fe4b161e1ba9ddeb77a7bafe14`; the
+later publication steps are documentation/ignore-only commits and leave runtime behavior unchanged.
+Its nested checkout and gitlink were both `825642c4218b3c71f74053264882e40971cc10f5`; nested
+`origin/ody-op` matched as well. Fresh `upstream/master` is
+`0ec3a082c7ca3302c171b03ff5cd43be61309f13`: the parent is `198/0` ahead/behind, while standalone
+opendbc is `35/3` ahead/behind its `3e92d112129507debe45364891954db70238997a` upstream. The three
+new nested commits are unrelated VW/HR-V/docs changes and must not be merged independently of the
+parent's public-opendbc pin. No `ody-op-onset` ref remains.
+
+The private ledger contains 261 historical rows. Forty additional rows were backfilled from their
+retained full-rate segments without changing any behavior metric, bringing exact parent,
+nested-source, model, mode, and selected-setting provenance to 47 rows. The remaining 214 rows stay
+historical: 156 route rows have no matching local full-rate segments, 57 retained rows lack
+resolvable source objects or metadata (most are staging captures), and one locally retained source
+route has mixed longitudinal personality. No row is treated as exact when its source or
+operating-state identity cannot be resolved. No newer small driving-model blob is present:
+`driving_supercombo.onnx` remains
+`f0672eab4856`, and the prior `93f5aa469a` release was reverted upstream.
+
+Cleanup removed the superseded stop-intent refs, one-off replay/analysis artifacts, generated Python
+caches, stale HTML maneuver reports, nested safety-test object/coverage files, the candidate's empty
+legacy `.claude` tree, and the separate staging worktree's editor/cache/gcov debris. Empty maneuver
+report directories were also removed; their generators recreate them on demand. The active supervised
+worktree `tmp/ody-op-stop-intent-road-20260905`, private route/download/extract caches, and reusable
+build/UV caches are intentionally retained. No tracked Claude skill or root `CLAUDE.md` remains;
+project guidance is `AGENTS.md` plus `.agents/`.
+
+The parent and nested repositories also had five old stash refs: one automatic pre-sync snapshot and
+four superseded ledger, task, or Honda-tune work-in-progress snapshots. Their committed history or
+ledger records are already retained, so the stash refs were dropped during this audit; no working-tree
+or active branch depended on them. No garbage collection was run, preserving normal Git recovery until
+the repositories next expire unreachable objects.
+
+The current device check still has no LAN presence (SSH timeout, ping loss, incomplete ARP), so its
+checkout, updater target, services, and route inventory remain unverified until it reconnects. The
+last successful state was the supervised child at parent `71b708453fb4564be21da783cb2036776dcc3573`
+with nested `825642c4218b`, Alpha Long enabled, and Experimental mode disabled.
+
+### Git temporary-pack cleanup (2026-09-05)
+
+The parent object store had five unreachable `tmp_pack_*` files left by interrupted July/August
+fetches (`3,323,740,155` bytes total). No Git fetch or pack process was active, and `git
+count-objects -v` classified them as garbage. They were removed by exact path; all refs, commits,
+reflogs, and worktrees were left intact. Parent and nested object stores now report zero garbage.
+No `git gc` or unreachable-object pruning was run, so historical recovery remains available until
+normal Git expiry. Reusable private-log, download, extraction, build, and UV caches remain outside
+the repositories; the supervised stop-intent worktree remains the only active temporary road arm.
+
+### Source-aware extraction refresh (2026-09-05)
+
+The exploratory extractor previously cached only `radarState.leadOne`, even though the planner's
+lead MPC uses `leadOne` for `lead0` and `leadTwo` for `lead1`. `.agents/extract.py` now retains both
+leads and adds `lead_selected_*`, selecting only for published lead-plan sources (raw enum 1/2);
+the historical `lead_*` names remain explicit `leadOne` aliases. Cache schema 5 was rebuilt for all
+26 retained routes, and the 26 obsolete schema-4 files were removed. The selector has focused tests;
+the source mapping mutation was observed failing before restoration.
+
+The refreshed source-aware stopped-lead screen leaves the current inactive predicate unchanged:
+`vEgo < 1.0`, `aTarget < -0.05`, model probability above `0.9`, `vLead < 0.35`, closing `vRel`,
+and gap below `6.5 m`, with five-frame persistence. On published lead-plan samples it would assert
+17 debounced runs (35.65 s) across eight routes; only 5.27 s of candidate frames across four routes
+survive a `vLead < 0.05` screen, so most of the current exposure is a slow-moving rather than
+stationary lead by this conservative proxy. The latter
+includes already-generic-stop intervals on routes `00000038`/`0000006d` and has no closed-loop
+stationary-lead versus moving-lead release result. This is a frozen-input classifier screen, not a
+road result. **Decision: KEEP the candidate inactive and require a supervised stationary-lead and
+moving-lead-release comparison; do not tune the planner or Honda command path from this replay.**
+
+The same tooling-only extractor/test sync is published on the supervised candidate as
+`e31690fa6d39e5516dd07e0a55f5ecde58c20735`; its runtime planner, Honda CAN, and nested gitlink are
+unchanged. Parent and candidate local refs match their respective remotes after publication. The
+candidate checkout has no local virtualenv, so its hook could not run; the parent virtualenv ran
+candidate Ruff plus the stopped-lead and extractor tests (`5 passed`).
+
+### Upstream refresh after source-aware extraction (2026-09-05)
+
+Parent `upstream/master` advanced to `f9dacd0d6b` with Cabana's build-directly change. The
+non-runtime commit was imported into `ody-op` as `3f510eb070`; `openpilot/tools/cabana` is now
+content-identical to upstream and the wrapper script is gone. The same commit is present on the
+supervised candidate as `915cba1651`. No longitudinal planner, lateral controller, Honda CAN, or
+nested gitlink behavior changed. The parent graph remains one commit behind upstream by object
+identity because this was a clean cherry-pick; no source delta remains for that upstream change.
+
+Nested `opendbc_repo/upstream/master` remains `3e92d1121295`, with only the unrelated VW MEB,
+scheduled-CARS, and 2027 HR-V commits beyond the pinned `825642c4218b`; they remain intentionally
+unmerged to preserve the parent/opendbc schema pairing.
+
+### Upstream Cabana UI refresh and final cleanup pass (2026-09-05)
+
+`upstream/master` advanced from `f9dacd0d6b` to `a989bc0b50` with Cabana-only UI and test
+formatting changes (`#38782`). The diff touches no planner, longcontrol, lateral controller, Honda
+CAN, safety, model, or nested-opendbc code. It was cherry-picked into the published parent as
+`73177efafd` and the supervised candidate as `f56976611c`; the nested pin remains
+`825642c4218b3c71f74053264882e40971cc10f5`.
+
+The follow-up hygiene pass removed stale in-tree build products, generated bindings, old binaries,
+and nested safety-test coverage/object debris (about 500 MB). It did not remove tracked source,
+private route/download/extract evidence, model/font assets, virtualenvs, reusable UV/SCons caches,
+historical refs, or the active supervised worktree. No `.claude` files, `.DS_Store`, stale worktree,
+or Git garbage remain; parent and nested `git count-objects` report zero garbage. Test-generated
+cache/debris was removed again after the focused suite (`29 passed, 58 subtests passed`).
+
+The parent and supervised candidate branches are published and clean, and direct remote lookup
+confirms no `ody-op-onset` ref. The device remains
+unreachable over SSH, so its current checkout/updater/services and any road result remain
+unverified; no deployment or reboot was performed for this UI-only sync or cleanup.
