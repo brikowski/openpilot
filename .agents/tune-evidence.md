@@ -2689,3 +2689,8 @@ lists are empty and both object stores report zero garbage; no broad garbage col
 This is a tooling/source-refresh and hygiene result only. The device remains unreachable (SSH
 timeout, ping loss, incomplete ARP), so no deployment, reboot, updater verification, or road result
 is claimed. Recheck the device separately before the next supervised route.
+
+The staging fallback verifier now asserts both official Sunnypilot remote URLs and
+`AlphaLongitudinalEnabled=1` in addition to its branch, updater, and failed-service checks. The
+guard is published in `fa80422d79`; `bash -n` and the help path pass. No device mutation was
+attempted while the LAN target remained unreachable.
