@@ -73,9 +73,11 @@ This checkout also exposes a small set of explicit VS Code tasks in
 - **Validate One Route** re-runs the authoritative validator for one already-local route without
   pulling anything. **Inspect Following Trace** prints the planner → `carControl` → wire → `aEgo`
   trace for the same route; both tasks prompt for a route ID or unique prefix.
-- **Inspect Upstream Delta** fetches the two upstream remotes and prints counts plus the recent
-  20 commits in both directions of the parent and nested delta, along with the upstream-pinned
-  nested commit. **Sync Upstream Locally**
+- **Inspect Upstream Delta** fetches the two upstream remotes and prints history-only object counts
+  plus the recent 20 commits in both directions of the parent and nested delta, along with the
+  upstream-pinned nested commit. The counts describe commit identity, so a cherry-picked change
+  can be source-equivalent while still appearing in both histories; inspect the actual diff before
+  importing anything. **Sync Upstream Locally**
   runs `.agents/sync_upstream.py`; it can rewrite local history, never pushes, and requires both
   repositories to be clean and on `ody-op`.
 - **Run Jotpluggler** and **Run Cabana** inspect a local route; Cabana accepts `live` for the comma
