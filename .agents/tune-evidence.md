@@ -2096,3 +2096,7 @@ because the route ran on baseline, but it is a required false-stop/early-standst
 the current `vLead < 0.35` screen may also match a slowly moving lead. Do not broaden the predicate
 or claim benefit from this replay; require a controlled candidate approach with human override and
 compare against the route-12 stopped-lead context before changing thresholds.
+
+The lead-acceleration field does not separate the contexts cleanly: route 1d had `aLeadK` near
+`-0.03 m/s2` before the lead accelerated, while route 12 also passed through near-zero `aLeadK`
+as its lead settled. Do not add an `aLeadK` gate from these frozen inputs alone.
