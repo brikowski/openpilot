@@ -2516,3 +2516,16 @@ The same tooling-only extractor/test sync is published on the supervised candida
 unchanged. Parent and candidate local refs match their respective remotes after publication. The
 candidate checkout has no local virtualenv, so its hook could not run; the parent virtualenv ran
 candidate Ruff plus the stopped-lead and extractor tests (`5 passed`).
+
+### Upstream refresh after source-aware extraction (2026-09-05)
+
+Parent `upstream/master` advanced to `f9dacd0d6b` with Cabana's build-directly change. The
+non-runtime commit was imported into `ody-op` as `3f510eb070`; `openpilot/tools/cabana` is now
+content-identical to upstream and the wrapper script is gone. The same commit is present on the
+supervised candidate as `915cba1651`. No longitudinal planner, lateral controller, Honda CAN, or
+nested gitlink behavior changed. The parent graph remains one commit behind upstream by object
+identity because this was a clean cherry-pick; no source delta remains for that upstream change.
+
+Nested `opendbc_repo/upstream/master` remains `3e92d1121295`, with only the unrelated VW MEB,
+scheduled-CARS, and 2027 HR-V commits beyond the pinned `825642c4218b`; they remain intentionally
+unmerged to preserve the parent/opendbc schema pairing.
