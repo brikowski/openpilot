@@ -1,6 +1,6 @@
 # Log Validation Ledger
 
-Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling `.jsonl`. One row is retained per route. Group behavioral comparisons by resolved `opendbc`, not by branch. Coverage and flags identify evidence to inspect; they do not authorize a tune change. `follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` counts physical BRAKE_REQUEST edges.
+Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling `.jsonl`. One row is retained per route. Group behavioral comparisons by resolved `opendbc`, not by branch. Coverage and flags identify evidence to inspect; they do not authorize a tune change. Exact parent/nested source, model blob, mode, and selected settings are retained in the JSONL (`*_full`, `model_*`, and `settings` fields). `follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` counts physical BRAKE_REQUEST edges.
 
 | date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS | legacy gasf | legacy windf | follow gas | follow brk | burst/10s | ovr/10m | tko/10m | lat CAN p95/max | lat sat | steer faults | FLAGS |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -261,7 +261,7 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-09-04 | 00000014--3598c61454 | ody-op | 0bd54951753f | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
 | 2026-09-04 | 00000013--dee84c0d75 | ody-op | 0bd54951753f | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
 | 2026-09-04 | 00000012--9ea63a15e3 | ody-op | 0bd54951753f | 71.8 | 83.9 | 0 | 0.147 | 0.005 | - | - | 0.005 | 0.013 | 4 | 0.3 | 0.1 | 1038/2560 | 0.2% | 3 | none |
-| 2026-09-05 | 0000001c--ca2ae44633 | ody-op | 31a1776c7bf4 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-09-05 | 0000001c--ca2ae44633 | ody-op | 31a1776c7bf4 | 2.3 | 2.6 | 0 | 0.114 | 0.005 | - | - | 0.006 | - | 0 | 0.0 | 4.4 | 1071/2209 | 0.0% | 0 | none |
 | 2026-09-05 | 0000001d--2e324ec2ce | ody-op | 825642c4218b | 18.5 | 12.3 | 0 | 0.243 | 0.008 | - | - | 0.010 | 0.011 | 8 | 0.0 | 4.3 | 1709/2560 | 0.6% | 0 | brake takeovers, brake-domain transition bursts, ride harshness (felt) |
-| 2026-09-05 | 0000001f--51e2cb8cb9 | ody-op | 825642c4218b | 5.4 | 3.6 | 0 | 0.247 | 0.008 | - | - | 0.008 | 0.014 | 9 | 0.0 | 3.7 | 1771/2560 | 0.8% | 0 | brake-domain transition bursts, ride harshness (felt) |
 | 2026-09-05 | 0000001e--bce126e36c | ody-op | 825642c4218b | 10.2 | 8.9 | 0 | 0.209 | 0.007 | - | - | 0.007 | 0.011 | 5 | 0.0 | 4.9 | 1208/2560 | 0.0% | 0 | brake takeovers, brake-domain transition bursts |
+| 2026-09-05 | 0000001f--51e2cb8cb9 | ody-op | 825642c4218b | 5.4 | 3.6 | 0 | 0.247 | 0.008 | - | - | 0.008 | 0.014 | 9 | 0.0 | 3.7 | 1771/2560 | 0.8% | 0 | brake-domain transition bursts, ride harshness (felt) |

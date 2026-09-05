@@ -1974,8 +1974,11 @@ independently; doing so risks the parent/opendbc schema mismatch documented in `
 The newly pulled 55-segment route resolves to parent `cc87e07f4a3b` (`Odyssey: retire unproven
 brake onset limiter`), nested opendbc `31a1776c7bf4` (`honda: retire unproven Odyssey brake onset
 limiter`), branch `ody-op`, and Alpha Long enabled. It contains 24.9 logged minutes but zero
-engaged minutes and no usable lateral or longitudinal command exposure. The validator row is kept
-as context only and is excluded from all route pooling and candidate decisions.
+engaged minutes in the initial pull, so that first validator row had no usable lateral or
+longitudinal command exposure. The complete local reread (all 55 numeric-order segments) corrected
+the row to 50.0 logged minutes
+and 2.3 engaged minutes. It remains thin context: only gas-domain exposure was usable, with no
+brake-domain or candidate stop-intent exposure, and it remains excluded from pooled decisions.
 
 ### Low-speed stopped-lead stop-intent candidate screen (2026-09-04)
 
