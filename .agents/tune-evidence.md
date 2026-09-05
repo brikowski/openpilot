@@ -2250,6 +2250,40 @@ isolated comparison: stationary-lead and no-lead crawl stops, matched request/sp
 moving-lead release case. The inactive stopped-lead planner candidate remains the narrower way to
 test the route-1e stop-intent symptom without adding an unverified Honda brake correction.
 
+### Low-speed residual derivative cross-check and bounded trim replay (2026-09-05)
+
+The low-speed residual was cross-checked against a finite-difference derivative of `vEgo` on the
+same carControl grid, with a 25-sample (~0.25 s) moving average. This is still an offline screen,
+but it tests whether the positive `aEgo - request` residual is only a standstill-filter artifact.
+The median residuals were:
+
+- Route `0000001d--2e324ec2ce` (parent `784b05ce670a`, nested `825642c4218b`): `+0.089 m/s2`
+  from `aEgo - request` versus `+0.094 m/s2` from `dvEgo/dt - request` over 5.53 s; the two
+  acceleration estimates differed by only `+0.001 m/s2`.
+- Route `0000001e--bce126e36c` (parent `400cfefaaa8e`, nested `825642c4218b`): `+0.128` versus
+  `+0.142 m/s2` over 9.23 s across the two low-speed segments. Segment medians were
+  `+0.155/+0.122` from `aEgo` and `+0.185/+0.128` from the derivative.
+- Route `0000001f--51e2cb8cb9` (parent `400cfefaaa8e`, nested `825642c4218b`): `+0.185` versus
+  `+0.214 m/s2` over 1.30 s. Its accelerating lead makes it a safety counterexample, not a tuning
+  result.
+
+This supports a real low-speed response deficit in these episodes, while the sign-changing
+route-level and 1.18 m/s stop-lurch residuals still rule out a global gain or offset. A temporary
+command-shape candidate was therefore screened but not retained: subtract `0.10 m/s2` only when
+the upstream state was `stopping`, `vEgo < 1.0 m/s`, no driver brake was pressed, and the raw request
+was in `[-0.35, -0.03)`. A focused test passed, then failed after deliberate mutation, proving the
+guard; the source was restored afterward. Exact-route replay changed 38 frames (0.38 s) on route
+`0000001e`, and zero frames on routes `0000001d`/`0000001f`; route-1e replay request-error RMS
+rose from `0.0077` baseline to `0.0085` because the candidate intentionally changes `ACCEL_COMMAND`.
+Jerk and domain-edge shape were effectively unchanged in frozen input. This is not closed-loop
+evidence and does not justify deployment.
+
+**Decision: keep the production baseline unchanged; change the next road question to a supervised
+low-speed stopping-trim screen only if a route deliberately exercises stationary-lead and no-lead
+crawl stops, plus a moving-lead release.** Reject the trim for any false stop, extra onset bite,
+late release, intervention, or command-domain mismatch; otherwise compare achieved acceleration,
+stop distance, jerk, and request-to-wire fidelity before considering promotion.
+
 ### Stopped-lead predicate safety refinement screen (2026-09-05)
 
 Before changing the inactive planner child, the recorded lead signals were replay-screened at the
