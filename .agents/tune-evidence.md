@@ -1982,3 +1982,19 @@ onset/lurch/pulsing, and no driver takeover. Reject immediately for a false stop
 gap, clear drivability regression, or any wire/domain mismatch; otherwise retire after three
 adequately exposed examples without attributable improvement. No production or device change is
 authorized by this screen.
+
+The temporary child `tmp/ody-op-stop-intent-20260904` added a five-frame persistence gate after the
+first planner replay exposed a one-frame true/false/true flicker. Mutation testing made the focused
+test fail when the persistence comparison changed from `>= 5` to `> 5`. On route 12 segment 79,
+baseline plannerd replay produced 319 `shouldStop` frames and first asserted at 4770.193 s; the
+candidate produced 387 frames and first asserted at 4766.792 s, about 3.4 s earlier, with no
+intermediate flicker. The candidate did not change `aTarget` or Honda CAN generation. Both replays
+produced 1,200 plans from 2,400 process outputs; the repeated initial MPC reset messages were the
+same on both arms.
+
+The direct Honda controller replay over the adjacent route-12 stop segment remained unchanged by
+the planner child: replayed request-to-wire RMS was `0.00594 m/s2`, replay-vs-recorded wire RMS
+`0.00968 m/s2`, with two open-loop brake-domain flips and no forceful flip. This validates the
+command/domain boundary only; it cannot predict the counterfactual vehicle response after an
+earlier stop intent. **KEEP the candidate as an unroaded child for controlled exposure; keep
+`ody-op` unchanged and do not claim stopping improvement until closed-loop evidence exists.**
