@@ -2410,8 +2410,9 @@ tuned checkout; those commits are unrelated VW/HR-V/docs changes and must not be
 independently of the parent pin. `ody-op-onset` and the superseded stop-intent refs are absent from
 both remotes; only the supervised road-arm ref `tmp/ody-op-stop-intent-road-20260905` remains.
 
-The fresh SSH check to `192.168.1.200` timed out, so the device's present checkout, updater state,
-services, and road-arm route inventory are not claimed current. The last successful probe remains
+The fresh SSH check to `192.168.1.200` timed out; a network-layer ping had 100% loss and the local
+ARP entry remained incomplete. The device's present checkout, updater state, services, and road-arm
+route inventory are therefore not claimed current. The last successful probe remains
 the supervised road arm at parent `71b708453fb4564be21da783cb2036776dcc3573`, nested
 `825642c4218b`, with Alpha Long enabled and Experimental mode disabled. Reverify that state before
 any further drive or deployment; no device change was made for this documentation-only backfill.
