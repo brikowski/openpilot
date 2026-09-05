@@ -17,6 +17,25 @@ MAX_LATERAL_ACCEL_NO_ROLL = 3.0  # m/s^2
 def should_stop(v_ego: float, a_target: float) -> bool:
   return bool(v_ego < 0.3 and a_target < 0.1)
 
+
+# Temporary stopped-lead stop-intent candidate. These bounds are intentionally kept in this pure
+# helper so the candidate can be removed without changing Honda command translation or ACCEL_COMMAND.
+STOPPED_LEAD_MAX_EGO_SPEED = 1.0
+STOPPED_LEAD_MAX_SPEED = 0.35
+STOPPED_LEAD_MAX_GAP = 6.5
+STOPPED_LEAD_MAX_REL_SPEED = 0.0
+STOPPED_LEAD_MAX_TARGET_ACCEL = -0.05
+
+
+def stopped_lead_should_stop(v_ego: float, a_target: float, lead) -> bool:
+  """Screen a close, closing near-stopped lead for earlier planner stop intent."""
+  return bool(v_ego < STOPPED_LEAD_MAX_EGO_SPEED and
+              a_target < STOPPED_LEAD_MAX_TARGET_ACCEL and
+              lead.present and lead.modelProb > 0.9 and
+              lead.vLead < STOPPED_LEAD_MAX_SPEED and
+              lead.vRel < STOPPED_LEAD_MAX_REL_SPEED and
+              lead.dRel < STOPPED_LEAD_MAX_GAP)
+
 def clamp(val, min_val, max_val):
   clamped_val = float(np.clip(val, min_val, max_val))
   return clamped_val, clamped_val != val
