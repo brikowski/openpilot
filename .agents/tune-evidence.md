@@ -1988,6 +1988,12 @@ trajectory and `LongCtrlState.stopping` mechanisms rather than adding a Honda br
 is current raw-command `ody-op`; the candidate lives on a temporary child and rolls back by deleting
 the child without changing the parent or nested gitlink.
 
+The expected downstream effect is also existing Honda plumbing: `shouldStop` moves `longcontrol`
+into `LongCtrlState.stopping`, Honda's controller advances its existing `stopping_counter`, and
+`hondacan.create_acc_commands()` emits the established `STANDSTILL=1`/`STANDSTILL_RELEASE=0`
+state while retaining the same raw `ACCEL_COMMAND` and gas/brake-domain selection. No new Honda CAN
+field or brake shaping is introduced by this candidate.
+
 Applying the predicate with the planner's actual lead selection (`leadOne` for `lead0`, `leadTwo`
 for `lead1`/E2E) to the raw full-rate route messages found seven candidate episodes: one each on
 routes 10, 12, and 38, two on route 44, and two on route 6d. Five reached the recorded generic
