@@ -2510,3 +2510,9 @@ includes already-generic-stop intervals on routes `00000038`/`0000006d` and has 
 stationary-lead versus moving-lead release result. This is a frozen-input classifier screen, not a
 road result. **Decision: KEEP the candidate inactive and require a supervised stationary-lead and
 moving-lead-release comparison; do not tune the planner or Honda command path from this replay.**
+
+The same tooling-only extractor/test sync is published on the supervised candidate as
+`e31690fa6d39e5516dd07e0a55f5ecde58c20735`; its runtime planner, Honda CAN, and nested gitlink are
+unchanged. Parent and candidate local refs match their respective remotes after publication. The
+candidate checkout has no local virtualenv, so its hook could not run; the parent virtualenv ran
+candidate Ruff plus the stopped-lead and extractor tests (`5 passed`).
