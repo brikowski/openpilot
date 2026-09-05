@@ -1951,6 +1951,14 @@ Nested commit `4dc05c99cf7a` briefly added three simultaneous Odyssey command ch
  candidate with a first-divergence hypothesis, mutation check, replay shape check, and closed-loop
 exposure.
 
+### Route 0000001c--ca2ae44633 provenance (2026-09-05)
+
+The newly pulled 55-segment route resolves to parent `cc87e07f4a3b` (`Odyssey: retire unproven
+brake onset limiter`), nested opendbc `31a1776c7bf4` (`honda: retire unproven Odyssey brake onset
+limiter`), branch `ody-op`, and Alpha Long enabled. It contains 24.9 logged minutes but zero
+engaged minutes and no usable lateral or longitudinal command exposure. The validator row is kept
+as context only and is excluded from all route pooling and candidate decisions.
+
 ### Low-speed stopped-lead stop-intent candidate screen (2026-09-04)
 
 The next candidate is planner-side and remains inactive on `ody-op`. Symptom: on route 12's
