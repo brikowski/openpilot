@@ -2365,3 +2365,30 @@ nested `825642c4218b3c71f74053264882e40971cc10f5`, with `UpdaterState=idle`,
 no failed services. The 14-route private inventory is fully validated and contains no route after
 the candidate switch. The latest parent changes are tooling/documentation only; no source rebuild
 or device replacement was performed, and no new road conclusion is claimed.
+
+### Upstream PR and model refresh (2026-09-05)
+
+The live upstream refs were refreshed before this audit. Parent `upstream/master` is
+`0ec3a082c7ca3302c171b03ff5cd43be61309f13`; `ody-op` is `ca3337d11e0b55e9cb47aa8adc48580604343c17`,
+with zero commits missing from the parent upstream history. The parent still pins public opendbc
+`b4ef5e1cf406ff143fa67bdbfb154739d43279c9`. Standalone opendbc `upstream/master` is
+`3e92d112129507debe45364891954db70238997a`, three commits beyond tuned nested `825642c4218b3c71f74053264882e40971cc10f5`.
+Those commits add 2027 HR-V fingerprints/docs and VW MEB harness work; the Honda diff also removes
+the Odyssey command-domain selector. Do not advance the nested gitlink independently: it would
+discard the retained Odyssey domain behavior and violate the parent pin/schema invariant.
+
+Three relevant openpilot PR heads were fetched for exact, read-only comparison. PR [#38658](https://github.com/commaai/openpilot/pull/38658)
+(`1aa815ed08`) changes shared `should_stop()` from `vEgo < 0.30` to `0.25 m/s` and reduces the
+`LongCtrlState.stopping` ramp from `1.0` to `0.3 m/s2/s`. Its own replay report shows stop-intent
+rises lagging by 1--2 frames on the tested Hyundai route. That is a generic comfort/stop-state
+change, not a Honda CAN divergence; the later threshold and slower ramp are not an evidence-based
+response to the Odyssey's missed stopped-lead approaches. Do not merge it into `ody-op` without a
+separate matched road arm.
+
+PR [#38726](https://github.com/commaai/openpilot/pull/38726) (`5a658611a8`) is a big-model/spatial-feature
+change (including `LAT_SMOOTH_SECONDS=0.1`), not a small-model release. PR [#38098](https://github.com/commaai/openpilot/pull/38098)
+(`82ed2b4ffd`) is a broad big-model fallback/router architecture, also not a small-model release
+or an Odyssey command-path change. The current upstream small driving-model blob remains
+`f0672eab4856`; the prior `93f5aa469a` Rebellious Hope release was reverted by `b361e952c9`, and
+no newer small-model release is present in the refreshed upstream master. **Decision: KEEP the
+current parent/nested pins and Odyssey baseline; do not import these open PRs or a model change.**
