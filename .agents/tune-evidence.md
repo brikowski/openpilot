@@ -2632,3 +2632,16 @@ The nested `opendbc_repo/upstream/master` remains `3e92d1121295`, three commits 
 `825642c4218b`; those VW/HR-V/docs changes remain unrelated and must not be merged independently.
 **Decision: keep the current Odyssey runtime and nested pin; import only the non-runtime Cabana
 refresh, with no Honda behavior change.**
+
+### Published baseline validation after upstream refresh (2026-09-05)
+
+On the clean published `ody-op` checkout (`bea2652d1f`, nested `825642c4218b`), the Honda interface
+and Odyssey rail gates pass: `270 passed, 58 subtests passed`. The repository pre-commit hook also
+passes its focused 39-test tooling suite. The full `opendbc_repo/test.sh` invocation remains
+dependency-blocked: the runner cannot resolve the Hugging Face `comma-car-segments==0.1.0` wheel;
+no source or test failure was reported. Test-generated caches and bytecode were removed afterward,
+leaving only the intentionally retained virtualenvs and reusable external caches.
+
+This is software/CAN-safety validation only. It does not change the road decision: the current
+Honda command-domain implementation and inactive stopped-lead planner child remain unchanged, and
+the device is still awaiting a reachable supervised road run.
