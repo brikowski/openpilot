@@ -1988,10 +1988,12 @@ trajectory and `LongCtrlState.stopping` mechanisms rather than adding a Honda br
 is current raw-command `ody-op`; the candidate lives on a temporary child and rolls back by deleting
 the child without changing the parent or nested gitlink.
 
-Applying the predicate to the locally cached full-rate extracts found seven candidate episodes:
-one each on routes 10, 12, and 38, two on route 44, and two on route 6d. Every episode already
-reached the recorded generic `shouldStop` within four seconds and none exceeded 1.6 mph in that
-window. This is useful exposure screening, not counterfactual or closed-loop proof: frozen logs
+Applying the predicate with the planner's actual lead selection (`leadOne` for `lead0`, `leadTwo`
+for `lead1`/E2E) to the raw full-rate route messages found seven candidate episodes: one each on
+routes 10, 12, and 38, two on route 44, and two on route 6d. Five reached the recorded generic
+`shouldStop` within four seconds; the other two reached it after about 4.35 s and 6.65 s. The
+candidate windows began at roughly 0.85-1.00 m/s (1.9-2.2 mph), so this is not a sub-1.6-mph
+screen. These are useful exposure checks, not counterfactual or closed-loop proof: frozen logs
 cannot show whether an earlier stop intent would false-stop a moving lead or improve the gap.
 
 Success requires mutation-verified predicate tests, planner replay showing earlier stop intent with
