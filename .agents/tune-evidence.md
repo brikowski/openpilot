@@ -2249,3 +2249,26 @@ brake-tuning arm from this screen.** Treat these segments as the minimum exposur
 isolated comparison: stationary-lead and no-lead crawl stops, matched request/speed/grade, and a
 moving-lead release case. The inactive stopped-lead planner candidate remains the narrower way to
 test the route-1e stop-intent symptom without adding an unverified Honda brake correction.
+
+### Stopped-lead predicate safety refinement screen (2026-09-05)
+
+Before changing the inactive planner child, the recorded lead signals were replay-screened at the
+planner rate with tighter lead-speed and persistence bounds. The current predicate (`vLead < 0.35`
+m/s, five planner frames, about 0.25 s) remains true for roughly 2.85 s on the slowly moving lead
+in route `0000001d`, 3.35/5.05 s on the two route-`0000001e` approaches, and 0.40 s on the
+accelerating lead in route `0000001f`. These are frozen-input safety screens, not counterfactual
+vehicle results.
+
+The most useful conservative tradeoff was `vLead < 0.25 m/s` with 15 planner frames (about
+0.75 s): it removed the route-`0000001f` moving-lead trigger while retaining 1.35 s of the route-
+`0000001d` moving-lead context and 2.85/4.55 s of route `0000001e`. A still tighter `vLead < 0.15`
+m/s with the same persistence removed the sustained route-`0000001d` trigger, but it also removed
+the route-12 stopped-lead replay exposure that motivated this candidate. Adding a lower ego-speed
+gate has the same tradeoff: it delays or loses the early route-12 stop intent without proving a
+safer stationary-lead classifier.
+
+**Decision: KEEP the current inactive predicate unchanged; do not promote a threshold refinement
+from frozen inputs.** The sweep establishes a bounded design choice for a future road arm, not a
+safe classifier. Any refinement must be tested with a human override on both a genuinely stationary
+lead and a lead that accelerates through the candidate window, while preserving raw
+`ACCEL_COMMAND`, Honda domain bits, and the existing stopping ramp.
