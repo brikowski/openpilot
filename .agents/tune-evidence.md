@@ -2174,3 +2174,15 @@ not use these edges to justify an opendbc brake threshold or a stop-intent chang
 likely benefit case, while route 1f preserves the moving-lead safety concern. No production or
 device change is authorized by these baseline routes. Candidate promotion still requires mutation
 tests, planner/CAN replay, and closed-loop stationary-lead and moving-lead-release evidence.
+
+### Upstream refresh after routes 1e/1f (2026-09-05)
+
+`upstream/master` advanced from `675ff569818f` to `0ec3a082c7`. The new commits only change
+`tools/op.sh` (Linux host detection, vendored Git-LFS configuration, and the corresponding revert/
+reapply sequence); they do not change the longitudinal planner, `longcontrol`, Honda CAN
+translation, or the driving model. The upstream driving-model blob remains `f0672eab4856`, and
+the latest small-model release remains `93f5aa469a`, reverted by `b361e952c9`; no newer model
+release is available. Standalone opendbc `upstream/master` remains `3e92d1121295`, while the
+OpenPilot parent still pins public opendbc `b4ef5e1cf406`; no new Honda stopping or peer-brand
+mechanism appeared after that pin. Keep the current parent/nested pairing and do not import the
+unrelated host-tool changes into the deployed baseline while the stop-intent arm is unroaded.
