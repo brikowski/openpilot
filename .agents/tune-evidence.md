@@ -2026,6 +2026,11 @@ At the fifth consecutive candidate frame (about 0.20 s into each window), the fr
 had ego speed near 1.00 m/s, gaps of 4.43-6.31 m, model probabilities of 0.999-1.000, and
 closing time-to-collision of 5.5-29.5 s. This bounds the candidate's initial trigger context for
 the controlled arm; it does not establish that the vehicle will stop safely on-road.
+On the recorded baseline, driver brake/longitudinal disengagement followed the fifth-frame trigger
+in five of the seven windows (about 0.73, 2.23, 2.39, 5.89, and 2.90 s later on routes 10, 12,
+44-segment-9, 44-segment-12, and 6d-segment-6); routes 38 and 6d-segment-5 had no such intervention
+before generic stop intent. These are baseline exposure markers for the controlled arm, not a
+counterfactual candidate benefit claim.
 
 Success requires mutation-verified predicate tests, planner replay showing earlier stop intent with
 unchanged request-to-wire/domain fidelity, then controlled stopped-lead and at least three
