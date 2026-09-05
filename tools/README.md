@@ -80,8 +80,9 @@ This checkout also exposes a small set of explicit VS Code tasks in
   importing anything. **Sync Upstream Locally**
   runs `.agents/sync_upstream.py`; it can rewrite local history, never pushes, and requires both
   repositories to be clean and on `ody-op`.
-- **Run Jotpluggler** and **Run Cabana** inspect a local route; Cabana accepts `live` for the comma
-  device at `192.168.1.200`.
+- **Run Jotpluggler** and **Run Cabana** inspect a local route; build the binaries once with
+  `tools/op.sh build openpilot/tools/jotpluggler/jotpluggler openpilot/tools/cabana/cabana` if they
+  are not present. Cabana accepts `live` for the comma device at `192.168.1.200`.
 - **Run Odyssey software checks** runs the focused lint, Odyssey rail/sync tests, and the nested
   `opendbc_repo/test.sh` suite. These are software/CAN-safety gates, not ride-quality evidence.
 - **Publish and Deploy ody-op** is the guarded custom deployment. It requires clean paired
