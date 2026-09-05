@@ -2601,3 +2601,18 @@ state. The refreshed metrics are unchanged (`0.0077/0.0108 m/s2` gas/brake wire 
 brake edges, and six driver brake takeovers); this is a provenance correction, not a new behavioral
 result. The ledger now has 48 exact-provenance rows; no comparison is pooled across the mixed
 operating-state route without conditioning on those settings.
+
+### Live upstream PR/model recheck (2026-09-05, second pass)
+
+The current public pull-request list now includes #38772 (setup/check tooling), #38771 (Cinque
+Terre model), #38767 and #38763 (driver-monitoring warp/JIT build packaging), #38757 (model replay),
+and #38768 (Hyundai set-speed behavior), alongside the previously reviewed BMRLNAP, Time to Go, and
+one-stopping-tune PRs. None is a new small driving-model release or a Honda longitudinal/lateral
+command-path change. In particular, #38771 changes only the big-model pointer; the small
+`driving_supercombo.onnx` pointer remains `f0672eab48566d395e49407293579b817f3e9d22`. PRs #38767
+and #38763 restore/package DM artifacts for both camera resolutions and report zero replay changes;
+they do not alter driving weights or control commands.
+
+**Decision: keep the current small model and `ody-op` source pins.** Do not import these PRs into the
+Odyssey arm. Recheck the list and model pointers after the next upstream fetch succeeds; this web
+check does not replace exact local source resolution or a road result.
