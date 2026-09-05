@@ -141,7 +141,7 @@ Use that first divergence to choose the work:
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
 - Review lateral and longitudinal behavior as separate evidence streams; a result on one axis does
   not authorize a change on the other.
-- Car-port edits follow `.claude/skills/comma-standards/SKILL.md`. Keep production comments PR-lean:
+- Car-port edits follow [`.agents/car-port-standards.md`](.agents/car-port-standards.md). Keep production comments PR-lean:
   explain the invariant or reason; keep route numbers, dates, and experiment history in evidence.
 - `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The
   historical deployed child used its `gas`/`brake` fields for learned-factor telemetry; the

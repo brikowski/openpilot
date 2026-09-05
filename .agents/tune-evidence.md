@@ -1,8 +1,8 @@
 # Odyssey command-following — evidence archive
 
 **This is a reference document, not an instruction file.** The rules that must survive a cold start
-live in the repo-root [`AGENTS.md`](../AGENTS.md) (`CLAUDE.md` is a symlink to it), which both Codex
-and Claude Code load automatically every session. This file holds the measurements, failed
+live in the repo-root [`AGENTS.md`](../AGENTS.md), which repository-aware coding agents load as
+project guidance. This file holds the measurements, failed
 experiments, and reasoning *behind* those rules, and is read on demand — it is deliberately not
 auto-loaded, because at ~86 KB it would crowd out the work.
 
@@ -1150,7 +1150,7 @@ authority below ~-0.2. **Failure mode is late brake onset / longer stops, not ch
 -0.20 if the driver reports either. Per habit #1 this is open-loop and therefore NOT validated;
 crossing rates underpredict ~2.7x and the sim freezes the feedback path.
 
-**The one genuinely untested state.** `GAS_COMMAND` has never been sent as **0** on this car: measured over `0000000d`/`00000003`, GAS_COMMAND is the -30000 inactive constant 4%/21% of engaged frames and positive 96%/79%, and **exactly 0 on 0.0%**. The +43 vs -139 torque contrast above is *low gas in the gas domain* vs *inactive in the brake domain*, so it conflates the domain flag with the gas value and cannot answer whether `GAS_COMMAND = 0` alone avoids the overrun fuel-cut. Per `comma-standards`, this signal is opaque/unitless in the DBC and must not be extrapolated. Answering it needs a deliberate probe, not a log query - and no existing route can substitute, because the state has never been on the wire.
+**The one genuinely untested state.** `GAS_COMMAND` has never been sent as **0** on this car: measured over `0000000d`/`00000003`, GAS_COMMAND is the -30000 inactive constant 4%/21% of engaged frames and positive 96%/79%, and **exactly 0 on 0.0%**. The +43 vs -139 torque contrast above is *low gas in the gas domain* vs *inactive in the brake domain*, so it conflates the domain flag with the gas value and cannot answer whether `GAS_COMMAND = 0` alone avoids the overrun fuel-cut. Per the current [car-port standards](car-port-standards.md), this signal is opaque/unitless in the DBC and must not be extrapolated. Answering it needs a deliberate probe, not a log query - and no existing route can substitute, because the state has never been on the wire.
 
 **Attribution note.** The 16:02/16:08 dips on `0000000d` that first looked like this defect are **upstream** - request was negative throughout and the wire tracked it to RMS 0.020, `plan_source = lead0`. On `00000006` the driver-reported event is upstream in full: **0.00 s brake domain, 0.00 s withheld gas**, wire-request RMS 0.0055, and the felt "holding the brake" is a **6.3 s lag** between the lead re-accelerating (t=374.0) and the MPC's request turning positive (t=380.3) while the gap opened 23 m -> 36 m. Do not attribute lead-following lag to the domain logic; check `brake_request` first.
 
