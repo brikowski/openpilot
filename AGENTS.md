@@ -340,3 +340,9 @@ non-Experimental route containing a lead stop and a sustained uphill, does the r
 baseline carry `carControl` to CAN without shaping, does `shouldStop` become true before the crawl,
 and does any positive uphill request still under-respond after controlling for speed and grade?
 Keep the stop/planner, gas-response, and brake-domain answers separate.
+
+The stopped-lead planner candidate is a separate, unpromoted supervised arm. It is currently
+deployed only on `tmp/ody-op-stop-intent-road-20260905`; `ody-op` remains the production rollback
+baseline. No post-deployment route has been received yet, so do not call the candidate effective or
+retire it. Any exposure must include a genuinely stationary lead, a lead that accelerates through
+the trigger window, and a no-lead crawl stop, with human override and the full planner-to-CAN trace.

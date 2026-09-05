@@ -2343,3 +2343,8 @@ driver intervention. Reject immediately for a false stop on a moving lead, extra
 stale stopping after lead release, late stop, or clear drivability regression. Keep or retire only
 after the candidate has stationary-lead, no-lead crawl-stop, and moving-lead-release exposure;
 this deployment itself is not a road result.
+
+A post-deployment inventory check on 2026-09-05 still found 14 device routes, all already validated,
+with no route recorded after the candidate switch. The candidate therefore remains road-pending;
+the last available routes (`1d`, `1e`, and `1f`) ran on the baseline before deployment and cannot
+count as candidate exposure.
