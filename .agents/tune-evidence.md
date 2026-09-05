@@ -2186,3 +2186,34 @@ release is available. Standalone opendbc `upstream/master` remains `3e92d1121295
 OpenPilot parent still pins public opendbc `b4ef5e1cf406`; no new Honda stopping or peer-brand
 mechanism appeared after that pin. Keep the current parent/nested pairing and do not import the
 unrelated host-tool changes into the deployed baseline while the stop-intent arm is unroaded.
+
+### Baseline brake-response bias screen (2026-09-05)
+
+To decide whether the observed stop lurch warrants a separate brake-response arm, the full-rate
+baseline routes were screened with zero-order-held Honda domains. Eligible samples were engaged,
+`BRAKE_REQUEST=1`, negative request below `-0.03 m/s2`, finite `aEgo`, and no driver brake. The
+diagnostic error is `aEgo - carControl.actuators.accel`; negative values mean the vehicle achieved
+more deceleration than requested, while positive values mean less. This is an offline actuator
+screen, not a closed-loop tuning result.
+
+The route-level medians do not identify a stable global gain or offset: route 1d was `-0.074`,
+route 1e `+0.024`, route 1f `-0.065`, route 68 `-0.099`, route 64 `-0.022`, and route 44
+`-0.045 m/s2`. Command-magnitude bins also change sign within routes. At speeds below 1 m/s,
+the same baseline was usually less decelerating than requested (route 1d `+0.098`, route 1e
+`+0.133` in the 0--0.5 m/s bin, route 1f `+0.185`), while the route-1e stop-lurch readout at
+1.18 m/s was a short transient with `aEgo=-1.64` against a `-1.19` wire request. The route-1f
+readout at 1.36 m/s was only `-0.13 m/s2` extra. These opposite signs across speed, command,
+terrain, and episode state are inconsistent with a safe global brake scale or fixed offset.
+
+The command boundary itself remains clean in the same samples: request-to-wire RMS was
+`0.0066--0.0137 m/s2`, with no sustained sign disagreement. Therefore a brake mapping change
+would trade under-braking for over-braking in different contexts without correcting the planner's
+late stop intent. This also matches peer-brand precedent: Hyundai sends the raw acceleration
+request with a separate stop bit, and Toyota's additional PCM ramp is specific to its internal
+cruise controller rather than a Honda `ACCEL_COMMAND` scale.
+
+**Decision: RETAIN no new brake-response tuning arm.** Keep the raw Honda acceleration command,
+the existing `-0.30` domain entry, and the stopped-lead planner child independently. Reopen brake
+actuator tuning only after a controlled candidate route repeatedly shows the same post-wire
+over/under-response under matched speed, request, and terrain; then test one bounded, upstream-style
+mechanism with stationary-lead and no-lead safety exposure.
