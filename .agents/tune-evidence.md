@@ -2115,3 +2115,11 @@ tests, replay results, and safety screen for a deliberate supervised re-deploy; 
 three-route road retirement or a claim that the mechanism failed closed-loop. The device is restored
 to the known-good `ody-op @ 407f780a7c` with nested opendbc `825642c4218b`, Alpha Long enabled, and
 Experimental mode disabled.
+
+Route `0000001d` also supplies a lateral boundary. Eleven high-authority windows (27.96 s total)
+hit exactly `+/-2560` CAN counts with normalized lateral request/output at `+/-1.0`, no steering
+faults, and no request-to-wire mismatch. Actual-versus-desired lateral acceleration error ranged
+from roughly `0.60 m/s2` in short transients to near zero during sustained high steer. The command
+is therefore faithfully reaching the Honda wire; this route does not justify extending the stock
+2560 map or changing opendbc. Reopen steering authority only with a repeatable matched-road
+vehicle-response symptom and an isolated comparison.
