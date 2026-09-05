@@ -2348,3 +2348,20 @@ A post-deployment inventory check on 2026-09-05 still found 14 device routes, al
 with no route recorded after the candidate switch. The candidate therefore remains road-pending;
 the last available routes (`1d`, `1e`, and `1f`) ran on the baseline before deployment and cannot
 count as candidate exposure.
+
+### Current repository and device audit (2026-09-05)
+
+At the latest audit, local and `origin/ody-op` both resolve to parent
+`307b50adcff96c8f75968c84769cdb6543f15b17`, whose `opendbc_repo` gitlink and clean nested checkout
+resolve to `825642c4218b3c71f74053264882e40971cc10f5`. `upstream/master` is
+`0ec3a082c7ca3302c171b03ff5cd43be61309f13` and still pins public opendbc
+`b4ef5e1cf406ff143fa67bdbfb154739d43279c9`; the nested tuned branch remains based on that pin.
+The published branch is clean, and no `ody-op-onset` ref remains.
+
+The device intentionally remains on the supervised child
+`tmp/ody-op-stop-intent-road-20260905` at parent `71b708453fb4564be21da783cb2036776dcc3573`,
+nested `825642c4218b3c71f74053264882e40971cc10f5`, with `UpdaterState=idle`,
+`UpdateAvailable=0`, no `LastUpdateException`, Alpha Long enabled, Experimental mode disabled, and
+no failed services. The 14-route private inventory is fully validated and contains no route after
+the candidate switch. The latest parent changes are tooling/documentation only; no source rebuild
+or device replacement was performed, and no new road conclusion is claimed.
