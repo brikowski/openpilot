@@ -2398,3 +2398,20 @@ or an Odyssey command-path change. The current upstream small driving-model blob
 `f0672eab4856`; the prior `93f5aa469a` Rebellious Hope release was reverted by `b361e952c9`, and
 no newer small-model release is present in the refreshed upstream master. **Decision: KEEP the
 current parent/nested pins and Odyssey baseline; do not import these open PRs or a model change.**
+
+### Repository and device recheck after provenance backfill (2026-09-05)
+
+The current published parent is `efbac937c76871f6b28caf46067ee426c8c8cf44` on `ody-op`, with a
+clean checkout and `origin/ody-op` at the same commit. Its gitlink and clean nested checkout are
+both `825642c4218b3c71f74053264882e40971cc10f5`; nested `origin/ody-op` matches. The parent is
+`196/0` ahead/behind the freshly fetched `upstream/master` `0ec3a082c7ca3302c171b03ff5cd43be61309f13`.
+Nested `upstream/master` is `3e92d112129507debe45364891954db70238997a`, three commits beyond the
+tuned checkout; those commits are unrelated VW/HR-V/docs changes and must not be merged
+independently of the parent pin. `ody-op-onset` and the superseded stop-intent refs are absent from
+both remotes; only the supervised road-arm ref `tmp/ody-op-stop-intent-road-20260905` remains.
+
+The fresh SSH check to `192.168.1.200` timed out, so the device's present checkout, updater state,
+services, and road-arm route inventory are not claimed current. The last successful probe remains
+the supervised road arm at parent `71b708453fb4564be21da783cb2036776dcc3573`, nested
+`825642c4218b`, with Alpha Long enabled and Experimental mode disabled. Reverify that state before
+any further drive or deployment; no device change was made for this documentation-only backfill.
