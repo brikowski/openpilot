@@ -2490,3 +2490,23 @@ reflogs, and worktrees were left intact. Parent and nested object stores now rep
 No `git gc` or unreachable-object pruning was run, so historical recovery remains available until
 normal Git expiry. Reusable private-log, download, extraction, build, and UV caches remain outside
 the repositories; the supervised stop-intent worktree remains the only active temporary road arm.
+
+### Source-aware extraction refresh (2026-09-05)
+
+The exploratory extractor previously cached only `radarState.leadOne`, even though the planner's
+lead MPC uses `leadOne` for `lead0` and `leadTwo` for `lead1`. `.agents/extract.py` now retains both
+leads and adds `lead_selected_*`, selecting only for published lead-plan sources (raw enum 1/2);
+the historical `lead_*` names remain explicit `leadOne` aliases. Cache schema 5 was rebuilt for all
+26 retained routes, and the 26 obsolete schema-4 files were removed. The selector has focused tests;
+the source mapping mutation was observed failing before restoration.
+
+The refreshed source-aware stopped-lead screen leaves the current inactive predicate unchanged:
+`vEgo < 1.0`, `aTarget < -0.05`, model probability above `0.9`, `vLead < 0.35`, closing `vRel`,
+and gap below `6.5 m`, with five-frame persistence. On published lead-plan samples it would assert
+17 debounced runs (35.65 s) across eight routes; only 5.27 s of candidate frames across four routes
+survive a `vLead < 0.05` screen, so most of the current exposure is a slow-moving rather than
+stationary lead by this conservative proxy. The latter
+includes already-generic-stop intervals on routes `00000038`/`0000006d` and has no closed-loop
+stationary-lead versus moving-lead release result. This is a frozen-input classifier screen, not a
+road result. **Decision: KEEP the candidate inactive and require a supervised stationary-lead and
+moving-lead-release comparison; do not tune the planner or Honda command path from this replay.**

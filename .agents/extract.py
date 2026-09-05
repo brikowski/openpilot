@@ -22,7 +22,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set changes, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 4
+SCHEMA = 5
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 
@@ -30,6 +30,15 @@ ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 # these map them back. Keep in sync with log.capnp if it ever gains a source/personality.
 PLAN_SOURCE = {0: "cruise", 1: "lead0", 2: "lead1", 3: "lead2", 4: "e2e"}
 PERSONALITY = {0: "aggressive", 1: "standard", 2: "relaxed"}
+LEAD_FIELDS = ("present", "drel", "vrel", "vlead", "prob", "radar")
+
+
+def select_lead_field(plan_source, lead_one, lead_two):
+  """Select the lead used by the published lead MPC plan, or NaN for non-lead plans."""
+  source = np.asarray(plan_source)
+  one = np.asarray(lead_one, dtype=float)
+  two = np.asarray(lead_two, dtype=float)
+  return np.where(source == 1, one, np.where(source == 2, two, np.nan))
 
 
 def _enum(held):
@@ -64,7 +73,8 @@ def _decode(paths):
   lp = {k: [] for k in ("t", "atarget", "source", "allow_throttle", "has_lead", "should_stop")}
   sc = {k: [] for k in ("t", "gas", "accel", "brake_request")}
   rx = {k: [] for k in ("t", "computer_braking", "user_brake", "engine_torque", "rpm", "gear")}
-  rs = {k: [] for k in ("t", "present", "drel", "vrel", "vlead", "prob", "radar")}
+  rs = {k: [] for k in ("t", *(f"one_{field}" for field in LEAD_FIELDS),
+                        *(f"two_{field}" for field in LEAD_FIELDS))}
   md = {k: [] for k in ("t", "e2e_accel", "e2e_should_stop", "des_curvature", "gas_press_prob")}
   ss = {k: [] for k in ("t", "experimental", "enabled", "personality")}
 
@@ -125,12 +135,10 @@ def _decode(paths):
     elif w == "radarState":
       r = m.radarState
       rs["t"].append(t)
-      rs["present"].append(float(r.leadOne.present))
-      rs["drel"].append(float(r.leadOne.dRel))
-      rs["vrel"].append(float(r.leadOne.vRel))
-      rs["vlead"].append(float(r.leadOne.vLead))
-      rs["prob"].append(float(r.leadOne.modelProb))
-      rs["radar"].append(float(r.leadOne.radar))
+      for name, lead in (("one", r.leadOne), ("two", r.leadTwo)):
+        for field, capnp_field in (("present", "present"), ("drel", "dRel"), ("vrel", "vRel"),
+                                    ("vlead", "vLead"), ("prob", "modelProb"), ("radar", "radar")):
+          rs[f"{name}_{field}"].append(float(getattr(lead, capnp_field)))
     elif w == "modelV2":
       a = m.modelV2.action
       md["t"].append(t)
@@ -228,10 +236,19 @@ def _build(route):
   out["personality"] = _enum(zoh(ss, "personality"))
   for k in ("allow_throttle", "has_lead", "should_stop"):
     out[k] = zoh(lp, k) > 0.5
-  out["lead_present"] = zoh(rs, "present") > 0.5
-  out["lead_radar"] = zoh(rs, "radar") > 0.5
+  # Keep the historical lead_* names as leadOne aliases for existing exploratory scripts. New
+  # analyses should use lead_one_*, lead_two_*, or lead_selected_* below. The planner's MPC source
+  # is lead0/lead1 (raw enum 1/2); cruise and e2e plans intentionally expose no selected lead.
+  for field in LEAD_FIELDS:
+    out[f"lead_one_{field}"] = zoh(rs, f"one_{field}")
+    out[f"lead_two_{field}"] = zoh(rs, f"two_{field}")
+  out["lead_present"] = out["lead_one_present"] > 0.5
+  out["lead_radar"] = out["lead_one_radar"] > 0.5
   for k in ("drel", "vrel", "vlead", "prob"):
-    out["lead_" + k] = zoh(rs, k)
+    out["lead_" + k] = out["lead_one_" + k]
+  for field in LEAD_FIELDS:
+    selected = select_lead_field(out["plan_source"], out[f"lead_one_{field}"], out[f"lead_two_{field}"])
+    out[f"lead_selected_{field}"] = selected
   out["e2e_should_stop"] = zoh(md, "e2e_should_stop") > 0.5
   for k in ("experimental", "enabled"):
     out[k] = zoh(ss, k) > 0.5
