@@ -2084,3 +2084,15 @@ per 10 s; 18/min on descents), felt-jerk RMS `0.376 m/s3` versus commanded `0.22
 stop-lurch readout, but those are baseline downhill/actuator symptoms rather than evidence for
 widening the stopped-lead predicate. Keep the stop-intent child unchanged and classify this route
 as baseline context; it supplies no closed-loop candidate example.
+
+An additional frozen-input screen of route `0000001d` found one relevant baseline context at about
+route-relative `1207.7-1211.5 s`. The car remained engaged with no driver brake, `carControl` and
+decoded Honda wire stayed aligned near `-0.19..-0.18 m/s2` in the brake domain, and `aEgo` remained
+near zero while a high-confidence lead moved from about `0.30` to `0.15 m/s` at a gap shrinking
+from `6.3` to `4.9 m`. The five-frame candidate predicate would have become true while ego speed
+was below `0.86 m/s` and generic `shouldStop` was still false; the recorded planner then relaxed
+through zero as the lead moved and the vehicle accelerated. This is not a candidate road result,
+because the route ran on baseline, but it is a required false-stop/early-standstill safety check:
+the current `vLead < 0.35` screen may also match a slowly moving lead. Do not broaden the predicate
+or claim benefit from this replay; require a controlled candidate approach with human override and
+compare against the route-12 stopped-lead context before changing thresholds.
