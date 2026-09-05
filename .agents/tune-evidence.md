@@ -2645,3 +2645,20 @@ leaving only the intentionally retained virtualenvs and reusable external caches
 This is software/CAN-safety validation only. It does not change the road decision: the current
 Honda command-domain implementation and inactive stopped-lead planner child remain unchanged, and
 the device is still awaiting a reachable supervised road run.
+
+### Stopped-lead classifier refinement screen (2026-09-05)
+
+With the current source-aware extraction cache (schema 5), I screened one bounded classifier
+variant against every locally retained full-rate route. The existing inactive child uses
+`vEgo < 1.0 m/s`, `aTarget < -0.05 m/s2`, model probability above `0.9`, `vLead < 0.35 m/s`,
+closing `vRel`, `dRel < 6.5 m`, and five planner frames. A conservative screen using
+`vLead < 0.20 m/s`, `vRel > -0.40 m/s`, `dRel < 5.5 m`, and 15 frames would remove the
+route-`1f` accelerating-lead trigger and reduce route `1d` to only `0.15 s`, while retaining
+`2.02 s` of the route-12 exposure. It still matches moving-lead portions of route `1e` (`6.27 s`)
+and route `44`, so it is not a safe stationary-lead classifier. The `vRel` lower bound also trades
+away earlier intent for a faster-closing genuine stop.
+
+This is a frozen-input screen only; it changes neither planner output nor Honda CAN. **Decision:
+keep the existing child predicate and production baseline unchanged.** If a future supervised arm
+needs a safer refinement, test this as a separate candidate with a stationary lead, a fast-closing
+lead, and a lead that accelerates through the window; do not silently replace the current child.
