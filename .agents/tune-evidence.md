@@ -2107,3 +2107,11 @@ edges near route-relative `669.33-678.18 s` had no lead, `cruise` plan source, a
 and back, while decoded `ACCEL_COMMAND` followed at about `-0.33` to `+0.01 m/s2` with the
 corresponding `BRAKE_REQUEST` transitions. This is command/domain fidelity through the Honda port,
 not a carControl-to-CAN divergence; do not use opendbc shaping to hide the upstream cruise pulse.
+
+Deployment decision: after repeated inventory checks found no post-deployment route, and the frozen
+route-1d screen raised a moving-lead early-standstill safety question, remove
+`tmp/ody-op-stop-intent-current-20260905` from active device behavior. Preserve its published commits,
+tests, replay results, and safety screen for a deliberate supervised re-deploy; this is not a
+three-route road retirement or a claim that the mechanism failed closed-loop. The device is restored
+to the known-good `ody-op @ 407f780a7c` with nested opendbc `825642c4218b`, Alpha Long enabled, and
+Experimental mode disabled.
