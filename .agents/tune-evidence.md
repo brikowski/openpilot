@@ -896,21 +896,20 @@ new brake arm.
 - **opendbc PR #2347** (github.com/commaai/opendbc/pull/2347): documents that Honda Bosch's own ECU already runs an internal brake PID. Stock `kp=0, ki=0` (pure feedforward) in `interface.py` is deliberate - adding openpilot's own closed-loop kp/ki on top "doubles up... and causes oscillating braking/acceleration strength." Check this before adding closed-loop longitudinal gain on a Honda Bosch car.
 - **opendbc PR #2767** (github.com/commaai/opendbc/pull/2767, closed): a comma engineer tried pitch-compensation on the gas pedal and hit "will need to switch the gas actuator from accel-based to torque-based first." Bosch A has no writable torque CAN signal (`ACC_CONTROL.ACCEL_COMMAND` is a real m/s2 value Honda's ECU closes its own loop on; `ACC_CONTROL.GAS_COMMAND` is opaque/unitless). A torque-based redesign would mean reverse-engineering a speed-dependent `GAS_COMMAND`-to-torque calibration using the car's own `GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE` telemetry as ground truth.
 - **Current longitudinal design on this branch**: `ody-op` uses upstream's direct Odyssey gas
-  mapping and a raw-request three-domain gas/coast/brake selector. For the current isolated road arm,
-  only moderate downward road-speed brake steps are limited to 3.0 m/s3; easing, release, low-speed
-  commands, and firm requests below -1.5 m/s2 follow the raw controller request. Wind and grade do
-  not affect either wire command or domain selection, and both the supplemental low-speed PID and
-  former production windfactor learner are removed. See the concise rationale and current code
-  before using this historical archive.
+  mapping and a raw-request three-domain gas/coast/brake selector. `ACCEL_COMMAND` is the clipped
+  controller request; the selector only chooses mutually exclusive Honda gas/coast/brake domains.
+  The asymmetric road-speed onset limiter, supplemental low-speed PID, and production windfactor
+  learner are retired. Wind and grade do not reshape the wire command or domain selection. See the
+  concise rationale and current code before using this historical archive.
 - **Review-sized design record**: `.agents/odyssey-tune-rationale.md` is the concise durable rationale removed from production comments; use the longer history here only when investigating a regression.
 - **Current tune status:** lateral keeps the stock-LKA baseline: 2560 maximum command,
-  `latAccelFactor 0.9`, and `steerActuatorDelay=0.15`; maximum authority is reopened only for the
-  matched stock-radar/nonlinear road arm defined above. Longitudinal retains the road-screened
-  three-domain selector while using upstream direct gas mapping. The isolated 3.0 m/s3 asymmetric
-  road-speed brake-command arm is active for evaluation; the custom low-speed PID and production
-  windfactor learner are retired. These source changes are software-validated only until controlled
-  maneuvers and an ordinary-road drive exercise the exact candidate.
-- **Historical brake-onset experiment (`DOMAIN_HYST` 0.06 + symmetric 2.0 m/s³ jerk limit): CLOSED 2026-07-27, both branches DELETED.** Do not recreate that combined architecture: its functional change and failed isolation remain useful history. The retained three-domain selector itself does not shape `ACCEL_COMMAND`; the current asymmetric road arm is a separate mechanism with immediate easing and firm-brake bypass. Retired tips in case the historical commits are still reachable: `ody-brake-onset` = parent `cb03c32b4` / opendbc `1b6048e98`; `ody-op-long2` = parent `9f73e6205` / opendbc `57fe3a908`.
+  `latAccelFactor 0.9`, and `steerActuatorDelay=0.15`; the nonlinear 3840 arm is retired. Longitudinal
+  retains the road-screened three-domain selector and upstream direct gas mapping with raw
+  `ACCEL_COMMAND`; the asymmetric onset arm is retired after its bounded road screen. The stopped-lead
+  planner candidate remains an inactive supervised child, not production behavior. The production
+  branch is software-validated and remains the rollback baseline until a separate candidate earns
+  controlled and ordinary-road evidence.
+- **Historical brake-onset experiment (`DOMAIN_HYST` 0.06 + symmetric 2.0 m/s³ jerk limit): CLOSED 2026-07-27, both branches DELETED.** Do not recreate that combined architecture: its functional change and failed isolation remain useful history. The retained three-domain selector itself does not shape `ACCEL_COMMAND`; the later asymmetric road arm was a separate mechanism and is also retired. Retired tips in case the historical commits are still reachable: `ody-brake-onset` = parent `cb03c32b4` / opendbc `1b6048e98`; `ody-op-long2` = parent `9f73e6205` / opendbc `57fe3a908`.
     ```python
     DOMAIN_HYST = 0.06                     # module scope
     self.in_brake_domain = False           # __init__
@@ -1065,7 +1064,11 @@ explicitly fingerprint-gated so it cannot silently affect every Bosch Honda.
 - **`.agents/test_odyssey_long_rails.py`** - parent-repository coverage for the custom tune; keeping it outside the opendbc submodule leaves that worktree scoped to production edits. It drives the *active* path (`longActive=True`) over the full accel authority and across grade and speed, and asserts every emitted 0x1DF passes the real panda TX hook. Fills exactly the gap above. Runs in under 2 s, needs no route download. **Mutation-verified**: deleting the `np.clip(target_accel, BOSCH_ACCEL_MIN, BOSCH_ACCEL_MAX)` in `carcontroller.py` fails 26 of 28 sweep cases. It also carries a `test_sweep_actually_reaches_both_rails` guard so the assertions cannot go vacuous if the sweep range drifts, plus the route-34 inactive-state/re-engagement and engaged stop/start regressions above. This matters most for the coming `min_gas_accel` change: an out-of-range ACCEL_COMMAND is dropped by the panda **silently, while driving**.
 - **`.agents/preflash.py`** - runs both (`test_models` for the Odyssey + the rail test) in ~4 s. `test_models`' concrete classes only exist under `DIRECTLY_CALLED`, hence the hand-built runner. Run it before flashing; it says nothing about ride quality, which still needs a drive plus `validate_log.py`.
 
-## PARKED NEXT: decouple the domain threshold from the gas-lookup floor (queued 2026-07-29)
+## Historical queue (superseded): decouple the domain threshold from the gas-lookup floor
+This section records the 2026-07-29 queue and its measurements. The work is closed: current
+`ody-op` retains the independently screened `-0.30 m/s2` road-speed entry and does not reopen the
+old width/threshold architecture without a new first-divergence result.
+
 `BRAKE_DOMAIN_ENTRY=-0.20` is now named separately from the gas lookup with no behavior change.
 Do not combine a future entry experiment with a release-band change: entry at -0.10 addresses
 delayed brake entry, while route `00000002--412e40c6a0` exposed an excessive release hold. Moving
@@ -1074,10 +1077,10 @@ for the reported underspeed. A combined -0.10 entry / 0.15 band released that ev
 on frozen inputs, but 0.15 is narrower than the 0.20 band that already failed on road and the pair
 changes both sides of the state machine. Keep it experimental until a clean baseline drive exists.
 
-**The next drive should be the `0000002f`/`00000030` descent route carrying a CANDIDATE value, not
-another baseline.** The 0.50 baseline arm is closed (26 pooled hold-episodes, see the restated gate
-above); do not spend another drive re-measuring it. Drive the same roads with ordinary
-disengage/re-engage and stop/start cycles until the candidate arm also reaches 20 pooled episodes.
+At the time, the next drive was intended to be the `0000002f`/`00000030` descent route carrying a
+CANDIDATE value rather than another baseline. The 0.50 baseline arm is closed (26 pooled
+hold-episodes, see the restated gate above); the historical plan and its width/threshold candidate
+are not an active queue. Later road screens selected the `-0.30` entry and retired the width arm.
 Compare physical `BRAKE_REQUEST` bursts, compensated-force release holds, interventions, sign
 disagreement, and whether set-speed recovery still undershoots. Known felt-tapping route `2f`
 produced **18 physical edges/10s**, failed `BRAKE_RELEASE_HOLD` route `30` produced **10**, and 0.50
@@ -1438,10 +1441,11 @@ vehicle had no lead and the request had moved from about `-0.09` to `+0.02 m/s2`
 `-0.33` brake request through `+0.16 m/s2`, releasing the brake domain before the press. Both
 events are retained as thin driver-intervention context, not as evidence to add brake authority.
 
-**Decision:** keep `-0.30` as the isolated candidate for a matched descent and lead-stop drive,
-but do not promote it as a comfort improvement. Route 45 does not reject the arm, and its absence
-of downhill exposure cannot answer the active road question. No other lateral or longitudinal
-tuning changes are authorized from this route; lateral remains diagnostic-only at the stock 2560
+**Decision at the time:** retain `-0.30` for a matched descent and lead-stop drive, but do not call
+it a comfort improvement. Route 45 did not reject the arm, and its absence of downhill exposure
+could not answer the then-active road question. Subsequent route 68 and later baseline screens kept
+the same domain entry while rejecting additional brake shaping. No other lateral or longitudinal
+tuning change was authorized from this route; lateral remains diagnostic-only at the stock 2560
 range with no saturation or fault evidence.
 
 ### Current-code `-0.30` descent screen: route 68 (2026-08-30)
@@ -1928,11 +1932,10 @@ domains, and lateral behavior are unchanged. The focused raw-command rail check 
 verified by reintroducing a shaped entry and observing all four road/descent/low-speed/stopping
 subcases fail.
 
-The post-deployment road question is deliberately narrow: on one ordinary non-Experimental route
-with a lead stop and sustained uphill exposure, verify separately whether `shouldStop` becomes true
-before crawl, whether raw `carControl` reaches CAN without shaping, and whether a positive uphill
-request still under-responds after controlling for command, speed, and grade. Do not substitute more
-replay or another threshold for that road evidence.
+With the onset arm retired, that post-deployment question is closed. Current investigation is
+planner-side stopped-lead intent plus independent low-speed actuator-response screening; those
+mechanisms remain separate from the retained raw Honda command path. New logs can add evidence to
+either stream, while replay remains command-shape evidence rather than a road result.
 
 ### Unroaded combined agile package audit (2026-09-04)
 
@@ -2416,3 +2419,32 @@ route inventory are therefore not claimed current. The last successful probe rem
 the supervised road arm at parent `71b708453fb4564be21da783cb2036776dcc3573`, nested
 `825642c4218b`, with Alpha Long enabled and Experimental mode disabled. Reverify that state before
 any further drive or deployment; no device change was made for this documentation-only backfill.
+
+### Latest repository, provenance, and cleanup audit (2026-09-05)
+
+This entry supersedes the earlier same-day snapshots above. The published production checkout is
+clean `ody-op` parent `0b3e4a1d279b66fe4b161e1ba9ddeb77a7bafe14`, and `origin/ody-op` matches it.
+Its nested checkout and gitlink are both `825642c4218b3c71f74053264882e40971cc10f5`; nested
+`origin/ody-op` matches as well. Fresh `upstream/master` is
+`0ec3a082c7ca3302c171b03ff5cd43be61309f13`: the parent is `198/0` ahead/behind, while standalone
+opendbc is `35/3` ahead/behind its `3e92d112129507debe45364891954db70238997a` upstream. The three
+new nested commits are unrelated VW/HR-V/docs changes and must not be merged independently of the
+parent's public-opendbc pin. No `ody-op-onset` ref remains.
+
+The private ledger contains 261 historical rows. Seven recently revalidated rows carry exact
+parent, nested-source, model, and mode provenance; the older rows predate those fields and remain
+historical evidence rather than being silently rewritten. All newly available note-bearing routes
+were revalidated with the exact current source where applicable. No newer small driving-model blob
+is present: `driving_supercombo.onnx` remains `f0672eab4856`, and the prior `93f5aa469a` release was
+reverted upstream.
+
+Cleanup removed the superseded stop-intent refs, one-off replay/analysis artifacts, generated Python
+caches, stale HTML maneuver reports, and nested safety-test object/coverage files. The active
+supervised worktree `tmp/ody-op-stop-intent-road-20260905`, private route/download/extract caches,
+and reusable build/UV caches are intentionally retained. No tracked Claude skill or root
+`CLAUDE.md` remains; project guidance is `AGENTS.md` plus `.agents/`.
+
+The current device check still has no LAN presence (SSH timeout, ping loss, incomplete ARP), so its
+checkout, updater target, services, and route inventory remain unverified until it reconnects. The
+last successful state was the supervised child at parent `71b708453fb4564be21da783cb2036776dcc3573`
+with nested `825642c4218b`, Alpha Long enabled, and Experimental mode disabled.
