@@ -2422,10 +2422,11 @@ any further drive or deployment; no device change was made for this documentatio
 
 ### Latest repository, provenance, and cleanup audit (2026-09-05)
 
-This entry supersedes the earlier same-day snapshots above. The published production checkout is
-clean `ody-op` parent `0b3e4a1d279b66fe4b161e1ba9ddeb77a7bafe14`, and `origin/ody-op` matches it.
-Its nested checkout and gitlink are both `825642c4218b3c71f74053264882e40971cc10f5`; nested
-`origin/ody-op` matches as well. Fresh `upstream/master` is
+This entry supersedes the earlier same-day snapshots above. The last source-bearing production
+snapshot in this audit was clean `ody-op` parent `0b3e4a1d279b66fe4b161e1ba9ddeb77a7bafe14`; the
+later publication steps are documentation/ignore-only commits and leave runtime behavior unchanged.
+Its nested checkout and gitlink were both `825642c4218b3c71f74053264882e40971cc10f5`; nested
+`origin/ody-op` matched as well. Fresh `upstream/master` is
 `0ec3a082c7ca3302c171b03ff5cd43be61309f13`: the parent is `198/0` ahead/behind, while standalone
 opendbc is `35/3` ahead/behind its `3e92d112129507debe45364891954db70238997a` upstream. The three
 new nested commits are unrelated VW/HR-V/docs changes and must not be merged independently of the
