@@ -62,3 +62,27 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 ├── replay/             # Replay drives and mock openpilot services
 └── sim/                # Run openpilot in a simulator
 ```
+
+## Private Odyssey workflow
+
+This checkout also exposes a small set of explicit VS Code tasks in
+[`../.vscode/tasks.json`](../.vscode/tasks.json):
+
+- **Pull and Validate New Logs** SSH-pulls retained private full-rate rlogs and updates the
+  authoritative validation ledger. The task sets `UV_CACHE_DIR` to a writable temporary cache.
+- **Run Jotpluggler** and **Run Cabana** inspect a local route; Cabana accepts `live` for the comma
+  device at `192.168.1.200`.
+- **Run Odyssey software checks** runs the focused lint, Odyssey rail/sync tests, and the nested
+  `opendbc_repo/test.sh` suite. These are software/CAN-safety gates, not ride-quality evidence.
+- **Publish and Deploy ody-op** is the guarded custom deployment. It requires clean paired
+  repositories, matching parent/submodule SHAs, publishes `opendbc_repo` before the parent, builds,
+  and reboots the device.
+- **Recover device on sunnypilot/staging** is the explicit known-good fallback. It destructively
+  switches `/data/openpilot` to the official Sunnypilot `origin/staging`, sets
+  `UpdaterTargetBranch=staging` and preserves `AlphaLongitudinalEnabled=1`, reboots, and verifies
+  exact state after reconnecting. It does not build because official staging is prebuilt-safe and it
+  does not alter this checkout. The separate **Verify device on sunnypilot/staging** task is read-only.
+
+The recovery helper accepts `ODYSSEY_DEVICE` and `ODYSSEY_SSH_KEY` overrides. Project agent guidance
+lives in [`../AGENTS.md`](../AGENTS.md) and [`../.agents/`](../.agents/); `CLAUDE.md` is retained only
+as a compatibility symlink to that guidance.

@@ -7,6 +7,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sync_upstream
 
 
+def test_only_recovery_branch_is_allowed():
+  assert sync_upstream.ALLOWED_BRANCHES == {"ody-op"}
+
+
 def test_opendbc_rebase_is_skipped_when_pinned_base_is_already_present(monkeypatch):
   calls = []
 

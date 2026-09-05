@@ -21,15 +21,16 @@ discovery.)
   the compatible local pair rebase and never pushes; inspect source conflicts and the final Honda diff.
 - Keep the recovery/shared-tooling parent and submodule paired on `ody-op`. Temporary mechanism
   children are deleted after promotion or rejection; `ody-op-test` and `ody-op-test2` are historical
-  snapshots, not active deployment targets. The VS Code tasks are intentionally limited to
-  all-retained private log pull, Jotpluggler, Cabana, and explicit guarded deployments for openpilot and
-  sunnypilot. There are no implicit sync, publish-only, maneuver, or generic validation tasks.
+  snapshots, not active deployment targets. The VS Code tasks cover all-retained private log pull,
+  Jotpluggler, Cabana, the explicit Odyssey software checks, and guarded deployment/recovery for
+  openpilot or Sunnypilot. There are no implicit sync, publish-only, or maneuver tasks; staging
+  recovery is deliberately an explicit destructive action.
 
 ## Layered Verification Workflow
 No one tool establishes that a tune is good. Use these layers in order, and keep an experimental production change isolated until both controlled and ordinary-road evidence agree.
 
-1. **Static, unit, interface, and panda-safety gates** (the old "Run Checks" task was removed from tasks.json 2026-08-05; run the commands directly): `lefthook run pre-commit` covers ruff over `.agents` + the Honda tune plus the pure custom-metric tests; `.venv/bin/python -m pytest .agents/test_odyssey_long_rails.py` covers the active-longitudinal rail/lifecycle invariants; `opendbc_repo/test.sh` covers car-interface tests and upstream Odyssey `test_models`. These establish software correctness and legal CAN output; they do **not** grade ride quality.
-2. **Official controlled maneuvers**: for a longitudinal change, record the official longitudinal suite in a safe empty area and run `uv run openpilot/tools/longitudinal_maneuvers/generate_report.py` on the route (the VSCode report tasks were removed 2026-08-05). These are the primary repeatable step-response characterization. Do not enable either maneuver mode automatically: the driver must make the safe-site decision.
+1. **Static, unit, interface, and panda-safety gates**: the VS Code **Run Odyssey software checks** task (or the equivalent commands below) runs `lefthook run pre-commit`, the focused Odyssey rail/sync tests, and `opendbc_repo/test.sh`; use `UV_CACHE_DIR=/private/tmp/openpilot-uv-cache` when invoking `uv` in this workspace. These establish software correctness and legal CAN output; they do **not** grade ride quality.
+2. **Official controlled maneuvers**: for a longitudinal change, record the official longitudinal suite in a safe empty area and run `uv run openpilot/tools/longitudinal_maneuvers/generate_report.py` on the route. No task enables maneuver mode or substitutes a route automatically: the driver must make the safe-site decision.
 3. **Ordinary-road validation**: the "Pull and Validate New Logs" task (or `.agents/pull_logs.py`) SSH-pulls every retained full-rate rlog not already in the validation ledger and runs the custom validator; `.agents/validate_log.py <route>` re-validates one already-local route. The custom tool is authoritative for branch-specific invariants (wire/request fidelity, lifecycle leaks, gas handoff, physical CAN transitions, crashes, interventions, thermal) and useful for trends. A threshold flag identifies an event to inspect; by itself it is not permission to tune.
 4. **Raw attribution**: inspect flagged timestamps in the standard Jotpluggler layout; use Cabana when the question is raw CAN/DBC semantics. Decide whether the planner, car port, or Honda actuator owns the symptom before changing code.
 5. **Evidence rule**: change tuning only when controlled maneuvers and real-road evidence point the same way. Check provenance, compare the same `opendbc_commit`, require adequate exposure, and repeat the conclusion after dropping the most influential route.
@@ -59,7 +60,7 @@ rather than treating an uncalibrated slew limit as known-good behavior.
 
 - **Private log retention**: `pull_logs.py` retains full-rate local rlogs by default. Pruning is deliberately opt-in with `--prune-hours`; once both the device and local archive delete a route, new metrics cannot be backfilled. Interrupted rsyncs may leave empty segment directories; the validator, extractor, following inspector, and replay now select only directories containing `rlog.zst`. Official maneuver report generators accept these bare local route IDs, so comma connect publication is not required.
 - **Counterfactual replay boundary**: `replay_carcontroller.py` compares command shape on frozen recorded inputs. It can catch command-fidelity regressions without driving, but cannot predict closed-loop vehicle response or on-road BRAKE_REQUEST counts. Never promote a tuning change from replay alone.
-- **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run checks and inspect the net Honda-only diff before the separate explicit publish or deploy task.
+- **Upstream workflow**: "Inspect Upstream Delta" is read-only apart from fetching refs. "Sync Upstream Locally" rewrites local history but never pushes. Run **Odyssey software checks** and inspect the net Honda-only diff before the separate explicit publish or deploy task.
 
 ## Current Validation Arm (raw split failed 2026-08-15; three-domain candidate)
 - **Latest mixed-mode drive attribution and baseline decision (2026-08-24).** Routes
@@ -1150,7 +1151,7 @@ authority below ~-0.2. **Failure mode is late brake onset / longer stops, not ch
 -0.20 if the driver reports either. Per habit #1 this is open-loop and therefore NOT validated;
 crossing rates underpredict ~2.7x and the sim freezes the feedback path.
 
-**The one genuinely untested state.** `GAS_COMMAND` has never been sent as **0** on this car: measured over `0000000d`/`00000003`, GAS_COMMAND is the -30000 inactive constant 4%/21% of engaged frames and positive 96%/79%, and **exactly 0 on 0.0%**. The +43 vs -139 torque contrast above is *low gas in the gas domain* vs *inactive in the brake domain*, so it conflates the domain flag with the gas value and cannot answer whether `GAS_COMMAND = 0` alone avoids the overrun fuel-cut. Per `comma-standards`, this signal is opaque/unitless in the DBC and must not be extrapolated. Answering it needs a deliberate probe, not a log query - and no existing route can substitute, because the state has never been on the wire.
+**The one genuinely untested state.** `GAS_COMMAND` has never been sent as **0** on this car: measured over `0000000d`/`00000003`, GAS_COMMAND is the -30000 inactive constant 4%/21% of engaged frames and positive 96%/79%, and **exactly 0 on 0.0%**. The +43 vs -139 torque contrast above is *low gas in the gas domain* vs *inactive in the brake domain*, so it conflates the domain flag with the gas value and cannot answer whether `GAS_COMMAND = 0` alone avoids the overrun fuel-cut. Per the current [car-port standards](car-port-standards.md), this signal is opaque/unitless in the DBC and must not be extrapolated. Answering it needs a deliberate probe, not a log query - and no existing route can substitute, because the state has never been on the wire.
 
 **Attribution note.** The 16:02/16:08 dips on `0000000d` that first looked like this defect are **upstream** - request was negative throughout and the wire tracked it to RMS 0.020, `plan_source = lead0`. On `00000006` the driver-reported event is upstream in full: **0.00 s brake domain, 0.00 s withheld gas**, wire-request RMS 0.0055, and the felt "holding the brake" is a **6.3 s lag** between the lead re-accelerating (t=374.0) and the MPC's request turning positive (t=380.3) while the gap opened 23 m -> 36 m. Do not attribute lead-following lag to the domain logic; check `brake_request` first.
 
