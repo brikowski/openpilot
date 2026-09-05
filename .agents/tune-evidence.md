@@ -2432,12 +2432,15 @@ opendbc is `35/3` ahead/behind its `3e92d112129507debe45364891954db70238997a` up
 new nested commits are unrelated VW/HR-V/docs changes and must not be merged independently of the
 parent's public-opendbc pin. No `ody-op-onset` ref remains.
 
-The private ledger contains 261 historical rows. Seven recently revalidated rows carry exact
-parent, nested-source, model, and mode provenance; the older rows predate those fields and remain
-historical evidence rather than being silently rewritten. All newly available note-bearing routes
-were revalidated with the exact current source where applicable. No newer small driving-model blob
-is present: `driving_supercombo.onnx` remains `f0672eab4856`, and the prior `93f5aa469a` release was
-reverted upstream.
+The private ledger contains 261 historical rows. Forty additional rows were backfilled from their
+retained full-rate segments without changing any behavior metric, bringing exact parent,
+nested-source, model, mode, and selected-setting provenance to 47 rows. The remaining 214 rows stay
+historical: 156 route rows have no matching local full-rate segments, 57 retained rows lack
+resolvable source objects or metadata (most are staging captures), and one locally retained source
+route has mixed longitudinal personality. No row is treated as exact when its source or
+operating-state identity cannot be resolved. No newer small driving-model blob is present:
+`driving_supercombo.onnx` remains
+`f0672eab4856`, and the prior `93f5aa469a` release was reverted upstream.
 
 Cleanup removed the superseded stop-intent refs, one-off replay/analysis artifacts, generated Python
 caches, stale HTML maneuver reports, nested safety-test object/coverage files, the candidate's empty
