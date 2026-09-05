@@ -259,8 +259,9 @@ The failed raw-split reference and direct-handoff architectures remain historica
 The promoted command-domain candidate has current ordinary-road screening, but it does not claim to
 fix Experimental model behavior or provide radar tracks. Full-rate master
 route `00000024--5c888c605c` measured 108.2 downhill edges/min and peak 25/10 s, versus 1.9/min and
-peak 3/10 s on `ody-op` route `00000026--bfe3fd933b`. The current upstream-pinned Honda path still
-uses the same raw request and fixed -0.20 split, so that comparison remains behaviorally relevant.
+peak 3/10 s on `ody-op` route `00000026--bfe3fd933b`. The master route uses the upstream -0.20
+split; `ody-op` retains the evidence-supported -0.30 selector while carrying the same raw request,
+so that comparison remains behaviorally relevant.
 
 The supplemental low-speed brake PID is retired. Corrected exact-source metrics proved that the old
 zero-exposure ledger values were caused by an impossible above-3/below-3 m/s mask; exposed routes
