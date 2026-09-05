@@ -1992,6 +1992,15 @@ intermediate flicker. The candidate did not change `aTarget` or Honda CAN genera
 produced 1,200 plans from 2,400 process outputs; the repeated initial MPC reset messages were the
 same on both arms.
 
+Three additional segment A/B screens were consistent with earlier intent: route 44 candidate
+replayed 870 stop frames and first asserted at 540.602 s versus 810/543.603 s on baseline; route
+6d replayed 420 versus 337 and first asserted at 311.309 s versus 315.459 s, with the same release
+at 332.306 s; route 38 replayed 396 versus 331 and first asserted at 98.804 s versus 102.054 s.
+The route-38 segment emitted identical intermittent SQP solver-status-3 warnings on both arms, so
+it is only a software screen. The repeated later route-44 transitions were identical, suggesting
+the candidate changes the early lead-stop state rather than general planner timing. None of these
+replays is closed-loop evidence or permission to deploy.
+
 The direct Honda controller replay over the adjacent route-12 stop segment remained unchanged by
 the planner child: replayed request-to-wire RMS was `0.00594 m/s2`, replay-vs-recorded wire RMS
 `0.00968 m/s2`, with two open-loop brake-domain flips and no forceful flip. This validates the
