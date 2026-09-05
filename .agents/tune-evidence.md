@@ -2549,3 +2549,19 @@ The parent and supervised candidate branches are published and clean, and direct
 confirms no `ody-op-onset` ref. The device remains
 unreachable over SSH, so its current checkout/updater/services and any road result remain
 unverified; no deployment or reboot was performed for this UI-only sync or cleanup.
+
+### Live upstream model/PR recheck (2026-09-05)
+
+The current public PR heads were checked against `commaai/openpilot` after the previous model
+audit. PR [#38771](https://github.com/commaai/openpilot/pull/38771) (`68b5f8e486`) is the **Cinque
+Terre big model**: its only model-file change is the `big_driving_supercombo.onnx` pointer. The
+small `driving_supercombo.onnx` pointer remains `f0672eab4856`, identical to `upstream/master` and
+`ody-op`; it is not a small-model release for this car.
+
+PR [#38746](https://github.com/commaai/openpilot/pull/38746) (`f7a158371f`) is BMRLNAP v6's
+precompiled Chestnut/big-model loader and 17-file tinygrad big-model bundle. PR
+[#38726](https://github.com/commaai/openpilot/pull/38726) (`5a658611a8`) is the Time to Go
+spatial/big-model change. Neither changes the small model or the Odyssey Honda command path. The
+public PR list shows no newer small-model candidate, and the latest small-model history remains
+the reverted `93f5aa469a` Rebellious Hope release. **Decision: keep the current small model,
+parent/nested pins, and Odyssey production baseline; do not import these big-model or loader PRs.**
