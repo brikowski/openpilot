@@ -2529,3 +2529,23 @@ identity because this was a clean cherry-pick; no source delta remains for that 
 Nested `opendbc_repo/upstream/master` remains `3e92d1121295`, with only the unrelated VW MEB,
 scheduled-CARS, and 2027 HR-V commits beyond the pinned `825642c4218b`; they remain intentionally
 unmerged to preserve the parent/opendbc schema pairing.
+
+### Upstream Cabana UI refresh and final cleanup pass (2026-09-05)
+
+`upstream/master` advanced from `f9dacd0d6b` to `a989bc0b50` with Cabana-only UI and test
+formatting changes (`#38782`). The diff touches no planner, longcontrol, lateral controller, Honda
+CAN, safety, model, or nested-opendbc code. It was cherry-picked into the published parent as
+`73177efafd` and the supervised candidate as `f56976611c`; the nested pin remains
+`825642c4218b3c71f74053264882e40971cc10f5`.
+
+The follow-up hygiene pass removed stale in-tree build products, generated bindings, old binaries,
+and nested safety-test coverage/object debris (about 500 MB). It did not remove tracked source,
+private route/download/extract evidence, model/font assets, virtualenvs, reusable UV/SCons caches,
+historical refs, or the active supervised worktree. No `.claude` files, `.DS_Store`, stale worktree,
+or Git garbage remain; parent and nested `git count-objects` report zero garbage. Test-generated
+cache/debris was removed again after the focused suite (`29 passed, 58 subtests passed`).
+
+The parent `ody-op` remote now resolves to `73177efafd`, the supervised candidate remote to
+`f56976611c`, and direct remote lookup confirms no `ody-op-onset` ref. The device remains
+unreachable over SSH, so its current checkout/updater/services and any road result remain
+unverified; no deployment or reboot was performed for this UI-only sync or cleanup.
