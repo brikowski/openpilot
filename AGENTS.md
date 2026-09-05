@@ -202,10 +202,11 @@ pattern, but route `00000044--1f70122a52` now rejects its late physical onset. I
 domain for 10.05 s and 2.45 s beyond a `-0.30` entry during the two reported lead approaches, then
 activated Honda at about `-0.50 m/s2`. The same mechanism delayed the six reported downhill entries
 by 0.44-2.85 s versus `-0.30`; achieved acceleration changed from positive to as low as
-`-1.26 m/s2` in the following second. The current isolated arm therefore changes only road-speed
-entry back to `-0.30`. Frozen-input analysis predicts 40 route-wide physical edges versus 28 at
-`-0.50`, while the reported downhill burst peak remains 6/10 s. Route 44 therefore selected the
-next isolated arm but did not prove a comfort improvement; the current retention decision follows.
+`-1.26 m/s2` in the following second. The historical follow-up changed only road-speed entry
+back to `-0.30`; that threshold is the retained selector described below. Frozen-input analysis
+predicts 40 route-wide physical edges versus 28 at `-0.50`, while the reported downhill burst peak
+remains 6/10 s. Route 44 therefore selected the next isolated arm but did not prove a comfort
+improvement; the current retention decision follows.
 
 Current-code route `00000068--bbbfad9947` retains `-0.30` after the first substantial post-promotion
 descent screen. It produced 40 physical edges, peak 9/10 s, including 27 over 0.90 downhill minutes;
