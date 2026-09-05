@@ -2662,3 +2662,30 @@ This is a frozen-input screen only; it changes neither planner output nor Honda 
 keep the existing child predicate and production baseline unchanged.** If a future supervised arm
 needs a safer refinement, test this as a separate candidate with a stationary lead, a fast-closing
 lead, and a lead that accelerates through the window; do not silently replace the current child.
+
+### Latest upstream refresh and workspace hygiene (2026-09-05)
+
+The next successful upstream fetch advanced `upstream/master` to
+`cb0da74b414363f4cdb15c2897f8bb1202bc7e79` (`#38785`, Cabana speed-label and toolbar-divider
+cleanup). It was cherry-picked into `ody-op` as `4183635c608d5fd2b18050ebd0acf5cbff9e722d`.
+The changed files are limited to `openpilot/tools/cabana`; direct diffs for the planner,
+`longcontrol`, lateral controller, Honda CAN, safety, model, and nested-opendbc paths are empty.
+The parent still pins nested `opendbc_repo` at `825642c4218b3c71f74053264882e40971cc10f5`; the
+nested upstream-only commits at `3e92d112129507debe45364891954db70238997a` remain unrelated
+VW/HR-V/docs work and were not merged independently.
+
+The `Inspect Upstream Delta` VS Code task now calls its counts “upstream-only/local-only history
+objects” instead of “missing commits,” documenting that cherry-picks can be source-equivalent
+despite different object IDs. Its JSON parses successfully, and the wording change is published in
+parent commit `134a4286bf` alongside `tools/README.md`.
+
+The final workspace scan found no project-owned temporary or generated debris: no `.claude` tree,
+`.DS_Store`, Python/build/test caches outside virtualenvs, stale maneuver reports, nested safety
+objects/coverage, or stale worktree. The supervised stop-intent worktree, private route/download/
+extract caches, virtualenvs, model/font assets, and reusable UV/SCons caches are intentionally
+retained because they support reproducible analysis or fallback deployment. Parent and nested stash
+lists are empty and both object stores report zero garbage; no broad garbage collection was run.
+
+This is a tooling/source-refresh and hygiene result only. The device remains unreachable (SSH
+timeout, ping loss, incomplete ARP), so no deployment, reboot, updater verification, or road result
+is claimed. Recheck the device separately before the next supervised route.
