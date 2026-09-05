@@ -2480,3 +2480,13 @@ The current device check still has no LAN presence (SSH timeout, ping loss, inco
 checkout, updater target, services, and route inventory remain unverified until it reconnects. The
 last successful state was the supervised child at parent `71b708453fb4564be21da783cb2036776dcc3573`
 with nested `825642c4218b`, Alpha Long enabled, and Experimental mode disabled.
+
+### Git temporary-pack cleanup (2026-09-05)
+
+The parent object store had five unreachable `tmp_pack_*` files left by interrupted July/August
+fetches (`3,323,740,155` bytes total). No Git fetch or pack process was active, and `git
+count-objects -v` classified them as garbage. They were removed by exact path; all refs, commits,
+reflogs, and worktrees were left intact. Parent and nested object stores now report zero garbage.
+No `git gc` or unreachable-object pruning was run, so historical recovery remains available until
+normal Git expiry. Reusable private-log, download, extraction, build, and UV caches remain outside
+the repositories; the supervised stop-intent worktree remains the only active temporary road arm.
