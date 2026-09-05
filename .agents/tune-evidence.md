@@ -2284,6 +2284,22 @@ crawl stops, plus a moving-lead release.** Reject the trim for any false stop, e
 late release, intervention, or command-domain mismatch; otherwise compare achieved acceleration,
 stop distance, jerk, and request-to-wire fidelity before considering promotion.
 
+### Low-speed sample lead-context safety audit (2026-09-05)
+
+The three derivative-positive samples do not yet provide stationary-stop exposure. In route `1d`,
+the lead was moving (`vLead` about `0.17--0.34 m/s`, `dRel` about `4.5--8.2 m`) while
+`shouldStop` stayed false. Route `1f` likewise had a moving/accelerating lead (`vLead` rising
+roughly `0.27--0.76 m/s`, `dRel` about `5.4--6.2 m`) and `shouldStop` false. Route `1e` briefly
+flickered `shouldStop` during the first approach, but its lead was still moving at about
+`0.15--0.23 m/s`; during the second approach it accelerated from roughly `0.06` to `0.97 m/s`
+as the vehicle released. The temporary stopping-only trim consequently changed only 38 frames
+on route `1e`, all in a moving-lead context, and none on routes `1d`/`1f`.
+
+**Decision: treat all three as actuator-response context and a moving-lead safety screen, not stop
+authority evidence.** Do not road-promote a low-speed brake trim from these samples. A valid arm
+still needs a genuinely stationary lead and a no-lead crawl stop before the moving-lead release
+case.
+
 ### Stopped-lead predicate safety refinement screen (2026-09-05)
 
 Before changing the inactive planner child, the recorded lead signals were replay-screened at the
