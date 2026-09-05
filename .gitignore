@@ -93,8 +93,7 @@ build/
 !.vscode/*.code-snippets
 
 # agents
-# Project guidance lives in AGENTS.md and .agents/. Keep Claude's local settings untracked; the
-# tracked CLAUDE.md symlink is only a compatibility alias for AGENTS.md.
+# Project guidance lives in AGENTS.md and .agents/. Keep local editor/agent state untracked.
 .claude/*
 .context/
 PLAN.md

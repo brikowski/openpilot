@@ -57,5 +57,4 @@ and ordinary-road evidence with comparable command, speed, domain, authority, an
 4. Publish the nested `opendbc_repo` commit before the parent gitlink, verify exact remote SHAs and
    clean trees, and only then deploy through the guarded task.
 
-The `CLAUDE.md` symlink remains only as a compatibility alias to `AGENTS.md`; project guidance and
-agent tooling live in `AGENTS.md` and `.agents/`.
+Project guidance and agent tooling live in `AGENTS.md` and `.agents/`.

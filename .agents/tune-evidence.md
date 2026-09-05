@@ -1,8 +1,8 @@
 # Odyssey command-following — evidence archive
 
 **This is a reference document, not an instruction file.** The rules that must survive a cold start
-live in the repo-root [`AGENTS.md`](../AGENTS.md) (`CLAUDE.md` is a symlink to it), which both Codex
-and Claude Code load automatically every session. This file holds the measurements, failed
+live in the repo-root [`AGENTS.md`](../AGENTS.md), which repository-aware coding agents load as the
+project guidance. This file holds the measurements, failed
 experiments, and reasoning *behind* those rules, and is read on demand — it is deliberately not
 auto-loaded, because at ~86 KB it would crowd out the work.
 

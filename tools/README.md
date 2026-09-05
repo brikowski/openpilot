@@ -70,6 +70,13 @@ This checkout also exposes a small set of explicit VS Code tasks in
 
 - **Pull and Validate New Logs** SSH-pulls retained private full-rate rlogs and updates the
   authoritative validation ledger. The task sets `UV_CACHE_DIR` to a writable temporary cache.
+- **Validate One Route** re-runs the authoritative validator for one already-local route without
+  pulling anything. **Inspect Following Trace** prints the planner → `carControl` → wire → `aEgo`
+  trace for the same route; both tasks prompt for a route ID or unique prefix.
+- **Inspect Upstream Delta** fetches the two upstream remotes and prints both directions of the
+  parent and nested delta plus the upstream-pinned nested commit. **Sync Upstream Locally**
+  runs `.agents/sync_upstream.py`; it can rewrite local history, never pushes, and requires both
+  repositories to be clean and on `ody-op`.
 - **Run Jotpluggler** and **Run Cabana** inspect a local route; Cabana accepts `live` for the comma
   device at `192.168.1.200`.
 - **Run Odyssey software checks** runs the focused lint, Odyssey rail/sync tests, and the nested
@@ -84,5 +91,4 @@ This checkout also exposes a small set of explicit VS Code tasks in
   does not alter this checkout. The separate **Verify device on sunnypilot/staging** task is read-only.
 
 The recovery helper accepts `ODYSSEY_DEVICE` and `ODYSSEY_SSH_KEY` overrides. Project agent guidance
-lives in [`../AGENTS.md`](../AGENTS.md) and [`../.agents/`](../.agents/); `CLAUDE.md` is retained only
-as a compatibility symlink to that guidance.
+lives in [`../AGENTS.md`](../AGENTS.md) and [`../.agents/`](../.agents/).
