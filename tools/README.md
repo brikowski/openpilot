@@ -90,8 +90,9 @@ This checkout also exposes a small set of explicit VS Code tasks in
 - **Recover device on sunnypilot/staging** is the explicit known-good fallback. It destructively
   switches `/data/openpilot` to the official Sunnypilot `origin/staging`, sets
   `UpdaterTargetBranch=staging` and preserves `AlphaLongitudinalEnabled=1`, reboots, and verifies
-  exact state after reconnecting. It does not build because official staging is prebuilt-safe and it
-  does not alter this checkout. The separate **Verify device on sunnypilot/staging** task is read-only.
+  exact state after reconnecting, including both Sunnypilot remotes and Alpha Long. It does not
+  build because official staging is prebuilt-safe and it does not alter this checkout. The separate
+  **Verify device on sunnypilot/staging** task is read-only and asserts the same state.
 
 The recovery helper accepts `ODYSSEY_DEVICE` and `ODYSSEY_SSH_KEY` overrides. Project agent guidance
 lives in [`../AGENTS.md`](../AGENTS.md) and [`../.agents/`](../.agents/).

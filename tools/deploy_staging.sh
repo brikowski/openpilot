@@ -62,9 +62,11 @@ failed=\$(systemctl --failed --no-legend)
 printf '%s\\n' \"failed_services=\$failed\"
 test \"\$branch\" = staging
 test \"\$origin\" = '$STAGING_REMOTE'
+test \"\$sunnypilot\" = '$STAGING_REMOTE'
 test \"\$(cat /data/params/d/UpdaterTargetBranch 2>/dev/null || true)\" = staging
 test \"\$(cat /data/params/d/UpdaterState 2>/dev/null || true)\" = idle
 test \"\$(cat /data/params/d/UpdateAvailable 2>/dev/null || true)\" = 0
+test \"\$(cat /data/params/d/AlphaLongitudinalEnabled 2>/dev/null || true)\" = 1
 test -z \"\$failed\"
 "
 }
