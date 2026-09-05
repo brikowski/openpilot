@@ -2000,6 +2000,16 @@ into `LongCtrlState.stopping`, Honda's controller advances its existing `stoppin
 state while retaining the same raw `ACCEL_COMMAND` and gas/brake-domain selection. No new Honda CAN
 field or brake shaping is introduced by this candidate.
 
+The raw route-12 segment-79 trace makes the ownership boundary concrete. At the provisional trigger
+near `53267.70 s` (route-relative `4766.79 s`), baseline `longitudinalPlan.aTarget` and
+`carControl.actuators.accel` were about `-0.20 m/s2`, decoded `ACCEL_COMMAND` was `-0.21 m/s2`,
+`BRAKE_REQUEST=1`, and `STANDSTILL=0`/`STANDSTILL_RELEASE=1`. The planner then relaxed toward
+`-0.17 m/s2` while the controller stayed in PID; `aEgo` became positive and `vEgo` rose to about
+`0.57 m/s`. The driver brake at `53269.936 s` disabled longitudinal control, while generic
+`shouldStop` did not become true until about `53271.10 s`, after the takeover. This is first a
+planner stop-intent miss, with Honda response to the relaxed request as a secondary contributor;
+the candidate's unroaded counterfactual would enter the existing stopping/standstill path earlier.
+
 Applying the predicate with the planner's actual lead selection (`leadOne` for `lead0`, `leadTwo`
 for `lead1`/E2E) to the raw full-rate route messages found seven candidate episodes: one each on
 routes 10, 12, and 38, two on route 44, and two on route 6d. Five reached the recorded generic
