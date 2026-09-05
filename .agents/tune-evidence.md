@@ -2565,3 +2565,27 @@ spatial/big-model change. Neither changes the small model or the Odyssey Honda c
 public PR list shows no newer small-model candidate, and the latest small-model history remains
 the reverted `93f5aa469a` Rebellious Hope release. **Decision: keep the current small model,
 parent/nested pins, and Odyssey production baseline; do not import these big-model or loader PRs.**
+
+### Route 00000070 transition-frame audit (2026-09-05)
+
+Route `00000070--16f597b10c` is a full-rate baseline capture from parent
+`0cdcc917185aee0c80b7af996d8dff9d17ac3903`, nested opendbc
+`f52c828fdf49275534d3a0c25030ee157c647f80`, branch `ody-op`, small model
+`f0672eab48566d395e49407293579b817f3e9d22`, Alpha Long enabled, Experimental mode disabled, and
+standard longitudinal personality. The nested source differs from the current pin only by a
+comment, moving the non-Bosch `stopping` local into the Bosch branch, and an interface assertion;
+the Odyssey command-domain function and Honda CAN encoding are behaviorally identical to current
+`825642c4218b3c71f74053264882e40971cc10f5`.
+
+The route's aggregate request-to-wire result is `0.0185 m/s2` RMS in the brake domain, with no
+sustained sign disagreement and three transition frames ignored by the validator. The two worst
+frames occur at route-relative `1126.43 s` and `1217.23 s`: `carControl.actuators.accel` has just
+crossed from about `-0.01` to `+0.04 m/s2`, while the zero-order-held Honda wire is still about
+`-0.01 m/s2` for one 20-ms command period before the positive gas command appears. The next samples
+carry the positive request and gas command; there is no sustained positive-request brake hold or
+request-to-wire/domain event. This is the expected 100-Hz controller versus 50-Hz Honda-command
+transition/quantization boundary, not a repeatable opendbc divergence.
+
+**Decision: KEEP the current command-domain implementation and make no Honda change from route
+70.** Retain the transition frames as a diagnostic boundary; reopen only if a full-rate route shows
+the same mismatch beyond the command-period transition or with measurable withheld acceleration.
