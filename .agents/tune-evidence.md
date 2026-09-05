@@ -2007,6 +2007,10 @@ routes 10, 12, and 38, two on route 44, and two on route 6d. Five reached the re
 candidate windows began at roughly 0.85-1.00 m/s (1.9-2.2 mph), so this is not a sub-1.6-mph
 screen. These are useful exposure checks, not counterfactual or closed-loop proof: frozen logs
 cannot show whether an earlier stop intent would false-stop a moving lead or improve the gap.
+At the fifth consecutive candidate frame (about 0.20 s into each window), the frozen-input screen
+had ego speed near 1.00 m/s, gaps of 4.43-6.31 m, model probabilities of 0.999-1.000, and
+closing time-to-collision of 5.5-29.5 s. This bounds the candidate's initial trigger context for
+the controlled arm; it does not establish that the vehicle will stop safely on-road.
 
 Success requires mutation-verified predicate tests, planner replay showing earlier stop intent with
 unchanged request-to-wire/domain fidelity, then controlled stopped-lead and at least three
