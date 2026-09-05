@@ -2470,6 +2470,12 @@ worktree `tmp/ody-op-stop-intent-road-20260905`, private route/download/extract 
 build/UV caches are intentionally retained. No tracked Claude skill or root `CLAUDE.md` remains;
 project guidance is `AGENTS.md` plus `.agents/`.
 
+The parent and nested repositories also had five old stash refs: one automatic pre-sync snapshot and
+four superseded ledger, task, or Honda-tune work-in-progress snapshots. Their committed history or
+ledger records are already retained, so the stash refs were dropped during this audit; no working-tree
+or active branch depended on them. No garbage collection was run, preserving normal Git recovery until
+the repositories next expire unreachable objects.
+
 The current device check still has no LAN presence (SSH timeout, ping loss, incomplete ARP), so its
 checkout, updater target, services, and route inventory remain unverified until it reconnects. The
 last successful state was the supervised child at parent `71b708453fb4564be21da783cb2036776dcc3573`
