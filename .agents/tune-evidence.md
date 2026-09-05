@@ -2545,7 +2545,7 @@ historical refs, or the active supervised worktree. No `.claude` files, `.DS_Sto
 or Git garbage remain; parent and nested `git count-objects` report zero garbage. Test-generated
 cache/debris was removed again after the focused suite (`29 passed, 58 subtests passed`).
 
-The parent `ody-op` remote now resolves to `73177efafd`, the supervised candidate remote to
-`f56976611c`, and direct remote lookup confirms no `ody-op-onset` ref. The device remains
+The parent and supervised candidate branches are published and clean, and direct remote lookup
+confirms no `ody-op-onset` ref. The device remains
 unreachable over SSH, so its current checkout/updater/services and any road result remain
 unverified; no deployment or reboot was performed for this UI-only sync or cleanup.
