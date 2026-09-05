@@ -2123,3 +2123,54 @@ from roughly `0.60 m/s2` in short transients to near zero during sustained high 
 is therefore faithfully reaching the Honda wire; this route does not justify extending the stock
 2560 map or changing opendbc. Reopen steering authority only with a repeatable matched-road
 vehicle-response symptom and an isolated comparison.
+
+### Routes 0000001e/0000001f baseline stop-intent exposure (2026-09-05)
+
+The next two full-rate routes were both recorded on the clean baseline: parent `400cfefaaa8e`,
+nested opendbc `825642c4218b`, branch `ody-op`, current driving model `f0672eab4856`, Alpha Long
+enabled, and Experimental mode disabled. Route `0000001e--bce126e36c` supplied 10.2 engaged
+minutes; route `0000001f--51e2cb8cb9` supplied 5.4 engaged minutes and is thin context. Both routes
+carried the requested acceleration through Honda's wire (request-to-wire RMS `0.0066`/`0.0076`
+m/s2, no sustained sign disagreement). The validator nevertheless flagged five of 32 brake
+presses as takeovers on route 1e and two of 15 on route 1f, plus 22/26 physical brake-domain
+edges with peaks of 5/9 per 10 seconds. These are baseline observations, not candidate-arm
+exposure.
+
+Route 1e contains two source-selected, close-lead approaches that meet the unroaded stopped-lead
+screen (`vEgo < 1.0`, negative request below `-0.05`, model probability above `0.9`,
+`vLead < 0.35`, closing `vRel < 0`, and gap below 6.5 m). The first runs from about
+2320.00--2323.58 s: ego speed falls from 0.98 to 0.40 m/s while the request and decoded wire
+relax from roughly `-1.04` to `-0.13 m/s2`; generic `shouldStop` appears only intermittently near
+0.30 m/s, and the driver presses the brake at 2323.59 s while still engaged. The second runs
+about 2376.63--2381.92 s: the vehicle remains near 0.30 m/s for several seconds at a 4--5 m gap
+with request about `-0.12 m/s2` and generic `shouldStop` false most of the time, then the lead
+accelerates and the request becomes positive. The planner and Honda translation remain numerically
+aligned in both windows, so the repeatable first divergence is stop intent, not opendbc encoding.
+
+Applying the current candidate predicate to the recorded inputs would assert its five-frame
+intent around 2320.20 s and 2376.83 s, well before the intermittent generic stop flag. This is a
+useful baseline exposure marker and a plausible explanation for the route-1e low-speed takeover,
+but it is not counterfactual vehicle evidence: the route ran on baseline and cannot show whether
+the existing stopping ramp would have avoided the takeover or produced an unwanted hold.
+
+Route 1f supplies the required moving-lead safety counterexample. Its candidate predicate is true
+for about 151.84--152.44 s while ego speed falls through 1.0--0.86 m/s, the gap is about 6.0 m,
+and the lead accelerates from roughly 0.09 to 0.31 m/s; by 152.64 s the lead is at 0.49 m/s and
+the closing speed has nearly disappeared, after which the request turns positive and the car
+accelerates. No driver takeover occurs in this low-speed window, but a candidate stop state would
+briefly overlap the lead's release. This confirms that the current bounds do not distinguish a
+settling stopped lead from a lead about to move. Do not tighten or broaden the predicate from this
+frozen input alone; use it to require a supervised candidate route with both stationary-lead and
+moving-lead release cases.
+
+The same routes also confirm that the high-speed downhill burst is upstream-request driven. The
+representative transitions on both routes occur with `cruise` source, no meaningful stop intent,
+and request oscillation around the `-0.30` Honda brake-domain split; the decoded `ACCEL_COMMAND`
+follows the request and the domain changes with it. Keep the `-0.30` command-domain rule and do
+not use these edges to justify an opendbc brake threshold or a stop-intent change.
+
+**Decision: KEEP the stopped-lead candidate as an inactive child for supervised exposure; keep
+`ody-op` unchanged.** The new route-1e windows strengthen the planner-side symptom and supply a
+likely benefit case, while route 1f preserves the moving-lead safety concern. No production or
+device change is authorized by these baseline routes. Candidate promotion still requires mutation
+tests, planner/CAN replay, and closed-loop stationary-lead and moving-lead-release evidence.
