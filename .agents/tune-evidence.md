@@ -1962,6 +1962,12 @@ model release is present through `675ff569818f`. Model selection therefore suppl
 candidate for the stopped-lead symptom; keep the planner-side experiment isolated from model and
 opendbc changes.
 
+The nested-source audit resolves the same invariant: `upstream/master` at `675ff569818f` pins
+public opendbc `b4ef5e1cf406`, while `opendbc_repo` `825642c4218b` is a descendant of that exact
+pin with only the retained Odyssey command-domain delta. Standalone opendbc `upstream/master`
+currently points to `3e92d1121295`, but it is newer than the parent pin and must not be advanced
+independently; doing so risks the parent/opendbc schema mismatch documented in `AGENTS.md`.
+
 ### Route 0000001c--ca2ae44633 provenance (2026-09-05)
 
 The newly pulled 55-segment route resolves to parent `cc87e07f4a3b` (`Odyssey: retire unproven
