@@ -2217,3 +2217,35 @@ the existing `-0.30` domain entry, and the stopped-lead planner child independen
 actuator tuning only after a controlled candidate route repeatedly shows the same post-wire
 over/under-response under matched speed, request, and terrain; then test one bounded, upstream-style
 mechanism with stationary-lead and no-lead safety exposure.
+
+### Repeated low-speed brake-response screen (2026-09-05)
+
+The baseline bias result has one narrower signal worth carrying into the next road question. Using
+the same zero-order-held mask (`longActive`, `BRAKE_REQUEST=1`, no driver brake, request below
+`-0.03 m/s2`, finite `aEgo`), the low-speed portions below `1.0 m/s` repeatedly measured a positive
+`aEgo - carControl.actuators.accel` residual, i.e. less deceleration than requested. The exposed
+segments were:
+
+- Route `0000001d--2e324ec2ce`, parent `784b05ce670a`, nested `825642c4218b`: 5.53 s at
+  `1206.53--1212.06`, median speed `0.75 m/s`, median request `-0.193 m/s2`, median residual
+  `+0.089 m/s2`.
+- Route `0000001e--bce126e36c`, parent `400cfefaaa8e`, nested `825642c4218b`: 3.58 s at
+  `2320.00--2323.58` (median residual `+0.155 m/s2`) and 5.63 s at `2376.63--2382.27`
+  (median residual `+0.122 m/s2`). The first ended in a driver brake, so it is an exposure marker,
+  not a candidate result.
+- Route `0000001f--51e2cb8cb9`, parent `400cfefaaa8e`, nested `825642c4218b`: 1.29 s at
+  `151.84--153.14`, median speed `0.85 m/s`, median request `-0.344 m/s2`, median residual
+  `+0.185 m/s2`; the lead was accelerating during this window, so it is a moving-lead safety
+  counterexample as well as a thin response sample.
+
+This recurrence is stronger than a single lurch, but it does not identify a safe global brake gain:
+the same baseline over-braked in the separate route-1e `1.18 m/s` lurch, and the route-level and
+command-magnitude residuals change sign. The low-speed residual may also include filtered/quantized
+`aEgo` near standstill. A supplemental PID or brake scale would therefore alter the requested
+`ACCEL_COMMAND` before a controlled test proves that the post-wire plant error is repeatable.
+
+**Decision: KEEP the raw low-speed command and existing brake domain; do not create a production
+brake-tuning arm from this screen.** Treat these segments as the minimum exposure for a future
+isolated comparison: stationary-lead and no-lead crawl stops, matched request/speed/grade, and a
+moving-lead release case. The inactive stopped-lead planner candidate remains the narrower way to
+test the route-1e stop-intent symptom without adding an unverified Honda brake correction.
