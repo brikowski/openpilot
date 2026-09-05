@@ -2185,8 +2185,9 @@ translation, or the driving model. The upstream driving-model blob remains `f067
 the latest small-model release remains `93f5aa469a`, reverted by `b361e952c9`; no newer model
 release is available. Standalone opendbc `upstream/master` remains `3e92d1121295`, while the
 OpenPilot parent still pins public opendbc `b4ef5e1cf406`; no new Honda stopping or peer-brand
-mechanism appeared after that pin. Keep the current parent/nested pairing and do not import the
-unrelated host-tool changes into the deployed baseline while the stop-intent arm is unroaded.
+mechanism appeared after that pin. The five host-tool commits are now merged into `ody-op` at
+parent merge `c4fce9bf05`, retaining the local memory-safe `op.sh switch` fetch/submodule limits;
+no Honda or deployed stop-intent behavior changed.
 
 ### Baseline brake-response bias screen (2026-09-05)
 
