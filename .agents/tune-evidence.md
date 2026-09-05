@@ -2015,6 +2015,14 @@ near `53267.70 s` (route-relative `4766.79 s`), baseline `longitudinalPlan.aTarg
 planner stop-intent miss, with Honda response to the relaxed request as a secondary contributor;
 the candidate's unroaded counterfactual would enter the existing stopping/standstill path earlier.
 
+Frozen-input counterfactual command shaping, holding the candidate stop intent through this window,
+uses the recorded `-0.21 m/s2` output as the stopping-state initial value and the route's
+`CP.stopAccel=-2.00 m/s2`. The existing `LongControl` stopping ramp reaches approximately
+`-0.71/-1.21/-1.71/-2.00 m/s2` at 0.5/1.0/1.5/2.0 s; Honda decoding follows those values exactly
+with `BRAKE_REQUEST=1`, inactive gas, and `STANDSTILL=1`/`STANDSTILL_RELEASE=0`. This verifies
+counterfactual command shape and domain selection only; it uses frozen `aEgo` and cannot predict
+the vehicle's closed-loop stop distance, jerk, or actuator response.
+
 Applying the predicate with the planner's actual lead selection (`leadOne` for `lead0`, `leadTwo`
 for `lead1`/E2E) to the raw full-rate route messages found seven candidate episodes: one each on
 routes 10, 12, and 38, two on route 44, and two on route 6d. Five reached the recorded generic
