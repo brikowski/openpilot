@@ -2322,3 +2322,22 @@ from frozen inputs.** The sweep establishes a bounded design choice for a future
 safe classifier. Any refinement must be tested with a human override on both a genuinely stationary
 lead and a lead that accelerates through the candidate window, while preserving raw
 `ACCEL_COMMAND`, Honda domain bits, and the existing stopping ramp.
+
+### Supervised stopped-lead road-arm deployment (2026-09-05)
+
+The reported repeated stop misses provide the requested reason to exercise the planner candidate,
+but not to promote it. A reproducible child was published at parent `e3c55df25213`, based on the
+current `ody-op` evidence baseline `dcdabbd766ce` plus planner commits `136d1ebd24` and
+`e3c55df252`; its nested opendbc gitlink remains `825642c4218b`. The device was switched to branch
+`tmp/ody-op-stop-intent-road-20260905` with `UpdaterTargetBranch` set to that branch, rebuilt with
+the virtualenv tools on `PATH`, rebooted, and verified clean. Alpha Long remains enabled and
+Experimental mode remains disabled. The production branch `ody-op` is unchanged and remains the
+rollback target (`dcdabbd766ce` parent, nested `825642c4218b`).
+
+This is an unpromoted, human-supervised road arm. Record each close-lead approach with
+`shouldStop`, `longitudinalPlan.aTarget`, `carControl.actuators.accel`, decoded
+`ACCEL_COMMAND`, `BRAKE_REQUEST`/`GAS_COMMAND`, `LongCtrlState`, `aEgo`, lead speed/gap, and any
+driver intervention. Reject immediately for a false stop on a moving lead, extra onset bite,
+stale stopping after lead release, late stop, or clear drivability regression. Keep or retire only
+after the candidate has stationary-lead, no-lead crawl-stop, and moving-lead-release exposure;
+this deployment itself is not a road result.
