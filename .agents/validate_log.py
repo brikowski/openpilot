@@ -51,6 +51,17 @@ STEERING_CONTROL = 0xE4
 ODYSSEY_STOCK_RADAR_MIN_STEER_SPEED = 70.0 / 3.6
 ODYSSEY_STOCK_LKA_MAX = 2560
 
+# These are immutable source artifacts, not values inferred from the local checkout.  Recording the
+# parent gitlink and the selected model blob makes a route reproducible after a branch is rebased.
+MODEL_PATHS = {
+  "small": "openpilot/selfdrive/modeld/models/driving_supercombo.onnx",
+  "big": "openpilot/selfdrive/modeld/models/big_driving_supercombo.onnx",
+}
+PROVENANCE_PARAM_KEYS = (
+  "AlphaLongitudinalEnabled", "DisengageOnAccelerator", "ExperimentalMode",
+  "LongitudinalPersonality", "OpenpilotEnabledToggle", "UpdaterTargetBranch",
+)
+
 # ---- thresholds (grounded in the converged baselines recorded in tune-evidence.md) ----
 # Convergence regression guards. Baselines: track RMS ~0.22, passthrough RMS ~0.11
 # on route 00000013 (tune-evidence.md "Tune status" historical notes).
@@ -157,6 +168,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "aa8a2e60fbad": -0.30,  # comment-only descendant; runtime behavior matches 871b98a64f6e
   "0bd54951753f": -0.30,  # exact deployed comment-only descendant
   "31a1776c7bf4": -0.30,  # retires the unproven onset limiter; raw command domains are unchanged
+  "825642c4218b": -0.30,  # current ody-op baseline after reverting the unproven agile arm
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -185,6 +197,7 @@ THREE_DOMAIN_COMMITS = {
   "aa8a2e60fbad",  # comment-only descendant; runtime behavior matches 871b98a64f6e
   "0bd54951753f",  # exact deployed comment-only descendant
   "31a1776c7bf4",  # restores raw ACCEL_COMMAND after the bounded onset screen
+  "825642c4218b",  # current ody-op baseline after reverting the unproven agile arm
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
@@ -492,6 +505,56 @@ def _jerk(smoothed, dt, active):
   return windowed_jerk(smoothed, dt, active, JERK_WIN_S)
 
 
+def _safe_attr(obj, name, default=None):
+  """Read optional capnp fields without turning an older log schema into a validator failure."""
+  try:
+    return getattr(obj, name)
+  except Exception:
+    return default
+
+
+def _text(value):
+  if value is None:
+    return None
+  value = str(value)
+  return value if value and value != "None" else None
+
+
+def _full_sha(value):
+  return bool(value and re.fullmatch(r"[0-9a-f]{40}", value))
+
+
+def _git_tree_entries(parent_commit, paths):
+  """Resolve exact tree entries from the logged parent commit, if it is locally available."""
+  if not parent_commit or not paths:
+    return {}
+  repo = Path(__file__).resolve().parents[1]
+  try:
+    out = subprocess.run(["git", "-C", str(repo), "ls-tree", parent_commit, "--", *paths],
+                         capture_output=True, text=True, timeout=10)
+  except (OSError, subprocess.SubprocessError):
+    return {}
+  if out.returncode != 0:
+    return {}
+  entries = {}
+  for line in out.stdout.splitlines():
+    parts = line.split(maxsplit=3)
+    if len(parts) == 4:
+      mode, kind, sha, path = parts
+      entries[path] = (mode, kind, sha)
+  return entries
+
+
+def _opendbc_pointer_full(parent_commit, dirty):
+  """Return the exact nested opendbc commit pinned by a clean logged parent tree."""
+  # A dirty initData tree does not identify the source that was actually flashed.  Do not turn a
+  # known parent commit into false precision by resolving its committed gitlink in that case.
+  if not parent_commit or dirty is not False:
+    return None
+  entry = _git_tree_entries(parent_commit, ("opendbc_repo",)).get("opendbc_repo")
+  return entry[2] if entry and entry[0] == "160000" and entry[1] == "commit" else None
+
+
 def _opendbc_pointer(parent_commit, dirty):
   """The opendbc commit that parent_commit pins - i.e. the code that actually contains the tune.
 
@@ -506,18 +569,67 @@ def _opendbc_pointer(parent_commit, dirty):
   what was flashed, so it is not recorded - the deploy task in tasks.json refuses dirty trees for
   this reason, but old rows predate that guard.
   """
-  if not parent_commit or dirty:
-    return None
-  repo = Path(__file__).resolve().parents[1]
+  pointer = _opendbc_pointer_full(parent_commit, dirty)
+  return pointer[:12] if pointer else None
+
+
+def _decode_param(value):
+  """Decode a selected initData parameter without leaking arbitrary binary params."""
   try:
-    out = subprocess.run(["git", "-C", str(repo), "ls-tree", parent_commit, "opendbc_repo"],
-                         capture_output=True, text=True, timeout=10)
-  except (OSError, subprocess.SubprocessError):
-    return None
-  if out.returncode != 0:
-    return None
-  parts = out.stdout.split()
-  return parts[2][:12] if len(parts) >= 3 and parts[0] == "160000" else None
+    raw = value if isinstance(value, bytes) else bytes(value)
+  except (TypeError, ValueError):
+    raw = str(value).encode("utf-8", errors="replace")
+  try:
+    text = raw.decode("utf-8").rstrip("\x00")
+  except UnicodeDecodeError:
+    return f"<binary:{len(raw)} bytes>"
+  return text
+
+
+def _init_settings(init_data):
+  params = _safe_attr(init_data, "params")
+  entries = _safe_attr(params, "entries", ()) or ()
+  selected = {}
+  for entry in entries:
+    key = _text(_safe_attr(entry, "key"))
+    if key in PROVENANCE_PARAM_KEYS:
+      selected[key] = _decode_param(_safe_attr(entry, "value", b""))
+  return selected
+
+
+def _observed_field(msgs, service, field, transform=None):
+  values = []
+  for msg in msgs:
+    if msg.which() != service:
+      continue
+    value = _safe_attr(_safe_attr(msg, service), field)
+    if value is None:
+      continue
+    value = transform(value) if transform else _text(value)
+    if value not in values:
+      values.append(value)
+  return (values[0] if len(values) == 1 else "mixed" if values else None), values
+
+
+def _model_provenance(msgs, parent_entries):
+  big_values = []
+  for service in ("modelV2", "drivingModelData"):
+    for msg in msgs:
+      if msg.which() != service:
+        continue
+      value = _safe_attr(_safe_attr(msg, service), "big")
+      if value is not None:
+        value = bool(value)
+        if value not in big_values:
+          big_values.append(value)
+  kinds = ["big" if value else "small" for value in big_values]
+  kind = kinds[0] if len(kinds) == 1 else "mixed" if kinds else None
+  small_entry = parent_entries.get(MODEL_PATHS["small"])
+  big_entry = parent_entries.get(MODEL_PATHS["big"])
+  small_blob = small_entry[2] if small_entry and small_entry[1] == "blob" else None
+  big_blob = big_entry[2] if big_entry and big_entry[1] == "blob" else None
+  selected_blob = {"small": small_blob, "big": big_blob}.get(kind)
+  return kind, kinds, selected_blob, small_blob, big_blob
 
 
 def _provenance(msgs):
@@ -527,18 +639,63 @@ def _provenance(msgs):
   for m in msgs:
     if m.which() == "initData":
       d = m.initData
-      commit, dirty = str(d.gitCommit)[:12], bool(d.dirty)
-      return {"git_branch": str(d.gitBranch), "git_commit": commit,
-              "opendbc_commit": _opendbc_pointer(commit, dirty),
-              "git_dirty": dirty, "op_version": str(d.version)}
-  return {"git_branch": None, "git_commit": None, "opendbc_commit": None,
-          "git_dirty": None, "op_version": None}
+      commit_full = _text(_safe_attr(d, "gitCommit"))
+      dirty_value = _safe_attr(d, "dirty")
+      dirty = bool(dirty_value) if dirty_value is not None else None
+      source_entries = _git_tree_entries(commit_full, ("opendbc_repo", *MODEL_PATHS.values())) \
+        if dirty is False else {}
+      opendbc_entry = source_entries.get("opendbc_repo")
+      opendbc_full = (opendbc_entry[2] if opendbc_entry and opendbc_entry[0] == "160000"
+                      and opendbc_entry[1] == "commit" else None)
+      model_kind, model_values, model_blob, small_blob, big_blob = _model_provenance(
+        msgs, source_entries)
+      experimental_mode, experimental_values = _observed_field(
+        msgs, "selfdriveState", "experimentalMode", transform=bool)
+      personality, personality_values = _observed_field(msgs, "selfdriveState", "personality")
+      settings = _init_settings(d)
+      exact = bool(_full_sha(commit_full) and dirty is False and _full_sha(opendbc_full)
+                   and model_kind in ("small", "big") and _full_sha(model_blob))
+      return {
+        "git_branch": _text(_safe_attr(d, "gitBranch")),
+        "git_commit": commit_full[:12] if commit_full else None,
+        "git_commit_full": commit_full,
+        "opendbc_commit": opendbc_full[:12] if opendbc_full else None,
+        "opendbc_commit_full": opendbc_full,
+        "git_dirty": dirty,
+        "git_remote": _text(_safe_attr(d, "gitRemote")),
+        "op_version": _text(_safe_attr(d, "version")),
+        "passive": _safe_attr(d, "passive"),
+        "model_kind": model_kind,
+        "model_kind_values": model_values,
+        "model_blob_full": model_blob,
+        "model_small_blob_full": small_blob,
+        "model_big_blob_full": big_blob,
+        "experimental_mode": experimental_mode,
+        "experimental_mode_values": experimental_values,
+        "longitudinal_personality": personality,
+        "longitudinal_personality_values": personality_values,
+        "settings": settings,
+        "provenance_exact": exact,
+      }
+  return {
+    "git_branch": None, "git_commit": None, "git_commit_full": None,
+    "opendbc_commit": None, "opendbc_commit_full": None, "git_dirty": None,
+    "git_remote": None, "op_version": None, "passive": None,
+    "model_kind": None, "model_kind_values": [], "model_blob_full": None,
+    "model_small_blob_full": None, "model_big_blob_full": None,
+    "experimental_mode": None, "experimental_mode_values": [],
+    "longitudinal_personality": None, "longitudinal_personality_values": [],
+    "settings": {}, "provenance_exact": False,
+  }
 
 
 def analyze(msgs, platform, alpha_longitudinal=None):
   r = {"platform": platform, "alpha_longitudinal": alpha_longitudinal, "notes": []}
   provenance = _provenance(msgs)
   r.update(provenance)
+  if not r["provenance_exact"]:
+    r["notes"].append("PROVENANCE INCOMPLETE: exact clean parent/opendbc/model identity was not "
+                      "resolvable from initData and the local object store.")
 
   # --- gather series on their native timebases ---
   t_cc, cc_accel = _series(msgs, "carControl", lambda m: m.carControl.actuators.accel)
@@ -1669,6 +1826,8 @@ def write_ledger_md(rows):
     "Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling `.jsonl`. "
     "One row is retained per route. Group behavioral comparisons by resolved `opendbc`, not by "
     "branch. Coverage and flags identify evidence to inspect; they do not authorize a tune change. "
+    "Exact parent/nested source, model blob, mode, and selected settings are retained in the JSONL "
+    "(`*_full`, `model_*`, and `settings` fields). "
     "`follow gas`/`follow brk` are RMS(ACCEL_COMMAND - carControl.accel) by domain, and `burst/10s` "
     "counts physical BRAKE_REQUEST edges.\n\n"
     "| date | route | branch | opendbc | eng min | eng mi | crashes | track RMS | passthru RMS "
@@ -1750,6 +1909,11 @@ def main():
         f"max {r['vego_max']*2.237:.0f} mph")
   print(f"  code:     {r.get('git_branch') or '?'} @ {r.get('git_commit') or '?'}"
         f"{' (DIRTY)' if r.get('git_dirty') else ''}")
+  print(f"  source:   parent {r.get('git_commit_full') or '?'} / opendbc "
+        f"{r.get('opendbc_commit_full') or '?'}")
+  print(f"  model:    {r.get('model_kind') or '?'} @ {r.get('model_blob_full') or '?'}")
+  print(f"  state:    experimental={r.get('experimental_mode')!s} / "
+        f"personality={r.get('longitudinal_personality') or '?'}")
   if r.get("alpha_longitudinal") is not None:
     print("  mode:     Alpha Long enabled (OpenPilot longitudinal)" if r["alpha_longitudinal"]
           else "  mode:     Alpha Long disabled (stock radar longitudinal)")

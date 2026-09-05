@@ -1,6 +1,7 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -104,6 +105,103 @@ def test_local_segment_names_ignore_empty_interrupted_pull_directories(tmp_path)
   assert _local_segment_names(route, tmp_path) == [f"{route}--2", f"{route}--10"]
 
 
+class _ProvenanceMessage:
+  def __init__(self, service, **fields):
+    self._service = service
+    setattr(self, service, SimpleNamespace(**fields))
+
+  def which(self):
+    return self._service
+
+
+def test_provenance_records_exact_source_model_mode_and_selected_settings(monkeypatch):
+  parent = "a" * 40
+  nested = "b" * 40
+  small_blob = "c" * 40
+  big_blob = "d" * 40
+  monkeypatch.setattr(validate_log, "_git_tree_entries", lambda _commit, _paths: {
+    "opendbc_repo": ("160000", "commit", nested),
+    validate_log.MODEL_PATHS["small"]: ("100644", "blob", small_blob),
+    validate_log.MODEL_PATHS["big"]: ("100644", "blob", big_blob),
+  })
+  params = SimpleNamespace(entries=[
+    SimpleNamespace(key="AlphaLongitudinalEnabled", value=b"1"),
+    SimpleNamespace(key="ExperimentalMode", value=b"0"),
+    SimpleNamespace(key="LongitudinalPersonality", value=b"1"),
+    SimpleNamespace(key="UpdaterTargetBranch", value=b"ody-op"),
+    SimpleNamespace(key="CalibrationParams", value=b"do-not-record"),
+  ])
+  msgs = [
+    _ProvenanceMessage("initData", gitCommit=parent, gitBranch="ody-op", dirty=False,
+                       gitRemote="https://example.invalid/openpilot.git", version="0.11.2",
+                       passive=False, params=params),
+    _ProvenanceMessage("modelV2", big=False),
+    _ProvenanceMessage("selfdriveState", experimentalMode=False, personality="standard"),
+  ]
+
+  provenance = validate_log._provenance(msgs)
+
+  assert provenance["git_commit"] == parent[:12]
+  assert provenance["git_commit_full"] == parent
+  assert provenance["opendbc_commit"] == nested[:12]
+  assert provenance["opendbc_commit_full"] == nested
+  assert provenance["model_kind"] == "small"
+  assert provenance["model_blob_full"] == small_blob
+  assert provenance["model_small_blob_full"] == small_blob
+  assert provenance["model_big_blob_full"] == big_blob
+  assert provenance["experimental_mode"] is False
+  assert provenance["longitudinal_personality"] == "standard"
+  assert provenance["settings"] == {
+    "AlphaLongitudinalEnabled": "1",
+    "ExperimentalMode": "0",
+    "LongitudinalPersonality": "1",
+    "UpdaterTargetBranch": "ody-op",
+  }
+  assert provenance["provenance_exact"]
+
+
+def test_provenance_does_not_claim_exact_source_for_dirty_or_mixed_model(monkeypatch):
+  monkeypatch.setattr(validate_log, "_git_tree_entries", lambda *_args: {
+    "opendbc_repo": ("160000", "commit", "b" * 40),
+    validate_log.MODEL_PATHS["small"]: ("100644", "blob", "c" * 40),
+    validate_log.MODEL_PATHS["big"]: ("100644", "blob", "d" * 40),
+  })
+  params = SimpleNamespace(entries=[])
+  msgs = [
+    _ProvenanceMessage("initData", gitCommit="a" * 40, gitBranch="ody-op", dirty=True,
+                       gitRemote="https://example.invalid/openpilot.git", version="0.11.2",
+                       passive=False, params=params),
+    _ProvenanceMessage("modelV2", big=False),
+    _ProvenanceMessage("modelV2", big=True),
+    _ProvenanceMessage("selfdriveState", experimentalMode=False, personality="standard"),
+  ]
+
+  provenance = validate_log._provenance(msgs)
+
+  assert provenance["opendbc_commit_full"] is None
+  assert provenance["model_kind"] == "mixed"
+  assert provenance["model_blob_full"] is None
+  assert provenance["model_kind_values"] == ["small", "big"]
+  assert not provenance["provenance_exact"]
+
+
+def test_provenance_requires_full_parent_sha(monkeypatch):
+  monkeypatch.setattr(validate_log, "_git_tree_entries", lambda *_args: {
+    "opendbc_repo": ("160000", "commit", "b" * 40),
+    validate_log.MODEL_PATHS["small"]: ("100644", "blob", "c" * 40),
+  })
+  msgs = [
+    _ProvenanceMessage("initData", gitCommit="a" * 12, gitBranch="ody-op", dirty=False,
+                       version="0.11.2", params=SimpleNamespace(entries=[])),
+    _ProvenanceMessage("modelV2", big=False),
+  ]
+
+  provenance = validate_log._provenance(msgs)
+
+  assert provenance["opendbc_commit_full"] == "b" * 40
+  assert not provenance["provenance_exact"]
+
+
 def test_brake_episode_metrics_distinguish_progressive_and_sudden_onsets():
   grid = np.arange(0.0, 6.0, 0.01)
   brake = (grid >= 1.0) & (grid < 5.0)
@@ -161,15 +259,17 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
 
   # Exact-pinned deployed revisions with source-identical Honda longitudinal output must stay mapped;
   # otherwise their road evidence silently loses the domain and low-speed attribution checks.
-  for current_commit in ("41aaf59ee6f2", "507559bc03ba", "955bd74c3562"):
+  for current_commit in ("41aaf59ee6f2", "507559bc03ba", "955bd74c3562", "825642c4218b"):
     assert current_commit in THREE_DOMAIN_COMMITS
-    assert current_commit in LOW_SPEED_BRAKE_PID_COMMITS
+    if current_commit != "825642c4218b":
+      assert current_commit in LOW_SPEED_BRAKE_PID_COMMITS
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
     assert valid and note == "raw three-domain coast split"
     np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
-    np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
+    expected_entry = -0.30 if current_commit == "825642c4218b" else -0.50
+    np.testing.assert_array_equal(current_threshold[100:], np.full(100, expected_entry))
 
   # The command-fidelity baseline keeps the same domain thresholds but deliberately removes the
   # low-speed supplemental brake PID. Its gas-seed ownership refactor is behavior-identical.
