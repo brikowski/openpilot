@@ -1949,4 +1949,36 @@ Nested commit `4dc05c99cf7a` briefly added three simultaneous Odyssey command ch
  `backup/ody-op-agile-upstream-merge-20260904-904b6027cb` for historical comparison, but it is not
  a road candidate. Any future brake-scale or low-speed authority work must be split into its own
  candidate with a first-divergence hypothesis, mutation check, replay shape check, and closed-loop
- exposure.
+exposure.
+
+### Low-speed stopped-lead stop-intent candidate screen (2026-09-04)
+
+The next candidate is planner-side and remains inactive on `ody-op`. Symptom: on route 12's
+08:38 stopped-lead approach, the request and Honda wire stayed aligned while the request relaxed
+near 1 mph and both planner and model `shouldStop` stayed false. The first repeatable divergence is
+therefore the planner's stop intent, not Honda CAN translation. The physical hypothesis is that a
+near-stopped lead at a short, closing gap while the ego vehicle is already crawling should enter
+the generic stopping state before the current `vEgo < 0.3 m/s` gate, while a slowly moving lead
+must remain a normal following target.
+
+The provisional replay-screen predicate is deliberately conservative and diagnostic only:
+`vEgo < 1.0 m/s`, `aTarget < -0.05 m/s2`, a present lead with `vLead < 0.35 m/s`,
+`vRel < 0`, and `dRel < 6.5 m`. It would set stop intent; it would not alter the raw
+`ACCEL_COMMAND` or Honda domain selection. This follows the existing upstream planner/MPC lead
+trajectory and `LongCtrlState.stopping` mechanisms rather than adding a Honda brake floor. Baseline
+is current raw-command `ody-op`; the candidate lives on a temporary child and rolls back by deleting
+the child without changing the parent or nested gitlink.
+
+Applying the predicate to the locally cached full-rate extracts found seven candidate episodes:
+one each on routes 10, 12, and 38, two on route 44, and two on route 6d. Every episode already
+reached the recorded generic `shouldStop` within four seconds and none exceeded 1.6 mph in that
+window. This is useful exposure screening, not counterfactual or closed-loop proof: frozen logs
+cannot show whether an earlier stop intent would false-stop a moving lead or improve the gap.
+
+Success requires mutation-verified predicate tests, planner replay showing earlier stop intent with
+unchanged request-to-wire/domain fidelity, then controlled stopped-lead and at least three
+independent ordinary-road examples with complete stop, no false stop on a moving lead, no added
+onset/lurch/pulsing, and no driver takeover. Reject immediately for a false stop, late or unsafe
+gap, clear drivability regression, or any wire/domain mismatch; otherwise retire after three
+adequately exposed examples without attributable improvement. No production or device change is
+authorized by this screen.
