@@ -2616,3 +2616,19 @@ they do not alter driving weights or control commands.
 **Decision: keep the current small model and `ody-op` source pins.** Do not import these PRs into the
 Odyssey arm. Recheck the list and model pointers after the next upstream fetch succeeds; this web
 check does not replace exact local source resolution or a road result.
+
+### Upstream Cabana refresh after live fetch (2026-09-05)
+
+The live fetch advanced `upstream/master` from `a989bc0b50` through `444be0a649` and
+`a4f7c50d2a` (Cabana frame pacing and sparkline rendering fixes). These commits touch only
+`openpilot/tools/cabana`; they do not change the longitudinal planner, `longcontrol`, lateral
+controller, Honda CAN translation, safety limits, model pointers, or the nested opendbc pin. The
+same content is now in the parent as clean cherry-picks `34a638d6d3` and `2d6131d840`, and in the
+supervised stopped-lead child as `c002d4ed9a` and `2243a6d349`. A direct path diff against
+`upstream/master` is empty for the Cabana files, while the remaining parent-only delta is the
+documented Odyssey tooling/evidence surface.
+
+The nested `opendbc_repo/upstream/master` remains `3e92d1121295`, three commits beyond the pinned
+`825642c4218b`; those VW/HR-V/docs changes remain unrelated and must not be merged independently.
+**Decision: keep the current Odyssey runtime and nested pin; import only the non-runtime Cabana
+refresh, with no Honda behavior change.**
