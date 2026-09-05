@@ -2073,3 +2073,14 @@ brake-domain flips and no forceful flip. This validates baseline command/domain 
 it cannot predict the candidate's earlier `STANDSTILL` state or vehicle response. **KEEP the
 candidate as an unroaded child for controlled exposure; keep `ody-op` unchanged and do not claim
 stopping improvement until closed-loop evidence exists.**
+
+Route `0000001d--2e324ec2ce` (2026-09-05) is a new full-rate baseline exposure, not a stop-intent
+candidate drive. Its exact source was parent `784b05ce670a`, nested opendbc `825642c4218b`, clean
+`ody-op`, Alpha Long enabled, and Experimental mode off. It contained 18.5 engaged minutes and
+24 driver brake presses, of which 8 were attributed takeovers. The eight takeover contexts were
+all high-speed cruise/lead approaches (about 18.9-69.4 mph); none met the candidate's low-speed,
+close, near-stopped-lead screen. The route still records 73 physical brake-domain edges (peak 8
+per 10 s; 18/min on descents), felt-jerk RMS `0.376 m/s3` versus commanded `0.221`, and a PID
+stop-lurch readout, but those are baseline downhill/actuator symptoms rather than evidence for
+widening the stopped-lead predicate. Keep the stop-intent child unchanged and classify this route
+as baseline context; it supplies no closed-loop candidate example.

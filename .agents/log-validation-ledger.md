@@ -262,3 +262,4 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-09-04 | 00000013--dee84c0d75 | ody-op | 0bd54951753f | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
 | 2026-09-04 | 00000012--9ea63a15e3 | ody-op | 0bd54951753f | 71.8 | 83.9 | 0 | 0.147 | 0.005 | - | - | 0.005 | 0.013 | 4 | 0.3 | 0.1 | 1038/2560 | 0.2% | 3 | none |
 | 2026-09-05 | 0000001c--ca2ae44633 | ody-op | 31a1776c7bf4 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
+| 2026-09-05 | 0000001d--2e324ec2ce | ody-op | 825642c4218b | 18.5 | 12.3 | 0 | 0.243 | 0.008 | - | - | 0.010 | 0.011 | 8 | 0.0 | 4.3 | 1709/2560 | 0.6% | 0 | brake takeovers, brake-domain transition bursts, ride harshness (felt) |
