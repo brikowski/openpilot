@@ -2055,6 +2055,26 @@ gap, clear drivability regression, or any wire/domain mismatch; otherwise retire
 adequately exposed examples without attributable improvement. No production or device change is
 authorized by this screen.
 
+### Upstream generic stopping PR screen (2026-09-05)
+
+OpenPilot PR [#38658](https://github.com/commaai/openpilot/pull/38658) was inspected as a
+possible stopping precedent, but it is not a Honda-port change. Its current tip
+`1aa815ed0851` changes the generic `shouldStop` speed gate from `0.30` to `0.25 m/s` and changes
+the `LongControl` stopping ramp from `1.0` to `0.3 m/s3`; its replay report shows one changed
+segment and 65 unchanged segments, with a Corolla road report. The speed-gate tightening does not
+address the Odyssey's earlier stopped-lead trigger, while the slower ramp trades away stop
+authority.
+
+For the Odyssey stopped-lead screen's recorded initial output of `-0.21 m/s2` and
+`CP.stopAccel=-2.00 m/s2`, the current ramp reaches approximately `-0.71/-1.21/-1.71/-2.00`
+at `0.5/1.0/1.5/1.79 s`. The PR ramp would reach only `-0.36/-0.51/-0.66/-0.81` at
+`0.5/1.0/1.5/2.0 s` and would not reach `-2.00` within 2.5 s. This is frozen command-shape
+evidence, not a vehicle-response result, but it makes the tradeoff material for a car whose
+reported failure is rolling through a lead stop. **Decision: do not import #38658 into the
+Odyssey arm.** Keep the existing stopping ramp and evaluate planner stop intent independently;
+reopen the generic ramp only with matched Odyssey stopped-lead stop-distance, jerk, and
+moving-lead-release evidence.
+
 The temporary child `tmp/ody-op-stop-intent-20260904` added a five-frame persistence gate after the
 first planner replay exposed a one-frame true/false/true flicker. Mutation testing made the focused
 test fail when the persistence comparison changed from `>= 5` to `> 5`. On route 12 segment 79,
