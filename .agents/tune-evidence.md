@@ -2021,9 +2021,9 @@ first planner replay exposed a one-frame true/false/true flicker. Mutation testi
 test fail when the persistence comparison changed from `>= 5` to `> 5`. On route 12 segment 79,
 baseline plannerd replay produced 319 `shouldStop` frames and first asserted at 4770.193 s; the
 candidate produced 387 frames and first asserted at 4766.792 s, about 3.4 s earlier, with no
-intermediate flicker. The candidate did not change `aTarget` or Honda CAN generation. Both replays
-produced 1,200 plans from 2,400 process outputs; the repeated initial MPC reset messages were the
-same on both arms.
+intermediate flicker. The candidate did not change `aTarget`; this planner-only replay does not
+exercise `card` or Honda CAN generation. Both replays produced 1,200 plans from 2,400 process
+outputs; the repeated initial MPC reset messages were the same on both arms.
 
 Three additional segment A/B screens were consistent with earlier intent: route 44 candidate
 replayed 870 stop frames and first asserted at 540.602 s versus 810/543.603 s on baseline; route
@@ -2034,9 +2034,10 @@ it is only a software screen. The repeated later route-44 transitions were ident
 the candidate changes the early lead-stop state rather than general planner timing. None of these
 replays is closed-loop evidence or permission to deploy.
 
-The direct Honda controller replay over the adjacent route-12 stop segment remained unchanged by
-the planner child: replayed request-to-wire RMS was `0.00594 m/s2`, replay-vs-recorded wire RMS
-`0.00968 m/s2`, with two open-loop brake-domain flips and no forceful flip. This validates the
-command/domain boundary only; it cannot predict the counterfactual vehicle response after an
-earlier stop intent. **KEEP the candidate as an unroaded child for controlled exposure; keep
-`ody-op` unchanged and do not claim stopping improvement until closed-loop evidence exists.**
+The fixed-input Honda controller replay over the adjacent route-12 stop segment (using recorded
+`carControl`, so it does not apply the candidate's counterfactual stopping state) had
+request-to-wire RMS `0.00594 m/s2`, replay-vs-recorded wire RMS `0.00968 m/s2`, with two open-loop
+brake-domain flips and no forceful flip. This validates baseline command/domain translation only;
+it cannot predict the candidate's earlier `STANDSTILL` state or vehicle response. **KEEP the
+candidate as an unroaded child for controlled exposure; keep `ody-op` unchanged and do not claim
+stopping improvement until closed-loop evidence exists.**
