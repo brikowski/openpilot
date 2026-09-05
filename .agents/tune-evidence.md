@@ -1999,6 +1999,11 @@ into `LongCtrlState.stopping`, Honda's controller advances its existing `stoppin
 `hondacan.create_acc_commands()` emits the established `STANDSTILL=1`/`STANDSTILL_RELEASE=0`
 state while retaining the same raw `ACCEL_COMMAND` and gas/brake-domain selection. No new Honda CAN
 field or brake shaping is introduced by this candidate.
+A direct pack/decode check against nested `825642c421` confirms the boundary: with the same active
+`ACCEL_COMMAND=-0.50 m/s2`, `BRAKE_REQUEST=1`, and inactive `GAS_COMMAND`, changing
+`stopping_counter` from `0` to `1` changes only `STANDSTILL` from `0` to `1` and
+`STANDSTILL_RELEASE` from `1` to `0`. This is software command-shape evidence, not a claim about
+Honda's closed-loop response.
 
 The raw route-12 segment-79 trace makes the ownership boundary concrete. At the provisional trigger
 near `53267.70 s` (route-relative `4766.79 s`), baseline `longitudinalPlan.aTarget` and
