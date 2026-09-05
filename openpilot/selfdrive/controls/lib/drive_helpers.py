@@ -25,6 +25,7 @@ STOPPED_LEAD_MAX_SPEED = 0.35
 STOPPED_LEAD_MAX_GAP = 6.5
 STOPPED_LEAD_MAX_REL_SPEED = 0.0
 STOPPED_LEAD_MAX_TARGET_ACCEL = -0.05
+STOPPED_LEAD_MIN_FRAMES = 5
 
 
 def stopped_lead_should_stop(v_ego: float, a_target: float, lead) -> bool:
@@ -35,6 +36,10 @@ def stopped_lead_should_stop(v_ego: float, a_target: float, lead) -> bool:
               lead.vLead < STOPPED_LEAD_MAX_SPEED and
               lead.vRel < STOPPED_LEAD_MAX_REL_SPEED and
               lead.dRel < STOPPED_LEAD_MAX_GAP)
+
+
+def stopped_lead_stop_intent(candidate: bool, candidate_frames: int) -> bool:
+  return bool(candidate and candidate_frames >= STOPPED_LEAD_MIN_FRAMES)
 
 def clamp(val, min_val, max_val):
   clamped_val = float(np.clip(val, min_val, max_val))

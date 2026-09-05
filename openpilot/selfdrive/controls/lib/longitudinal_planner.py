@@ -11,7 +11,8 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
-from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, should_stop, stopped_lead_should_stop
+from openpilot.selfdrive.controls.lib.drive_helpers import (CONTROL_N, get_accel_from_plan, should_stop,
+                                                             stopped_lead_should_stop, stopped_lead_stop_intent)
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
@@ -65,6 +66,7 @@ class LongitudinalPlanner:
     self.a_cruise = init_a
     self.output_a_target = init_a
     self.output_should_stop = False
+    self.stopped_lead_candidate_frames = 0
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -128,8 +130,11 @@ class LongitudinalPlanner:
                                               action_t=action_t)
     lead = (sm['radarState'].leadOne if self.mpc.source == LongitudinalPlanSource.lead0
             else sm['radarState'].leadTwo)
+    stopped_lead_candidate = stopped_lead_should_stop(v_ego, output_a_target_mpc, lead)
+    self.stopped_lead_candidate_frames = (self.stopped_lead_candidate_frames + 1
+                                          if stopped_lead_candidate else 0)
     output_should_stop_mpc = (should_stop(v_ego, output_a_target_mpc) or
-                              stopped_lead_should_stop(v_ego, output_a_target_mpc, lead))
+                              stopped_lead_stop_intent(stopped_lead_candidate, self.stopped_lead_candidate_frames))
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 

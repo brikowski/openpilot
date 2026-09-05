@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from openpilot.selfdrive.controls.lib.drive_helpers import stopped_lead_should_stop
+from openpilot.selfdrive.controls.lib.drive_helpers import stopped_lead_should_stop, stopped_lead_stop_intent
 
 
 def _lead(**kwargs):
@@ -26,3 +26,9 @@ def test_stopped_lead_screen_rejects_each_unsafe_or_incomplete_condition():
 
   assert not stopped_lead_should_stop(1.0, -0.20, _lead())
   assert not stopped_lead_should_stop(0.42, -0.05, _lead())
+
+
+def test_stopped_lead_stop_intent_requires_persistence():
+  assert not stopped_lead_stop_intent(True, 4)
+  assert stopped_lead_stop_intent(True, 5)
+  assert not stopped_lead_stop_intent(False, 5)
