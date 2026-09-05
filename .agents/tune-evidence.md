@@ -2440,10 +2440,12 @@ is present: `driving_supercombo.onnx` remains `f0672eab4856`, and the prior `93f
 reverted upstream.
 
 Cleanup removed the superseded stop-intent refs, one-off replay/analysis artifacts, generated Python
-caches, stale HTML maneuver reports, and nested safety-test object/coverage files. The active
-supervised worktree `tmp/ody-op-stop-intent-road-20260905`, private route/download/extract caches,
-and reusable build/UV caches are intentionally retained. No tracked Claude skill or root
-`CLAUDE.md` remains; project guidance is `AGENTS.md` plus `.agents/`.
+caches, stale HTML maneuver reports, nested safety-test object/coverage files, the candidate's empty
+legacy `.claude` tree, and the separate staging worktree's editor/cache/gcov debris. Empty maneuver
+report directories were also removed; their generators recreate them on demand. The active supervised
+worktree `tmp/ody-op-stop-intent-road-20260905`, private route/download/extract caches, and reusable
+build/UV caches are intentionally retained. No tracked Claude skill or root `CLAUDE.md` remains;
+project guidance is `AGENTS.md` plus `.agents/`.
 
 The current device check still has no LAN presence (SSH timeout, ping loss, incomplete ARP), so its
 checkout, updater target, services, and route inventory remain unverified until it reconnects. The
