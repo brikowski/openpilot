@@ -5,6 +5,7 @@ from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, Big
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigInputDialog, BigConfirmationCircleButton
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
+from openpilot.selfdrive.ui.layouts.settings.lateral_maneuver import set_lateral_maneuver_mode
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.widgets.ssh_key import SshKeyFetcher
 
@@ -178,7 +179,7 @@ class DeveloperLayoutMici(NavScroller):
     restart_needed_callback()
 
   def _on_lat_maneuver_mode(self, state: bool):
-    ui_state.params.put_bool("LateralManeuverMode", state, block=True)
+    set_lateral_maneuver_mode(ui_state.params, state)
     ui_state.params.put_bool("ExperimentalMode", False, block=True)
     ui_state.params.put_bool("JoystickDebugMode", False, block=True)
     self._joystick_toggle.set_checked(False)

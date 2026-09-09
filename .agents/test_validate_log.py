@@ -1,0 +1,1139 @@
+import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import validate_log
+from validate_log import (
+  BRAKE_ONSET_RATE_LIMIT_COMMITS,
+  ODYSSEY,
+  LOW_SPEED_BRAKE_PID_COMMITS,
+  THREE_DOMAIN_COMMITS,
+  _base_route,
+  _brake_passthrough_expected,
+  _domain_model,
+  _has_learner_telemetry,
+  _local_segment_names,
+  _model_provenance,
+  _opendbc_pointer_full,
+  _suggest_status_rows,
+  domain_achieved_following_metrics,
+  lateral_metrics,
+  write_ledger_md,
+)
+from tuning_metrics import (
+  after_grace,
+  brake_episode_metrics,
+  brake_release_hold_metrics,
+  causal_lpf,
+  command_transition_metrics,
+  cruise_input_metrics,
+  descent_hold_metrics,
+  gas_reentry_pulse_metrics,
+  hold_last,
+  level_positive_response_metrics,
+  max_edges_in_window,
+  negative_request_gas_metrics,
+  physical_edges,
+  post_edge_window,
+  shadow_windfactor_metrics,
+  sign_disagreement_metrics,
+  steering_forwarding_metrics,
+  stop_lurch_metrics,
+  under_set_speed_metrics,
+)
+
+
+def test_steering_forwarding_matches_counter_and_measures_radar_extension():
+  t = np.arange(100, dtype=float) * 0.01
+  torque = np.concatenate((np.zeros(20), np.full(40, 2560.0), np.full(40, 3000.0)))
+  request = np.ones(100)
+  counter = np.arange(100) % 4
+  sent = np.column_stack((t, torque, request, counter))
+  forwarded_torque = torque.copy()
+  forwarded_torque[-40:] = 2800.0
+  received = np.column_stack((t + 0.02, forwarded_torque, request, counter))
+  # Same counter but outside the bounded transport window must not match a stale source frame.
+  received = np.vstack((received, [1.20, 100.0, 1.0, 0.0]))
+  state_t = np.arange(0.0, 1.3, 0.01)
+  state_count = len(state_t)
+
+  metrics = steering_forwarding_metrics(
+    sent, received, state_t, np.full(state_count, 25.0), np.zeros(state_count),
+    np.zeros(state_count), np.zeros(state_count),
+    min_speed=70.0 / 3.6, cap_command=2559, extended_command=2560,
+    settle_s=0.20, max_delay_s=0.10,
+  )
+
+  assert metrics["lat_radar_forward_matched_frames"] == 100
+  assert np.isclose(metrics["lat_radar_forward_delay_ms_median"], 20.0)
+  assert metrics["lat_radar_forward_source_max_abs"] == 3000.0
+  assert metrics["lat_radar_forward_output_max_abs"] == 2800.0
+  assert np.isclose(metrics["lat_radar_forward_extended_source_sec"], 0.40)
+  assert np.isclose(metrics["lat_radar_forward_extended_output_sec"], 0.40)
+  assert np.isclose(metrics["lat_radar_forward_extended_gain_median"], 2800.0 / 3000.0)
+
+
+def test_domain_achieved_following_separates_gas_and_brake_response():
+  requested = np.array([0.5] * 60 + [-0.5] * 60)
+  achieved = np.array([0.3] * 60 + [-0.2] * 60)
+  speed = np.full(120, 20.0)
+  gas = np.arange(120) < 60
+
+  gas_metrics = domain_achieved_following_metrics(requested, achieved, speed, gas, 0.01)
+  brake_metrics = domain_achieved_following_metrics(requested, achieved, speed, ~gas, 0.01)
+
+  assert np.isclose(gas_metrics["achieved_sec"], 0.6)
+  assert np.isclose(gas_metrics["achieved_rms"], 0.2)
+  assert np.isclose(gas_metrics["achieved_error_mean"], -0.2)
+  assert np.isclose(gas_metrics["achieved_under_median"], 0.2)
+  assert gas_metrics["achieved_under_frac"] == 1.0
+  assert np.isclose(brake_metrics["achieved_sec"], 0.6)
+  assert np.isclose(brake_metrics["achieved_rms"], 0.3)
+  assert np.isclose(brake_metrics["achieved_error_mean"], 0.3)
+  assert np.isclose(brake_metrics["achieved_under_median"], 0.3)
+  assert brake_metrics["achieved_under_frac"] == 1.0
+
+
+def test_local_segment_names_ignore_empty_interrupted_pull_directories(tmp_path):
+  route = "00000026--8d38fff2db"
+  for index in (10, 2):
+    segment = tmp_path / f"{route}--{index}"
+    segment.mkdir()
+    (segment / "rlog.zst").touch()
+  (tmp_path / f"{route}--4").mkdir()
+
+  assert _local_segment_names(route, tmp_path) == [f"{route}--2", f"{route}--10"]
+
+
+class _ProvenanceMessage:
+  def __init__(self, service, **fields):
+    self._service = service
+    setattr(self, service, SimpleNamespace(**fields))
+
+  def which(self):
+    return self._service
+
+
+def test_provenance_records_exact_source_model_mode_and_selected_settings(monkeypatch):
+  parent = "a" * 40
+  nested = "b" * 40
+  small_blob = "c" * 40
+  big_blob = "d" * 40
+  monkeypatch.setattr(validate_log, "_git_tree_entries", lambda _commit, _paths: {
+    "opendbc_repo": ("160000", "commit", nested),
+    validate_log.MODEL_PATHS["small"]: ("100644", "blob", small_blob),
+    validate_log.MODEL_PATHS["big"]: ("100644", "blob", big_blob),
+  })
+  params = SimpleNamespace(entries=[
+    SimpleNamespace(key="AlphaLongitudinalEnabled", value=b"1"),
+    SimpleNamespace(key="ExperimentalMode", value=b"0"),
+    SimpleNamespace(key="LongitudinalPersonality", value=b"1"),
+    SimpleNamespace(key="UpdaterTargetBranch", value=b"ody-op"),
+    SimpleNamespace(key="CalibrationParams", value=b"do-not-record"),
+  ])
+  msgs = [
+    _ProvenanceMessage("initData", gitCommit=parent, gitBranch="ody-op", dirty=False,
+                       gitRemote="https://example.invalid/openpilot.git", version="0.11.2",
+                       passive=False, params=params),
+    _ProvenanceMessage("modelV2", big=False),
+    _ProvenanceMessage("selfdriveState", experimentalMode=False, personality="standard"),
+  ]
+
+  provenance = validate_log._provenance(msgs)
+
+  assert provenance["git_commit"] == parent[:12]
+  assert provenance["git_commit_full"] == parent
+  assert provenance["opendbc_commit"] == nested[:12]
+  assert provenance["opendbc_commit_full"] == nested
+  assert provenance["model_kind"] == "small"
+  assert provenance["model_blob_full"] == small_blob
+  assert provenance["model_small_blob_full"] == small_blob
+  assert provenance["model_big_blob_full"] == big_blob
+  assert provenance["experimental_mode"] is False
+  assert provenance["longitudinal_personality"] == "standard"
+  assert provenance["settings"] == {
+    "AlphaLongitudinalEnabled": "1",
+    "ExperimentalMode": "0",
+    "LongitudinalPersonality": "1",
+    "UpdaterTargetBranch": "ody-op",
+  }
+  assert provenance["provenance_exact"]
+
+
+def test_provenance_does_not_claim_exact_source_for_dirty_or_mixed_model(monkeypatch):
+  monkeypatch.setattr(validate_log, "_git_tree_entries", lambda *_args: {
+    "opendbc_repo": ("160000", "commit", "b" * 40),
+    validate_log.MODEL_PATHS["small"]: ("100644", "blob", "c" * 40),
+    validate_log.MODEL_PATHS["big"]: ("100644", "blob", "d" * 40),
+  })
+  params = SimpleNamespace(entries=[])
+  msgs = [
+    _ProvenanceMessage("initData", gitCommit="a" * 40, gitBranch="ody-op", dirty=True,
+                       gitRemote="https://example.invalid/openpilot.git", version="0.11.2",
+                       passive=False, params=params),
+    _ProvenanceMessage("modelV2", big=False),
+    _ProvenanceMessage("modelV2", big=True),
+    _ProvenanceMessage("selfdriveState", experimentalMode=False, personality="standard"),
+  ]
+
+  provenance = validate_log._provenance(msgs)
+
+  assert provenance["opendbc_commit_full"] is None
+  assert provenance["model_kind"] == "mixed"
+  assert provenance["model_blob_full"] is None
+  assert provenance["model_kind_values"] == ["small", "big"]
+  assert not provenance["provenance_exact"]
+
+
+def test_provenance_requires_full_parent_sha(monkeypatch):
+  monkeypatch.setattr(validate_log, "_git_tree_entries", lambda *_args: {
+    "opendbc_repo": ("160000", "commit", "b" * 40),
+    validate_log.MODEL_PATHS["small"]: ("100644", "blob", "c" * 40),
+  })
+  msgs = [
+    _ProvenanceMessage("initData", gitCommit="a" * 12, gitBranch="ody-op", dirty=False,
+                       version="0.11.2", params=SimpleNamespace(entries=[])),
+    _ProvenanceMessage("modelV2", big=False),
+  ]
+
+  provenance = validate_log._provenance(msgs)
+
+  assert provenance["opendbc_commit_full"] == "b" * 40
+  assert not provenance["provenance_exact"]
+
+
+def test_provenance_resolves_sunnypilot_vendored_opendbc(monkeypatch):
+  parent = "a" * 40
+  base = "b" * 40
+  nested = "c" * 40
+
+  def tree(commit, _paths):
+    if commit == parent:
+      return {"opendbc_repo": ("040000", "tree", "d" * 40)}
+    if commit == base:
+      return {"opendbc_repo": ("160000", "commit", nested)}
+    return {}
+
+  monkeypatch.setattr(validate_log, "_git_tree_entries", tree)
+  monkeypatch.setattr(validate_log, "_git_commit_message",
+                      lambda commit: (f"sunnypilot v2026.003.000 (staging)\nmaster commit: {base}\n"
+                                      if commit == parent else ""))
+
+  assert _opendbc_pointer_full(parent, False) == nested
+  assert _opendbc_pointer_full(parent, True) is None
+
+
+def test_model_provenance_uses_sunnypilot_tinygrad_manifest():
+  manifest = "e" * 40
+  msgs = [_ProvenanceMessage("modelV2", big=False)]
+  entries = {
+    validate_log.MODEL_FALLBACK_PATHS["small"]: ("100644", "blob", manifest),
+  }
+
+  kind, values, selected, small, big = _model_provenance(msgs, entries)
+
+  assert kind == "small"
+  assert values == ["small"]
+  assert selected == small == manifest
+  assert big is None
+
+
+def test_brake_episode_metrics_distinguish_progressive_and_sudden_onsets():
+  grid = np.arange(0.0, 6.0, 0.01)
+  brake = (grid >= 1.0) & (grid < 5.0)
+  common = {
+    "brake_request": brake,
+    "controlling": np.ones(len(grid), dtype=bool),
+    "brake_pressed": np.zeros(len(grid), dtype=bool),
+    "speed": np.full(len(grid), 20.0),
+    "pitch": np.full(len(grid), -0.02),
+    "min_speed": 5.0,
+    "downhill_pitch": -0.012,
+    "min_duration_s": 0.3,
+    "smooth_tau": 0.20,
+    "jerk_window_s": 0.10,
+  }
+  progressive = np.zeros(len(grid))
+  progressive[brake] = -np.minimum((grid[brake] - 1.0) / 3.0, 1.0)
+  sudden = np.zeros(len(grid))
+  sudden[brake] = -1.0
+
+  slow = brake_episode_metrics(grid, progressive, **common)
+  fast = brake_episode_metrics(grid, sudden, **common)
+
+  assert slow["brake_episode_count"] == slow["downhill_brake_episode_count"] == 1
+  assert slow["brake_episode_ramp80_median"] > 2.0
+  assert fast["brake_episode_ramp80_median"] < 0.5
+  assert fast["brake_episode_onset_jerk_median"] < slow["brake_episode_onset_jerk_median"]
+
+
+def test_domain_model_selects_exact_opendbc_source_semantics():
+  requested = np.full(200, -0.10)
+  speed = np.array([4.0] * 100 + [20.0] * 100)
+  pitch = np.full(200, -0.05)
+  windfactor = np.full(200, 0.5)
+
+  switch, threshold, valid, note = _domain_model(
+    "f6e4f07bdc61", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid and note == "raw upstream split"
+  np.testing.assert_array_equal(switch, requested)
+  np.testing.assert_array_equal(threshold, np.full(200, -0.20))
+
+  candidate_commit = "candidate123"
+  THREE_DOMAIN_COMMITS.add(candidate_commit)
+  try:
+    switch, threshold, valid, note = _domain_model(
+      candidate_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+  finally:
+    THREE_DOMAIN_COMMITS.discard(candidate_commit)
+  assert valid and note == "raw three-domain coast split"
+  np.testing.assert_array_equal(switch, requested)
+  np.testing.assert_array_equal(threshold[:100], np.zeros(100))
+  np.testing.assert_array_equal(threshold[100:], np.full(100, -0.30))
+
+  # Exact-pinned deployed revisions with source-identical Honda longitudinal output must stay mapped;
+  # otherwise their road evidence silently loses the domain and low-speed attribution checks.
+  for current_commit in ("41aaf59ee6f2", "507559bc03ba", "955bd74c3562", "825642c4218b", "9e9eeeb25084"):
+    assert current_commit in THREE_DOMAIN_COMMITS
+    if current_commit not in ("825642c4218b", "9e9eeeb25084"):
+      assert current_commit in LOW_SPEED_BRAKE_PID_COMMITS
+    _, current_threshold, valid, note = _domain_model(
+      current_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+    assert valid and note == "raw three-domain coast split"
+    np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+    expected_entry = -0.30 if current_commit in ("825642c4218b", "9e9eeeb25084") else -0.50
+    np.testing.assert_array_equal(current_threshold[100:], np.full(100, expected_entry))
+
+  # The command-fidelity baseline keeps the same domain thresholds but deliberately removes the
+  # low-speed supplemental brake PID. Its gas-seed ownership refactor is behavior-identical.
+  for current_commit in ("09a52a2bf003", "e86b4ba94621"):
+    assert current_commit in THREE_DOMAIN_COMMITS
+    assert current_commit not in LOW_SPEED_BRAKE_PID_COMMITS
+    _, current_threshold, valid, note = _domain_model(
+      current_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+    assert valid and note == "raw three-domain coast split"
+    np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+    np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.50))
+
+  # The -0.30 arm and its descendants keep source-identical brake-domain behavior. Later revisions
+  # retire independent gas calibration, adopt upstream gas mapping, and simplify scalar code only.
+  for current_commit in ("6ff9761fc72e", "17e1f614d8b3", "843b22ab0a74",
+                         "2dcbb30f5a53", "929540bbcf79", "5144f8b2fe94",
+                         "9d6f42dd4fce", "f52c828fdf49", "871b98a64f6e",
+                         "aa8a2e60fbad", "0bd54951753f", "31a1776c7bf4",
+                         "9e9eeeb25084"):
+    _, current_threshold, valid, note = _domain_model(
+      current_commit, requested, speed, pitch, windfactor, 0.01,
+    )
+    assert current_commit in THREE_DOMAIN_COMMITS
+    assert current_commit not in LOW_SPEED_BRAKE_PID_COMMITS
+    assert valid and note == "raw three-domain coast split"
+    np.testing.assert_array_equal(current_threshold[:100], np.zeros(100))
+    np.testing.assert_array_equal(current_threshold[100:], np.full(100, -0.30))
+
+  assert _brake_passthrough_expected("f52c828fdf49")
+  assert _brake_passthrough_expected("31a1776c7bf4")
+  for onset_commit in ("871b98a64f6e", "aa8a2e60fbad", "0bd54951753f"):
+    assert onset_commit in BRAKE_ONSET_RATE_LIMIT_COMMITS
+    assert not _brake_passthrough_expected(onset_commit)
+
+  # Historical route provenance must retain the threshold that was actually deployed, even when
+  # the current candidate's default has moved.
+  _, old_threshold, valid, _ = _domain_model(
+    "3169fd4cc3fa", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid
+  np.testing.assert_array_equal(old_threshold[100:], np.full(100, -0.30))
+
+  switch, threshold, valid, note = _domain_model(
+    "e29fe3dccd09", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert valid and note == "legacy compensated ody-op split"
+  assert switch[0] == requested[0]
+  assert switch[-1] < requested[-1]
+  np.testing.assert_allclose(threshold[[0, -1]], np.array([0.01, -0.30]))
+
+  switch, threshold, valid, note = _domain_model(
+    "unknown", requested, speed, pitch, windfactor, 0.01,
+  )
+  assert switch is threshold is None
+  assert not valid and "unmapped" in note
+
+
+def test_learner_telemetry_is_only_read_from_legacy_caroutput_semantics():
+  assert not _has_learner_telemetry("3169fd4cc3fa")
+  assert not _has_learner_telemetry("f453a51e0081")
+  assert _has_learner_telemetry("e29fe3dccd09")
+  assert not _has_learner_telemetry("future-unknown")
+
+
+def test_hold_last_does_not_invent_intermediate_can_values():
+  grid = np.array([-0.01, 0.00, 0.01, 0.02, 0.03, 0.04])
+  sent_at = np.array([0.00, 0.02, 0.04])
+  commands = np.array([-30000.0, 60.0, 120.0])
+
+  assert hold_last(grid, sent_at, commands).tolist() == [-30000.0, -30000.0, -30000.0, 60.0, 60.0, 120.0]
+
+
+def test_after_grace_ignores_one_can_period_but_keeps_a_latch():
+  one_period = np.array([False, True, True, False])
+  latched = np.array([False, True, True, True, True, False])
+
+  assert not after_grace(one_period, 0.01, 0.02).any()
+  assert after_grace(latched, 0.01, 0.02).tolist() == [False, False, False, True, True, False]
+
+
+def test_verdict_reports_direct_gas_handoff_without_inventing_a_limit():
+  route = {
+    "crashes": 0,
+    "track_rms": None,
+    "passthrough_rms": None,
+    "gasf_eff_mean": None,
+    "windf_mean": None,
+    "overshoot_frac": 0.0,
+    "creep_frames": 0,
+    "gas_handoff_events": 2,
+    "gas_handoff_max": 1200.0,
+  }
+
+  handoff = next(v for v in validate_log.verdicts(route)
+                 if v["check"] == "gas handoff command (diagnostic)")
+
+  assert handoff["ok"]
+  assert handoff["status"] is None
+  assert "1200 counts" in handoff["detail"]
+  assert "no calibrated handoff limit" in handoff["detail"]
+
+
+def test_verdict_records_alpha_long_mode_without_grading_the_mode():
+  route = {
+    "crashes": 0,
+    "track_rms": None,
+    "passthrough_rms": None,
+    "gasf_eff_mean": None,
+    "windf_mean": None,
+    "alpha_longitudinal": False,
+    "overshoot_frac": 0.0,
+    "creep_frames": 0,
+  }
+
+  mode = next(v for v in validate_log.verdicts(route)
+              if v["check"] == "Alpha Long mode (diagnostic)")
+
+  assert mode["ok"]
+  assert mode["status"] is None
+  assert mode["detail"] == "disabled (stock radar longitudinal)"
+
+
+def test_causal_lpf_can_reproduce_a_zero_initialized_controller_filter():
+  samples = np.ones(3)
+
+  assert causal_lpf(samples, dt=0.1, tau=0.1).tolist() == [1.0, 1.0, 1.0]
+  assert causal_lpf(samples, dt=0.1, tau=0.1, initial=0.0).tolist() == [0.5, 0.75, 0.875]
+
+
+def test_physical_edges_do_not_splice_disjoint_mask_windows():
+  signal = np.array([False, False, True, True, True, True])
+  split_mask = np.array([True, True, False, False, True, True])
+  contiguous_mask = np.array([True, True, True, False, False, False])
+
+  assert physical_edges(signal, split_mask).tolist() == []
+  assert physical_edges(signal, contiguous_mask).tolist() == [2]
+
+
+def test_brake_burst_uses_real_timestamps():
+  times = np.array([0.0, 0.5, 1.0, 9.9, 10.1, 20.0])
+
+  assert max_edges_in_window(times, 10.0) == 4
+  assert max_edges_in_window(np.array([]), 10.0) == 0
+
+
+def test_post_edge_window_excludes_transport_period():
+  window = post_edge_window(np.array([10]), length=100, dt=0.01, start_s=0.02, end_s=0.50)
+
+  assert not window[11]
+  assert window[12]
+  assert window[59]
+  assert not window[60]
+
+
+def _transition_trace(brake_release_frame, first_gas):
+  """Build a complete inactive -> active -> gas trace for mutation-style metric tests."""
+  n = 80
+  grid = np.arange(n, dtype=float) * 0.01
+  engaged = np.zeros(n, dtype=bool)
+  engaged[10:] = True
+  requested = np.zeros(n)
+  requested[10:] = 0.1
+  vego = np.zeros(n)
+  brake_pressed = np.zeros(n, dtype=bool)
+  brake_request = np.zeros(n, dtype=bool)
+  brake_request[10:brake_release_frame] = True
+  gas = np.full(n, -30000.0)
+  gas[brake_release_frame:] = first_gas
+  wire = np.full(n, -2.0)
+  wire[brake_release_frame:] = 0.1
+  return command_transition_metrics(
+    grid, requested, engaged, vego, brake_pressed, brake_request, gas, wire,
+    low_speed_vego=5.0,
+    request_threshold=0.02,
+    command_period_s=0.02,
+    reengage_window_s=0.50,
+    gas_inactive=-30000,
+  )
+
+
+def test_transition_golden_trace_accepts_transport_skew_and_reports_direct_gas_handoff():
+  """The fixed trace stays clean while still proving every detector was exercised.
+  """
+  metrics = _transition_trace(brake_release_frame=12, first_gas=1200)
+
+  assert metrics == {
+    "low_speed_conflict_sec": 0.0,
+    "low_speed_conflict_events": 0,
+    "low_speed_conflict_worst": 0.0,
+    "low_speed_conflict_skew_frames": 2,
+    "reengagement_events": 1,
+    "reengagement_stale_sec": 0.0,
+    "reengagement_stale_events": 0,
+    "reengagement_stale_worst": 0.0,
+    "gas_handoff_events": 1,
+    "gas_handoff_max": 1200.0,
+    "direct_gas_to_brake": 0,
+    "direct_brake_to_gas": 0,
+  }
+
+
+def test_transition_mutation_detects_latch_without_grading_direct_gas_handoff():
+  """A direct gas handoff stays diagnostic while the mutated brake lifecycle must fail."""
+  metrics = _transition_trace(brake_release_frame=25, first_gas=1200)
+
+  assert np.isclose(metrics["low_speed_conflict_sec"], 0.13)
+  assert metrics["low_speed_conflict_events"] == 1
+  assert np.isclose(metrics["reengagement_stale_sec"], 0.13)
+  assert metrics["reengagement_stale_events"] == 1
+  assert metrics["gas_handoff_events"] == 1
+  assert metrics["gas_handoff_max"] == 1200.0
+
+
+def test_transition_mutation_detects_direct_domains_but_accepts_coast_interlock():
+  def run(brake, gas):
+    n = len(brake)
+    return command_transition_metrics(
+      np.arange(n, dtype=float) * 0.01, np.zeros(n), np.ones(n, dtype=bool),
+      np.full(n, 20.0), np.zeros(n, dtype=bool), np.array(brake, dtype=bool),
+      np.array(gas, dtype=float), np.zeros(n), low_speed_vego=5.0,
+      request_threshold=0.02, command_period_s=0.02, reengage_window_s=0.50,
+      gas_inactive=-30000,
+    )
+
+  direct = run([False, False, True, True, False], [60, 60, -30000, -30000, 60])
+  interlocked = run([False, False, False, True, False, False],
+                    [60, 60, -30000, -30000, -30000, 60])
+
+  assert direct["direct_gas_to_brake"] == 1
+  assert direct["direct_brake_to_gas"] == 1
+  assert interlocked["direct_gas_to_brake"] == 0
+  assert interlocked["direct_brake_to_gas"] == 0
+
+
+def test_gas_reentry_pulse_metric_isolates_tiny_short_coast_reentry():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:190] = 100.0
+  requested = np.zeros(len(grid))
+  requested[150:190] = 0.01
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 1
+  assert metrics["gas_reentry_pulse_short_events"] == 1
+  assert metrics["gas_reentry_pulse_tiny_events"] == 1
+  assert metrics["gas_reentry_pulse_tiny_short_events"] == 1
+  assert np.isclose(metrics["gas_reentry_pulse_duration_median"], 0.39)
+  assert np.isclose(metrics["gas_reentry_pulse_entry_request_max"], 0.01)
+
+
+def test_gas_reentry_pulse_metric_does_not_call_brake_handoff_a_pulse():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_request[100:150] = True
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:260] = 100.0
+  requested = np.full(len(grid), 0.10)
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 0
+
+
+def test_gas_reentry_pulse_metric_ignores_disengagement_exit():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  engaged[190:] = False
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[150:190] = 100.0
+  requested = np.full(len(grid), 0.01)
+
+  metrics = gas_reentry_pulse_metrics(
+    grid, requested, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, gas_inactive=-30000,
+    entry_request_max=0.02, short_duration_s=1.0, entry_window_s=0.02,
+  )
+
+  assert metrics["gas_reentry_pulse_events"] == 0
+
+
+def test_negative_request_gas_metric_measures_upstream_domain_split():
+  grid = np.arange(0.0, 2.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[50:120] = 100.0
+  requested = np.zeros(len(grid))
+  requested[50:120] = -0.10
+
+  metrics = negative_request_gas_metrics(
+    grid, requested, engaged, vego, brake_pressed, brake_request, gas,
+    low_speed_vego=5.0, request_threshold=-0.02, gas_inactive=-30000,
+  )
+
+  assert np.isclose(metrics["negative_request_gas_sec"], 0.70)
+  assert metrics["negative_request_gas_events"] == 1
+  assert np.isclose(metrics["negative_request_gas_longest"], 0.70)
+  assert np.isclose(metrics["negative_request_gas_request_min"], -0.10)
+
+
+def test_negative_request_gas_metric_excludes_brake_domain_and_threshold_boundary():
+  grid = np.arange(0.0, 1.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_request[20:40] = True
+  gas = np.full(len(grid), 100.0)
+  requested = np.full(len(grid), -0.01)
+  requested[40:60] = -0.10
+
+  metrics = negative_request_gas_metrics(
+    grid, requested, engaged, vego, brake_pressed, brake_request, gas,
+    low_speed_vego=5.0, request_threshold=-0.02, gas_inactive=-30000,
+  )
+
+  assert np.isclose(metrics["negative_request_gas_sec"], 0.20)
+  assert metrics["negative_request_gas_events"] == 1
+  assert np.isclose(metrics["negative_request_gas_request_min"], -0.10)
+
+
+def test_sign_disagreement_ignores_transport_and_separates_downhill():
+  requested = np.full(12, 0.1)
+  wire = np.zeros(12)
+  brake = np.zeros(12, dtype=bool)
+  brake[1:6] = True       # after 20 ms grace: frames 3-5 remain
+  brake[7:10] = True      # after grace: frame 9 remains
+  active = np.ones(12, dtype=bool)
+  pitch = np.zeros(12)
+  pitch[3:6] = -0.03
+
+  metrics = sign_disagreement_metrics(
+    requested, wire, brake, active, pitch,
+    request_threshold=0.02,
+    downhill_pitch=-0.012,
+    dt=0.01,
+    transition_grace_s=0.02,
+  )
+
+  assert np.isclose(metrics["sign_disagree_frac"], 4 / 12)
+  assert np.isclose(metrics["sign_disagree_downhill_frac"], 3 / 12)
+  assert np.isclose(metrics["sign_disagree_non_grade_frac"], 1 / 12)
+  assert metrics["sign_disagree_transition_frames"] == 4
+
+
+def test_creep_detector_can_actually_fire():
+  """`creep at stop` has never flagged in 79 drives - prove that is the car, not a dead check.
+
+  tune-evidence.md habit #1: a check you have never seen fail is not evidence. This drives the exact
+  predicate with a synthetic creep (rolling forward at 1 m/s while the planner asks <= 0) and
+  asserts it trips, so a future edit that silently disables it goes red.
+  """
+  creep_vego, creep_aego, min_frames = 2.0, 0.15, 50
+  n = 200
+  active = np.ones(n, dtype=bool)
+  vego = np.full(n, 1.0)
+  cc_accel = np.full(n, -0.10)      # planner asking for no drive torque
+  aego = np.full(n, 0.20)           # ...and the van rolling forward anyway
+
+  creep = active & (vego < creep_vego) & (cc_accel <= 0.0) & (aego > creep_aego)
+  run = best = 0
+  for c in creep:
+    run = run + 1 if c else 0
+    best = max(best, run)
+  assert best >= min_frames, "creep predicate cannot fire even on a synthetic creep"
+
+  # And the healthy case must NOT fire, or the check is vacuous in the other direction.
+  healthy = active & (vego < creep_vego) & (cc_accel <= 0.0) & (np.full(n, -0.05) > creep_aego)
+  assert not healthy.any()
+
+
+def test_sign_disagreement_severity_uses_the_request_not_the_wire_error():
+  """The wire error is near-zero exactly where the domain withholds gas; grade the request.
+
+  Guards the 2026-08-05 finding: ACCEL_COMMAND carries the request faithfully through a domain
+  hold, so `sign_disagree_worst` (min(wire - requested)) stays tiny no matter how much
+  acceleration was actually withheld. If the withheld-request fields are ever re-derived from
+  `wire` this test goes red.
+  """
+  n = 22
+  requested = np.full(n, 0.40)   # openpilot asking for real acceleration
+  wire = requested.copy()        # ...and the wire carrying it perfectly
+  brake = np.zeros(n, dtype=bool)
+  brake[1:21] = True             # 20 frames latched; 2 lost to the 20 ms grace
+  active = np.ones(n, dtype=bool)
+  pitch = np.zeros(n)
+
+  m = sign_disagreement_metrics(
+    requested, wire, brake, active, pitch,
+    request_threshold=0.02, downhill_pitch=-0.012, dt=0.01, transition_grace_s=0.02,
+  )
+
+  # The error-based number sees nothing at all here - that is the whole point.
+  assert np.isclose(m["sign_disagree_worst"], 0.0)
+  # The request-based numbers see the full severity.
+  assert m["sign_disagree_events"] == 1
+  assert np.isclose(m["sign_disagree_sec"], 0.18)
+  assert np.isclose(m["sign_disagree_longest"], 0.18)
+  assert np.isclose(m["sign_disagree_withheld_worst"], 0.40)
+  assert np.isclose(m["sign_disagree_withheld_integral"], 18 * 0.01 * 0.40)
+  # Mutation guard: withheld severity must not collapse when the wire tracks the request.
+  assert m["sign_disagree_withheld_integral"] > abs(m["sign_disagree_worst"])
+
+
+def test_release_hold_uses_compensated_entry_predicate_and_measures_runs():
+  switch_accel = np.array([-0.3, -0.3, -0.19, -0.1, 0.0, 0.1,
+                           -0.3, -0.3, -0.15, -0.05, 0.05, -0.3])
+  entry = np.full(12, -0.2)
+  requested = np.linspace(-0.1, 0.12, 12)
+  actual = requested - 0.2
+  brake = np.zeros(12, dtype=bool)
+  brake[1:6] = True
+  brake[7:11] = True
+  active = np.ones(12, dtype=bool)
+
+  metrics = brake_release_hold_metrics(
+    switch_accel, entry, requested, actual, brake, active, dt=0.01,
+  )
+
+  assert np.isclose(metrics["brake_release_hold_sec"], 0.07)
+  assert metrics["brake_release_hold_events"] == 2
+  assert np.isclose(metrics["brake_release_hold_max"], 0.04)
+  assert np.isclose(metrics["brake_release_hold_force_margin_mean"], np.mean([0.01, 0.1, 0.2, 0.3, 0.05, 0.15, 0.25]))
+  assert np.isclose(metrics["brake_release_hold_tracking_mean"], -0.2)
+
+
+def _descent_hold_trace(n=300, request=0.1, pitch_val=-0.02, hold_frames=80):
+  """One 0.8 s hold plus one 0.3 s sub-threshold run, at 100 Hz."""
+  requested = np.full(n, request)
+  brake = np.zeros(n, dtype=bool)
+  brake[10:10 + hold_frames] = True     # candidate episode
+  brake[200:230] = True                 # 0.3 s run: always below the 0.5 s episode floor
+  active = np.ones(n, dtype=bool)
+  pitch = np.full(n, pitch_val)
+  return descent_hold_metrics(
+    requested, brake, active, pitch,
+    request_threshold=0.02, downhill_pitch=-0.012, min_episode_s=0.5, dt=0.01,
+  )
+
+
+def test_descent_hold_counts_only_sustained_downhill_positive_request_holds():
+  m = _descent_hold_trace()
+  assert m["descent_hold_episodes"] == 1
+  assert np.isclose(m["descent_hold_sec"], 0.8)
+  assert np.isclose(m["descent_hold_longest"], 0.8)
+
+  # Mutations: each gate condition removed must zero the count, or the counter proves nothing.
+  assert _descent_hold_trace(hold_frames=40)["descent_hold_episodes"] == 0   # too short
+  assert _descent_hold_trace(pitch_val=0.0)["descent_hold_episodes"] == 0    # not a descent
+  assert _descent_hold_trace(request=-0.1)["descent_hold_episodes"] == 0     # request not positive
+
+
+def test_reledger_preserves_drive_date_and_description(monkeypatch, tmp_path):
+  jsonl = tmp_path / "ledger.jsonl"
+  monkeypatch.setattr(validate_log, "LEDGER_JSONL", jsonl)
+  monkeypatch.setattr(validate_log, "LEDGER_MD", tmp_path / "ledger.md")
+  r = {"platform": "X", "engaged_min": 1.0}
+  validate_log.append_ledger("00000042--aabbccddee", "first pass", r, [])
+  first = json.loads(jsonl.read_text().splitlines()[0])
+  # Backfill rerun on a later day: date and description must survive, metrics must refresh.
+  monkeypatch.setattr(validate_log, "datetime", _FrozenDate)
+  validate_log.append_ledger("00000042--aabbccddee", None, {**r, "engaged_min": 2.0}, [])
+  rows = [json.loads(l) for l in jsonl.read_text().splitlines()]
+  assert len(rows) == 1
+  assert rows[0]["date"] == first["date"]
+  assert rows[0]["description"] == "first pass"
+  assert rows[0]["engaged_min"] == 2.0
+
+
+class _FrozenDate:
+  @staticmethod
+  def now(tz=None):
+    from datetime import datetime as _dt
+    return _dt(2030, 1, 1, tzinfo=tz)
+
+
+def _shadow_trace(error_sign=1.0, *, gas_live=True, braking=False):
+  n = 200
+  grid = np.arange(n, dtype=float) * 0.01
+  requested = np.full(n, 0.1 * error_sign)
+  actual = np.zeros(n)
+  speed = np.full(n, 22.0)
+  pitch = np.zeros(n)
+  active_pid = np.ones(n, dtype=bool)
+  pedal = np.zeros(n, dtype=bool)
+  brake_request = np.full(n, braking, dtype=bool)
+  gas = np.full(n, 100.0 if gas_live else -30000.0)
+  return shadow_windfactor_metrics(
+    grid, requested, actual, speed, pitch, active_pid, pedal, pedal, brake_request, gas,
+    gas_inactive=-30000.0,
+    gas_max=2000.0,
+    accel_min=-3.5,
+    accel_max=2.0,
+    base_drag=np.full(n, 0.136),
+    initial_windfactor=0.5,
+    windfactor_min=0.1,
+    windfactor_max=3.0,
+    learn_divisor=500.0,
+    update_period_s=0.02,
+    min_speed=15.0,
+    steady_accel=0.3,
+    steady_pitch_rate=0.003,
+    accel_rail_margin=0.2,
+    gas_rail_margin=100.0,
+  )
+
+
+def test_shadow_windfactor_moves_only_on_identifiable_gas_frames():
+  increasing = _shadow_trace(error_sign=1.0)
+  decreasing = _shadow_trace(error_sign=-1.0)
+  inactive_gas = _shadow_trace(gas_live=False)
+  braking = _shadow_trace(braking=True)
+
+  assert increasing["windf_shadow_end"] > 0.5
+  assert decreasing["windf_shadow_end"] < 0.5
+  assert increasing["windf_shadow_eligible_min"] > 0.0
+  assert inactive_gas["windf_shadow_eligible_min"] == 0.0
+  assert inactive_gas["windf_shadow_end"] == 0.5
+  assert braking["windf_shadow_eligible_min"] == 0.0
+  assert braking["windf_shadow_end"] == 0.5
+
+
+def test_under_set_speed_metrics_isolates_sustained_no_lead_cruise_holds():
+  n = 600
+  grid = np.arange(n, dtype=float) * 0.01
+  set_speed = np.full(n, 20.0)
+  speed = set_speed.copy()
+  speed[100:400] -= 0.5
+  requested = np.full(n, 0.30)
+  actual = np.zeros(n)
+  pitch = np.full(n, 0.05)
+  active = np.ones(n, dtype=bool)
+  visible = np.ones(n, dtype=bool)
+  cruise = np.ones(n, dtype=bool)
+  allow_throttle = np.ones(n, dtype=bool)
+  has_lead = np.zeros(n, dtype=bool)
+  pedal = np.zeros(n, dtype=bool)
+
+  metrics = under_set_speed_metrics(
+    grid, set_speed, speed, requested, actual, pitch, active, visible, cruise,
+    allow_throttle, has_lead, pedal, pedal,
+    speed_min=3.0, gap_min=0.5 * 0.44704, gap_max=1.5 * 0.44704,
+    request_min=0.05, min_episode_s=2.0,
+  )
+
+  assert metrics["under_set_speed_events"] == 1
+  assert np.isclose(metrics["under_set_speed_sec"], 3.0)
+  assert np.isclose(metrics["under_set_speed_longest"], 3.0)
+  assert np.isclose(metrics["under_set_speed_gap_median"], 0.5)
+  assert np.isclose(metrics["under_set_speed_request_median"], 0.30)
+  assert np.isclose(metrics["under_set_speed_aego_median"], 0.0)
+  assert np.isclose(metrics["under_set_speed_response_error_mean"], -0.30)
+  assert np.isclose(metrics["under_set_speed_pitch_median"], 0.05)
+
+  # Mutations: each attribution gate must suppress the event rather than silently broadening it.
+  no_throttle = under_set_speed_metrics(
+    grid, set_speed, speed, requested, actual, pitch, active, visible, cruise,
+    np.zeros(n, dtype=bool), has_lead, pedal, pedal,
+    speed_min=3.0, gap_min=0.5 * 0.44704, gap_max=1.5 * 0.44704,
+    request_min=0.05, min_episode_s=2.0,
+  )
+  assert no_throttle["under_set_speed_events"] == 0
+  assert no_throttle["under_set_speed_gap_median"] is None
+  assert under_set_speed_metrics(
+    grid, set_speed, speed, requested, actual, pitch, active, visible, cruise,
+    allow_throttle, np.ones(n, dtype=bool), pedal, pedal,
+    speed_min=3.0, gap_min=0.5 * 0.44704, gap_max=1.5 * 0.44704,
+    request_min=0.05, min_episode_s=2.0,
+  )["under_set_speed_events"] == 0
+  assert under_set_speed_metrics(
+    grid, set_speed, speed, requested, actual, pitch, active, visible,
+    np.zeros(n, dtype=bool), allow_throttle, has_lead, pedal, pedal,
+    speed_min=3.0, gap_min=0.5 * 0.44704, gap_max=1.5 * 0.44704,
+    request_min=0.05, min_episode_s=2.0,
+  )["under_set_speed_events"] == 0
+
+
+def test_level_positive_response_metrics_requires_full_attribution_mask():
+  n = 600
+  grid = np.arange(n, dtype=float) * 0.01
+  requested = np.full(n, 0.30)
+  actual = np.full(n, 0.10)
+  wire = requested.copy()
+  speed = np.full(n, 20.0)
+  pitch = np.zeros(n)
+  active = np.ones(n, dtype=bool)
+  cruise = np.ones(n, dtype=bool)
+  allow_throttle = np.ones(n, dtype=bool)
+  has_lead = np.zeros(n, dtype=bool)
+  pedal = np.zeros(n, dtype=bool)
+
+  metrics = level_positive_response_metrics(
+    grid, requested, actual, wire, speed, pitch, active, cruise, allow_throttle,
+    has_lead, pedal, pedal,
+    speed_min=3.0, pitch_abs_max=0.02, request_min=0.10, min_episode_s=2.0,
+  )
+
+  assert metrics["level_positive_events"] == 1
+  assert np.isclose(metrics["level_positive_sec"], 6.0)
+  assert np.isclose(metrics["level_positive_longest"], 6.0)
+  assert np.isclose(metrics["level_positive_request_median"], 0.30)
+  assert np.isclose(metrics["level_positive_aego_median"], 0.10)
+  assert np.isclose(metrics["level_positive_response_error_mean"], -0.20)
+  assert np.isclose(metrics["level_positive_response_error_rms"], 0.20)
+  assert np.isclose(metrics["level_positive_wire_rms"], 0.0)
+  assert np.isclose(metrics["level_positive_pitch_median"], 0.0)
+
+  # Mutation gates: a hill, a lead, or a driver pedal must remove the exposure rather than
+  # silently turning a different situation into a level-road response sample.
+  for mutation in ("pitch", "lead", "pedal"):
+    mutated_pitch = np.full(n, 0.03) if mutation == "pitch" else pitch
+    mutated_lead = np.ones(n, dtype=bool) if mutation == "lead" else has_lead
+    mutated_gas = np.ones(n, dtype=bool) if mutation == "pedal" else pedal
+    assert level_positive_response_metrics(
+      grid, requested, actual, wire, speed, mutated_pitch, active, cruise, allow_throttle,
+      mutated_lead, mutated_gas, pedal,
+      speed_min=3.0, pitch_abs_max=0.02, request_min=0.10, min_episode_s=2.0,
+    )["level_positive_events"] == 0
+
+
+def test_cruise_input_metrics_preserves_edges_and_set_speed_changes():
+  button_times = np.array([10.0, 10.2, 11.0, 11.2])
+  button_types = np.array(["accelCruise", "accelCruise", "cancel", "cancel"], dtype=object)
+  button_pressed = np.array([True, False, True, False])
+  set_speed_times = np.array([9.0, 9.1, 10.3, 11.1, 11.2])
+  set_speed = np.array([15.0, 15.0, 16.0, 14.0, 14.0])
+
+  metrics = cruise_input_metrics(
+    button_times, button_types, button_pressed, set_speed_times, set_speed,
+    route_start=9.0,
+  )
+
+  assert metrics["cruise_button_press_events"] == 2
+  assert metrics["cruise_button_press_counts"] == {"accelCruise": 1, "cancel": 1}
+  assert metrics["cruise_button_events"][0] == {
+    "time_s": 1.0, "type": "accelCruise", "pressed": True,
+  }
+  assert metrics["cruise_set_speed_change_events"] == 2
+  assert metrics["cruise_set_speed_up_events"] == 1
+  assert metrics["cruise_set_speed_down_events"] == 1
+  assert np.isclose(metrics["cruise_set_speed_up_max_mps"], 1.0)
+  assert np.isclose(metrics["cruise_set_speed_down_max_mps"], -2.0)
+  assert metrics["cruise_set_speed_changes"][0]["time_s"] == 1.3
+
+  # Mutation checks: removing presses must not manufacture input, and a constant set speed must
+  # not manufacture a transition from repeated samples.
+  no_presses = cruise_input_metrics(
+    button_times, button_types, np.zeros_like(button_pressed), set_speed_times, set_speed,
+    route_start=9.0,
+  )
+  assert no_presses["cruise_button_press_events"] == 0
+  constant_speed = cruise_input_metrics(
+    button_times, button_types, button_pressed, set_speed_times, np.full_like(set_speed, 15.0),
+    route_start=9.0,
+  )
+  assert constant_speed["cruise_set_speed_change_events"] == 0
+  unset = cruise_input_metrics(
+    [], [], [], [0.0, 0.1], [255.0 / 3.6, 15.0], route_start=0.0,
+  )
+  assert unset["cruise_set_speed_change_events"] == 0
+
+
+def test_stop_lurch_attributes_request_to_wire_to_actuator():
+  requested = np.array([0.2, 0.5, -0.4, -0.6, -1.2])
+  wire = np.array([0.2, 0.5, -0.4, -0.7, -1.2])
+  actual = np.array([-0.8, 0.1, -0.5, -1.0, -1.3])
+  speed = np.array([0.0, 1.0, 1.8, 1.2, 0.7])
+  engaged = np.ones(5, dtype=bool)
+  stop_state = np.array([False, False, False, False, True])
+
+  metrics = stop_lurch_metrics(
+    requested, wire, actual, speed, engaged, stop_state,
+    min_speed=0.25,
+    max_speed=2.0,
+  )
+
+  # The stationary decel noise, positive actual acceleration, and hardest absolute decel are not
+  # lurch events. The moving -1.0 sample exceeds its milder request by 0.4 and splits cleanly.
+  assert np.isclose(metrics["stop_lurch_worst"], 1.0)
+  assert np.isclose(metrics["stop_lurch_excess"], 0.4)
+  assert np.isclose(metrics["stop_lurch_wire_extra"], 0.1)
+  assert np.isclose(metrics["stop_lurch_actuator_extra"], 0.3)
+  assert np.isclose(metrics["stop_lurch_speed"], 1.2)
+  assert not metrics["stop_lurch_in_stopping"]
+
+
+def test_base_route_normalizes_local_and_api_forms():
+  route = "0000003b--aeccafe9e4"
+
+  assert _base_route(route) == route
+  assert _base_route(f"805f87f5e96d128c/{route}/a") == route
+  assert _base_route(f"{route}--42") == route
+
+
+def test_write_ledger_md_escapes_flag_column_delimiters(monkeypatch, tmp_path):
+  ledger = tmp_path / "ledger.md"
+  monkeypatch.setattr(validate_log, "LEDGER_MD", ledger)
+  row = {
+    "date": "2026-08-04",
+    "route": "00000055--b6c9bb3917",
+    "verdicts": [{"check": "track RMS |aEgo-aTarget|", "ok": False}],
+  }
+
+  write_ledger_md([row])
+
+  table_row = ledger.read_text().splitlines()[-1]
+  assert "track RMS &#124;aEgo-aTarget&#124;" in table_row
+  assert len(table_row.split("|")) == 22
+
+
+def test_lateral_metrics_reports_command_output_and_safety_telemetry():
+  n = 100
+  grid = np.arange(n, dtype=float) * 0.01
+  active = np.ones(n, dtype=bool)
+  requested = np.full(n, 0.5)
+  output = requested.copy()
+  output[30:40] -= 0.1
+  output_can = output * 3840.0
+  steering_pressed = np.zeros(n, dtype=bool)
+  steering_pressed[50:55] = True
+  steer_fault_temp = np.zeros(n, dtype=bool)
+  steer_fault_temp[70:72] = True
+  steer_fault_perm = np.zeros(n, dtype=bool)
+  saturated = np.zeros(n, dtype=bool)
+  saturated[80:85] = True
+  actual = np.full(n, 0.8)
+  desired = np.full(n, 1.0)
+
+  metrics = lateral_metrics(
+    grid, active, requested, output, output_can, np.full(n, 25.0), steering_pressed,
+    steer_fault_temp, steer_fault_perm, saturated, actual, desired,
+    np.full(n, 2.0), np.full(n, 3.0), 0.01,
+  )
+
+  assert np.isclose(metrics["lat_active_sec"], 1.0)
+  assert np.isclose(metrics["lat_follow_mean"], -0.01)
+  assert metrics["lat_output_torque_can_abs_max"] == 1920.0
+  assert np.isclose(metrics["lat_saturated_frac"], 0.05)
+  assert np.isclose(metrics["lat_model_rms"], 0.2)
+  assert metrics["steering_override_events"] == 1
+  assert metrics["steer_fault_events"] == 1
+
+
+def test_lateral_metrics_reports_high_authority_openpilot_following():
+  n = 200
+  grid = np.arange(n, dtype=float) * 0.01
+  active = np.ones(n, dtype=bool)
+  requested = np.ones(n)
+  output = requested.copy()
+  output_can = np.full(n, 2560.0)
+  vego = np.full(n, 25.0)
+  steering_pressed = np.zeros(n, dtype=bool)
+  steering_pressed[100:120] = True
+  no_fault = np.zeros(n, dtype=bool)
+  saturated = np.zeros(n, dtype=bool)
+  desired = np.concatenate((np.ones(100), -np.ones(100)))
+  actual = np.concatenate((np.full(100, 0.8), np.full(100, -0.7)))
+
+  metrics = lateral_metrics(
+    grid, active, requested, output, output_can, vego, steering_pressed,
+    no_fault, no_fault, saturated, actual, desired,
+    np.full(n, 2.0), np.full(n, 3.0), 0.01,
+  )
+
+  assert np.isclose(metrics["lat_high_authority_sec"], 1.8)
+  assert np.isclose(metrics["lat_high_authority_rms"], np.sqrt((100 * 0.2 ** 2 + 80 * 0.3 ** 2) / 180))
+  assert np.isclose(metrics["lat_high_authority_under_median"], 0.2)
+  assert metrics["lat_high_authority_under_frac"] == 1.0
+  assert metrics["lat_high_authority_output_abs_median"] == 2560.0
+  assert metrics["lat_high_authority_output_abs_max"] == 2560.0
+
+
+def _status_row(route, opendbc_commit, flagged=True):
+  return {
+    "route": route,
+    "platform": ODYSSEY,
+    "opendbc_commit": opendbc_commit,
+    "engaged_min": 10.0,
+    "verdicts": [{
+      "check": "brake-domain transition bursts",
+      "ok": not flagged,
+      "status": "brake-domain chatter - revisit hysteresis",
+    }],
+  }
+
+
+def test_status_suggestions_do_not_mix_opendbc_configurations():
+  rows = [
+    _status_row("00000001--aaaaaaaaaa", "old"),
+    _status_row("00000002--bbbbbbbbbb", "current"),
+  ]
+
+  assert _suggest_status_rows(rows, "00000002--bbbbbbbbbb") == []
+
+
+def test_status_suggestions_promote_repeated_symptom_on_same_opendbc():
+  rows = [
+    _status_row("00000001--aaaaaaaaaa", "current"),
+    _status_row("00000002--bbbbbbbbbb", "current"),
+  ]
+
+  suggestions = _suggest_status_rows(rows, "00000002--bbbbbbbbbb")
+  assert len(suggestions) == 1
+  assert "flagged in 2/2 recent logs" in suggestions[0]

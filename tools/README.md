@@ -62,3 +62,37 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 ├── replay/             # Replay drives and mock openpilot services
 └── sim/                # Run openpilot in a simulator
 ```
+
+## Private Odyssey workflow
+
+This checkout also exposes a small set of explicit VS Code tasks in
+[`../.vscode/tasks.json`](../.vscode/tasks.json):
+
+- **Pull and Validate New Logs** SSH-pulls retained private full-rate rlogs and updates the
+  authoritative validation ledger. The task sets `UV_CACHE_DIR` to a writable temporary cache.
+- **Validate One Route** re-runs the authoritative validator for one already-local route without
+  pulling anything. **Inspect Following Trace** prints the planner → `carControl` → wire → `aEgo`
+  trace for the same route; both tasks prompt for a route ID or unique prefix.
+- **Inspect Upstream Delta** fetches the two upstream remotes and prints history-only object counts
+  plus the recent 20 commits in both directions of the parent and nested delta, along with the
+  upstream-pinned nested commit. The counts describe commit identity, so a cherry-picked change
+  can be source-equivalent while still appearing in both histories; inspect the actual diff before
+  importing anything. **Sync Upstream Locally**
+  runs `.agents/sync_upstream.py`; it can rewrite local history, never pushes, and requires both
+  repositories to be clean and on `ody-op`.
+- **Run Jotpluggler** and **Run Cabana** inspect a local route; build the binaries once with
+  `tools/op.sh build openpilot/tools/jotpluggler/jotpluggler openpilot/tools/cabana/cabana` if they
+  are not present. Cabana accepts `live` for the comma device at `192.168.1.200`.
+- **Run Odyssey software checks** runs the focused lint, Odyssey rail/sync tests, and the nested
+  `opendbc_repo/test.sh` suite. These are software/CAN-safety gates, not ride-quality evidence.
+- **Publish and Deploy ody-op** is the guarded custom deployment. It requires clean paired
+  repositories, matching parent/submodule SHAs, publishes `opendbc_repo` before the parent, builds,
+  and reboots the device.
+The former **Recover device on sunnypilot/staging** and **Verify device on sunnypilot/staging**
+VS Code tasks were removed after repeated unreliable swaps. `tools/deploy_staging.sh` remains only
+as an explicit manual fallback for a deliberate recovery; it destructively switches
+`/data/openpilot` to the official Sunnypilot `origin/staging`, sets `UpdaterTargetBranch=staging`
+and `AlphaLongitudinalEnabled=0`, reboots, and verifies exact state after reconnecting. It accepts
+`ODYSSEY_DEVICE` and `ODYSSEY_SSH_KEY` overrides.
+
+Project agent guidance lives in [`../AGENTS.md`](../AGENTS.md) and [`../.agents/`](../.agents/).
