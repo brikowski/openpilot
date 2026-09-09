@@ -3778,7 +3778,7 @@ domain threshold to mask this pulse. The next longitudinal candidate must separa
 upstream cruise-trajectory or actuator-response hypothesis against the immediately preceding
 road-known-good `ody-op` pair; the present routes do not justify a Honda command shaper.
 
-### Unpromoted steep-downhill planner throttle-gate candidate (2026-09-08)
+### Retired steep-downhill planner throttle-gate candidate (2026-09-08)
 
 The first repeatable divergence on route `00000009--8ce01166d6` is the non-Experimental `cruise`
 planner request: near set speed on the steep descent, `aTarget` repeatedly crosses from roughly
@@ -3803,7 +3803,9 @@ validation-ledger row's `git_commit_full` field, paired with its `opendbc_commit
 remain the source-equivalent command baseline for the affected controls path, with the parent/model
 and nested lateral-source differences recorded above. The device pair, gitlink, clean state, build,
 reboot, and startup health were verified; no road evidence has been collected for this pair yet.
-The road arm remains unpromoted and requires an exact-source supervised road test covering one
-steep descent and one mild descent, with `AlphaLongitudinalEnabled=1`, `ExperimentalMode=0`,
-standard personality, and the small model. Reject it for renewed brake cycling, sustained
-underspeed, late lead braking, or any planner-to-wire divergence.
+**Decision: RETIRE before road testing.** The candidate changed the upstream planner request rather
+than the Honda command translation, which violates the command-source boundary for this objective
+and could mask planner/model behavior that should remain observable as OpenPilot improves. No road
+promotion evidence was collected for it. Preserve this hypothesis and its route analysis as
+historical evidence; do not reopen it under the Honda port objective. A future upstream runtime
+change requires a separately authorized planner/model objective.

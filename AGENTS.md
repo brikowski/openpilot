@@ -26,6 +26,13 @@ controlled or ordinary-road drives validate closed-loop behavior. Every candidat
 mutation-verified tests, an isolated baseline comparison, and an explicit keep/change/retire decision.
 Retired mechanisms remain historical and are not reopened without new first-divergence evidence.
 
+For this Honda command-following objective, treat the pinned upstream OpenPilot planner, model, and
+controllers as the command source. Vehicle-runtime changes are limited to the nested `opendbc`
+Honda port, DBC, and safety translation; root OpenPilot changes may add diagnostics, tests, or
+evidence but must not alter vehicle behavior. If the first divergence is upstream of `carControl`,
+document and diagnose it rather than masking it in the Honda port. An upstream runtime fix requires
+a separate explicitly authorized planner/model objective.
+
 ## What this branch is
 
 `ody-op` is the recovery baseline and shared tooling/evidence branch for Honda Bosch command following on
