@@ -3856,3 +3856,15 @@ fixture because route `d7233a428eb7d0b5/00000001--9b99b04d43`, declared in
 `opendbc/car/tests/routes.py`, is absent from the local replay cache. The preflash result is
 therefore **FAIL / DO NOT FLASH**, not a runtime regression finding. The device remains clean on
 Sunnypilot `staging` at root `40d6afd30042e9a1bb452f42d3b6e67ecd00c98f`; no deployment was made.
+
+### Device restored to official Sunnypilot staging (2026-09-11)
+
+After the interrupted, canceled `ody-op` switch was stopped, the device checkout was restored
+from the verified official staging ref and the interrupted checkout artifacts were removed. The
+device now verifies clean on branch `staging` at parent `40d6afd30042e9a1bb452f42d3b6e67ecd00c98f`
+(`sunnypilot v2026.003.000`, upstream base `6135084c941d4d947dd90c78326a557c3c857f89`, exact
+embedded `opendbc` source `f95f996f5917dcbbf2e32fe51b606a24cf836af6`). Both `origin` and
+`sunnypilot` point to `https://github.com/sunnypilot/sunnypilot.git`; the in-tree source is clean,
+`UpdaterTargetBranch=staging`, `UpdaterState=idle`, `UpdateAvailable=0`,
+`AlphaLongitudinalEnabled=0`, and no services are failed. The device was rebooted after recovery.
+This is deployment-health evidence only; it is not Odyssey command-following or road evidence.
