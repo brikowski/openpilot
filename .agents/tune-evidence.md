@@ -3809,3 +3809,19 @@ and could mask planner/model behavior that should remain observable as OpenPilot
 promotion evidence was collected for it. Preserve this hypothesis and its route analysis as
 historical evidence; do not reopen it under the Honda port objective. A future upstream runtime
 change requires a separately authorized planner/model objective.
+
+### Stock-radar staging provenance audit (2026-09-12)
+
+The newly pulled Sunnypilot staging routes `00000008--0ae67238ab` through
+`00000017--7db38e968b` all report parent `40d6afd30042e9a1bb452f42d3b6e67ecd00c98f`,
+which is the `sunnypilot v2026.003.000` release built from upstream parent
+`6135084c941d4d947dd90c78326a557c3c857f89`. The vendor tree resolves to exact nested
+`opendbc` source `f95f996f5917dcbbf2e32fe51b606a24cf836af6` through that upstream parent's
+gitlink. All sixteen routes have Alpha Long disabled and zero OpenPilot engaged minutes, so
+they are not closed-loop candidate evidence.
+
+Route `00000017--7db38e968b` is still useful as an offline stock-radar command reference: its
+native bus-0 `ACC_CONTROL` stream contains 114,890 frames at 50.1 Hz, 12 brake episodes, no
+direct gas-to-brake transitions, and zero `AEB_STATUS`, `AEB_PREPARE`, or `AEB_BRAKING` frames.
+Those observations describe stock command shape only; they do not justify a Honda tune change or
+provide Alpha-Long CMBS/AEB evidence.
