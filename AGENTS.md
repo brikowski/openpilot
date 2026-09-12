@@ -51,6 +51,14 @@ acceleration while the three-domain selector, direct gas mapping, and low-speed 
 active. New model or radar experiments must be one hypothesis committed directly to `ody-op`, then
 deployed only after the software gate for a supervised road test.
 
+Alpha Long has a separate safety boundary on this Bosch Odyssey: enabling
+`openpilotLongitudinalControl` disables the Bosch radar ECU through the Honda UDS
+communication-control path, and the controller keeps it disabled with tester-present messages.
+Treat Honda CMBS, including stock AEB and FCW, as unavailable during Alpha Long road tests.
+This is independent of the Panda `alternativeExperience` AEB-forwarding flag and of safety
+guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the radar ECU is
+disabled.
+
 The former `ody-op-radar` arm is closed after its first engaged route, and both implementation
 branches are deleted. It changed radar availability and published a camera-side object/fusion bank;
 it did not change the retained Honda longitudinal CAN translation. On route
