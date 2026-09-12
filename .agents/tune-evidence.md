@@ -3846,3 +3846,13 @@ command/domain translation and stock lateral map; make no Honda CAN/DBC change f
 Alpha Long's separate safety boundary remains unchanged: its Bosch radar disable makes Honda CMBS,
 including factory AEB and FCW, unavailable during those routes; this is not evidence that the
 Honda command path should be reshaped to restore it.
+
+### Deployment gate recheck (2026-09-12)
+
+Before any device switch, the current clean root `6f2033e9e5f0fd1231caa66ea0645eedec0ceeef`
+and nested `opendbc` `3d2280daf310e942a1ee3f246f6cd768f5b198bd` passed the Odyssey longitudinal
+rail suite (`20 passed, 58 subtests`). The Honda model preflash test could not construct its
+fixture because route `d7233a428eb7d0b5/00000001--9b99b04d43`, declared in
+`opendbc/car/tests/routes.py`, is absent from the local replay cache. The preflash result is
+therefore **FAIL / DO NOT FLASH**, not a runtime regression finding. The device remains clean on
+Sunnypilot `staging` at root `40d6afd30042e9a1bb452f42d3b6e67ecd00c98f`; no deployment was made.
