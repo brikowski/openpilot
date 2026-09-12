@@ -3825,3 +3825,24 @@ native bus-0 `ACC_CONTROL` stream contains 114,890 frames at 50.1 Hz, 12 brake e
 direct gas-to-brake transitions, and zero `AEB_STATUS`, `AEB_PREPARE`, or `AEB_BRAKING` frames.
 Those observations describe stock command shape only; they do not justify a Honda tune change or
 provide Alpha-Long CMBS/AEB evidence.
+
+### Strict zero-order-held command-path recheck (2026-09-12)
+
+After diagnostic commit `826ffea5b6`, the command-path readout was rerun with causal
+zero-order hold for the plan, `carControl`, and Honda wire signals. Route
+`00000009--8ce01166d6` (parent `7f235e09796633b1e216a0acf5747fee6a2a97ad`, nested
+`9e9eeeb250849a33940280d74b53f33ca099d80b`) measured `0.0028 m/s2` RMS from plan to
+`carControl` and `0.0125 m/s2` RMS from `carControl` to the brake wire, with only isolated
+sample-level sign disagreement. Route `00000068--bbbfad9947` (parent
+`533f4cd91ef857fa2721586c9a15a57651a64c80`, nested `929540bbcf79868945c38fc6b33a5c5794b08887b`)
+measured `0.0027` and `0.0126 m/s2` respectively, with the same no-sustained-mismatch result.
+The mild route `0000000c--37845b37d1` measured `0.0025` plan-to-`carControl` and `0.0251`
+`carControl`-to-wire RMS over one short brake episode and had no steep-descent exposure.
+
+These are exact-source command-path checks, not matched closed-loop A/B evidence. They reinforce
+that the repeated steep-descent pulse begins in the upstream request trajectory and that the
+remaining response amplification is downstream in the Honda plant. **Decision: keep the raw
+command/domain translation and stock lateral map; make no Honda CAN/DBC change for this symptom.**
+Alpha Long's separate safety boundary remains unchanged: its Bosch radar disable makes Honda CMBS,
+including factory AEB and FCW, unavailable during those routes; this is not evidence that the
+Honda command path should be reshaped to restore it.
