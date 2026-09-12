@@ -48,8 +48,9 @@ from radar_command_metrics import (
   quantiles,
   regression_metrics,
   transition_metrics,
+  zero_order_hold,
 )
-from tuning_metrics import brake_episode_metrics, hold_last
+from tuning_metrics import brake_episode_metrics
 
 
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"
@@ -224,25 +225,20 @@ def _decode_route(route, role):
 
 
 def _align(route):
-  """Align context to each ACC_CONTROL frame using interpolation/ZOH appropriate to the signal."""
+  """Align every context stream causally to native ACC_CONTROL timestamps with ZOH."""
   command = route["commands"]
   t = command["t"]
   t0 = float(t[0])
   grid = t - t0
   aligned = {key: value.copy() for key, value in command.items()}
 
-  continuous = {"request", "pitch", "vego", "aego", "atarget", "lead_drel", "lead_vrel", "lead_vlead",
-                "lead_prob", "engine_torque", "rpm", "gasfactor", "windfactor"}
   for key, values in route["context"].items():
     if not values["t"]:
       aligned[key] = np.full(len(t), np.nan)
       continue
     source_t = np.asarray(values["t"], dtype=float) - t0
     source_v = np.asarray(values["v"], dtype=float)
-    if key in continuous:
-      aligned[key] = np.interp(grid, source_t, source_v)
-    else:
-      aligned[key] = hold_last(grid, source_t, source_v)
+    aligned[key] = zero_order_hold(grid, source_t, source_v)
   aligned["domain"] = command_domain(
     aligned["ACC_ENABLED"], aligned["BRAKE_REQUEST"], aligned["GAS_COMMAND"], control_on=aligned["CONTROL_ON"])
   aligned["commands"] = command

@@ -18,6 +18,24 @@ GAS_INACTIVE = -30000.0
 FEATURE_NAMES = ("bias", "speed", "speed_sq", "accel", "accel_speed", "pitch", "accel_pitch")
 
 
+def zero_order_hold(grid, times, values):
+  """Sample timestamped values causally without inventing intermediate values.
+
+  Samples before the first source timestamp are unknown rather than extrapolated from a future
+  value. After the first source sample, each value is held until the next source timestamp.
+  """
+  grid = np.asarray(grid, dtype=float)
+  times = np.asarray(times, dtype=float)
+  values = np.asarray(values, dtype=float)
+  if not len(times):
+    return np.full(len(grid), np.nan, dtype=float)
+  indices = np.searchsorted(times, grid, side="right") - 1
+  valid = indices >= 0
+  output = np.full(len(grid), np.nan, dtype=float)
+  output[valid] = values[indices[valid]]
+  return output
+
+
 def command_domain(acc_enabled, brake_request, gas_command, *, gas_inactive=GAS_INACTIVE, control_on=None):
   """Classify each ACC_CONTROL sample as inactive, coast, gas, or brake.
 

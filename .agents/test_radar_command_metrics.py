@@ -12,6 +12,7 @@ from radar_command_metrics import (
   feature_matrix,
   regression_metrics,
   transition_metrics,
+  zero_order_hold,
 )
 
 
@@ -64,3 +65,14 @@ def test_regression_metrics_exposes_low_command_error_separately():
   assert metrics["n"] == 3
   assert metrics["low_command_n"] == 2
   assert metrics["low_command_mae"] == 5.0
+
+
+def test_zero_order_hold_is_causal_and_does_not_invent_intermediate_values():
+  grid = np.array([-0.01, 0.00, 0.01, 0.02, 0.03, 0.04])
+  source_t = np.array([0.00, 0.02, 0.04])
+  source_v = np.array([-30000.0, 60.0, 120.0])
+
+  result = zero_order_hold(grid, source_t, source_v)
+
+  assert np.isnan(result[0])
+  assert result[1:].tolist() == [-30000.0, -30000.0, 60.0, 60.0, 120.0]
