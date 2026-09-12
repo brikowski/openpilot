@@ -3847,7 +3847,7 @@ Alpha Long's separate safety boundary remains unchanged: its Bosch radar disable
 including factory AEB and FCW, unavailable during those routes; this is not evidence that the
 Honda command path should be reshaped to restore it.
 
-### Deployment gate recheck (2026-09-12)
+### Deployment gate recheck (2026-09-11)
 
 Before any device switch, the current clean root `6f2033e9e5f0fd1231caa66ea0645eedec0ceeef`
 and nested `opendbc` `3d2280daf310e942a1ee3f246f6cd768f5b198bd` passed the Odyssey longitudinal
