@@ -187,6 +187,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "31a1776c7bf4": -0.30,  # retires the unproven onset limiter; raw command domains are unchanged
   "825642c4218b": -0.30,  # current ody-op baseline after reverting the unproven agile arm
   "9e9eeeb25084": -0.30,  # lateral candidate; longitudinal domain selection matches the baseline
+  "909b12c8e218": -0.30,  # current pinned opendbc source; command-domain behavior is unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -218,6 +219,7 @@ THREE_DOMAIN_COMMITS = {
   "31a1776c7bf4",  # restores raw ACCEL_COMMAND after the bounded onset screen
   "825642c4218b",  # current ody-op baseline after reverting the unproven agile arm
   "9e9eeeb25084",  # lateral candidate; raw three-domain longitudinal output is unchanged
+  "909b12c8e218",  # current pinned opendbc source; raw three-domain output is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",

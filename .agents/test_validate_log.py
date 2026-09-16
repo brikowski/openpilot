@@ -330,7 +330,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "2dcbb30f5a53", "929540bbcf79", "5144f8b2fe94",
                          "9d6f42dd4fce", "f52c828fdf49", "871b98a64f6e",
                          "aa8a2e60fbad", "0bd54951753f", "31a1776c7bf4",
-                         "9e9eeeb25084"):
+                         "9e9eeeb25084", "909b12c8e218"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
