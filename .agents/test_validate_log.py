@@ -39,6 +39,7 @@ from tuning_metrics import (
   hold_last,
   level_positive_response_metrics,
   max_edges_in_window,
+  negative_live_gas_bridge_metrics,
   negative_request_gas_metrics,
   physical_edges,
   post_edge_window,
@@ -618,6 +619,52 @@ def test_active_zero_gas_metric_isolates_state_and_response():
   assert np.isclose(metrics["active_zero_gas_request_max"], -0.04)
   assert np.isclose(metrics["active_zero_gas_response_error_mean"], 0.005)
   assert np.isclose(metrics["active_zero_gas_response_error_rms"], np.sqrt(0.00475))
+
+
+def test_negative_live_gas_bridge_metric_isolates_response_and_lifecycle():
+  grid = np.arange(0.0, 4.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  requested = np.zeros(len(grid))
+  achieved = np.zeros(len(grid))
+
+  gas[50:120] = -60.0
+  gas[120:130] = 100.0
+  requested[50:120] = -0.10
+  achieved[50:120] = -0.08
+  gas[150:180] = -60.0
+  gas[180:190] = 100.0
+  requested[150:180] = -0.05
+  achieved[150:180] = -0.15
+
+  # These live-negative frames must be reported as lifecycle overlap, not response exposure.
+  gas[220:230] = -60.0
+  brake_request[220:230] = True
+  gas[250:260] = -60.0
+  vego[250:260] = 4.0
+  gas[280:300] = -30.0  # another negative command is not the candidate's exact bridge
+
+  metrics = negative_live_gas_bridge_metrics(
+    grid, requested, achieved, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, bridge_command=-60.0, gas_inactive=-30000,
+    smooth_tau=0.20, jerk_window_s=0.10,
+  )
+
+  assert np.isclose(metrics["gas_bridge_sec"], 1.0)
+  assert metrics["gas_bridge_events"] == 2
+  assert np.isclose(metrics["gas_bridge_longest"], 0.70)
+  assert np.isclose(metrics["gas_bridge_request_min"], -0.10)
+  assert np.isclose(metrics["gas_bridge_request_max"], -0.05)
+  assert np.isclose(metrics["gas_bridge_response_error_mean"], -0.016)
+  assert np.isclose(metrics["gas_bridge_response_error_median"], 0.02)
+  assert np.isclose(metrics["gas_bridge_response_error_rms"], np.sqrt(0.00328))
+  assert np.isclose(metrics["gas_bridge_brake_overlap_sec"], 0.10)
+  assert np.isclose(metrics["gas_bridge_low_speed_sec"], 0.10)
+  assert metrics["gas_bridge_exit_events"] == 2
+  assert metrics["gas_bridge_exit_jerk_median"] is not None
 
 
 def test_gas_reentry_pulse_metric_does_not_call_brake_handoff_a_pulse():

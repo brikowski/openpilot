@@ -31,11 +31,12 @@ from tuning_metrics import (
   command_transition_metrics,
   cruise_input_metrics,
   descent_hold_metrics,
-  negative_request_gas_metrics,
   gas_reentry_pulse_metrics,
   gas_release_band_metrics,
   hold_last as _hold_last,
   level_positive_response_metrics,
+  negative_live_gas_bridge_metrics,
+  negative_request_gas_metrics,
   max_edges_in_window as _max_edges_in_window,
   physical_edges as _physical_edges,
   sample_rate as _rate,
@@ -139,6 +140,7 @@ GAS_REENTRY_PULSE_ENTRY_MAX = 0.02  # m/s^2: diagnostic boundary for a tiny posi
 GAS_REENTRY_PULSE_MAX_S = 1.0        # s: short event boundary used by the gas-pulse readout
 GAS_REENTRY_PULSE_ENTRY_WINDOW_S = CAN_COMMAND_PERIOD_S
 ACTIVE_ZERO_GAS_SHORT_S = 1.0       # s: expose short active-zero cycling; diagnostic only
+ODYSSEY_GAS_BRIDGE_COMMAND = -60.0  # counts: exact command from the nested road candidate
 NEGATIVE_REQUEST_GAS_THRESHOLD = -0.02  # m/s^2: diagnostic boundary; not a brake-domain rule
 GAS_RELEASE_BAND_REQUEST_MIN = -0.20
 GAS_RELEASE_BAND_REQUEST_MAX = -0.15
@@ -1280,6 +1282,13 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "active_zero_gas_response_error_rms": None,
          "negative_request_gas_sec": None, "negative_request_gas_events": None,
          "negative_request_gas_longest": None, "negative_request_gas_request_min": None,
+         "gas_bridge_sec": None, "gas_bridge_events": None, "gas_bridge_longest": None,
+         "gas_bridge_request_min": None, "gas_bridge_request_max": None,
+         "gas_bridge_response_error_mean": None, "gas_bridge_response_error_median": None,
+         "gas_bridge_response_error_rms": None, "gas_bridge_felt_jerk_rms": None,
+         "gas_bridge_felt_jerk_p95": None, "gas_bridge_brake_overlap_sec": None,
+         "gas_bridge_low_speed_sec": None, "gas_bridge_exit_events": None,
+         "gas_bridge_exit_jerk_median": None, "gas_bridge_exit_jerk_p90": None,
          "gas_release_band_gas_sec": None, "gas_release_band_gas_events": None,
          "gas_release_band_gas_error_mean": None,
          "gas_release_band_coast_sec": None, "gas_release_band_coast_events": None,
@@ -1385,6 +1394,15 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
     request_threshold=NEGATIVE_REQUEST_GAS_THRESHOLD,
     gas_inactive=GAS_INACTIVE,
+    dt=dt,
+  ))
+  out.update(negative_live_gas_bridge_metrics(
+    grid, requested, aego, eng_all, vego_all, BR, brakepressed, GAS,
+    low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
+    bridge_command=ODYSSEY_GAS_BRIDGE_COMMAND,
+    gas_inactive=GAS_INACTIVE,
+    smooth_tau=JERK_SMOOTH_TAU,
+    jerk_window_s=JERK_WIN_S,
     dt=dt,
   ))
   out.update(gas_release_band_metrics(
@@ -1822,6 +1840,29 @@ def verdicts(r):
         f"{r['negative_request_gas_sec']:.2f}s over {r['negative_request_gas_events']} event(s), "
         f"longest {r['negative_request_gas_longest']:.2f}s; request min {request_min} "
         f"(threshold < {NEGATIVE_REQUEST_GAS_THRESHOLD:+.2f} m/s^2; no calibrated limit)")
+  if r.get("gas_bridge_sec") is not None:
+    def bridge_metric(name, signed=False):
+      value = r.get(name)
+      if value is None:
+        return "n/a"
+      return f"{value:+.3f}" if signed else f"{value:.3f}"
+
+    lifecycle_bad = r["gas_bridge_brake_overlap_sec"] > 0.0 or r["gas_bridge_low_speed_sec"] > 0.0
+    add("negative-live gas bridge", not lifecycle_bad,
+        f"{r['gas_bridge_sec']:.2f}s over {r['gas_bridge_events']} event(s), longest "
+        f"{r['gas_bridge_longest']:.2f}s; request "
+        f"{bridge_metric('gas_bridge_request_min', True)}.."
+        f"{bridge_metric('gas_bridge_request_max', True)} m/s^2; aEgo-request mean/median/RMS "
+        f"{bridge_metric('gas_bridge_response_error_mean', True)}/"
+        f"{bridge_metric('gas_bridge_response_error_median', True)}/"
+        f"{bridge_metric('gas_bridge_response_error_rms')} m/s^2; bridge jerk RMS/p95 "
+        f"{bridge_metric('gas_bridge_felt_jerk_rms')}/"
+        f"{bridge_metric('gas_bridge_felt_jerk_p95')} m/s^3; "
+        f"{r['gas_bridge_exit_events']} positive exit(s), jerk median/p90 "
+        f"{bridge_metric('gas_bridge_exit_jerk_median')}/"
+        f"{bridge_metric('gas_bridge_exit_jerk_p90')} m/s^3; brake/low-speed overlap "
+        f"{r['gas_bridge_brake_overlap_sec']:.2f}/{r['gas_bridge_low_speed_sec']:.2f}s",
+        status="negative live gas escaped its road-speed non-brake boundary" if lifecycle_bad else None)
   if r.get("gas_release_band_coast_sec") is not None:
     def metric(name, signed=False):
       value = r.get(name)

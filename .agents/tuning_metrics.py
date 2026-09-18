@@ -462,6 +462,92 @@ def active_zero_gas_metrics(grid, requested, achieved, engaged, vego, brake_requ
   }
 
 
+def negative_live_gas_bridge_metrics(grid, requested, achieved, engaged, vego, brake_request,
+                                     brake_pressed, gas_command, *, low_speed_vego,
+                                     bridge_command, gas_inactive, smooth_tau,
+                                     jerk_window_s, dt=None):
+  """Describe the Odyssey's exact negative-live gas bridge and achieved response."""
+  arrays = [grid, requested, achieved, engaged, vego, brake_request, brake_pressed, gas_command]
+  n = len(grid)
+  empty = {
+    "gas_bridge_sec": 0.0,
+    "gas_bridge_events": 0,
+    "gas_bridge_longest": 0.0,
+    "gas_bridge_request_min": None,
+    "gas_bridge_request_max": None,
+    "gas_bridge_response_error_mean": None,
+    "gas_bridge_response_error_median": None,
+    "gas_bridge_response_error_rms": None,
+    "gas_bridge_felt_jerk_rms": None,
+    "gas_bridge_felt_jerk_p95": None,
+    "gas_bridge_brake_overlap_sec": 0.0,
+    "gas_bridge_low_speed_sec": 0.0,
+    "gas_bridge_exit_events": 0,
+    "gas_bridge_exit_jerk_median": None,
+    "gas_bridge_exit_jerk_p90": None,
+  }
+  if not n or any(len(np.asarray(value)) != n for value in arrays[1:]):
+    return empty
+
+  grid = np.asarray(grid, dtype=float)
+  requested = np.asarray(requested, dtype=float)
+  achieved = np.asarray(achieved, dtype=float)
+  engaged = np.asarray(engaged, dtype=bool)
+  vego = np.asarray(vego, dtype=float)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  brake_pressed = np.asarray(brake_pressed, dtype=bool)
+  gas_command = np.asarray(gas_command, dtype=float)
+  if dt is None:
+    dt = float(np.median(np.diff(grid))) if n > 1 else 0.01
+  if not np.isfinite(dt) or dt <= 0.0:
+    dt = 0.01
+
+  exact_bridge = np.isclose(gas_command, bridge_command, atol=0.5)
+  candidate = engaged & ~brake_pressed & (vego >= low_speed_vego) & ~brake_request & exact_bridge
+  transitions = np.diff(candidate.astype(np.int8), prepend=0, append=0)
+  starts = np.flatnonzero(transitions == 1)
+  ends = np.flatnonzero(transitions == -1)
+  durations = (ends - starts) * dt
+
+  finite_request = candidate & np.isfinite(requested)
+  finite_response = finite_request & np.isfinite(achieved)
+  response_error = achieved[finite_response] - requested[finite_response]
+  jerk = windowed_jerk(causal_lpf(achieved, dt, smooth_tau), dt, engaged, jerk_window_s)
+  finite_jerk = candidate & np.isfinite(jerk)
+
+  live_negative = engaged & (gas_command > gas_inactive) & (gas_command < 0.0)
+  exit_edges = np.flatnonzero(candidate[:-1] & ~candidate[1:] &
+                              engaged[1:] & (gas_command[1:] >= 0.0)) + 1
+  exit_jerks = []
+  start_offset = max(0, int(np.ceil(0.15 / dt)))
+  end_offset = max(start_offset + 1, int(np.ceil(0.80 / dt)))
+  for edge in exit_edges:
+    values = jerk[min(n, edge + start_offset):min(n, edge + end_offset)]
+    values = values[np.isfinite(values)]
+    if len(values):
+      exit_jerks.append(float(np.max(values)))
+
+  return {
+    "gas_bridge_sec": float(candidate.sum() * dt),
+    "gas_bridge_events": int(len(starts)),
+    "gas_bridge_longest": float(np.max(durations)) if len(durations) else 0.0,
+    "gas_bridge_request_min": float(np.min(requested[finite_request])) if finite_request.any() else None,
+    "gas_bridge_request_max": float(np.max(requested[finite_request])) if finite_request.any() else None,
+    "gas_bridge_response_error_mean": float(np.mean(response_error)) if len(response_error) else None,
+    "gas_bridge_response_error_median": float(np.median(response_error)) if len(response_error) else None,
+    "gas_bridge_response_error_rms": float(np.sqrt(np.mean(response_error ** 2))) if len(response_error) else None,
+    "gas_bridge_felt_jerk_rms": (
+      float(np.sqrt(np.mean(jerk[finite_jerk] ** 2))) if finite_jerk.any() else None),
+    "gas_bridge_felt_jerk_p95": (
+      float(np.percentile(np.abs(jerk[finite_jerk]), 95)) if finite_jerk.any() else None),
+    "gas_bridge_brake_overlap_sec": float((live_negative & brake_request).sum() * dt),
+    "gas_bridge_low_speed_sec": float((live_negative & (vego < low_speed_vego)).sum() * dt),
+    "gas_bridge_exit_events": len(exit_jerks),
+    "gas_bridge_exit_jerk_median": float(np.median(exit_jerks)) if exit_jerks else None,
+    "gas_bridge_exit_jerk_p90": float(np.percentile(exit_jerks, 90)) if exit_jerks else None,
+  }
+
+
 def gas_reentry_pulse_metrics(grid, requested, engaged, vego, brake_request, brake_pressed,
                               gas_command, *, low_speed_vego, gas_inactive,
                               entry_request_max, short_duration_s, entry_window_s):
