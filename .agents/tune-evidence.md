@@ -4169,3 +4169,43 @@ new dwell evidence neither identifies a selector divergence nor contradicts thei
 a time hold, widen the release threshold, or keep `COMPUTER_BRAKING` active to mask this response
 mode. The next production hypothesis still requires exact-baseline evidence for a distinct mechanism
 that owns the downstream response without withholding a correct `carControl` command.
+
+### Active-gas response-boundary experiment (2026-09-18)
+
+Fresh route `00000009--019ee79ffb` and seven source-equivalent baseline routes isolate a narrower
+domain question than the active-zero experiment. The current direct map uses `-0.20 m/s2` both as
+its zero-count scaling floor and as the release point for an already-active gas domain. Stable
+15-25 m/s, mild-downhill samples showed a response crossover inside that interval: in
+`-0.20..-0.15`, gas-domain error was `+0.170 m/s2` mean and `+0.177` median versus coast
+`-0.122` mean and `-0.132` median; in `-0.15..-0.10`, gas was closer at `+0.125` mean and
+`+0.129` median versus coast `-0.231` mean and `-0.247` median. Positive error means the Odyssey
+decelerated less than requested.
+
+A route-held-out one-to-one match in the lower band paired 149 samples with request within
+`0.015 m/s2`, speed within `1.5 m/s`, pitch within `0.005`, and different route provenance. The
+matched requests were `-0.178/-0.179 m/s2`; gas/coast response error was `+0.179/-0.038` mean,
+`+0.200/+0.007` median, and `0.215/0.165` RMS. Inactive coast reduced mean absolute error by
+`0.074 m/s2`, reduced median absolute error by `0.110`, and was closer in 75.8% of pairs. Median
+engine torque was `+39` in gas versus `-145` in coast. This identifies Honda response to the domain
+choice as the first divergence; planner-to-`carControl` and numeric request-to-wire fidelity remain
+close.
+
+The isolated candidate therefore releases an already-active road-speed gas domain at
+`-0.15 m/s2`. Fresh entry still requires a positive request. Raw `ACCEL_COMMAND`, direct positive
+gas mapping, `-0.30` brake entry, negative-request brake hold, low-speed stop authority, and all
+lateral behavior are unchanged. A deliberate pre-change mutation test failed because the prior
+`-0.20` boundary kept gas live at `-0.15`; the implementation then passed the focused test and all
+20 Odyssey rail tests (58 subtests).
+
+Frozen-input route-09 command analysis changes coast exposure from 43.1 to 101.1 seconds,
+gas-to-coast edges from 31 to 36, and coast-to-gas edges from 14 to 18; coast-to-brake and
+brake-to-gas remain 17 each. Across the eight routes, natural gas-to-coast transitions had
+`0.70/2.32 m/s3` median/p90 peak absolute achieved jerk and coast-to-gas had `0.82/1.71`, compared
+with `1.28/2.45` for coast-to-brake. These measurements bound exposure but do not predict the
+candidate's closed-loop response or comfort.
+
+**Decision: CHANGE for one supervised road screen on the single linear `ody-op` line; this is not
+promotion evidence.** Reject the candidate for increased gas/coast pulsing, achieved jerk, set-speed
+overshoot, delayed brake response, driver intervention, incomplete stopping, lifecycle leakage, or
+safety failure. Keep it only if full-rate road evidence confirms improved request tracking in the
+lower band without those regressions; otherwise revert the candidate commit on `ody-op`.

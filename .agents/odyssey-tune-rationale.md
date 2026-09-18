@@ -21,14 +21,19 @@ stand in for current evidence.
   `validate_log.py` continues to counter-match full-rate controller sends to the physical bus-1
   steering frame so stock-radar attenuation is not confused with the controller cap.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
-- Positive and already-active mapped `GAS_COMMAND` use upstream's direct request mapping and
-  upstream Odyssey ceiling:
+- Positive mapped `GAS_COMMAND` uses upstream's direct request mapping and upstream Odyssey ceiling:
   `[-0.2, 2.0] m/s2 -> [0, 2000]` counts. The former speed map and live residual multiplier are
   both retired: the map was an adaptive seed, and keeping it alone permanently attenuated upstream
   gas to 54-72% without an isolated road benefit. On frozen routes `61`, `64`, and `68`, however,
   direct mapping is usually lower than the final learned wire command. The road arm must therefore
   reject repeatable under-response or set-speed loss as well as excess gas or surge; replay proves
   command exposure only.
+- At road speed, an already-active gas domain releases to inactive coast at `-0.15 m/s2`; a
+  fresh gas domain still requires a positive request. This separates the response boundary from
+  the direct map's `-0.20` scaling floor. Route-held-out matching across eight source-equivalent
+  routes favored coast in `-0.20..-0.15` and gas in `-0.15..-0.10`. The boundary is a single
+  road-pending experiment, not a promoted calibration; raw `ACCEL_COMMAND`, brake entry/hold,
+  low-speed stop authority, and positive gas mapping are unchanged.
 - The active-zero neutral-gas candidate is retired. Three independently exposed road routes showed
   no matched command-following improvement: active zero moved conditioned `-0.10..0` response
   error from approximately zero to `+0.074 m/s2` median and worsened the `-0.20..-0.10` hold band

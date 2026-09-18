@@ -210,6 +210,14 @@ re-entry, active-zero neutral gas, and 3840-steering are historical comparison m
 than permanent exclusions. Reopen any one when new logs locate a repeatable first divergence it
 could own, including a response or domain symptom not present in the original exposure.
 
+The current single linear experiment releases an already-active road-speed gas domain when the raw
+request reaches `-0.15 m/s2`, instead of carrying it to the gas map's `-0.20` floor. It leaves
+raw `ACCEL_COMMAND`, positive gas entry and mapping, the `-0.30` brake entry, brake hold, and
+low-speed stopping unchanged. Pooled route-held-out matching found coast response closer to the
+request in the lower `-0.20..-0.15` band, while gas remained better in `-0.15..-0.10`; frozen-input
+analysis only establishes exposure and transition count. Treat this as road-pending and reject it
+for added pulsing, jerk, overspeed, late braking, intervention, or stop regression.
+
 The active-zero road screen carried planner requests through `carControl` and `ACCEL_COMMAND` with
 small residuals, but Honda response crossed past the requested acceleration. In matched 15-25 m/s,
 mild-downhill exposure, active zero moved `-0.10..0` response error from approximately zero to
