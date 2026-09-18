@@ -3868,3 +3868,41 @@ embedded `opendbc` source `f95f996f5917dcbbf2e32fe51b606a24cf836af6`). Both `ori
 `UpdaterTargetBranch=staging`, `UpdaterState=idle`, `UpdateAvailable=0`,
 `AlphaLongitudinalEnabled=0`, and no services are failed. The device was rebooted after recovery.
 This is deployment-health evidence only; it is not Odyssey command-following or road evidence.
+
+### Current-source response and stock-command cross-check (2026-09-17)
+
+The retained `ody-op` pair is parent `6e69ffa8559638454b90d91500112ce58334b36a`
+with nested `opendbc` `909b12c8e21857984d9995e0e59543d0401c514f`. A source diff grouped
+the longitudinally equivalent nested revisions `f52c828f`, `31a1776c`, `825642c4`,
+`fb8a8f98`, and `9e9eeeb2`; the last revision differs only in the now-retired lateral map.
+Nineteen retained full-rate routes from that source pool supplied about 240 engaged minutes.
+
+With active PID, no pedal input, speed at least 5 m/s, stable gear/domain/request, and
+`carControl`-to-wire error no greater than `0.05 m/s2`, pooled response alignment favored about
+`0.8 s` in gas and `0.5 s` in brake. Gas response error was `0.219 m/s2` RMS with median
+`-0.104 m/s2` over 2,309 seconds; brake response error was `0.177 m/s2` RMS with median
+`-0.084 m/s2` over 414 seconds. A stricter no-lead cruise gas screen retained 831.7 seconds
+across 14 routes and measured median `aEgo-request=-0.140 m/s2`, RMS `0.175 m/s2`. A
+route-fixed regression left pitch as the dominant observed term at about
+`-7.26 m/s2/rad`, with residual RMS `0.076 m/s2`. Strict no-lead brake exposure was only
+4.1 seconds across two routes and is not calibration evidence.
+
+The pitch result identifies road load in the achieved response, not a causal error in the opaque
+Honda gas command. The current direct request-to-`GAS_COMMAND` mapping cannot be independently
+identified from ordinary-road logs because request and gas count are deterministic. It also does
+not overturn the prior retirement of grade feedforward, gasfactor, or windfactor.
+
+As a command-shape cross-check, a route-held-out stock-radar shadow used
+`00000017--7db38e968b`, `00000049--fd8b934bd3`, and `0000004a--b8518d776c`. Its held-out
+MAE was 71.1, 40.7, and 107.5 opaque gas counts. Current-source OpenPilot routes
+`0000001d--2e324ec2ce`, `00000024--8ed656b4ba`, `00000009--8ce01166d6`, and
+`00000070--16f597b10c` had model-minus-command biases of `-4.1`, `+19.8`, `+18.1`, and
+`-5.4` counts. The mixed biases are smaller than the shadow's own held-out error and do not show
+a repeatable under-command that could own the grade-correlated vehicle response.
+
+**Decision: KEEP the current longitudinal command/domain translation and direct upstream gas
+mapping. Make no Honda implementation, DBC, or safety change from this observational pool.** The
+next longitudinal production hypothesis requires a matched, level-road fixed-request comparison
+that varies the Honda gas command independently and records speed, pitch, gear, engine torque,
+and achieved acceleration. Lateral received no new symptom or matched exposure in this audit;
+keep the stock 2560 map unchanged.
