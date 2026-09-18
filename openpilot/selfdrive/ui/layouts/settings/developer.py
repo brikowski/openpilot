@@ -1,4 +1,5 @@
 from openpilot.common.params import Params
+from openpilot.selfdrive.ui.layouts.settings.lateral_maneuver import set_lateral_maneuver_mode
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
@@ -176,7 +177,7 @@ class DeveloperLayout(Widget):
     self._lat_maneuver_toggle.action_item.set_state(False)
 
   def _on_lat_maneuver_mode(self, state: bool):
-    self._params.put_bool("LateralManeuverMode", state, block=True)
+    set_lateral_maneuver_mode(self._params, state)
     self._params.put_bool("ExperimentalMode", False, block=True)
     self._params.put_bool("JoystickDebugMode", False, block=True)
     self._joystick_toggle.action_item.set_state(False)

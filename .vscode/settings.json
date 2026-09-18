@@ -13,9 +13,10 @@
     "**/.venv": true,
     "**/__pycache__": true
   },
-  "python.analysis.exclude": [
-    "**/.git",
-    "**/.venv",
-    "**/__pycache__",
+  "python.analysis.extraPaths": [
+    ".agents"
+  ],
+  "python.autoComplete.extraPaths": [
+    ".agents"
   ]
 }
