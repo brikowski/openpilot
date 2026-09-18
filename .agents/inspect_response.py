@@ -22,6 +22,8 @@ def brake_entry_summary(rows, max_edge_age=0.75):
   ages = [row["domain_edge_age"] for row in events]
   command_magnitudes = [abs(row["command_jerk_peak"]) for row in events]
   response_magnitudes = [abs(row["response_jerk"]) for row in events]
+  domain_from_counts = {name: sum(row["domain_from"] == name for row in events)
+                        for name in ("gas", "coast", "brake")}
   correlation = None
   if len(events) > 1 and np.std(command_magnitudes) > 0.0 and np.std(response_magnitudes) > 0.0:
     correlation = float(np.corrcoef(command_magnitudes, response_magnitudes)[0, 1])
@@ -33,6 +35,7 @@ def brake_entry_summary(rows, max_edge_age=0.75):
     "command_jerk_abs_median": median(command_magnitudes),
     "amplification_median": median(row["amplification"] for row in events),
     "jerk_magnitude_correlation": correlation,
+    "domain_from_counts": domain_from_counts,
     "without_gear_edge": sum(row["gear_edges_in_history"] == 0 for row in events),
     "plan_request_rms_max": max(row["plan_request_rms"] for row in events),
     "request_wire_rms_max": max(row["request_wire_rms"] for row in events),
@@ -51,7 +54,9 @@ def print_brake_entry_summary(rows):
       f"{summary['command_jerk_abs_median']:.2f}, |wire|/|response| corr {correlation}, median amplification ",
       f"{summary['amplification_median']:.1f}x, no gear edge ",
       f"{summary['without_gear_edge']}/{summary['count']}, max plan/request/wire RMS ",
-      f"{summary['plan_request_rms_max']:.4f}/{summary['request_wire_rms_max']:.4f} m/s^2",
+      f"{summary['plan_request_rms_max']:.4f}/{summary['request_wire_rms_max']:.4f} m/s^2, from ",
+      f"gas/coast/brake={summary['domain_from_counts']['gas']}/",
+      f"{summary['domain_from_counts']['coast']}/{summary['domain_from_counts']['brake']}",
     )))
   else:
     print("brake-entry summary: no qualifying negative peaks")
@@ -83,7 +88,8 @@ def inspect(route, *, threshold, limit, summary_only):
     print("".join((
       f"t={row['time']:8.2f}s response={row['response_jerk']:+.2f} m/s^3 ",
       f"prior-wire={row['command_jerk_peak']:+.2f} ({row['amplification']:.1f}x) ",
-      f"domain={row['domain']} edge-age={edge} edges/1.5s={row['domain_edges_in_history']}\n",
+      f"domain={row['domain_from']}->{row['domain']} edge-age={edge} ",
+      f"edges/1.5s={row['domain_edges_in_history']}\n",
       f"  plan->request RMS={row['plan_request_rms']:.4f}, request->wire RMS={row['request_wire_rms']:.4f}; ",
       f"request/wire/aEgo={row['request']:+.2f}/{row['wire']:+.2f}/{row['actual_accel']:+.2f} m/s^2; ",
       f"v={row['speed'] * 2.23694:.1f} mph pitch={row['pitch']:+.4f} ",

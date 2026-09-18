@@ -260,7 +260,9 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
     command_peak_index = history_idx[np.argmax(np.abs(command_jerk[history_idx]))]
     attribution = history & (grid >= grid[index] - attribution_s)
     previous_edges = edges[edges <= index]
-    edge_age = float(grid[index] - grid[previous_edges[-1]]) if len(previous_edges) else None
+    last_edge = int(previous_edges[-1]) if len(previous_edges) else None
+    edge_age = float(grid[index] - grid[last_edge]) if last_edge is not None else None
+    domain_from = names[int(domain[last_edge - 1])] if last_edge is not None and last_edge > 0 else None
     history_edges = int(np.sum((edges >= history_idx[0]) & (edges <= index)))
     gear_edges = physical_edges(gear, history & np.isfinite(gear))
     response = float(response_jerk[index])
@@ -271,6 +273,7 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
       "command_jerk_peak": command,
       "amplification": float(abs(response) / max(abs(command), 1e-6)),
       "domain": names[int(domain[index])],
+      "domain_from": domain_from,
       "domain_edge_age": edge_age,
       "domain_edges_in_history": history_edges,
       "gear_edges_in_history": int(len(gear_edges)),

@@ -28,6 +28,7 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context():
   assert len(rows) == 1
   event = rows[0]
   assert event["domain"] == "brake"
+  assert event["domain_from"] == "gas"
   assert 0.5 < event["domain_edge_age"] < 1.2
   assert event["domain_edges_in_history"] == 1
   assert event["response_jerk"] < -1.0
@@ -47,6 +48,7 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context():
     "command_jerk_abs_median": abs(event["command_jerk_peak"]),
     "amplification_median": event["amplification"],
     "jerk_magnitude_correlation": None,
+    "domain_from_counts": {"gas": 1, "coast": 0, "brake": 0},
     "without_gear_edge": 1,
     "plan_request_rms_max": 0.0,
     "request_wire_rms_max": 0.0,
@@ -60,6 +62,7 @@ def test_brake_entry_summary_uses_every_qualifying_event():
     "gear_edges_in_history": 0,
     "plan_request_rms": 0.01,
     "request_wire_rms": 0.02,
+    "domain_from": "coast",
   }
   rows = [
     {**base, "response_jerk": -1.0, "command_jerk_peak": -0.5, "amplification": 2.0},
@@ -79,6 +82,7 @@ def test_brake_entry_summary_uses_every_qualifying_event():
     "command_jerk_abs_median": 0.75,
     "amplification_median": 2.0,
     "jerk_magnitude_correlation": pytest.approx(1.0),
+    "domain_from_counts": {"gas": 0, "coast": 2, "brake": 0},
     "without_gear_edge": 1,
     "plan_request_rms_max": 0.03,
     "request_wire_rms_max": 0.04,

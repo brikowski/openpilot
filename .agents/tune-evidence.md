@@ -4024,8 +4024,9 @@ Across source-equivalent routes `00000003`, `00000004`, and `00000005`, the diag
 negative achieved-jerk peaks of at least `1.0 m/s3` in the brake domain `0.34..0.73 s` after a
 physical domain edge. Their median achieved-to-wire-jerk amplification was about `2.9x`; 19 of 21
 had no gear edge in the preceding 1.5 seconds. The events span positive and negative pitch and both
-lead and cruise sources. Local plan-to-request RMS was at most about `0.024 m/s2`, and local
-request-to-wire RMS was at most about `0.028 m/s2`. Route `00000002` supplied no qualifying
+lead and cruise sources; all 21 followed a physical coast-to-brake transition. Local
+plan-to-request RMS was at most about `0.024 m/s2`, and local request-to-wire RMS was at most about
+`0.028 m/s2`. Route `00000002` supplied no qualifying
 brake-entry peak and is not counted as a fourth independent example. Across the 21 events, median
 prior-wire jerk magnitude was `0.46 m/s3` and absolute wire/response jerk correlation was `+0.50`:
 command slope contributes, but Honda still amplifies it and the discrete transition does not reduce
@@ -4036,8 +4037,10 @@ The same metric was then applied to exact historical asymmetric-onset routes
 `3.0 m/s3` limiter, they retained 11 qualifying delayed brake-entry peaks at `0.45..0.62 s`, with
 median response jerk `-1.56 m/s3`, median prior-wire magnitude `0.78 m/s3`, median amplification
 `2.7x`, and absolute wire/response correlation `+0.37`. Seven had no nearby gear edge. This is not
-a matched candidate-versus-baseline comparison and route counts must not be compared as rates, but
-it directly confirms that the same delayed response mode survived the retired shaper.
+a matched candidate-versus-baseline comparison and route counts must not be compared as rates. Ten
+of the 11 peaks followed coast-to-brake and one followed gas-to-brake, directly confirming that the
+same delayed response mode survived the retired shaper. Mutation of the prior-domain lookup to the
+post-edge state failed the synthetic transition assertion before restoration.
 
 This is repeatable Honda-response evidence, but it does not identify a new command-translation
 mechanism. The retired `3.0 m/s3` asymmetric onset limiter changed only the first roughly 0.1 second
