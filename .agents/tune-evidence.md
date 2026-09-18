@@ -4055,3 +4055,34 @@ response without isolated proof.
 behavior change from this screen.** Preserve the event diagnostic for the next exact-baseline route.
 A new production arm requires a distinct mechanism that explains the delayed response peak and an
 isolated matched comparison; the prior onset limiter remains retired.
+
+### Current-pool stock-2560 lateral rescreen (2026-09-18)
+
+Lateral was reviewed independently on the same four routes. Candidate `bee068d882d1` changes only
+Odyssey longitudinal domain state, so its stock-2560 lateral source is behavior-identical to
+restored baseline `c16579385f56`. Routes `00000002`, `00000003`, and `00000005` supplied 1.46,
+8.72, and 3.31 clean high-authority seconds at CAN 2560; route `00000004` never reached the cap.
+Their route-level cap RMS actual-versus-desired lateral acceleration was `0.641`, `0.157`, and
+`0.547 m/s2`, with sign-corrected under-response medians `+0.722`, `+0.050`, and `+0.251`.
+All four routes had zero steering-fault events. Their all-active lateral RMS remained
+`0.094/0.070/0.041/0.077 m/s2` for routes 02 through 05.
+
+Conditioning exposes why those route-level cap values are not one calibration result. On route 02,
+0.67 seconds at 22-25 m/s and desired magnitude above `1.0 m/s2` tracked at only `0.020..0.030`
+RMS, while 0.79 seconds at 25-30 m/s and desired magnitude below `1.5` had `0.860..0.948` RMS.
+Route 03's dominant 22-25 m/s, `1.0..1.5 m/s2` cell supplied 6.47 seconds at `0.147` RMS and
+`+0.042 m/s2` median under-response; its 1.05-second higher-demand cell rose to `0.255` RMS.
+Route 05 supplied 1.14 seconds in the comparable 22-25 m/s high-demand cell at `0.798` RMS and
+`+0.842 m/s2` median under-response, while its 1.32-second lower-speed high-demand cell had
+`0.430` RMS but only `+0.034` median under-response. The sign and magnitude therefore depend on
+route/episode conditions rather than repeating as a matched stock-authority deficit.
+
+The controller is reaching the exact 2560 output recorded in `torqueOutputCan`; the current source
+packs that same value into `STEERING_CONTROL`, and no route reports a fault. The first possible
+boundary in the cap intervals is physical stock authority/vehicle response, not model-to-controller
+or DBC numeric loss. These thin unmatched episodes do not overturn the prior three-route nonlinear
+3840 retirement or the passive stock-camera evidence that nonzero OEM steering stays within 2560.
+
+**Lateral decision: KEEP stock 2560, `latAccelFactor 0.9`, and `steerActuatorDelay 0.15`; make no
+lateral behavior change.** Reopen authority only for a repeatable driver-observed lateral symptom
+with an isolated matched road comparison and explicit fault/override grading.

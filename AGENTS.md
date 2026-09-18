@@ -217,6 +217,13 @@ Honda-response symptom, but the retired asymmetric onset limiter already failed 
 exposed road examples and must not be reopened from this repeated symptom alone. Keep raw
 `ACCEL_COMMAND` until a distinct mechanism has isolated evidence against the restored baseline.
 
+The same four-route pool adds no reason to reopen lateral authority. Routes 02, 03, and 05 supplied
+1.46, 8.72, and 3.31 seconds at the stock 2560 cap with zero steering faults; conditioned response
+ranged from close tracking to strong under-response and did not repeat consistently across matched
+speed and demand bins. The controller reached the exact stock wire cap, so this is physical-
+authority context rather than a DBC loss. Keep stock 2560 unless a repeatable lateral symptom and
+isolated matched comparison contradict the retired 3840 decision.
+
 Keep the stopped-lead planner arm and any uphill/model behavior separate from Honda response work.
 Before changing production behavior, show the first divergence, run the focused tests and replay
 checks, and obtain an isolated controlled or ordinary-road comparison against `ody-op`.
