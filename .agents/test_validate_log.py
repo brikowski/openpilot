@@ -35,6 +35,7 @@ from tuning_metrics import (
   cruise_input_metrics,
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
+  gas_release_band_metrics,
   hold_last,
   level_positive_response_metrics,
   max_edges_in_window,
@@ -331,7 +332,8 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "2dcbb30f5a53", "929540bbcf79", "5144f8b2fe94",
                          "9d6f42dd4fce", "f52c828fdf49", "871b98a64f6e",
                          "aa8a2e60fbad", "0bd54951753f", "31a1776c7bf4",
-                         "9e9eeeb25084", "909b12c8e218", "bee068d882d1", "c16579385f56"):
+                         "9e9eeeb25084", "909b12c8e218", "bee068d882d1", "c16579385f56",
+                         "409c25925c19"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -345,6 +347,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert _brake_passthrough_expected("31a1776c7bf4")
   assert _brake_passthrough_expected("bee068d882d1")
   assert _brake_passthrough_expected("c16579385f56")
+  assert _brake_passthrough_expected("409c25925c19")
   for onset_commit in ("871b98a64f6e", "aa8a2e60fbad", "0bd54951753f"):
     assert onset_commit in BRAKE_ONSET_RATE_LIMIT_COMMITS
     assert not _brake_passthrough_expected(onset_commit)
@@ -698,6 +701,40 @@ def test_negative_request_gas_metric_excludes_brake_domain_and_threshold_boundar
   assert np.isclose(metrics["negative_request_gas_sec"], 0.20)
   assert metrics["negative_request_gas_events"] == 1
   assert np.isclose(metrics["negative_request_gas_request_min"], -0.10)
+
+
+def test_gas_release_band_metric_separates_sustained_gas_and_coast_response():
+  grid = np.arange(0.0, 3.0, 0.01)
+  requested = np.full(len(grid), -0.175)
+  achieved = requested.copy()
+  achieved[:100] += 0.20
+  achieved[100:] += 0.05
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  pitch = np.full(len(grid), -0.01)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  gas[:100] = 50.0
+
+  metrics = gas_release_band_metrics(
+    grid, requested, achieved, engaged, vego, pitch, brake_pressed, brake_request, gas,
+    speed_min=15.0, speed_max=25.0, request_min=-0.20, request_max=-0.15,
+    min_episode_s=0.6, gas_inactive=-30000,
+  )
+
+  assert np.isclose(metrics["gas_release_band_gas_sec"], 1.0)
+  assert metrics["gas_release_band_gas_events"] == 1
+  assert np.isclose(metrics["gas_release_band_gas_error_mean"], 0.20)
+  assert np.isclose(metrics["gas_release_band_coast_sec"], 2.0)
+  assert metrics["gas_release_band_coast_events"] == 1
+  assert np.isclose(metrics["gas_release_band_coast_error_mean"], 0.05)
+  assert np.isclose(metrics["gas_release_band_coast_error_median"], 0.05)
+  assert np.isclose(metrics["gas_release_band_coast_error_rms"], 0.05)
+  assert np.isclose(metrics["gas_release_band_gas_speed_median"], 20.0)
+  assert np.isclose(metrics["gas_release_band_gas_pitch_median"], -0.01)
+  assert np.isclose(metrics["gas_release_band_coast_speed_median"], 20.0)
+  assert np.isclose(metrics["gas_release_band_coast_pitch_median"], -0.01)
 
 
 def test_sign_disagreement_ignores_transport_and_separates_downhill():

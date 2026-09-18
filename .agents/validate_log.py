@@ -33,6 +33,7 @@ from tuning_metrics import (
   descent_hold_metrics,
   negative_request_gas_metrics,
   gas_reentry_pulse_metrics,
+  gas_release_band_metrics,
   hold_last as _hold_last,
   level_positive_response_metrics,
   max_edges_in_window as _max_edges_in_window,
@@ -139,6 +140,11 @@ GAS_REENTRY_PULSE_MAX_S = 1.0        # s: short event boundary used by the gas-p
 GAS_REENTRY_PULSE_ENTRY_WINDOW_S = CAN_COMMAND_PERIOD_S
 ACTIVE_ZERO_GAS_SHORT_S = 1.0       # s: expose short active-zero cycling; diagnostic only
 NEGATIVE_REQUEST_GAS_THRESHOLD = -0.02  # m/s^2: diagnostic boundary; not a brake-domain rule
+GAS_RELEASE_BAND_REQUEST_MIN = -0.20
+GAS_RELEASE_BAND_REQUEST_MAX = -0.15
+GAS_RELEASE_BAND_SPEED_MIN = 15.0
+GAS_RELEASE_BAND_SPEED_MAX = 25.0
+GAS_RELEASE_BAND_MIN_EPISODE_S = 0.6
 STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
                                # deceleration only says the plan asked for braking; excess separates
                                # car-port contribution from Honda actuator bite. STILL REPORTED,
@@ -192,6 +198,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "909b12c8e218": -0.30,  # current pinned opendbc source; command-domain behavior is unchanged
   "bee068d882d1": -0.30,  # active-zero gas candidate; brake-domain behavior is unchanged
   "c16579385f56": -0.30,  # reverts active zero; restores the retained three-domain baseline
+  "409c25925c19": -0.30,  # -0.15 active-gas release; brake-domain behavior is unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -226,6 +233,7 @@ THREE_DOMAIN_COMMITS = {
   "909b12c8e218",  # current pinned opendbc source; raw three-domain output is unchanged
   "bee068d882d1",  # active-zero gas candidate; raw brake-domain output is unchanged
   "c16579385f56",  # active-zero revert; raw three-domain baseline restored
+  "409c25925c19",  # -0.15 active-gas release; raw brake-domain behavior is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
@@ -1270,6 +1278,16 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "active_zero_gas_response_error_rms": None,
          "negative_request_gas_sec": None, "negative_request_gas_events": None,
          "negative_request_gas_longest": None, "negative_request_gas_request_min": None,
+         "gas_release_band_gas_sec": None, "gas_release_band_gas_events": None,
+         "gas_release_band_gas_error_mean": None,
+         "gas_release_band_coast_sec": None, "gas_release_band_coast_events": None,
+         "gas_release_band_coast_error_mean": None,
+         "gas_release_band_coast_error_median": None,
+         "gas_release_band_coast_error_rms": None,
+         "gas_release_band_gas_speed_median": None,
+         "gas_release_band_gas_pitch_median": None,
+         "gas_release_band_coast_speed_median": None,
+         "gas_release_band_coast_pitch_median": None,
          "direct_gas_to_brake": None, "direct_brake_to_gas": None,
          "brake_toggle_edges": None, "brake_toggle_per_min": None,
          "brake_toggle_max_10s": None, "brake_toggle_min_gap": None,
@@ -1366,6 +1384,15 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     request_threshold=NEGATIVE_REQUEST_GAS_THRESHOLD,
     gas_inactive=GAS_INACTIVE,
     dt=dt,
+  ))
+  out.update(gas_release_band_metrics(
+    grid, requested, aego, eng_all, vego_all, pitch, brakepressed, BR, GAS,
+    speed_min=GAS_RELEASE_BAND_SPEED_MIN,
+    speed_max=GAS_RELEASE_BAND_SPEED_MAX,
+    request_min=GAS_RELEASE_BAND_REQUEST_MIN,
+    request_max=GAS_RELEASE_BAND_REQUEST_MAX,
+    min_episode_s=GAS_RELEASE_BAND_MIN_EPISODE_S,
+    gas_inactive=GAS_INACTIVE,
   ))
   out.update(brake_episode_metrics(
     grid, aego, BR, eng_all, brakepressed, vego_all, pitch,
@@ -1793,6 +1820,27 @@ def verdicts(r):
         f"{r['negative_request_gas_sec']:.2f}s over {r['negative_request_gas_events']} event(s), "
         f"longest {r['negative_request_gas_longest']:.2f}s; request min {request_min} "
         f"(threshold < {NEGATIVE_REQUEST_GAS_THRESHOLD:+.2f} m/s^2; no calibrated limit)")
+  if r.get("gas_release_band_coast_sec") is not None:
+    def metric(name, signed=False):
+      value = r.get(name)
+      if value is None:
+        return "n/a"
+      return f"{value:+.3f}" if signed else f"{value:.3f}"
+
+    add("active-gas release band response (diagnostic)", True,
+        f"{r['gas_release_band_coast_sec']:.2f}s/{r['gas_release_band_coast_events']} sustained "
+        f"coast episode(s), aEgo-request mean/median/RMS "
+        f"{metric('gas_release_band_coast_error_mean', True)}/"
+        f"{metric('gas_release_band_coast_error_median', True)}/"
+        f"{metric('gas_release_band_coast_error_rms')} m/s^2; "
+        f"coast speed/pitch median {metric('gas_release_band_coast_speed_median')}/"
+        f"{metric('gas_release_band_coast_pitch_median', True)}; "
+        f"{r['gas_release_band_gas_sec']:.2f}s/{r['gas_release_band_gas_events']} sustained gas "
+        f"episode(s), gas mean {metric('gas_release_band_gas_error_mean', True)} m/s^2; "
+        f"gas speed/pitch median {metric('gas_release_band_gas_speed_median')}/"
+        f"{metric('gas_release_band_gas_pitch_median', True)} "
+        f"(request {GAS_RELEASE_BAND_REQUEST_MIN:+.2f}..{GAS_RELEASE_BAND_REQUEST_MAX:+.2f} m/s^2; "
+        f"no calibrated limit)")
   if r.get("direct_gas_to_brake") is not None:
     # Diagnostic only. Direct handoffs are observations, not a claimed comfort invariant.
     add("direct gas/brake handoffs (diagnostic)", True,

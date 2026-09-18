@@ -4204,6 +4204,18 @@ brake-to-gas remain 17 each. Across the eight routes, natural gas-to-coast trans
 with `1.28/2.45` for coast-to-brake. These measurements bound exposure but do not predict the
 candidate's closed-loop response or comfort.
 
+The deployed pair is parent `5a0a53fced39` with nested `409c25925c19`; the device remained clean
+and healthy with Alpha Long enabled after reboot. The validator now resolves that exact nested SHA
+to the unchanged raw three-domain brake semantics and reports sustained response separately for gas
+and coast in the `-0.20..-0.15` band. A deliberate missing-metric mutation failed collection before
+the pure metric was implemented; 49 tooling tests and project lint then passed. Revalidating
+pre-candidate route 09 found 18.86 seconds over 13 sustained gas episodes at `+0.185 m/s2` mean
+response error, versus 0.60 seconds of natural coast at `+0.087` mean, with separate speed/pitch
+medians (`22.389 m/s`, `+0.003 rad` gas; `22.386 m/s`, `-0.004 rad` coast). This is a concrete
+baseline readout, not a matched road result. As of the post-deployment inventory check, all ten
+recent retained routes were already validated and none carried `409c25925c19`, so the candidate has
+no closed-loop exposure yet.
+
 **Decision: CHANGE for one supervised road screen on the single linear `ody-op` line; this is not
 promotion evidence.** Reject the candidate for increased gas/coast pulsing, achieved jerk, set-speed
 overshoot, delayed brake response, driver intervention, incomplete stopping, lifecycle leakage, or

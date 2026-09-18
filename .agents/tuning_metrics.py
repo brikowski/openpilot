@@ -579,6 +579,84 @@ def negative_request_gas_metrics(grid, requested, engaged, vego, brake_pressed,
   }
 
 
+def gas_release_band_metrics(grid, requested, achieved, engaged, vego, pitch, brake_pressed,
+                             brake_request, gas_command, *, speed_min, speed_max, request_min,
+                             request_max, min_episode_s, gas_inactive):
+  """Compare sustained gas and coast response in an active-gas release band.
+
+  The band is diagnostic rather than a calibration rule. Requiring a sustained contiguous domain
+  episode keeps one-command-period transport edges from dominating the response comparison.
+  """
+  keys = (
+    "gas_release_band_gas_sec", "gas_release_band_gas_events",
+    "gas_release_band_gas_error_mean", "gas_release_band_coast_sec",
+    "gas_release_band_coast_events", "gas_release_band_coast_error_mean",
+    "gas_release_band_coast_error_median", "gas_release_band_coast_error_rms",
+    "gas_release_band_gas_speed_median", "gas_release_band_gas_pitch_median",
+    "gas_release_band_coast_speed_median", "gas_release_band_coast_pitch_median",
+  )
+  empty = dict.fromkeys(keys)
+  empty.update({
+    "gas_release_band_gas_sec": 0.0,
+    "gas_release_band_gas_events": 0,
+    "gas_release_band_coast_sec": 0.0,
+    "gas_release_band_coast_events": 0,
+  })
+  arrays = (requested, achieved, engaged, vego, pitch, brake_pressed, brake_request, gas_command)
+  if not len(grid) or any(len(np.asarray(value)) != len(grid) for value in arrays):
+    return empty
+
+  grid = np.asarray(grid, dtype=float)
+  requested = np.asarray(requested, dtype=float)
+  achieved = np.asarray(achieved, dtype=float)
+  engaged = np.asarray(engaged, dtype=bool)
+  vego = np.asarray(vego, dtype=float)
+  pitch = np.asarray(pitch, dtype=float)
+  brake_pressed = np.asarray(brake_pressed, dtype=bool)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  gas_live = np.asarray(gas_command, dtype=float) > gas_inactive
+  dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
+  if not np.isfinite(dt) or dt <= 0.0:
+    dt = 0.01
+
+  base = (engaged & ~brake_pressed & ~brake_request & np.isfinite(requested) &
+          np.isfinite(achieved) & np.isfinite(vego) & np.isfinite(pitch) &
+          (vego >= speed_min) & (vego <= speed_max) &
+          (requested >= request_min) & (requested <= request_max))
+
+  def sustained(mask):
+    transitions = np.diff(mask.astype(np.int8), prepend=0, append=0)
+    starts = np.flatnonzero(transitions == 1)
+    ends = np.flatnonzero(transitions == -1)
+    keep = np.zeros(len(mask), dtype=bool)
+    episodes = 0
+    for start, end in zip(starts, ends, strict=True):
+      if (end - start) * dt >= min_episode_s:
+        keep[start:end] = True
+        episodes += 1
+    return keep, episodes
+
+  gas, gas_events = sustained(base & gas_live)
+  coast, coast_events = sustained(base & ~gas_live)
+  gas_error = achieved[gas] - requested[gas]
+  coast_error = achieved[coast] - requested[coast]
+  return {
+    "gas_release_band_gas_sec": float(gas.sum() * dt),
+    "gas_release_band_gas_events": gas_events,
+    "gas_release_band_gas_error_mean": float(np.mean(gas_error)) if len(gas_error) else None,
+    "gas_release_band_coast_sec": float(coast.sum() * dt),
+    "gas_release_band_coast_events": coast_events,
+    "gas_release_band_coast_error_mean": float(np.mean(coast_error)) if len(coast_error) else None,
+    "gas_release_band_coast_error_median": float(np.median(coast_error)) if len(coast_error) else None,
+    "gas_release_band_coast_error_rms": (
+      float(np.sqrt(np.mean(coast_error ** 2))) if len(coast_error) else None),
+    "gas_release_band_gas_speed_median": float(np.median(vego[gas])) if gas.any() else None,
+    "gas_release_band_gas_pitch_median": float(np.median(pitch[gas])) if gas.any() else None,
+    "gas_release_band_coast_speed_median": float(np.median(vego[coast])) if coast.any() else None,
+    "gas_release_band_coast_pitch_median": float(np.median(pitch[coast])) if coast.any() else None,
+  }
+
+
 def under_set_speed_metrics(grid, set_speed, speed, requested, actual_accel, pitch, active,
                             speed_visible, cruise_plan, allow_throttle, has_lead,
                             gas_pressed, brake_pressed, *, speed_min, gap_min, gap_max,
