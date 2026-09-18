@@ -4221,3 +4221,48 @@ promotion evidence.** Reject the candidate for increased gas/coast pulsing, achi
 overshoot, delayed brake response, driver intervention, incomplete stopping, lifecycle leakage, or
 safety failure. Keep it only if full-rate road evidence confirms improved request tracking in the
 lower band without those regressions; otherwise revert the candidate commit on `ody-op`.
+
+### Active-gas response-boundary road decision (2026-09-18)
+
+Route `0000000b--c529eb1e28` supplied the first closed-loop candidate exposure: 63.9 logged minutes,
+21.0 engaged minutes, and 14.4 engaged miles at parent `5a0a53fced39` and nested
+`409c25925c19396bc58f72f00fcc5b2b61a795d9`. Alpha Long was enabled, Experimental Mode was off,
+the small-model blob was `f030157ccd2bacbdc6d7b98358903cbacc0e0b34`, and the longitudinal
+personality was standard. Planner-to-`carControl` RMS was `0.0027 m/s2`; request-to-wire RMS was
+`0.0082` in gas and `0.0103` in brake, with no sustained sign disagreement. The candidate therefore
+reached Honda CAN as intended; the comparison below is vehicle response, not command-path error.
+
+The candidate produced 8.95 seconds over ten sustained coast episodes in the intended
+`-0.20..-0.15 m/s2` band. Its pooled mean/median/RMS response error was
+`+0.002/+0.047/0.199 m/s2`, but that near-zero pooled mean hid opposite response modes. A one-to-one
+comparison against source-equivalent baseline gas samples held request within `0.015 m/s2`, speed
+within `1.5 m/s`, pitch within `0.005 rad`, and lead-presence state equal. Across 52 pairs, baseline
+gas versus candidate coast mean absolute error was `0.175/0.198 m/s2`; candidate error increased by
+`0.023 m/s2` and was closer in only 44.2% of pairs. In 30 lead-present pairs, candidate coast flipped
+from baseline under-deceleration (`+0.153`) to over-deceleration (`-0.136`) and increased mean
+absolute error by `0.024`. In 22 no-lead pairs it retained under-deceleration and worsened from
+`+0.180` to `+0.203`, increasing mean absolute error by `0.022`. The domain change therefore did not
+provide a stable response correction in either context.
+
+The comfort screen also moved in the rejected direction. Candidate gas-to-coast transitions occurred
+at 3.57/minute with `0.77/2.72 m/s3` median/p90 achieved jerk, versus route-09 baseline at
+2.67/minute and `0.60/2.29`. Coast-to-gas transitions rose from 1.38 to 2.48/minute, with p90 jerk
+increasing from `1.05` to `1.41 m/s3`. Nine of twelve brake takeovers had no candidate-band coast
+exposure in the prior five seconds, so the route's takeover count is not assigned wholesale to this
+mechanism; the matched tracking and transition results are sufficient to reject it.
+
+**Decision: RETIRE and revert.** Nested commit `196119896d73` reverts `409c25925c19` on the same
+linear `ody-op` line and restores the `c16579385f56` three-domain behavior. The result falsifies this
+release-threshold hypothesis; it does not justify a lead-dependent Honda selector, because lead state
+describes upstream context rather than a distinct actuator command contract. Reopen domain selection
+only from a new repeatable first-divergence mechanism, not from the canceled pooled mean.
+
+### Device updater ownership repair (2026-09-18)
+
+The on-device update failure was a filesystem ownership defect, not a source or network failure.
+`git clean -xdff` could not remove root-owned rednose editable-install metadata under
+`/data/openpilot/.venv`, while updater and manager run as `comma`. With the device offroad, ownership
+was repaired only for the affected rednose metadata and the updater was retriggered through its
+supported signal. `UpdaterState` returned to `idle`, `UpdateFailedCount` to `0`, and
+`LastUpdateException` to empty; Alpha Long remained enabled. `tools/deploy_ody_op.sh verify` now
+rejects any non-`comma`-owned `.venv` path so this failure cannot be mistaken for a healthy deploy.

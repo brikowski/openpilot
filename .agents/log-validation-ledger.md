@@ -313,3 +313,4 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-09-18 | 00000007--282a45a51d | ody-op | c16579385f56 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | device thermal |
 | 2026-09-18 | 00000006--dce46abfab | ody-op | c16579385f56 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |
 | 2026-09-18 | 00000009--019ee79ffb | ody-op | c16579385f56 | 12.3 | 8.2 | 0 | 0.231 | 0.007 | - | - | 0.008 | 0.017 | 6 | 0.0 | 4.1 | 2560/2560 | 1.5% | 0 | brake takeovers, brake-domain transition bursts, ride harshness (felt) |
+| 2026-09-18 | 0000000b--c529eb1e28 | ody-op | 409c25925c19 | 21.0 | 14.4 | 0 | 0.254 | 0.008 | - | - | 0.008 | 0.010 | 9 | 0.5 | 5.7 | 1422/2560 | 0.7% | 0 | brake takeovers, brake-domain transition bursts, ride harshness (felt) |

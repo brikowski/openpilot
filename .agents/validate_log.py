@@ -199,6 +199,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "bee068d882d1": -0.30,  # active-zero gas candidate; brake-domain behavior is unchanged
   "c16579385f56": -0.30,  # reverts active zero; restores the retained three-domain baseline
   "409c25925c19": -0.30,  # -0.15 active-gas release; brake-domain behavior is unchanged
+  "196119896d73": -0.30,  # reverts the failed -0.15 release screen; baseline restored
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -234,6 +235,7 @@ THREE_DOMAIN_COMMITS = {
   "bee068d882d1",  # active-zero gas candidate; raw brake-domain output is unchanged
   "c16579385f56",  # active-zero revert; raw three-domain baseline restored
   "409c25925c19",  # -0.15 active-gas release; raw brake-domain behavior is unchanged
+  "196119896d73",  # release-boundary revert; raw three-domain baseline restored
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",

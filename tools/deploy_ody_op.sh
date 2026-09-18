@@ -75,12 +75,14 @@ opendbc=\$(git -C opendbc_repo rev-parse HEAD)
 origin=\$(git remote get-url origin)
 parent_status=\$(git status --porcelain)
 opendbc_status=\$(git -C opendbc_repo status --porcelain)
+venv_bad_owner=\$(find .venv -xdev ! -user comma -print -quit 2>/dev/null || true)
 alpha=\$(cat /data/params/d/AlphaLongitudinalEnabled 2>/dev/null || true)
 failed=\$(systemctl --failed --no-legend)
 printf '%s\n' \
   \"branch=\$branch\" \"parent_commit=\$parent\" \"gitlink_commit=\$gitlink\" \
   \"opendbc_commit=\$opendbc\" \"origin=\$origin\" \
   \"parent_status=\$parent_status\" \"opendbc_status=\$opendbc_status\" \
+  \"venv_bad_owner=\$venv_bad_owner\" \
   \"AlphaLongitudinalEnabled=\${alpha:-missing}\" \
   \"UpdaterTargetBranch=\$(cat /data/params/d/UpdaterTargetBranch 2>/dev/null || true)\" \
   \"UpdaterState=\$(cat /data/params/d/UpdaterState 2>/dev/null || true)\" \
@@ -96,6 +98,7 @@ test \"\$opendbc\" = '$OPENDBC_SHA'
 test \"\$origin\" = '$DEVICE_REMOTE'
 test -z \"\$parent_status\"
 test -z \"\$opendbc_status\"
+test -z \"\$venv_bad_owner\"
 test ! -e /data/params/d/IsOnroad
 test \"\$(cat /data/params/d/UpdaterTargetBranch 2>/dev/null || true)\" = '$BRANCH'
 test \"\$(cat /data/params/d/UpdaterState 2>/dev/null || true)\" = idle
