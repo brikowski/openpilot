@@ -202,21 +202,22 @@ throughout.
 
 ## Current focus
 
-Nested `opendbc` `c16579385f56` is the current comparison baseline: raw clipped longitudinal
+Nested `opendbc` `196119896d73` is the current comparison baseline: raw clipped longitudinal
 command, evidence-supported three-domain selection, direct upstream gas mapping, and stock lateral
-authority. It linearly reverts the prior active-zero experiment and is source-equivalent to its
-`909b12c8e218` parent. Gasfactor, windfactor, low-speed PID, onset-shaping, positive gas
-re-entry, active-zero neutral gas, and 3840-steering are historical comparison mechanisms rather
-than permanent exclusions. Reopen any one when new logs locate a repeatable first divergence it
-could own, including a response or domain symptom not present in the original exposure.
+authority. It linearly reverts the `-0.15 m/s2` active-gas-release experiment and is behavior-
+equivalent to the earlier `c16579385f56` baseline. There is no active behavioral candidate.
+Gasfactor, windfactor, low-speed PID, onset shaping, gas re-entry or release logic, active-zero
+neutral gas, negative live gas, and 3840 steering are historical comparison mechanisms rather than
+permanent exclusions. Reopen any one when new logs locate a repeatable first divergence it could
+own, including a response or domain symptom not present in the original exposure. Re-derive the
+hypothesis from current exact-provenance data and current safety semantics instead of inheriting an
+old conclusion.
 
-The current single linear experiment releases an already-active road-speed gas domain when the raw
-request reaches `-0.15 m/s2`, instead of carrying it to the gas map's `-0.20` floor. It leaves
-raw `ACCEL_COMMAND`, positive gas entry and mapping, the `-0.30` brake entry, brake hold, and
-low-speed stopping unchanged. Pooled route-held-out matching found coast response closer to the
-request in the lower `-0.20..-0.15` band, while gas remained better in `-0.15..-0.10`; frozen-input
-analysis only establishes exposure and transition count. Treat this as road-pending and reject it
-for added pulsing, jerk, overspeed, late braking, intervention, or stop regression.
+The reverted `-0.15 m/s2` release arm had one long road exposure. Its request-to-wire path remained
+accurate, but matched achieved response and transition jerk did not improve relative to the
+`-0.20 m/s2` comparison baseline. That result rejects that exact candidate on that exposure; it
+does not establish a universal gas-release threshold or exclude a differently owned transition
+mechanism.
 
 The active-zero road screen carried planner requests through `carControl` and `ACCEL_COMMAND` with
 small residuals, but Honda response crossed past the requested acceleration. In matched 15-25 m/s,

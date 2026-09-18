@@ -28,12 +28,13 @@ stand in for current evidence.
   direct mapping is usually lower than the final learned wire command. The road arm must therefore
   reject repeatable under-response or set-speed loss as well as excess gas or surge; replay proves
   command exposure only.
-- At road speed, an already-active gas domain releases to inactive coast at `-0.15 m/s2`; a
-  fresh gas domain still requires a positive request. This separates the response boundary from
-  the direct map's `-0.20` scaling floor. Route-held-out matching across eight source-equivalent
-  routes favored coast in `-0.20..-0.15` and gas in `-0.15..-0.10`. The boundary is a single
-  road-pending experiment, not a promoted calibration; raw `ACCEL_COMMAND`, brake entry/hold,
-  low-speed stop authority, and positive gas mapping are unchanged.
+- At road speed, the comparison baseline carries an already-active gas domain to the direct map's
+  `-0.20 m/s2` floor; a fresh gas domain still requires a positive request. The isolated
+  `-0.15 m/s2` release arm was reverted after its long road exposure preserved request-to-wire
+  fidelity but did not improve matched achieved response or transition jerk. That is evidence
+  against the exact arm in its tested conditions, not a permanent threshold conclusion. Raw
+  `ACCEL_COMMAND`, brake entry/hold, low-speed stop authority, and positive gas mapping remain
+  unchanged.
 - The active-zero neutral-gas candidate is retired. Three independently exposed road routes showed
   no matched command-following improvement: active zero moved conditioned `-0.10..0` response
   error from approximately zero to `+0.074 m/s2` median and worsened the `-0.20..-0.10` hold band
