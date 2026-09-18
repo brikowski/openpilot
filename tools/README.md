@@ -87,7 +87,7 @@ This checkout also exposes a small set of explicit VS Code tasks in
   `opendbc_repo/test.sh` suite. These are software/CAN-safety gates, not ride-quality evidence.
 - **Publish and Deploy ody-op** is the guarded custom deployment. It requires clean paired
   repositories, matching parent/submodule SHAs, publishes `opendbc_repo` before the parent, refuses
-  an onroad or Alpha-Long-enabled device, recreates the frozen environment under `/data`, builds,
+  an onroad or Alpha-Long-enabled device, recreates the frozen environment and managed Python under `/data`, builds,
   reboots, and verifies exact source and runtime health. The task calls
   `tools/deploy_ody_op.sh deploy`; its `verify` command is read-only.
 The former **Recover device on sunnypilot/staging** and **Verify device on sunnypilot/staging**

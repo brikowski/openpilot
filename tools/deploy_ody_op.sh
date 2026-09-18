@@ -9,6 +9,7 @@ SSH_KEY="${ODYSSEY_SSH_KEY:-/Users/travisbadgley/.ssh/id_ed25519}"
 BRANCH=ody-op
 DEVICE_REMOTE=https://github.com/brikowski/openpilot.git
 DEVICE_UV_CACHE=/data/uv-cache
+DEVICE_UV_PYTHON=/data/uv-python
 
 usage() {
   cat <<'EOF'
@@ -125,8 +126,10 @@ alpha=\$(cat /data/params/d/AlphaLongitudinalEnabled 2>/dev/null || true)
 test -z \"\$alpha\" || test \"\$alpha\" = 0
 if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin '$DEVICE_REMOTE'; else git remote add origin '$DEVICE_REMOTE'; fi
 tools/op.sh switch origin '$BRANCH'
-UV_CACHE_DIR='$DEVICE_UV_CACHE' uv sync --frozen --all-extras
-PYTHONPATH=/data/openpilot UV_CACHE_DIR='$DEVICE_UV_CACHE' tools/op.sh build
+UV_CACHE_DIR='$DEVICE_UV_CACHE' UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' \
+  UV_PYTHON_PREFERENCE=managed uv sync --frozen --all-extras
+PYTHONPATH=/data/openpilot UV_CACHE_DIR='$DEVICE_UV_CACHE' \
+  UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' UV_PYTHON_PREFERENCE=managed tools/op.sh build
 test \"\$(git rev-parse HEAD)\" = '$PARENT_SHA'
 test \"\$(git ls-tree HEAD opendbc_repo | awk '{print \$3}')\" = '$OPENDBC_SHA'
 test \"\$(git -C opendbc_repo rev-parse HEAD)\" = '$OPENDBC_SHA'
