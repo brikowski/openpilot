@@ -4268,3 +4268,40 @@ supported signal. `UpdaterState` returned to `idle`, `UpdateFailedCount` to `0`,
 the same ownership fault, proving that a one-time repair was insufficient. `tools/deploy_ody_op.sh`
 now normalizes `.venv` ownership after its build and before reboot, while `verify` rejects any
 non-`comma`-owned path so this failure cannot be mistaken for a healthy deploy.
+
+### Stock-ACC brake-entry response cross-check (2026-09-18)
+
+The newest route's 22 qualifying delayed brake-entry peaks made domain timing worth checking
+against Honda's own controller before opening another threshold arm. The retained stock-radar
+routes `00000017--7db38e968b`, `00000049--fd8b934bd3`, and `0000004a--b8518d776c` supplied 16
+moving, no-pedal brake entries after excluding any target-gear change in the preceding 1.5 seconds.
+The OpenPilot side used behavior-equivalent brake-entry source from routes
+`0000000b--c529eb1e28`, `00000009--019ee79ffb`, `0000001d--2e324ec2ce`,
+`00000024--8ed656b4ba`, and `00000070--16f597b10c`; the route-0b candidate changed only active-gas
+release and left brake entry and brake-domain output unchanged. It supplied 82 clean entries under
+the same filter.
+
+Stock Honda always passed through coast before these brake entries, but its coast dwell was much
+shorter: `0.039/0.060/0.230 s` q10/median/q90 versus OpenPilot
+`0.170/0.411/2.019 s`. That difference alone did not explain smoothness. Stock entry
+`ACCEL_COMMAND` was broad (`-0.435/-0.275/-0.025 m/s2`) and prior command jerk was
+`-0.600/-0.164/-0.031 m/s3`; OpenPilot entry was concentrated at its selector boundary
+(`-0.330/-0.310/-0.300`) with stronger prior command jerk
+(`-0.798/-0.375/-0.150`). Unmatched 0.20-to-0.75-second achieved-jerk minima were therefore
+`-1.794/-0.818/-0.428 m/s3` stock versus `-2.350/-1.292/-0.366` OpenPilot.
+
+A greedy one-to-one comparison then required the same lead-presence state, entry request within
+`0.12 m/s2`, speed within `2.0 m/s`, pitch within `0.015 rad`, and prior command jerk within
+`0.4 m/s3`. Across nine pairs, stock achieved-jerk mean/median was `-0.927/-0.775 m/s3` versus
+OpenPilot `-0.748/-0.607`; OpenPilot was harsher in only three pairs. This small stock cohort does
+not prove OpenPilot is smoother, but it rejects the narrower hypothesis that Honda's shorter coast
+dwell is itself the missing comfort mechanism. The unmatched difference is materially confounded
+by the command trajectory Honda receives, while the current port reproduces the pinned
+`carControl` request accurately.
+
+**Decision: KEEP the `-0.30 m/s2` brake entry and do not open an earlier-entry or coast-dwell arm.**
+Earlier entry would add brake exposure and transitions without matched evidence of a smoother
+physical response. The remaining delayed bite is after correct command translation and Honda's
+prompt VSA state transition; the previously failed onset shaper also remains closed absent a new
+mechanism. A next longitudinal behavior experiment still requires a distinct Honda-side cause or a
+controlled fixed-request comparison that varies only the opaque gas/brake actuation input.
