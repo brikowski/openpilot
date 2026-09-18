@@ -144,11 +144,13 @@ def main(argv=None):
   # true domain handoff, decoded from the CAN this controller would actually have sent
   flips = forceful = coast_entries = 0
   brake_domain_frames = gas_domain_frames = coast_domain_frames = 0
+  negative_live_gas_frames = negative_live_gas_events = 0
   total_edges = []
   try:
     from opendbc.can.parser import CANParser
     cp = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
     prev = prev_domain = None
+    previous_negative_live = False
     for i, (mono, sends) in enumerate(sendcans):
       cp.update([(mono, [(addr, dat, src) for addr, dat, src in sends])])
       if cp.can_valid:
@@ -157,6 +159,10 @@ def main(argv=None):
         gas = float(cp.vl["ACC_CONTROL"]["GAS_COMMAND"])
         if act[i]:
           domain = "brake" if br else ("gas" if gas > GAS_INACTIVE else "coast")
+          negative_live = domain == "gas" and gas < 0
+          negative_live_gas_frames += negative_live
+          negative_live_gas_events += negative_live and not previous_negative_live
+          previous_negative_live = negative_live
           brake_domain_frames += domain == "brake"
           gas_domain_frames += domain == "gas"
           coast_domain_frames += domain == "coast"
@@ -165,6 +171,7 @@ def main(argv=None):
           prev_domain = domain
         else:
           prev_domain = None
+          previous_negative_live = False
         if prev is not None and br != prev:
           flips += 1
           total_edges.append(mono)
@@ -182,7 +189,9 @@ def main(argv=None):
                  "brake_domain_frames_open_loop_only": brake_domain_frames,
                  "gas_domain_frames_open_loop_only": gas_domain_frames,
                  "coast_domain_frames_open_loop_only": coast_domain_frames,
-                 "coast_entries_open_loop_only": coast_entries},
+                 "coast_entries_open_loop_only": coast_entries,
+                 "negative_live_gas_frames_open_loop_only": negative_live_gas_frames,
+                 "negative_live_gas_events_open_loop_only": negative_live_gas_events},
     "recorded": stats(rec, act),
     # fidelity: on the SAME branch that produced the log this must be ~0. If it is not, the
     # replay is not reproducing the drive and no A/B conclusion drawn from it is trustworthy.

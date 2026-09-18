@@ -202,12 +202,24 @@ throughout.
 
 ## Current focus
 
-Nested `opendbc` `196119896d73` is the current comparison baseline: raw clipped longitudinal
-command, evidence-supported three-domain selection, direct upstream gas mapping, and stock lateral
-authority. It linearly reverts the `-0.15 m/s2` active-gas-release experiment and is behavior-
-equivalent to the earlier `c16579385f56` baseline. There is no active behavioral candidate.
+Nested `opendbc` `147e1d732eaa` is the current single road-pending candidate on top of comparison
+baseline `196119896d73`. It preserves raw clipped `ACCEL_COMMAND`, brake selection, low-speed stop
+authority, direct nonnegative gas mapping, and stock lateral authority. At road speed only, a fresh
+coast recovery crossing nominal `-0.10 m/s2` pre-activates Honda's gas domain with the stock-observed
+`-60` live command until the request becomes nonnegative. It does not apply after braking or to an
+already-active gas domain. A dedicated Odyssey Panda flag permits `-60..2000`; every other Honda
+Bosch longitudinal mode retains `0..2000` plus the inactive sentinel.
+
+Stock full-rate matching supports the hypothesis but is not road proof. At matched `-0.10 m/s2`
+upward crossings, six stock negative-live transitions had median response error `-0.011 m/s2`
+versus OpenPilot coast at `-0.129`, while OpenPilot waited a median `0.67 s` for positive gas. At
+the later gas handoff, seven matched examples showed higher OpenPilot response jerk and positive
+error. Replay exposes the bridge without changing request-to-wire acceleration fidelity. Reject it
+for a positive surge, increased handoff jerk, delayed needed acceleration, late braking, or driver
+intervention; keep/change/retire requires isolated full-rate road evidence against `196119896d73`.
+
 Gasfactor, windfactor, low-speed PID, onset shaping, gas re-entry or release logic, active-zero
-neutral gas, negative live gas, and 3840 steering are historical comparison mechanisms rather than
+neutral gas, and 3840 steering are historical comparison mechanisms rather than
 permanent exclusions. Reopen any one when new logs locate a repeatable first divergence it could
 own, including a response or domain symptom not present in the original exposure. Re-derive the
 hypothesis from current exact-provenance data and current safety semantics instead of inheriting an
@@ -223,9 +235,9 @@ The active-zero road screen carried planner requests through `carControl` and `A
 small residuals, but Honda response crossed past the requested acceleration. In matched 15-25 m/s,
 mild-downhill exposure, active zero moved `-0.10..0` response error from approximately zero to
 `+0.074 m/s2` median and moved the `-0.20..-0.10` hold band from `+0.098` to `+0.153 m/s2`.
-That first divergence belongs to Honda's response to the changed domain state in that exposure. The
-current baseline therefore remains unchanged pending a fresh isolated hypothesis; this result does
-not write off every narrower domain or response mechanism.
+That first divergence belongs to Honda's response to the changed domain state in that exposure.
+This result does not write off every narrower domain or response mechanism; the current negative-
+live bridge is separately owned by the coast-to-gas response gap and does not restore active zero.
 
 A separate event-level rescreen of the same source-equivalent brake path found 21 achieved-jerk
 peaks across three routes about `0.34..0.73 s` after brake-domain entry, with approximately `2.9x`

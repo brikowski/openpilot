@@ -4305,3 +4305,50 @@ physical response. The remaining delayed bite is after correct command translati
 prompt VSA state transition; the previously failed onset shaper also remains closed absent a new
 mechanism. A next longitudinal behavior experiment still requires a distinct Honda-side cause or a
 controlled fixed-request comparison that varies only the opaque gas/brake actuation input.
+
+### Stock-supported negative-live gas bridge (2026-09-18)
+
+Stock-radar routes `00000017--7db38e968b`, `00000049--fd8b934bd3`, and
+`0000004a--b8518d776c` establish that Odyssey `GAS_COMMAND` is signed and that Honda uses a live
+negative transition state distinct from inactive `-30000`. After excluding pedals, speeds below
+5 m/s, and discontinuous samples, 405 frames were in `-88..-3` counts (median `-28`). Nineteen
+clean gas entries started negative (median `-60`): nine from coast and ten from brake. Mild
+coast entries commonly rose from about `-60` to zero over roughly `0.4..0.65 s`; this is not the
+historical +60-count-per-frame OpenPilot limiter.
+
+The OpenPilot comparison used longitudinally behavior-equivalent nested revisions on routes
+`00000009--019ee79ffb`, `00000009--8ce01166d6`, `0000001d--2e324ec2ce`,
+`00000024--8ed656b4ba`, and `00000070--16f597b10c`. For the first screen, matching held origin,
+lead state, request within `0.15 m/s2`, speed within `2.0 m/s`, pitch within `0.015 rad`, and prior
+command jerk within `0.5 m/s3`. Seven matched coast-to-gas pairs had stock versus OpenPilot median
+positive response jerk `0.493/0.626 m/s3` and median achieved error `-0.015/+0.061 m/s2`.
+
+Because OpenPilot fresh gas begins near zero request while stock often begins near `-0.10`, a second
+comparison aligned the same upward `-0.10 m/s2` crossing. Six stock slow negative-live coast entries
+matched six OpenPilot inactive-coast crossings. Stock versus OpenPilot median positive response jerk
+was `0.526/0.358 m/s3`, but achieved error was `-0.011/-0.129 m/s2`; OpenPilot coast over-decelerated
+in all six pairs and waited a median `0.67 s` for positive gas. Together the two screens locate a
+response gap between over-decelerating coast and the later, sharper positive-gas handoff. The prior
+active-zero arm crossed too far toward acceleration; a bounded negative live command is a distinct
+intermediate hypothesis.
+
+Nested commit `147e1d732eaa0328168c9e1b6f9741712222c6a1` implements only that bridge. At road speed,
+a fresh coast recovery crossing nominal `-0.10 m/s2` selects gas at `-60` while the request remains
+negative, then restores the existing direct map at a nonnegative request. It cannot enter from the
+brake domain, does not alter an already-active gas domain, resets on disengagement, preserves raw
+`ACCEL_COMMAND`, and leaves low-speed, braking, lateral, DBC, and other Honda behavior unchanged.
+Panda safety receives an Odyssey-only flag permitting `-60..2000`; standard Bosch remains
+`0..2000`, and `-61` is rejected.
+
+Controller-entry, wire-value, and Panda-minimum mutations each made their focused tests fail before
+restoration. Focused Honda/interface coverage passed 501 tests with 244 platform skips. Preflash
+passed the Odyssey model suite and 20 command-rail tests with 58 subtests. Open-loop replay exposed
+14 negative-live events on baseline route `00000009--019ee79ffb` and 20 on long route
+`0000000b--c529eb1e28`; replay request-to-wire RMS remained `0.0092/0.0063 m/s2`. Frozen response
+cannot grade the bridge.
+
+**Decision: CHANGE to the negative-live bridge for one supervised road screen.** Compare against
+nested baseline `196119896d73` in mild road-speed coast recovery, separately checking response error
+through `-0.10..0`, coast-to-gas achieved jerk, acceleration delay, brake timing, and interventions.
+Retire for positive surge, increased handoff jerk, delayed required acceleration, late braking, or
+any safety/lifecycle regression. This is a software-qualified candidate, not a promotion.

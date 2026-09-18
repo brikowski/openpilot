@@ -35,6 +35,12 @@ stand in for current evidence.
   against the exact arm in its tested conditions, not a permanent threshold conclusion. Raw
   `ACCEL_COMMAND`, brake entry/hold, low-speed stop authority, and positive gas mapping remain
   unchanged.
+- The current single candidate pre-activates gas only when a road-speed coast recovery crosses
+  nominal `-0.10 m/s2`. It sends live `-60` while the request remains negative, then returns to the
+  direct map at a nonnegative request. Stock Honda used `-88..-3` over 405 clean moving frames and
+  six matched slow coast transitions tracked the shared request more closely than OpenPilot coast;
+  this supports a road screen, not promotion. The bridge never enters from braking or at low speed,
+  and a dedicated Odyssey safety flag leaves all other Bosch gas limits unchanged.
 - The active-zero neutral-gas candidate is retired. Three independently exposed road routes showed
   no matched command-following improvement: active zero moved conditioned `-0.10..0` response
   error from approximately zero to `+0.074 m/s2` median and worsened the `-0.20..-0.10` hold band

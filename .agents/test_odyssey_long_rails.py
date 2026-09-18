@@ -145,8 +145,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert not brake[-10:].any()
     assert (gas[-10:] != GAS_INACTIVE).all()
 
-  def test_road_speed_gas_domain_reenters_for_any_positive_request(self):
-    """Gas stays active through mild negatives and fresh positive requests re-enter immediately."""
+  def test_road_speed_gas_domain_uses_negative_bridge_before_positive_request(self):
+    """A coast recovery pre-activates with bounded negative gas, then uses direct positive gas."""
     accels = np.array([0.10] * 20 + [-0.19] * 20 + [-0.21] * 20 + [-0.10] * 20 +
                       [0.01] * 20 + [0.03] * 20)
     rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
@@ -154,7 +154,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     gases = np.array([gas for _, gas, _ in seen])
     brake = np.array([br for _, _, br in seen], dtype=bool)
     assert (gases[:20] != GAS_INACTIVE).all(), "stock gas range pulsed inactive"
-    assert (gases[20:40] == GAS_INACTIVE).all(), "gas re-entered for a non-positive request"
+    assert (gases[20:30] == GAS_INACTIVE).all(), "gas re-entered below the bridge boundary"
+    assert (gases[30:40] == -60).all(), "nominal -0.10 request did not use the negative gas bridge"
     assert (gases[40:50] != GAS_INACTIVE).all(), "positive road request did not re-enter gas"
     assert (gases[50:60] != GAS_INACTIVE).all(), "larger road request did not keep gas active"
     assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
