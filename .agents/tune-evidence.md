@@ -4086,3 +4086,31 @@ or DBC numeric loss. These thin unmatched episodes do not overturn the prior thr
 **Lateral decision: KEEP stock 2560, `latAccelFactor 0.9`, and `steerActuatorDelay 0.15`; make no
 lateral behavior change.** Reopen authority only for a repeatable driver-observed lateral symptom
 with an isolated matched road comparison and explicit fault/override grading.
+
+### Brake-state timing boundary (2026-09-18)
+
+The event diagnostic now aligns each physical brake-domain entry with received
+`VSA_STATUS.COMPUTER_BRAKING`, preserving that decoded status as zero-order-held state. This is a
+downstream Honda/VSA state bit, not a pressure measurement. The exact Bosch DBC has no brake-pressure
+message; Honda's neighboring Nidec DBC labels `0x1E7` as `BRAKE_PRESSURE`, but a full raw-CAN scan
+found no `0x1E7` frame on any bus across all 47 retained segments of routes `00000002` through
+`00000005`. Its Nidec signal meaning therefore cannot be imported into this Odyssey analysis.
+
+All 21 qualifying current-pool coast-to-brake jerk events had a distinct received computer-braking
+rise and the bit was active at every achieved-jerk peak. The request-to-state delay was `0.061 s`
+median (`0.048..0.142 s`), while state-to-achieved-jerk-peak delay was `0.494 s` median
+(`0.290..0.654 s`). The exact historical asymmetric-onset routes showed the same split: all 11
+events had the state edge and active bit at the peak, with `0.068 s` median request-to-state and
+`0.461 s` median state-to-peak. Thus the retired `3.0 m/s3` command shaper did not remove either the
+prompt Honda brake-state transition or the later physical jerk mode.
+
+The synthetic timing assertion was mutation-verified by collapsing its `0.080 s` computer-braking
+delay to zero: the focused test failed on the expected delay comparison, then all three response
+tests passed after restoration. Missing status streams remain explicit as `n/a` rather than being
+coerced to active state.
+
+**Decision: KEEP nested baseline `c16579385f56`; make no Honda behavior change.** The repeatable
+first unresolved boundary now lies after correct planner/request/wire translation and after the
+decoded VSA brake-state transition. Without physical pressure telemetry or a matched exact-baseline
+road comparison, the logs cannot separate Honda's internal brake-pressure control from actuator and
+vehicle response, and they do not justify delaying, scaling, or reshaping `ACCEL_COMMAND`.

@@ -212,8 +212,12 @@ is retired rather than narrowed without another isolated hypothesis.
 A separate event-level rescreen of the same source-equivalent brake path found 21 achieved-jerk
 peaks across three routes about `0.34..0.73 s` after brake-domain entry, with approximately `2.9x`
 median amplification over the strongest causal wire jerk. Planner, `carControl`, and wire remained
-close, all 21 followed coast-to-brake activation, and 19 had no nearby gear change. This confirms a
-Honda-response symptom, but the retired asymmetric onset limiter already failed three adequately
+close, all 21 followed coast-to-brake activation, and 19 had no nearby gear change. Received
+`VSA_STATUS.COMPUTER_BRAKING` rose for all 21 after a median `0.061 s`, while the achieved-jerk peak
+followed that state edge by a median `0.494 s`. Exact onset-limiter routes retained the same split.
+The Bosch logs contain no `0x1E7` pressure frame, so this locates the symptom after command packing
+and brake-state activation without distinguishing Honda's internal pressure loop from physical
+actuator/vehicle response. The retired asymmetric onset limiter already failed three adequately
 exposed road examples and must not be reopened from this repeated symptom alone. Keep raw
 `ACCEL_COMMAND` until a distinct mechanism has isolated evidence against the restored baseline.
 

@@ -22,6 +22,12 @@ def brake_entry_summary(rows, max_edge_age=0.75):
   ages = [row["domain_edge_age"] for row in events]
   command_magnitudes = [abs(row["command_jerk_peak"]) for row in events]
   response_magnitudes = [abs(row["response_jerk"]) for row in events]
+  computer_brake_delays = [row["request_to_computer_brake_s"] for row in events
+                           if row["request_to_computer_brake_s"] is not None]
+  computer_brake_to_peak = [row["computer_brake_to_peak_s"] for row in events
+                            if row["computer_brake_to_peak_s"] is not None]
+  computer_brake_peak_samples = [row["computer_braking_at_peak"] for row in events
+                                 if row["computer_braking_at_peak"] is not None]
   domain_from_counts = {name: sum(row["domain_from"] == name for row in events)
                         for name in ("gas", "coast", "brake")}
   correlation = None
@@ -36,6 +42,13 @@ def brake_entry_summary(rows, max_edge_age=0.75):
     "amplification_median": median(row["amplification"] for row in events),
     "jerk_magnitude_correlation": correlation,
     "domain_from_counts": domain_from_counts,
+    "computer_brake_edges": len(computer_brake_delays),
+    "computer_braking_at_peak": sum(computer_brake_peak_samples),
+    "computer_braking_peak_samples": len(computer_brake_peak_samples),
+    "request_to_computer_brake_median": (median(computer_brake_delays)
+                                          if computer_brake_delays else None),
+    "computer_brake_to_peak_median": (median(computer_brake_to_peak)
+                                       if computer_brake_to_peak else None),
     "without_gear_edge": sum(row["gear_edges_in_history"] == 0 for row in events),
     "plan_request_rms_max": max(row["plan_request_rms"] for row in events),
     "request_wire_rms_max": max(row["request_wire_rms"] for row in events),
@@ -47,6 +60,10 @@ def print_brake_entry_summary(rows):
   if summary["count"]:
     correlation = ("n/a" if summary["jerk_magnitude_correlation"] is None
                    else f"{summary['jerk_magnitude_correlation']:+.2f}")
+    request_to_state = ("n/a" if summary["request_to_computer_brake_median"] is None
+                        else f"{summary['request_to_computer_brake_median']:.3f}s")
+    state_to_peak = ("n/a" if summary["computer_brake_to_peak_median"] is None
+                     else f"{summary['computer_brake_to_peak_median']:.3f}s")
     print("".join((
       f"brake-entry summary: {summary['count']} negative peak(s), edge age ",
       f"{summary['edge_age_min']:.2f}..{summary['edge_age_max']:.2f}s, median response ",
@@ -56,7 +73,10 @@ def print_brake_entry_summary(rows):
       f"{summary['without_gear_edge']}/{summary['count']}, max plan/request/wire RMS ",
       f"{summary['plan_request_rms_max']:.4f}/{summary['request_wire_rms_max']:.4f} m/s^2, from ",
       f"gas/coast/brake={summary['domain_from_counts']['gas']}/",
-      f"{summary['domain_from_counts']['coast']}/{summary['domain_from_counts']['brake']}",
+      f"{summary['domain_from_counts']['coast']}/{summary['domain_from_counts']['brake']}; ",
+      f"computer-brake edge {summary['computer_brake_edges']}/{summary['count']}, active at peak ",
+      f"{summary['computer_braking_at_peak']}/{summary['computer_braking_peak_samples']}, ",
+      f"request->state median {request_to_state}, state->peak median {state_to_peak}",
     )))
   else:
     print("brake-entry summary: no qualifying negative peaks")
@@ -67,7 +87,8 @@ def inspect(route, *, threshold, limit, summary_only):
   clean_active = data["active"] & ~data["gas_pressed"] & ~data["brake_pressed"]
   rows = response_jerk_events(
     data["t"], data["atarget"], data["request"], data["accel_command"], data["aego"],
-    clean_active, data["brake_request"], data["gas_command"], data["vego"], data["pitch"],
+    clean_active, data["brake_request"], data["computer_braking"], data["gas_command"],
+    data["vego"], data["pitch"],
     data["has_lead"], data["plan_source"], data["gear"], data["engine_torque"], data["rpm"],
     gas_inactive=GAS_INACTIVE,
     threshold=threshold, limit=None,
@@ -84,12 +105,17 @@ def inspect(route, *, threshold, limit, summary_only):
                         key=lambda row: row["time"])
   for row in display_rows:
     edge = "none" if row["domain_edge_age"] is None else f"{row['domain_edge_age']:.2f}s"
+    request_to_state = ("n/a" if row["request_to_computer_brake_s"] is None
+                        else f"{row['request_to_computer_brake_s']:.3f}s")
+    state_to_peak = ("n/a" if row["computer_brake_to_peak_s"] is None
+                     else f"{row['computer_brake_to_peak_s']:.3f}s")
     source = PLAN_SOURCE.get(row["plan_source"], f"unknown({row['plan_source']})")
     print("".join((
       f"t={row['time']:8.2f}s response={row['response_jerk']:+.2f} m/s^3 ",
       f"prior-wire={row['command_jerk_peak']:+.2f} ({row['amplification']:.1f}x) ",
       f"domain={row['domain_from']}->{row['domain']} edge-age={edge} ",
-      f"edges/1.5s={row['domain_edges_in_history']}\n",
+      f"edges/1.5s={row['domain_edges_in_history']}; computer-brake ",
+      f"request->state={request_to_state} state->peak={state_to_peak}\n",
       f"  plan->request RMS={row['plan_request_rms']:.4f}, request->wire RMS={row['request_wire_rms']:.4f}; ",
       f"request/wire/aEgo={row['request']:+.2f}/{row['wire']:+.2f}/{row['actual_accel']:+.2f} m/s^2; ",
       f"v={row['speed'] * 2.23694:.1f} mph pitch={row['pitch']:+.4f} ",

@@ -194,7 +194,8 @@ def windowed_jerk(smoothed, dt, active, window_s):
 
 
 def response_jerk_events(grid, planner, requested, wire, actual_accel, active, brake_request,
-                         gas_command, speed, pitch, has_lead, plan_source, gear, engine_torque, rpm,
+                         computer_braking, gas_command, speed, pitch, has_lead, plan_source, gear,
+                         engine_torque, rpm,
                          *, gas_inactive,
                          min_speed=5.0, threshold=1.0, separation_s=0.75, history_s=1.5,
                          attribution_s=0.10, smooth_tau=0.20, jerk_window_s=0.10, limit=8):
@@ -205,7 +206,7 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
   RMS keep an upstream or Honda-translation divergence visible. Domain edges are counted from the
   discrete zero-order-held commands supplied by the caller.
   """
-  arrays = [planner, requested, wire, actual_accel, active, brake_request, gas_command,
+  arrays = [planner, requested, wire, actual_accel, active, brake_request, computer_braking, gas_command,
             speed, pitch, has_lead, plan_source, gear, engine_torque, rpm]
   if len(grid) < 3 or any(len(x) != len(grid) for x in arrays):
     return []
@@ -217,6 +218,9 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
   actual_accel = np.asarray(actual_accel, dtype=float)
   active = np.asarray(active, dtype=bool)
   brake_request = np.asarray(brake_request, dtype=bool)
+  computer_braking_raw = np.asarray(computer_braking, dtype=float)
+  computer_braking_valid = np.isfinite(computer_braking_raw)
+  computer_braking = np.nan_to_num(computer_braking_raw, nan=0.0) > 0.5
   gas_command = np.asarray(gas_command, dtype=float)
   speed = np.asarray(speed, dtype=float)
   pitch = np.asarray(pitch, dtype=float)
@@ -237,6 +241,8 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
 
   domain = np.where(brake_request, 2, np.where(gas_command > gas_inactive, 1, 0))
   edges = physical_edges(domain, valid)
+  computer_brake_edges = physical_edges(computer_braking, valid & computer_braking_valid)
+  computer_brake_rises = computer_brake_edges[computer_braking[computer_brake_edges]]
   local_peak = np.ones(len(grid), dtype=bool)
   local_peak[1:-1] = ((np.abs(response_jerk[1:-1]) >= np.abs(response_jerk[:-2])) &
                       (np.abs(response_jerk[1:-1]) > np.abs(response_jerk[2:])))
@@ -263,6 +269,15 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
     last_edge = int(previous_edges[-1]) if len(previous_edges) else None
     edge_age = float(grid[index] - grid[last_edge]) if last_edge is not None else None
     domain_from = names[int(domain[last_edge - 1])] if last_edge is not None and last_edge > 0 else None
+    computer_brake_edge = None
+    if (last_edge is not None and domain[index] == 2 and computer_braking_valid[last_edge - 1] and
+        not computer_braking[last_edge - 1]):
+      following = computer_brake_rises[(computer_brake_rises >= last_edge) & (computer_brake_rises <= index)]
+      computer_brake_edge = int(following[0]) if len(following) else None
+    request_to_computer_brake = (float(grid[computer_brake_edge] - grid[last_edge])
+                                 if computer_brake_edge is not None else None)
+    computer_brake_to_peak = (float(grid[index] - grid[computer_brake_edge])
+                              if computer_brake_edge is not None else None)
     history_edges = int(np.sum((edges >= history_idx[0]) & (edges <= index)))
     gear_edges = physical_edges(gear, history & np.isfinite(gear))
     response = float(response_jerk[index])
@@ -276,6 +291,13 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
       "domain_from": domain_from,
       "domain_edge_age": edge_age,
       "domain_edges_in_history": history_edges,
+      "computer_braking_before_entry": (bool(computer_braking[last_edge - 1])
+                                          if last_edge is not None and last_edge > 0 and
+                                          computer_braking_valid[last_edge - 1] else None),
+      "computer_braking_at_peak": (bool(computer_braking[index])
+                                     if computer_braking_valid[index] else None),
+      "request_to_computer_brake_s": request_to_computer_brake,
+      "computer_brake_to_peak_s": computer_brake_to_peak,
       "gear_edges_in_history": int(len(gear_edges)),
       "plan_request_rms": float(np.sqrt(np.mean((planner[attribution] - requested[attribution]) ** 2))),
       "request_wire_rms": float(np.sqrt(np.mean((requested[attribution] - wire[attribution]) ** 2))),
