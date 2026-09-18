@@ -4264,5 +4264,7 @@ The on-device update failure was a filesystem ownership defect, not a source or 
 `/data/openpilot/.venv`, while updater and manager run as `comma`. With the device offroad, ownership
 was repaired only for the affected rednose metadata and the updater was retriggered through its
 supported signal. `UpdaterState` returned to `idle`, `UpdateFailedCount` to `0`, and
-`LastUpdateException` to empty; Alpha Long remained enabled. `tools/deploy_ody_op.sh verify` now
-rejects any non-`comma`-owned `.venv` path so this failure cannot be mistaken for a healthy deploy.
+`LastUpdateException` to empty; Alpha Long remained enabled. The first rollback deployment recreated
+the same ownership fault, proving that a one-time repair was insufficient. `tools/deploy_ody_op.sh`
+now normalizes `.venv` ownership after its build and before reboot, while `verify` rejects any
+non-`comma`-owned path so this failure cannot be mistaken for a healthy deploy.

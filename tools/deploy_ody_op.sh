@@ -130,6 +130,10 @@ UV_CACHE_DIR='$DEVICE_UV_CACHE' UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' \
   UV_PYTHON_PREFERENCE=managed uv sync --frozen --all-extras
 PYTHONPATH=/data/openpilot UV_CACHE_DIR='$DEVICE_UV_CACHE' \
   UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' UV_PYTHON_PREFERENCE=managed tools/op.sh build
+# The updater's overlay can preserve root ownership from a prior install. Normalize the project
+# environment before reboot so its comma-owned git clean can replace editable package metadata.
+sudo chown -R comma:comma .venv
+test -z \"\$(find .venv -xdev ! -user comma -print -quit)\"
 test \"\$(git rev-parse HEAD)\" = '$PARENT_SHA'
 test \"\$(git ls-tree HEAD opendbc_repo | awk '{print \$3}')\" = '$OPENDBC_SHA'
 test \"\$(git -C opendbc_repo rev-parse HEAD)\" = '$OPENDBC_SHA'
