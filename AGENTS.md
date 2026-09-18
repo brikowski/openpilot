@@ -221,6 +221,13 @@ actuator/vehicle response. The retired asymmetric onset limiter already failed t
 exposed road examples and must not be reopened from this repeated symptom alone. Keep raw
 `ACCEL_COMMAND` until a distinct mechanism has isolated evidence against the restored baseline.
 
+Brake-state dwell does not supply that mechanism. Across the same 21 events, longer coast and
+received-computer-braking-off dwell did not precede larger jerk; a conditioned subset remained
+inverse but was confounded by wire-command slope, and the 11 exact onset-limiter events supplied no
+independent positive dwell trend. The selector already holds braking through every negative request,
+while historical time-release and width arms failed on road. Do not extend the brake hold from this
+screen.
+
 The same four-route pool adds no reason to reopen lateral authority. Routes 02, 03, and 05 supplied
 1.46, 8.72, and 3.31 seconds at the stock 2560 cap with zero steering faults; conditioned response
 ranged from close tracking to strong under-response and did not repeat consistently across matched

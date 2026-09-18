@@ -4114,3 +4114,37 @@ first unresolved boundary now lies after correct planner/request/wire translatio
 decoded VSA brake-state transition. Without physical pressure telemetry or a matched exact-baseline
 road comparison, the logs cannot separate Honda's internal brake-pressure control from actuator and
 vehicle response, and they do not justify delaying, scaling, or reshaping `ACCEL_COMMAND`.
+
+### Brake-off dwell and release-hold closure (2026-09-18)
+
+The same events were screened for a narrower lifecycle hypothesis: whether Honda's later brake bite
+gets worse after the brake state has been inactive long enough to require hydraulic re-priming. Each
+dwell is the contiguous clean-active interval before the physical brake-domain edge, measured from
+zero-order-held gas/brake domain and received `VSA_STATUS.COMPUTER_BRAKING` state. This is still a
+state-duration diagnostic, not pressure telemetry.
+
+Across all 21 source-equivalent current-pool events, prior-coast dwell versus achieved-jerk magnitude
+had correlation `-0.499`, and computer-braking-off dwell versus jerk had correlation `-0.470`.
+Longer inactive dwell therefore did not precede a larger response peak. A tighter 13-event subset
+required 16-19 m/s, `0.20..0.50 m/s2` request magnitude, and no nearby gear edge; its correlations
+remained `-0.543` for coast dwell and `-0.483` for computer-braking-off dwell. The six events below
+two seconds off had `1.79 m/s3` median jerk versus `1.29` for the seven longer-off events, but their
+median prior-wire jerk was also `0.378` versus `0.167 m/s3`, and three of the six short-off events
+came from the single harsher route `00000005`. That split cannot isolate dwell from command slope or
+route conditions.
+
+The exact historical asymmetric-onset cohort provides no independent positive dwell relationship.
+Across its 11 events, computer-braking-off dwell versus achieved jerk was `-0.155`; prior-domain
+dwell versus jerk was only `+0.300`, compared with `+0.372` for prior-wire jerk, and the sole
+gas-to-brake event carried a 14.4-second prior-domain dwell. The ten coast-to-brake events span
+roughly `0.02..0.48 s` of clean prior coast without a monotonic severity ordering.
+
+The current selector already retains `BRAKE_REQUEST` for every negative request after entry and
+releases at zero. Extending it through nonnegative coast would recreate the time-based
+`BRAKE_RELEASE_HOLD` or wider-domain family: those mechanisms already failed road screens, and the
+new dwell evidence neither identifies a selector divergence nor contradicts their retirement.
+
+**Decision: KEEP the existing brake lifecycle and retire a new dwell/hold experiment.** Do not add
+a time hold, widen the release threshold, or keep `COMPUTER_BRAKING` active to mask this response
+mode. The next production hypothesis still requires exact-baseline evidence for a distinct mechanism
+that owns the downstream response without withholding a correct `carControl` command.
