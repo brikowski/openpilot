@@ -26,6 +26,7 @@ from validate_log import (
   write_ledger_md,
 )
 from tuning_metrics import (
+  active_zero_gas_metrics,
   after_grace,
   brake_episode_metrics,
   brake_release_hold_metrics,
@@ -330,7 +331,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "2dcbb30f5a53", "929540bbcf79", "5144f8b2fe94",
                          "9d6f42dd4fce", "f52c828fdf49", "871b98a64f6e",
                          "aa8a2e60fbad", "0bd54951753f", "31a1776c7bf4",
-                         "9e9eeeb25084", "909b12c8e218"):
+                         "9e9eeeb25084", "909b12c8e218", "bee068d882d1"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -342,6 +343,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
 
   assert _brake_passthrough_expected("f52c828fdf49")
   assert _brake_passthrough_expected("31a1776c7bf4")
+  assert _brake_passthrough_expected("bee068d882d1")
   for onset_commit in ("871b98a64f6e", "aa8a2e60fbad", "0bd54951753f"):
     assert onset_commit in BRAKE_ONSET_RATE_LIMIT_COMMITS
     assert not _brake_passthrough_expected(onset_commit)
@@ -569,6 +571,49 @@ def test_gas_reentry_pulse_metric_isolates_tiny_short_coast_reentry():
   assert metrics["gas_reentry_pulse_tiny_short_events"] == 1
   assert np.isclose(metrics["gas_reentry_pulse_duration_median"], 0.39)
   assert np.isclose(metrics["gas_reentry_pulse_entry_request_max"], 0.01)
+
+
+def test_active_zero_gas_metric_isolates_state_and_response():
+  grid = np.arange(0.0, 3.0, 0.01)
+  engaged = np.ones(len(grid), dtype=bool)
+  vego = np.full(len(grid), 20.0)
+  brake_request = np.zeros(len(grid), dtype=bool)
+  brake_pressed = np.zeros(len(grid), dtype=bool)
+  gas = np.full(len(grid), -30000.0)
+  requested = np.zeros(len(grid))
+  achieved = np.zeros(len(grid))
+
+  gas[50:120] = 0.0
+  requested[50:120] = -0.08
+  achieved[50:120] = -0.03
+  gas[150:180] = 0.0
+  requested[150:180] = -0.04
+  achieved[150:180] = -0.14
+
+  # These zero-command frames are outside the state being measured.
+  gas[10:20] = 0.0
+  engaged[10:20] = False
+  gas[200:210] = 0.0
+  brake_request[200:210] = True
+  gas[220:230] = 0.0
+  brake_pressed[220:230] = True
+  gas[240:250] = 0.0
+  vego[240:250] = 4.0
+  gas[260:270] = 100.0
+
+  metrics = active_zero_gas_metrics(
+    grid, requested, achieved, engaged, vego, brake_request, brake_pressed, gas,
+    low_speed_vego=5.0, short_duration_s=1.0,
+  )
+
+  assert np.isclose(metrics["active_zero_gas_sec"], 1.0)
+  assert metrics["active_zero_gas_events"] == 2
+  assert metrics["active_zero_gas_short_events"] == 2
+  assert np.isclose(metrics["active_zero_gas_longest"], 0.70)
+  assert np.isclose(metrics["active_zero_gas_request_min"], -0.08)
+  assert np.isclose(metrics["active_zero_gas_request_max"], -0.04)
+  assert np.isclose(metrics["active_zero_gas_response_error_mean"], 0.005)
+  assert np.isclose(metrics["active_zero_gas_response_error_rms"], np.sqrt(0.00475))
 
 
 def test_gas_reentry_pulse_metric_does_not_call_brake_handoff_a_pulse():

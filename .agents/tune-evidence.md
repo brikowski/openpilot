@@ -3951,6 +3951,13 @@ the neutral-state regression fail; the implementation then passed all 20 Odyssey
 7 model/interface tests plus the rail suite. Replay retained raw request shape and did not add
 brake authority. These are software and command-shape results only.
 
+The road validator maps `bee068d882d1` to the unchanged raw brake-domain model and now reports
+active-zero exposure, event and sub-one-second counts, request range, and aligned
+`aEgo-carControl` mean/RMS separately from positive live gas. This is an ungraded state and
+response diagnostic, not an acceptance threshold. Mutation from exact zero to nonnegative gas
+incorrectly admitted a positive 100-count command and failed the synthetic exposure assertion;
+restoring the exact-zero selector passed all 45 focused validator tests.
+
 **Decision: CHANGE to the active-zero candidate for one supervised road screen; do not promote it
 yet.** Compare against the direct parent and report neutral entries/minute and duration, engine
 torque across inactive-to-zero and zero-to-positive transitions, aligned `aEgo-request` in the

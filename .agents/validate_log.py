@@ -24,6 +24,7 @@ from opendbc.car.honda.values import CarControllerParams as HondaParams
 # CUSTOM TOOLING: keep behavior-changing array math independent from route I/O and ledger policy,
 # so synthetic traces can prove each metric both passes and fails before it grades a road drive.
 from tuning_metrics import (
+  active_zero_gas_metrics,
   brake_episode_metrics,
   brake_release_hold_metrics,
   causal_lpf as _causal_lpf,
@@ -136,6 +137,7 @@ LOW_SPEED_DOMAIN_VEGO = 5.0   # m/s: region where an incorrect handoff can inter
 GAS_REENTRY_PULSE_ENTRY_MAX = 0.02  # m/s^2: diagnostic boundary for a tiny positive re-entry
 GAS_REENTRY_PULSE_MAX_S = 1.0        # s: short event boundary used by the gas-pulse readout
 GAS_REENTRY_PULSE_ENTRY_WINDOW_S = CAN_COMMAND_PERIOD_S
+ACTIVE_ZERO_GAS_SHORT_S = 1.0       # s: expose short active-zero cycling; diagnostic only
 NEGATIVE_REQUEST_GAS_THRESHOLD = -0.02  # m/s^2: diagnostic boundary; not a brake-domain rule
 STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
                                # deceleration only says the plan asked for braking; excess separates
@@ -188,6 +190,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "825642c4218b": -0.30,  # current ody-op baseline after reverting the unproven agile arm
   "9e9eeeb25084": -0.30,  # lateral candidate; longitudinal domain selection matches the baseline
   "909b12c8e218": -0.30,  # current pinned opendbc source; command-domain behavior is unchanged
+  "bee068d882d1": -0.30,  # active-zero gas candidate; brake-domain behavior is unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -220,6 +223,7 @@ THREE_DOMAIN_COMMITS = {
   "825642c4218b",  # current ody-op baseline after reverting the unproven agile arm
   "9e9eeeb25084",  # lateral candidate; raw three-domain longitudinal output is unchanged
   "909b12c8e218",  # current pinned opendbc source; raw three-domain output is unchanged
+  "bee068d882d1",  # active-zero gas candidate; raw brake-domain output is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
@@ -1257,6 +1261,11 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "gas_reentry_pulse_duration_median": None,
          "gas_reentry_pulse_tiny_duration_median": None,
          "gas_reentry_pulse_entry_request_max": None,
+         "active_zero_gas_sec": None, "active_zero_gas_events": None,
+         "active_zero_gas_short_events": None, "active_zero_gas_longest": None,
+         "active_zero_gas_request_min": None, "active_zero_gas_request_max": None,
+         "active_zero_gas_response_error_mean": None,
+         "active_zero_gas_response_error_rms": None,
          "negative_request_gas_sec": None, "negative_request_gas_events": None,
          "negative_request_gas_longest": None, "negative_request_gas_request_min": None,
          "direct_gas_to_brake": None, "direct_brake_to_gas": None,
@@ -1342,6 +1351,12 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     entry_request_max=GAS_REENTRY_PULSE_ENTRY_MAX,
     short_duration_s=GAS_REENTRY_PULSE_MAX_S,
     entry_window_s=GAS_REENTRY_PULSE_ENTRY_WINDOW_S,
+  ))
+  out.update(active_zero_gas_metrics(
+    grid, requested, aego, eng_all, vego_all, BR, brakepressed, GAS,
+    low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
+    short_duration_s=ACTIVE_ZERO_GAS_SHORT_S,
+    dt=dt,
   ))
   out.update(negative_request_gas_metrics(
     grid, requested, eng_all, vego_all, brakepressed, BR, GAS,
@@ -1755,6 +1770,20 @@ def verdicts(r):
         f"(<= {GAS_REENTRY_PULSE_ENTRY_MAX:+.2f} m/s^2); median {duration}, "
         f"tiny median {tiny_duration}, max entry request {entry_request} "
         f"(no calibrated limit)")
+  if r.get("active_zero_gas_sec") is not None:
+    request_min = (f"{r['active_zero_gas_request_min']:+.3f}"
+                   if r.get("active_zero_gas_request_min") is not None else "n/a")
+    request_max = (f"{r['active_zero_gas_request_max']:+.3f}"
+                   if r.get("active_zero_gas_request_max") is not None else "n/a")
+    response_mean = (f"{r['active_zero_gas_response_error_mean']:+.3f}"
+                     if r.get("active_zero_gas_response_error_mean") is not None else "n/a")
+    response_rms = (f"{r['active_zero_gas_response_error_rms']:.3f}"
+                    if r.get("active_zero_gas_response_error_rms") is not None else "n/a")
+    add("active-zero gas (diagnostic)", True,
+        f"{r['active_zero_gas_sec']:.2f}s over {r['active_zero_gas_events']} event(s), "
+        f"{r['active_zero_gas_short_events']} under {ACTIVE_ZERO_GAS_SHORT_S:.1f}s, "
+        f"longest {r['active_zero_gas_longest']:.2f}s; request {request_min}..{request_max} m/s^2, "
+        f"aEgo-request mean/RMS {response_mean}/{response_rms} m/s^2 (no calibrated limit)")
   if r.get("negative_request_gas_sec") is not None:
     request_min = (f"{r['negative_request_gas_request_min']:+.3f} m/s^2"
                    if r.get("negative_request_gas_request_min") is not None else "n/a")

@@ -278,6 +278,68 @@ def gas_handoff_values(gas_command, gas_inactive):
   return gas[1:][handoffs]
 
 
+def active_zero_gas_metrics(grid, requested, achieved, engaged, vego, brake_request,
+                            brake_pressed, gas_command, *, low_speed_vego,
+                            short_duration_s, dt=None):
+  """Describe Honda's live gas domain with a zero ``GAS_COMMAND``.
+
+  Active zero is distinct from both inactive gas and positive gas on Honda Bosch. This ungraded
+  readout isolates that state above the low-speed stop/start region and reports the vehicle response
+  without asserting that active zero is better than coast for any particular request.
+  """
+  arrays = [grid, requested, achieved, engaged, vego, brake_request, brake_pressed, gas_command]
+  n = len(grid)
+  empty = {
+    "active_zero_gas_sec": 0.0,
+    "active_zero_gas_events": 0,
+    "active_zero_gas_short_events": 0,
+    "active_zero_gas_longest": 0.0,
+    "active_zero_gas_request_min": None,
+    "active_zero_gas_request_max": None,
+    "active_zero_gas_response_error_mean": None,
+    "active_zero_gas_response_error_rms": None,
+  }
+  if not n or any(len(np.asarray(value)) != n for value in arrays[1:]):
+    return empty
+
+  grid = np.asarray(grid, dtype=float)
+  requested = np.asarray(requested, dtype=float)
+  achieved = np.asarray(achieved, dtype=float)
+  engaged = np.asarray(engaged, dtype=bool)
+  vego = np.asarray(vego, dtype=float)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  brake_pressed = np.asarray(brake_pressed, dtype=bool)
+  gas_command = np.asarray(gas_command, dtype=float)
+  if dt is None:
+    dt = float(np.median(np.diff(grid))) if n > 1 else 0.01
+  if not np.isfinite(dt) or dt <= 0.0:
+    dt = 0.01
+
+  eligible = (engaged & ~brake_pressed & (vego >= low_speed_vego) & ~brake_request &
+              (gas_command == 0.0))
+  transitions = np.diff(eligible.astype(np.int8), prepend=0, append=0)
+  starts = np.flatnonzero(transitions == 1)
+  ends = np.flatnonzero(transitions == -1)
+  durations = (ends - starts) * dt
+  finite_request = eligible & np.isfinite(requested)
+  finite_response = finite_request & np.isfinite(achieved)
+  response_error = achieved[finite_response] - requested[finite_response]
+  return {
+    "active_zero_gas_sec": float(eligible.sum() * dt),
+    "active_zero_gas_events": int(len(starts)),
+    "active_zero_gas_short_events": int(np.sum(durations < short_duration_s)),
+    "active_zero_gas_longest": float(np.max(durations)) if len(durations) else 0.0,
+    "active_zero_gas_request_min": (
+      float(np.min(requested[finite_request])) if finite_request.any() else None),
+    "active_zero_gas_request_max": (
+      float(np.max(requested[finite_request])) if finite_request.any() else None),
+    "active_zero_gas_response_error_mean": (
+      float(np.mean(response_error)) if len(response_error) else None),
+    "active_zero_gas_response_error_rms": (
+      float(np.sqrt(np.mean(response_error ** 2))) if len(response_error) else None),
+  }
+
+
 def gas_reentry_pulse_metrics(grid, requested, engaged, vego, brake_request, brake_pressed,
                               gas_command, *, low_speed_vego, gas_inactive,
                               entry_request_max, short_duration_s, entry_window_s):
