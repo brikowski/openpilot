@@ -1,5 +1,6 @@
 import numpy as np
 
+from inspect_response import brake_entry_summary
 from tuning_metrics import response_jerk_events
 
 
@@ -35,3 +36,15 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context():
   assert event["request_wire_rms"] == 0.0
   assert event["gear_edges_in_history"] == 0
   assert event["gear"] == 6.0
+
+  summary = brake_entry_summary(rows, max_edge_age=1.0)
+  assert summary == {
+    "count": 1,
+    "edge_age_min": event["domain_edge_age"],
+    "edge_age_max": event["domain_edge_age"],
+    "response_jerk_median": event["response_jerk"],
+    "amplification_median": event["amplification"],
+    "without_gear_edge": 1,
+    "plan_request_rms_max": 0.0,
+    "request_wire_rms_max": 0.0,
+  }

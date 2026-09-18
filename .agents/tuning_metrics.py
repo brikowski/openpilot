@@ -247,7 +247,7 @@ def response_jerk_events(grid, planner, requested, wire, actual_accel, active, b
     if any(abs(grid[index] - grid[prior]) < separation_s for prior in selected):
       continue
     selected.append(int(index))
-    if len(selected) >= limit:
+    if limit is not None and len(selected) >= limit:
       break
 
   names = ("coast", "gas", "brake")
