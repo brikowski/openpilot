@@ -141,6 +141,7 @@ GAS_REENTRY_PULSE_MAX_S = 1.0        # s: short event boundary used by the gas-p
 GAS_REENTRY_PULSE_ENTRY_WINDOW_S = CAN_COMMAND_PERIOD_S
 ACTIVE_ZERO_GAS_SHORT_S = 1.0       # s: expose short active-zero cycling; diagnostic only
 ODYSSEY_GAS_BRIDGE_COMMAND = -60.0  # counts: exact command from the nested road candidate
+ODYSSEY_GAS_BRIDGE_ENTRY = -0.101   # m/s^2: exact source entry bound, including float32 -0.10
 NEGATIVE_REQUEST_GAS_THRESHOLD = -0.02  # m/s^2: diagnostic boundary; not a brake-domain rule
 GAS_RELEASE_BAND_REQUEST_MIN = -0.20
 GAS_RELEASE_BAND_REQUEST_MAX = -0.15
@@ -202,6 +203,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "c16579385f56": -0.30,  # reverts active zero; restores the retained three-domain baseline
   "409c25925c19": -0.30,  # -0.15 active-gas release; brake-domain behavior is unchanged
   "196119896d73": -0.30,  # reverts the failed -0.15 release screen; baseline restored
+  "147e1d732eaa": -0.30,  # negative-live gas bridge; brake-domain behavior is unchanged
+  "afc133f34": -0.30,  # bounds bridge recovery; brake-domain behavior is unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -238,6 +241,8 @@ THREE_DOMAIN_COMMITS = {
   "c16579385f56",  # active-zero revert; raw three-domain baseline restored
   "409c25925c19",  # -0.15 active-gas release; raw brake-domain behavior is unchanged
   "196119896d73",  # release-boundary revert; raw three-domain baseline restored
+  "147e1d732eaa",  # negative-live gas bridge; raw brake-domain behavior is unchanged
+  "afc133f34",  # bounded bridge recovery; raw brake-domain behavior is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
@@ -1289,6 +1294,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "gas_bridge_felt_jerk_p95": None, "gas_bridge_brake_overlap_sec": None,
          "gas_bridge_low_speed_sec": None, "gas_bridge_exit_events": None,
          "gas_bridge_exit_jerk_median": None, "gas_bridge_exit_jerk_p90": None,
+         "gas_bridge_event_details": [],
          "gas_release_band_gas_sec": None, "gas_release_band_gas_events": None,
          "gas_release_band_gas_error_mean": None,
          "gas_release_band_coast_sec": None, "gas_release_band_coast_events": None,
@@ -1399,6 +1405,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   out.update(negative_live_gas_bridge_metrics(
     grid, requested, aego, eng_all, vego_all, BR, brakepressed, GAS,
     low_speed_vego=LOW_SPEED_DOMAIN_VEGO,
+    bridge_entry_min=ODYSSEY_GAS_BRIDGE_ENTRY,
     bridge_command=ODYSSEY_GAS_BRIDGE_COMMAND,
     gas_inactive=GAS_INACTIVE,
     smooth_tau=JERK_SMOOTH_TAU,

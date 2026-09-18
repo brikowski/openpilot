@@ -4352,3 +4352,33 @@ nested baseline `196119896d73` in mild road-speed coast recovery, separately che
 through `-0.10..0`, coast-to-gas achieved jerk, acceleration delay, brake timing, and interventions.
 Retire for positive surge, increased handoff jerk, delayed required acceleration, late braking, or
 any safety/lifecycle regression. This is a software-qualified candidate, not a promotion.
+
+#### First bridge route and bounded-recovery correction (2026-09-18)
+
+Route `0000000c--25d237b5ee` is exact root `e7a68cb5b612` / nested
+`147e1d732eaa`, small model `f030157ccd2bacbdc6d7b98358903cbacc0e0b34`, standard personality,
+Experimental off, and Alpha Long enabled. It supplied 13.2 engaged minutes and four reconstructed
+bridge events totaling 3.30 seconds, with zero brake or low-speed overlap. Planner-to-`carControl`
+RMS was `0.0024 m/s2`; gas/brake request-to-wire RMS was `0.0083/0.0101`, so the route does not
+locate a numeric upstream or CAN-packing divergence.
+
+The four entries were genuine recoveries: their request increased by `+0.020..+0.083 m/s2` over the
+preceding 0.20 seconds before crossing the nominal `-0.10` entry. Two continued to positive gas.
+Their bridge durations were 0.70/0.20 seconds, response errors `-0.113/-0.288 m/s2`, and positive-exit
+jerk maxima `0.588/1.093 m/s3`; two examples are too thin and mixed to establish a comfort gain.
+The other two reversed after entry, but the bridge-originated gas latch inherited ordinary active-
+gas hysteresis and remained at `-60` down to requests of `-0.216/-0.202 m/s2`. Those 1.14/1.26-second
+events under-decelerated by `+0.199/+0.196 m/s2` on average before returning to coast. This is the
+first repeatable divergence: the upstream request changed direction correctly, while the candidate
+Honda domain lifecycle kept its recovery command active outside its owned entry band.
+
+**Decision: CHANGE the same bridge hypothesis, not its command value.** Nested
+`afc133f343d84c1a6ecf15320fd4ba684ca0e9c8` makes only bridge-originated gas return to coast below `-0.101 m/s2`; ordinary already-
+active gas retains the existing `-0.20` hysteresis, and braking, low speed, raw `ACCEL_COMMAND`,
+lateral, DBC, and safety bounds are unchanged. Mutation of that release guard made the focused test
+fail. The full nested gate passed 3,978 tests with 702 skips; preflash passed seven model tests and
+20 command-rail tests with 58 subtests. Frozen-input replay on route 0c retained four entries but
+reduced negative-live exposure from the recorded 3.30 seconds to about 1.94 seconds, with
+request-error RMS `0.0056 m/s2`; it does not predict closed-loop response. Deploy this bounded
+revision for the second supervised road example and compare reversal handling and positive exits
+separately before keep or revert.

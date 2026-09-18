@@ -238,6 +238,11 @@ mild-downhill exposure, active zero moved `-0.10..0` response error from approxi
 That first divergence belongs to Honda's response to the changed domain state in that exposure.
 This result does not write off every narrower domain or response mechanism; the current negative-
 live bridge is separately owned by the coast-to-gas response gap and does not restore active zero.
+Its first road route exposed a narrower lifecycle error: two valid recovery entries reversed toward
+stronger deceleration, but bridge-originated gas inherited ordinary active-gas hysteresis and held
+`-60` down to about `-0.20 m/s2`. The current nested candidate bounds only that bridge-originated
+state to `-0.101..0 m/s2`; ordinary active gas remains unchanged. This revision is software-gated
+and awaiting its second supervised road example, not yet retained or promoted.
 
 A separate event-level rescreen of the same source-equivalent brake path found 21 achieved-jerk
 peaks across three routes about `0.34..0.73 s` after brake-domain entry, with approximately `2.9x`

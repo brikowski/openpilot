@@ -334,7 +334,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "9d6f42dd4fce", "f52c828fdf49", "871b98a64f6e",
                          "aa8a2e60fbad", "0bd54951753f", "31a1776c7bf4",
                          "9e9eeeb25084", "909b12c8e218", "bee068d882d1", "c16579385f56",
-                         "409c25925c19"):
+                         "409c25925c19", "196119896d73", "147e1d732eaa", "afc133f34"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -349,6 +349,9 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert _brake_passthrough_expected("bee068d882d1")
   assert _brake_passthrough_expected("c16579385f56")
   assert _brake_passthrough_expected("409c25925c19")
+  assert _brake_passthrough_expected("196119896d73")
+  assert _brake_passthrough_expected("147e1d732eaa")
+  assert _brake_passthrough_expected("afc133f34")
   for onset_commit in ("871b98a64f6e", "aa8a2e60fbad", "0bd54951753f"):
     assert onset_commit in BRAKE_ONSET_RATE_LIMIT_COMMITS
     assert not _brake_passthrough_expected(onset_commit)
@@ -643,13 +646,17 @@ def test_negative_live_gas_bridge_metric_isolates_response_and_lifecycle():
   # These live-negative frames must be reported as lifecycle overlap, not response exposure.
   gas[220:230] = -60.0
   brake_request[220:230] = True
+  requested[220:230] = -0.05
   gas[250:260] = -60.0
   vego[250:260] = 4.0
+  requested[250:260] = -0.05
   gas[280:300] = -30.0  # another negative command is not the candidate's exact bridge
+  gas[320:340] = -60.0
+  requested[320:340] = 0.10  # mapped -60 after a positive request is not a bridge entry
 
   metrics = negative_live_gas_bridge_metrics(
     grid, requested, achieved, engaged, vego, brake_request, brake_pressed, gas,
-    low_speed_vego=5.0, bridge_command=-60.0, gas_inactive=-30000,
+    low_speed_vego=5.0, bridge_entry_min=-0.101, bridge_command=-60.0, gas_inactive=-30000,
     smooth_tau=0.20, jerk_window_s=0.10,
   )
 
@@ -665,6 +672,8 @@ def test_negative_live_gas_bridge_metric_isolates_response_and_lifecycle():
   assert np.isclose(metrics["gas_bridge_low_speed_sec"], 0.10)
   assert metrics["gas_bridge_exit_events"] == 2
   assert metrics["gas_bridge_exit_jerk_median"] is not None
+  assert [event["start_s"] for event in metrics["gas_bridge_event_details"]] == [0.5, 1.5]
+  assert all(event["positive_exit"] for event in metrics["gas_bridge_event_details"])
 
 
 def test_gas_reentry_pulse_metric_does_not_call_brake_handoff_a_pulse():
