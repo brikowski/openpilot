@@ -3906,3 +3906,55 @@ next longitudinal production hypothesis requires a matched, level-road fixed-req
 that varies the Honda gas command independently and records speed, pitch, gear, engine torque,
 and achieved acceleration. Lateral received no new symptom or matched exposure in this audit;
 keep the stock 2560 map unchanged.
+
+### Active-zero neutral-gas candidate (2026-09-17)
+
+The current-source-equivalent pool was split by physical command domain before proposing another
+gas change. Stable inactive coast with raw requests between `-0.30` and zero supplied 368.1 seconds.
+At a `+0.6 s` response alignment, `aEgo-request` had median `+0.081 m/s2` in the
+`-0.30..-0.20` bin and `+0.065 m/s2` in `-0.20..-0.10`, so replacing the whole coast band with
+active gas would weaken requested deceleration. In the narrower `-0.10..0` recovery bin, however,
+28.7 seconds had median `-0.148 m/s2`, mean `-0.182`, and RMS `0.312`: inactive coast commonly
+decelerated more than the near-zero request. Dropping each of the six largest route contributors
+left pooled medians from `-0.093` through `-0.218 m/s2`, so the sign did not depend on one route.
+
+Across 237 clean gas-to-inactive-coast transitions, median engine torque fell from about `+39` at
+the transition to `-115` after 0.6 seconds and `-159` after 1.0 second while the request settled
+near `-0.21 m/s2`; achieved acceleration moved from `+0.087` to `-0.176 m/s2`. That supports
+retaining inactive coast around `-0.20`, not applying a broad neutral override.
+
+The retained stock-radar streams establish a narrower Honda state. Routes
+`00000017--7db38e968b`, `00000049--fd8b934bd3`, and `0000004a--b8518d776c` contained 179 valid
+frames in which `CONTROL_ON=5`, `BRAKE_REQUEST=0`, and `GAS_COMMAND=0`. They formed 23 episodes;
+route 49 included sustained runs of 0.67, 1.08, and 1.15 seconds, while routes 17 and 4a included
+active-zero frames at `ACCEL_COMMAND=-0.10 m/s2`. Route 49's sustained zero-command windows held
+estimated engine torque near zero. These observations establish active-zero reachability and
+semantics, not closed-loop calibration for OpenPilot.
+
+Nested `opendbc` `bee068d882d1ce1f20e7db8ecbaeac38d3080e72` is therefore one isolated,
+road-pending translation experiment on `ody-op`; `909b12c8e21857984d9995e0e59543d0401c514f`
+is its direct nested rollback parent, and root `a1dd8e58bec7c4b508738d297b51d34c42078528`
+is the paired root rollback. After inactive coast, a raw request above `-0.10 m/s2` selects
+active `GAS_COMMAND=0`; that neutral state remains selected down to the upstream `-0.20 m/s2`
+split. A prior brake still requires a positive request to release, positive gas retains the direct
+upstream map, and `ACCEL_COMMAND`, the `-0.30` brake entry, low-speed brake authority, DBC, and
+Panda rails are unchanged.
+
+Frozen-input projection over the 19-route source-equivalent pool changes 140.46 seconds across
+154 neutral entries; 120 projected entries are under one second, so transition smoothness is an
+explicit rejection risk rather than an assumed benefit. Representative projections were 23.82
+seconds on route 09, 3.73 seconds on route 22, and 6.79 seconds on route 1d. The projection adds
+one zero-command-to-brake transition and no positive-gas overlap; the regression requires that
+boundary to drop gas inactive and apply the raw brake request in the same frame. Mutation first made
+the neutral-state regression fail; the implementation then passed all 20 Odyssey rail tests and
+58 subtests, 27 focused Honda interface tests, 247 Honda safety tests, and the preflash gate's
+7 model/interface tests plus the rail suite. Replay retained raw request shape and did not add
+brake authority. These are software and command-shape results only.
+
+**Decision: CHANGE to the active-zero candidate for one supervised road screen; do not promote it
+yet.** Compare against the direct parent and report neutral entries/minute and duration, engine
+torque across inactive-to-zero and zero-to-positive transitions, aligned `aEgo-request` in the
+`-0.10..0` band, achieved jerk, set-speed error, gas/brake handoffs, interventions, and driver
+feel. Retire immediately for a positive surge, increased short pulsing, delayed required braking,
+brake-to-neutral release before a positive request, or any safety regression. Lateral is unchanged
+and remains stock 2560.

@@ -15,14 +15,17 @@ a substitute for current code, DBC semantics, or full-rate logs.
   `validate_log.py` continues to counter-match full-rate controller sends to the physical bus-1
   steering frame so stock-radar attenuation is not confused with the controller cap.
 - Longitudinal is scoped to `HONDA_ODYSSEY_5G_MMR`. Other Bosch Hondas retain upstream behavior.
-- `GAS_COMMAND` uses upstream's direct request mapping and upstream Odyssey ceiling:
+- Positive and already-active mapped `GAS_COMMAND` use upstream's direct request mapping and
+  upstream Odyssey ceiling:
   `[-0.2, 2.0] m/s2 -> [0, 2000]` counts. The former speed map and live residual multiplier are
   both retired: the map was an adaptive seed, and keeping it alone permanently attenuated upstream
   gas to 54-72% without an isolated road benefit. On frozen routes `61`, `64`, and `68`, however,
   direct mapping is usually lower than the final learned wire command. The road arm must therefore
   reject repeatable under-response or set-speed loss as well as excess gas or surge; replay proves
   command exposure only.
-- The active gas arm sends `GAS_COMMAND` from the controller request only. Pitch and
+- The road-pending neutral candidate does not rescale positive gas. It sends Honda's active-zero
+  gas state only when inactive coast recovers above `-0.10 m/s2`, holds zero down to `-0.20 m/s2`,
+  and keeps a prior brake selected until the request becomes positive. Pitch and
   aerodynamic-drag estimates remain available in offline diagnostic analysis; the retired
   production windfactor state and wind/grade terms do not select the brake domain, change
   `ACCEL_COMMAND`, or add wire force. Command domains use only the raw request and speed.
@@ -37,10 +40,12 @@ a substitute for current code, DBC semantics, or full-rate logs.
   attributable improvement after all three means removal, while a safety regression can end it sooner.
 - `ody-op-test` is frozen after its stacked coast, threshold, integral, onset, and release
   experiments failed the reported downhill symptom.
-- The raw upstream-split `ody-op-test2` reference failed its first road screen. The current
-  three-domain path removes the compensated threshold, release hysteresis, and onset shaping. At
-  road speed it keeps raw clipped `ACCEL_COMMAND`, coasts for requests from `0` through `-0.30`,
-  brakes below `-0.30`, and retains brake for non-positive requests below 5 m/s. The isolated
+- The raw upstream-split `ody-op-test2` reference failed its first road screen. The retained
+  three-domain baseline removes the compensated threshold, release hysteresis, and onset shaping;
+  the current candidate adds only a fourth, active-zero state. At road speed it keeps raw clipped
+  `ACCEL_COMMAND`, separates inactive coast from the bounded
+  active-zero recovery state, brakes below `-0.30`, and retains brake for non-positive requests
+  below 5 m/s. The isolated
   `-0.30` entry is retained after current-code route `68`: it kept every entry request-to-wire error
   within `0.005 m/s2` and eliminated direct gas-to-brake handoffs, while a fixed-input `-0.20`
   selector would increase 40 physical edges to 72 and add 36 direct handoffs. This is an
@@ -50,12 +55,13 @@ a substitute for current code, DBC semantics, or full-rate logs.
   road routes produced only one fixed-input peak-jerk improvement, while four were unchanged or
   worse and no closed-loop benefit was attributable to the limiter. Current source again keeps raw
   clipped `ACCEL_COMMAND`; historical limiter revisions remain mapped only to interpret old logs.
-- Eligible gas receives the calculated `GAS_COMMAND` immediately once the gas domain is selected.
+- Eligible positive gas receives the calculated `GAS_COMMAND` immediately once mapped gas is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. The former `+0.02 m/s2` fresh-gas re-entry gate is also
   retired after three exact-arm routes showed no attributable command-following or comfort gain.
-  Any fresh positive road-speed request now selects gas; active gas still follows Honda's upstream
-  `-0.20` release split and low-speed positive starts remain immediate.
+  Any fresh positive road-speed request still selects mapped gas immediately. The road-pending
+  candidate separately re-enters Honda's active-zero state above `-0.10 m/s2` after coast, holds it
+  to the upstream `-0.20` split, and leaves low-speed positive starts immediate.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
   other Honda interfaces in the same process.
 - `.agents/analyze_radar_commands.py` is the offline stock-radar reverse-engineering tool. It
