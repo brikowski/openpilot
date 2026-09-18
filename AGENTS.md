@@ -47,11 +47,11 @@ command-domain selection around the raw `ACCEL_COMMAND` (road-speed brake/coast 
 low-speed stop authority, and an OEM-aligned active-gas hold). It does not restore the retired brake
 PID, compensated input, coast interlock, raw-split reference, or historical symmetric onset stack.
 The unproven asymmetric onset limiter is fully retired: `ACCEL_COMMAND` delivers raw clipped
-acceleration while the three-domain selector and low-speed stop authority remain active. The current
-single-hypothesis road candidate preserves direct mapped gas, but adds Honda's active-zero gas state
-only when inactive coast recovers above `-0.10 m/s2`; it holds that state down to the upstream
-`-0.20 m/s2` split and never releases an active brake before a positive request. This candidate is
-not promoted until an isolated road comparison shows better near-zero tracking and smoothness.
+acceleration while the three-domain selector and low-speed stop authority remain active. The later
+active-zero gas candidate is also retired after three independently exposed road routes shifted
+matched near-zero response past the request and worsened the `-0.20..-0.10 m/s2` hold band. Nested
+revert `c16579385f56` restores the three-domain baseline; do not reintroduce active-zero neutral gas
+without new matched evidence that identifies a narrower Honda-response defect.
 
 Alpha Long has a separate safety boundary on this Bosch Odyssey: enabling
 `openpilotLongitudinalControl` disables the Bosch radar ECU through the Honda UDS
@@ -193,19 +193,19 @@ throughout.
 
 ## Current focus
 
-Root `a1dd8e58bec7` is the comparison baseline: raw clipped longitudinal command,
-evidence-supported Odyssey command domains, direct upstream gas mapping, and stock lateral authority.
-Nested `opendbc` `bee068d882d1` is the single road-pending experiment on `ody-op`;
-`909b12c8e218` is its direct nested rollback parent. The retired gasfactor, windfactor, low-speed
-PID, onset-shaping, positive gas re-entry deadband, and 3840-steering mechanisms remain historical;
-reopen one only when a new route locates a repeatable first divergence that it could own.
+Nested `opendbc` `c16579385f56` is the retained comparison baseline: raw clipped longitudinal
+command, evidence-supported three-domain selection, direct upstream gas mapping, and stock lateral
+authority. It linearly reverts the failed `bee068d882d1` active-zero experiment and is source-
+equivalent to its `909b12c8e218` parent. The retired gasfactor, windfactor, low-speed PID,
+onset-shaping, positive gas re-entry deadband, active-zero neutral gas, and 3840-steering mechanisms
+remain historical; reopen one only when a new route locates a repeatable first divergence it owns.
 
-The current source pool carried the planner request through `carControl` and `ACCEL_COMMAND` with
-small residuals. Stable inactive coast tracked requests near `-0.20 m/s2`, but over-decelerated in
-the `-0.10..0` recovery band, where stock radar demonstrates a distinct active-zero gas state. The
-candidate changes only that domain translation. Its next evidence must compare near-zero tracking,
-engine torque, jerk, transitions, and interventions against the immediate parent on a supervised
-full-rate road route; replay and software checks are not closed-loop proof.
+The active-zero road screen carried planner requests through `carControl` and `ACCEL_COMMAND` with
+small residuals, but Honda response crossed past the requested acceleration. In matched 15-25 m/s,
+mild-downhill exposure, active zero moved `-0.10..0` response error from approximately zero to
+`+0.074 m/s2` median and moved the `-0.20..-0.10` hold band from `+0.098` to `+0.153 m/s2`.
+That first divergence belongs to Honda's response to the changed domain state, and the experiment
+is retired rather than narrowed without another isolated hypothesis.
 
 Keep the stopped-lead planner arm and any uphill/model behavior separate from Honda response work.
 Before changing production behavior, show the first divergence, run the focused tests and replay

@@ -3965,3 +3965,39 @@ torque across inactive-to-zero and zero-to-positive transitions, aligned `aEgo-r
 feel. Retire immediately for a positive surge, increased short pulsing, delayed required braking,
 brake-to-neutral release before a positive request, or any safety regression. Lateral is unchanged
 and remains stock 2560.
+
+### Active-zero road screen and retirement (2026-09-18)
+
+Four full-rate routes resolved to candidate `bee068d882d1`: `00000002--81d8e3cb2d`,
+`00000003--cb9f703767`, `00000004--ca0260cf8f`, and `00000005--a5d819505c`. They supplied
+3.85, 3.92, 3.08, and 7.61 engaged minutes. Planner-to-`carControl` acceleration RMS remained
+`0.0018..0.0037 m/s2`; gas/brake-domain `carControl`-to-wire RMS remained
+`0.0058..0.0118 m/s2`. No route showed a sustained command-sign disagreement. The first
+repeatable divergence therefore remained downstream of Honda command translation, in achieved
+vehicle response.
+
+The candidate exposed active-zero gas for 46.76 seconds across 22 episodes, including nine under
+one second. After requiring 0.6 seconds of a stable same-domain request and matching 15-25 m/s,
+mild-downhill samples, the `-0.20..-0.10 m/s2` hold band had 10.97 candidate seconds with median,
+mean, and RMS `aEgo-request` error of `+0.152`, `+0.149`, and `0.172 m/s2`. The available
+inactive-coast baseline had 49.77 seconds and conditioned median, mean, and RMS errors of `+0.098`,
+`+0.091`, and `0.124 m/s2`. In the `-0.10..0` recovery band, candidate exposure was 8.18 seconds
+with `+0.074`, `+0.078`, and `0.117 m/s2`; baseline inactive coast was approximately zero median,
+`-0.016` mean, and `0.102 m/s2` RMS. Three independent candidate routes supplied adequately
+exposed recovery samples: route 02 had 2.38 seconds and `+0.074 m/s2` median error, route 04 had
+1.57 seconds and `+0.117`, and route 05 had 4.19 seconds and `+0.054`. Route 03 added only 0.04
+conditioned seconds and is not counted as an independent example.
+
+The screen contained 20 inactive-coast-to-active-zero entries and no direct gas-to-brake
+regression, but the changed Honda state consistently reduced requested deceleration and did not
+improve matched response RMS in either target band. This is Honda-response evidence against the
+translation hypothesis; it does not justify changing the pinned planner, `carControl`, raw
+`ACCEL_COMMAND`, DBC, or Panda rails.
+
+**Decision: RETIRE active-zero neutral gas after three independent exposed routes.** Nested revert
+`c16579385f569300c373f36dddefbd980b4d5e22` restores the retained three-domain behavior and is
+source-equivalent to direct parent `909b12c8e21857984d9995e0e59543d0401c514f`. Keep positive gas
+directly mapped, inactive coast for non-positive road-speed requests above the `-0.30 m/s2` brake
+entry, low-speed stop authority, and stock 2560 lateral control. Alpha Long was restored to enabled
+after this offroad audit at the user's direction; deployment tooling reports but does not manage
+that user-owned parameter.

@@ -23,12 +23,12 @@ a substitute for current code, DBC semantics, or full-rate logs.
   direct mapping is usually lower than the final learned wire command. The road arm must therefore
   reject repeatable under-response or set-speed loss as well as excess gas or surge; replay proves
   command exposure only.
-- The road-pending neutral candidate does not rescale positive gas. It sends Honda's active-zero
-  gas state only when inactive coast recovers above `-0.10 m/s2`, holds zero down to `-0.20 m/s2`,
-  and keeps a prior brake selected until the request becomes positive. Pitch and
-  aerodynamic-drag estimates remain available in offline diagnostic analysis; the retired
-  production windfactor state and wind/grade terms do not select the brake domain, change
-  `ACCEL_COMMAND`, or add wire force. Command domains use only the raw request and speed.
+- The active-zero neutral-gas candidate is retired. Three independently exposed road routes showed
+  no matched command-following improvement: active zero moved conditioned `-0.10..0` response
+  error from approximately zero to `+0.074 m/s2` median and worsened the `-0.20..-0.10` hold band
+  from `+0.098` to `+0.153 m/s2`. Positive gas remains directly mapped; inactive coast again owns
+  non-positive road-speed requests above the brake threshold. Pitch and aerodynamic-drag estimates
+  remain offline diagnostics and do not change `ACCEL_COMMAND` or add wire force.
 - Honda Bosch treats `ACCEL_COMMAND` as acceleration and closes its own brake loop. At road speed,
   the current path leaves that request raw and only selects Honda's gas/coast/brake domain. The
   former one-sided integral correction below 3 m/s is retired for lack of an attributable road
@@ -41,11 +41,10 @@ a substitute for current code, DBC semantics, or full-rate logs.
 - `ody-op-test` is frozen after its stacked coast, threshold, integral, onset, and release
   experiments failed the reported downhill symptom.
 - The raw upstream-split `ody-op-test2` reference failed its first road screen. The retained
-  three-domain baseline removes the compensated threshold, release hysteresis, and onset shaping;
-  the current candidate adds only a fourth, active-zero state. At road speed it keeps raw clipped
-  `ACCEL_COMMAND`, separates inactive coast from the bounded
-  active-zero recovery state, brakes below `-0.30`, and retains brake for non-positive requests
-  below 5 m/s. The isolated
+  three-domain baseline removes the compensated threshold, release hysteresis, onset shaping, and
+  the failed fourth active-zero state. At road speed it keeps raw clipped `ACCEL_COMMAND`, uses
+  inactive coast above the `-0.30` brake entry, and retains brake for non-positive requests below
+  5 m/s. The isolated
   `-0.30` entry is retained after current-code route `68`: it kept every entry request-to-wire error
   within `0.005 m/s2` and eliminated direct gas-to-brake handoffs, while a fixed-input `-0.20`
   selector would increase 40 physical edges to 72 and add 36 direct handoffs. This is an
@@ -59,9 +58,9 @@ a substitute for current code, DBC semantics, or full-rate logs.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. The former `+0.02 m/s2` fresh-gas re-entry gate is also
   retired after three exact-arm routes showed no attributable command-following or comfort gain.
-  Any fresh positive road-speed request still selects mapped gas immediately. The road-pending
-  candidate separately re-enters Honda's active-zero state above `-0.10 m/s2` after coast, holds it
-  to the upstream `-0.20` split, and leaves low-speed positive starts immediate.
+  Any fresh positive road-speed request still selects mapped gas immediately, and low-speed
+  positive starts remain immediate. Active-zero coast recovery is retired with nested revert
+  `c16579385f56`.
 - The Odyssey gas lookup ceiling is an instance attribute so constructing it cannot contaminate
   other Honda interfaces in the same process.
 - `.agents/analyze_radar_commands.py` is the offline stock-radar reverse-engineering tool. It

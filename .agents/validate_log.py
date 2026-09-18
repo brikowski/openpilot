@@ -191,6 +191,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "9e9eeeb25084": -0.30,  # lateral candidate; longitudinal domain selection matches the baseline
   "909b12c8e218": -0.30,  # current pinned opendbc source; command-domain behavior is unchanged
   "bee068d882d1": -0.30,  # active-zero gas candidate; brake-domain behavior is unchanged
+  "c16579385f56": -0.30,  # reverts active zero; restores the retained three-domain baseline
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -224,6 +225,7 @@ THREE_DOMAIN_COMMITS = {
   "9e9eeeb25084",  # lateral candidate; raw three-domain longitudinal output is unchanged
   "909b12c8e218",  # current pinned opendbc source; raw three-domain output is unchanged
   "bee068d882d1",  # active-zero gas candidate; raw brake-domain output is unchanged
+  "c16579385f56",  # active-zero revert; raw three-domain baseline restored
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",

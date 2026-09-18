@@ -132,8 +132,8 @@ class TestOdysseyLongRails(unittest.TestCase):
               assert brake_request == 0
 
   def test_road_speed_brake_domain_releases_for_positive_request(self):
-    """A settling brake request may cross neutral, but only positive gas releases it."""
-    accels = np.array([-0.6] * 20 + [-0.05] * 20 + [0.10] * 20)
+    """A settling brake request may cross the coast band, but positive gas releases immediately."""
+    accels = np.array([-0.6] * 20 + [-0.55] * 20 + [0.10] * 20)
     rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
     assert not rejects
     brake = np.array([br for _, _, br in seen], dtype=bool)
@@ -145,26 +145,19 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert not brake[-10:].any()
     assert (gas[-10:] != GAS_INACTIVE).all()
 
-  def test_road_speed_neutral_gas_reentry(self):
-    """Coast recovery uses Honda's active-zero gas state before positive gas resumes."""
-    accels = np.array([0.10] * 20 + [-0.19] * 20 + [-0.21] * 20 + [-0.09] * 20 +
-                      [-0.15] * 20 + [-0.21] * 20 + [-0.09] * 20 + [-0.31] * 20 + [0.01] * 20)
+  def test_road_speed_gas_domain_reenters_for_any_positive_request(self):
+    """Gas stays active through mild negatives and fresh positive requests re-enter immediately."""
+    accels = np.array([0.10] * 20 + [-0.19] * 20 + [-0.21] * 20 + [-0.10] * 20 +
+                      [0.01] * 20 + [0.03] * 20)
     rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
     assert not rejects
-    commands = np.array([accel for accel, _, _ in seen])
     gases = np.array([gas for _, gas, _ in seen])
     brake = np.array([br for _, _, br in seen], dtype=bool)
-    np.testing.assert_array_equal(commands[30:50], np.array([-9] * 10 + [-15] * 10))
     assert (gases[:20] != GAS_INACTIVE).all(), "stock gas range pulsed inactive"
-    assert (gases[20:30] == GAS_INACTIVE).all(), "coast exited before the neutral-entry threshold"
-    assert (gases[30:50] == 0).all(), "neutral recovery did not use active GAS_COMMAND zero"
-    assert (gases[50:60] == GAS_INACTIVE).all(), "neutral gas remained active below its release threshold"
-    assert (gases[60:70] == 0).all(), "second neutral recovery did not use active zero"
-    assert (gases[70:80] == GAS_INACTIVE).all() and brake[70:80].all(), \
-      "neutral-to-brake transition retained gas or withheld required braking"
-    assert (gases[80:90] > 0).all() and not brake[80:90].any(), \
-      "positive road request did not release brake into mapped gas"
-    assert not brake[:70].any(), "gas/neutral hysteresis unexpectedly selected the brake domain"
+    assert (gases[20:40] == GAS_INACTIVE).all(), "gas re-entered for a non-positive request"
+    assert (gases[40:50] != GAS_INACTIVE).all(), "positive road request did not re-enter gas"
+    assert (gases[50:60] != GAS_INACTIVE).all(), "larger road request did not keep gas active"
+    assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
 
   def test_gas_command_does_not_add_unverified_grade_or_drag(self):
     """The gas wire must not change solely because the recorded pitch changes."""

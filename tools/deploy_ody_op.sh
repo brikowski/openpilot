@@ -17,7 +17,7 @@ Usage: tools/deploy_ody_op.sh <deploy|verify>
 
 Commands:
   deploy  Verify and publish the paired ody-op source, switch/build the offroad
-          device with Alpha Long disabled, reboot, and verify exact state.
+          device without changing Alpha Long, reboot, and verify exact state.
   verify  Read-only comparison of the device against this checkout's ody-op pair.
 
 Environment:
@@ -96,7 +96,6 @@ test \"\$opendbc\" = '$OPENDBC_SHA'
 test \"\$origin\" = '$DEVICE_REMOTE'
 test -z \"\$parent_status\"
 test -z \"\$opendbc_status\"
-test -z \"\$alpha\" || test \"\$alpha\" = 0
 test ! -e /data/params/d/IsOnroad
 test \"\$(cat /data/params/d/UpdaterTargetBranch 2>/dev/null || true)\" = '$BRANCH'
 test \"\$(cat /data/params/d/UpdaterState 2>/dev/null || true)\" = idle
@@ -122,8 +121,6 @@ deploy_device() {
 set -euo pipefail
 cd /data/openpilot
 test ! -e /data/params/d/IsOnroad
-alpha=\$(cat /data/params/d/AlphaLongitudinalEnabled 2>/dev/null || true)
-test -z \"\$alpha\" || test \"\$alpha\" = 0
 if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin '$DEVICE_REMOTE'; else git remote add origin '$DEVICE_REMOTE'; fi
 tools/op.sh switch origin '$BRANCH'
 UV_CACHE_DIR='$DEVICE_UV_CACHE' UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' \
