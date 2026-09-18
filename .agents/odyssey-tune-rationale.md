@@ -54,6 +54,9 @@ a substitute for current code, DBC semantics, or full-rate logs.
   road routes produced only one fixed-input peak-jerk improvement, while four were unchanged or
   worse and no closed-loop benefit was attributable to the limiter. Current source again keeps raw
   clipped `ACCEL_COMMAND`; historical limiter revisions remain mapped only to interpret old logs.
+  A later event-level rescreen found repeatable Honda jerk amplification roughly 0.5-0.6 seconds
+  after brake-domain entry, but that is the same downstream symptom the limiter failed to improve,
+  not evidence for restoring or retuning it.
 - Eligible positive gas receives the calculated `GAS_COMMAND` immediately once mapped gas is selected.
   The former 60-count handoff ramp was mechanically verified but retired because no isolated
   comparison established a road benefit. The former `+0.02 m/s2` fresh-gas re-entry gate is also

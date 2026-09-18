@@ -4001,3 +4001,40 @@ directly mapped, inactive coast for non-positive road-speed requests above the `
 entry, low-speed stop authority, and stock 2560 lateral control. Alpha Long was restored to enabled
 after this offroad audit at the user's direction; deployment tooling reports but does not manage
 that user-owned parameter.
+
+### Post-active-zero harshness attribution (2026-09-18)
+
+The two candidate routes flagged for achieved ride harshness were screened separately from the
+retired active-zero state. Route `00000005--a5d819505c` measured achieved jerk RMS `0.391 m/s3`
+versus commanded `0.207` (`1.9x`), and route `00000003--cb9f703767` measured `0.403` versus
+`0.229` (`1.8x`). Their planner-to-`carControl` RMS remained `0.0028/0.0037 m/s2`, brake-domain
+request-to-wire RMS remained `0.0106/0.0100 m/s2`, and neither had sustained sign disagreement.
+Thus the harshness is not a hidden active-zero, planner, numeric-CAN, or DBC divergence.
+
+New diagnostic `.agents/inspect_response.py` ranks achieved-jerk peaks using the same causal
+low-pass/windowed derivative as the validator, retains the strongest wire-command jerk in the
+preceding 1.5 seconds, and reports exact domain-edge age, local plan/request/wire residuals, speed,
+pitch, lead source, gear changes, engine torque, and RPM. Its pure metric is mutation-verified: a
+deliberate loss of causal command history failed the focused assertion, and restoration passed.
+
+Across source-equivalent routes `00000003`, `00000004`, and `00000005`, the diagnostic found 14
+negative achieved-jerk peaks of at least `1.0 m/s3` in the brake domain `0.49..0.64 s` after a
+physical domain edge. Their median achieved-to-wire-jerk amplification was about `2.9x`; 12 of 14
+had no gear edge in the preceding 1.5 seconds. The events span positive and negative pitch and both
+lead and cruise sources. Local plan-to-request RMS was at most about `0.024 m/s2`, and local
+request-to-wire RMS was at most about `0.037 m/s2`. Route `00000002` supplied no qualifying
+brake-entry peak and is not counted as a fourth independent example.
+
+This is repeatable Honda-response evidence, but it does not identify a new command-translation
+mechanism. The retired `3.0 m/s3` asymmetric onset limiter changed only the first roughly 0.1 second
+of moderate entries and already failed three adequately exposed road examples; its exact-arm routes
+showed no attributable closed-loop improvement. The current peaks occur roughly half a second after
+the discrete domain transition, including several after small wire-jerk inputs, so merely restoring
+or retuning that shaper would repeat a closed experiment. Delaying `BRAKE_REQUEST` or scaling the
+real `ACCEL_COMMAND` from this unmatched screen would also trade command fidelity and stopping
+response without isolated proof.
+
+**Decision: KEEP nested baseline `c16579385f56` and raw clipped `ACCEL_COMMAND`; make no Honda
+behavior change from this screen.** Preserve the event diagnostic for the next exact-baseline route.
+A new production arm requires a distinct mechanism that explains the delayed response peak and an
+isolated matched comparison; the prior onset limiter remains retired.

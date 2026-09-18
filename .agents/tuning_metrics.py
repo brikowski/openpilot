@@ -193,6 +193,103 @@ def windowed_jerk(smoothed, dt, active, window_s):
   return np.where(active & ~edge, jerk, 0.0)
 
 
+def response_jerk_events(grid, planner, requested, wire, actual_accel, active, brake_request,
+                         gas_command, speed, pitch, has_lead, plan_source, gear, engine_torque, rpm,
+                         *, gas_inactive,
+                         min_speed=5.0, threshold=1.0, separation_s=0.75, history_s=1.5,
+                         attribution_s=0.10, smooth_tau=0.20, jerk_window_s=0.10, limit=8):
+  """Rank achieved-jerk peaks and retain the command-path context that preceded each one.
+
+  This is an attribution diagnostic, not an acceptance threshold. The response peak is compared
+  with the largest wire-command jerk in its causal history, while planner/request and request/wire
+  RMS keep an upstream or Honda-translation divergence visible. Domain edges are counted from the
+  discrete zero-order-held commands supplied by the caller.
+  """
+  arrays = [planner, requested, wire, actual_accel, active, brake_request, gas_command,
+            speed, pitch, has_lead, plan_source, gear, engine_torque, rpm]
+  if len(grid) < 3 or any(len(x) != len(grid) for x in arrays):
+    return []
+
+  grid = np.asarray(grid, dtype=float)
+  planner = np.asarray(planner, dtype=float)
+  requested = np.asarray(requested, dtype=float)
+  wire = np.asarray(wire, dtype=float)
+  actual_accel = np.asarray(actual_accel, dtype=float)
+  active = np.asarray(active, dtype=bool)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  gas_command = np.asarray(gas_command, dtype=float)
+  speed = np.asarray(speed, dtype=float)
+  pitch = np.asarray(pitch, dtype=float)
+  has_lead = np.asarray(has_lead, dtype=bool)
+  plan_source = np.asarray(plan_source, dtype=int)
+  gear = np.asarray(gear, dtype=float)
+  engine_torque = np.asarray(engine_torque, dtype=float)
+  rpm = np.asarray(rpm, dtype=float)
+  dt = float(np.median(np.diff(grid)))
+  if not np.isfinite(dt) or dt <= 0.0:
+    return []
+
+  finite = (np.isfinite(planner) & np.isfinite(requested) & np.isfinite(wire) &
+            np.isfinite(actual_accel) & np.isfinite(speed) & np.isfinite(pitch))
+  valid = active & finite & (speed >= min_speed)
+  response_jerk = windowed_jerk(causal_lpf(actual_accel, dt, smooth_tau), dt, valid, jerk_window_s)
+  command_jerk = windowed_jerk(causal_lpf(wire, dt, smooth_tau), dt, valid, jerk_window_s)
+
+  domain = np.where(brake_request, 2, np.where(gas_command > gas_inactive, 1, 0))
+  edges = physical_edges(domain, valid)
+  local_peak = np.ones(len(grid), dtype=bool)
+  local_peak[1:-1] = ((np.abs(response_jerk[1:-1]) >= np.abs(response_jerk[:-2])) &
+                      (np.abs(response_jerk[1:-1]) > np.abs(response_jerk[2:])))
+  candidates = np.flatnonzero(valid & local_peak & (np.abs(response_jerk) >= threshold))
+
+  selected = []
+  for index in candidates[np.argsort(np.abs(response_jerk[candidates]))[::-1]]:
+    if any(abs(grid[index] - grid[prior]) < separation_s for prior in selected):
+      continue
+    selected.append(int(index))
+    if len(selected) >= limit:
+      break
+
+  names = ("coast", "gas", "brake")
+  rows = []
+  for index in sorted(selected, key=lambda i: grid[i]):
+    history = valid & (grid >= grid[index] - history_s) & (grid <= grid[index])
+    history_idx = np.flatnonzero(history)
+    if not len(history_idx):
+      continue
+    command_peak_index = history_idx[np.argmax(np.abs(command_jerk[history_idx]))]
+    attribution = history & (grid >= grid[index] - attribution_s)
+    previous_edges = edges[edges <= index]
+    edge_age = float(grid[index] - grid[previous_edges[-1]]) if len(previous_edges) else None
+    history_edges = int(np.sum((edges >= history_idx[0]) & (edges <= index)))
+    gear_edges = physical_edges(gear, history & np.isfinite(gear))
+    response = float(response_jerk[index])
+    command = float(command_jerk[command_peak_index])
+    rows.append({
+      "time": float(grid[index]),
+      "response_jerk": response,
+      "command_jerk_peak": command,
+      "amplification": float(abs(response) / max(abs(command), 1e-6)),
+      "domain": names[int(domain[index])],
+      "domain_edge_age": edge_age,
+      "domain_edges_in_history": history_edges,
+      "gear_edges_in_history": int(len(gear_edges)),
+      "plan_request_rms": float(np.sqrt(np.mean((planner[attribution] - requested[attribution]) ** 2))),
+      "request_wire_rms": float(np.sqrt(np.mean((requested[attribution] - wire[attribution]) ** 2))),
+      "request": float(requested[index]),
+      "wire": float(wire[index]),
+      "actual_accel": float(actual_accel[index]),
+      "speed": float(speed[index]),
+      "pitch": float(pitch[index]),
+      "has_lead": bool(has_lead[index]),
+      "plan_source": int(plan_source[index]),
+      "gear": float(gear[index]),
+      "engine_torque": float(engine_torque[index]),
+      "rpm": float(rpm[index]),
+    })
+  return rows
+
+
 def brake_episode_metrics(grid, actual_accel, brake_request, controlling, brake_pressed, speed,
                           pitch, *, min_speed, downhill_pitch, min_duration_s,
                           smooth_tau, jerk_window_s):

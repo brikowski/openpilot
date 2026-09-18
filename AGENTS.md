@@ -151,6 +151,8 @@ Use that first divergence to choose the work:
 - Run every drive through `.agents/validate_log.py`, which writes one row per route to
   `.agents/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
+- Use `.agents/inspect_response.py` to rank achieved-jerk peaks against the causal wire-command
+  history, physical command-domain edges, gear changes, terrain, lead state, and powertrain context.
 - Review lateral and longitudinal behavior as separate evidence streams; a result on one axis does
   not authorize a change on the other.
 - Car-port edits follow [`.agents/car-port-standards.md`](.agents/car-port-standards.md). Keep
@@ -206,6 +208,14 @@ mild-downhill exposure, active zero moved `-0.10..0` response error from approxi
 `+0.074 m/s2` median and moved the `-0.20..-0.10` hold band from `+0.098` to `+0.153 m/s2`.
 That first divergence belongs to Honda's response to the changed domain state, and the experiment
 is retired rather than narrowed without another isolated hypothesis.
+
+A separate event-level rescreen of the same source-equivalent brake path found 14 achieved-jerk
+peaks across three routes about `0.49..0.64 s` after brake-domain entry, with approximately `2.9x`
+median amplification over the strongest causal wire jerk. Planner, `carControl`, and wire remained
+close, and 12 events had no nearby gear change. This confirms a Honda-response symptom, but the
+retired asymmetric onset limiter already failed three adequately exposed road examples and must not
+be reopened from this repeated symptom alone. Keep raw `ACCEL_COMMAND` until a distinct mechanism
+has isolated evidence against the restored baseline.
 
 Keep the stopped-lead planner arm and any uphill/model behavior separate from Honda response work.
 Before changing production behavior, show the first divergence, run the focused tests and replay
