@@ -24,7 +24,10 @@ Apply the same ownership rule independently to lateral and longitudinal control.
 fidelity and physical response as separate outcomes: replay validates command shape, while matched
 controlled or ordinary-road drives validate closed-loop behavior. Every candidate needs
 mutation-verified tests, an isolated baseline comparison, and an explicit keep/change/retire decision.
-Retired mechanisms remain historical and are not reopened without new first-divergence evidence.
+Historical keep/change/retire labels are evidence receipts, not permanent exclusions. New
+full-rate logs may reopen any mechanism when they supply a repeatable first-divergence hypothesis;
+re-audit the cited exposure instead of treating an absence of proof as proof of failure. Preserve
+the verified safety, provenance, and ownership boundaries below.
 
 For this Honda command-following objective, treat the pinned upstream OpenPilot planner, model, and
 controllers as the command source. Vehicle-runtime changes are limited to the nested `opendbc`
@@ -46,12 +49,13 @@ The former `ody-op-test2` final candidate is now the `ody-op` baseline: it chang
 command-domain selection around the raw `ACCEL_COMMAND` (road-speed brake/coast separation,
 low-speed stop authority, and an OEM-aligned active-gas hold). It does not restore the retired brake
 PID, compensated input, coast interlock, raw-split reference, or historical symmetric onset stack.
-The unproven asymmetric onset limiter is fully retired: `ACCEL_COMMAND` delivers raw clipped
-acceleration while the three-domain selector and low-speed stop authority remain active. The later
-active-zero gas candidate is also retired after three independently exposed road routes shifted
-matched near-zero response past the request and worsened the `-0.20..-0.10 m/s2` hold band. Nested
-revert `c16579385f56` restores the three-domain baseline; do not reintroduce active-zero neutral gas
-without new matched evidence that identifies a narrower Honda-response defect.
+The earlier asymmetric onset limiter did not establish a benefit in its tested exposures, so it is
+not part of the current baseline: `ACCEL_COMMAND` delivers raw clipped acceleration while the
+three-domain selector and low-speed stop authority remain active. The prior active-zero gas screen
+also did not improve its matched routes and shifted the measured near-zero response; nested revert
+`c16579385f56` therefore remains the comparison baseline. Those are exposure-scoped results, not
+universal exclusions: a new exact-provenance route may reopen either mechanism as a fresh isolated
+hypothesis with its own safety and response comparison.
 
 Alpha Long has a separate safety boundary on this Bosch Odyssey: enabling
 `openpilotLongitudinalControl` disables the Bosch radar ECU through the Honda UDS
@@ -61,24 +65,27 @@ This is independent of the Panda `alternativeExperience` AEB-forwarding flag and
 guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the radar ECU is
 disabled.
 
-The former `ody-op-radar` arm is closed after its first engaged route, and both implementation
+The former `ody-op-radar` arm is historical after its first engaged route, and both implementation
 branches are deleted. It changed radar availability and published a camera-side object/fusion bank;
 it did not change the retained Honda longitudinal CAN translation. On route
 `00000043--a13083ebb4`, radar-marked lead selection and the planner command changed abruptly while
-physical brake-domain cycling and driver-felt gas/brake behavior worsened. Do not compensate for
-this perception/planner regression with gas or brake tuning. Preserve its route/source findings as
-historical evidence and use the vision-only `ody-op` baseline for future comparisons.
+physical brake-domain cycling and driver-felt gas/brake behavior worsened. Keep this
+perception/planner result separate from Honda command translation; it is not a permanent ban on a
+future radar hypothesis or on Honda tuning. Preserve its route/source findings as historical
+evidence and use the vision-only `ody-op` baseline for future comparisons unless a new matched
+comparison establishes different ownership.
 
 Lateral uses the stock 2560 LKA command map with `latAccelFactor 0.9` and
-`steerActuatorDelay 0.15`. The isolated nonlinear 3840 arm is retired after its bounded three-route
-screen failed to establish an attributable improvement. Route `0000005d--ed7df97035` was mixed and
+`steerActuatorDelay 0.15`. The isolated nonlinear 3840 arm did not establish an attributable
+improvement in its bounded three-route screen. Route `0000005d--ed7df97035` was mixed and
 only favored the arm in a thin unmatched comparison; route `00000061--b8f07e1ca7` supplied 15.61
 high-authority seconds but still had `0.245 m/s2` actual-desired RMS and three steering-fault events;
 route `00000064--898a884741` was clean for 5.09 seconds at 3840 but its `+0.009 m/s2` median
 under-response was effectively the same as the comparable stock-2560 readout. Clean operation is not
 proof of benefit, and the custom range no longer meets the PR-minimal retention burden. The former
-linear 3840 RDM map and 0.20 s delay fallback remain retired. Reopen steering authority only for a
-repeatable logged lateral symptom and an isolated matched-road comparison. Passive route
+linear 3840 RDM map and 0.20 s delay fallback remain historical comparison arms. Reopen steering
+authority for a repeatable logged lateral symptom and an isolated matched-road comparison; the
+prior screen alone is not a permanent exclusion. Passive route
 `00000069--eab494ffc4` independently captured the stock camera source with no OpenPilot steering
 frames: every nonzero steering request stayed within 2560, including 216 full-rate frames exactly at
 the cap, while the DBC-labeled RDM/haptic state carried zero torque. This confirms the stock LKA wire
@@ -195,19 +202,21 @@ throughout.
 
 ## Current focus
 
-Nested `opendbc` `c16579385f56` is the retained comparison baseline: raw clipped longitudinal
+Nested `opendbc` `c16579385f56` is the current comparison baseline: raw clipped longitudinal
 command, evidence-supported three-domain selection, direct upstream gas mapping, and stock lateral
-authority. It linearly reverts the failed `bee068d882d1` active-zero experiment and is source-
-equivalent to its `909b12c8e218` parent. The retired gasfactor, windfactor, low-speed PID,
-onset-shaping, positive gas re-entry deadband, active-zero neutral gas, and 3840-steering mechanisms
-remain historical; reopen one only when a new route locates a repeatable first divergence it owns.
+authority. It linearly reverts the prior active-zero experiment and is source-equivalent to its
+`909b12c8e218` parent. Gasfactor, windfactor, low-speed PID, onset-shaping, positive gas
+re-entry, active-zero neutral gas, and 3840-steering are historical comparison mechanisms rather
+than permanent exclusions. Reopen any one when new logs locate a repeatable first divergence it
+could own, including a response or domain symptom not present in the original exposure.
 
 The active-zero road screen carried planner requests through `carControl` and `ACCEL_COMMAND` with
 small residuals, but Honda response crossed past the requested acceleration. In matched 15-25 m/s,
 mild-downhill exposure, active zero moved `-0.10..0` response error from approximately zero to
 `+0.074 m/s2` median and moved the `-0.20..-0.10` hold band from `+0.098` to `+0.153 m/s2`.
-That first divergence belongs to Honda's response to the changed domain state, and the experiment
-is retired rather than narrowed without another isolated hypothesis.
+That first divergence belongs to Honda's response to the changed domain state in that exposure. The
+current baseline therefore remains unchanged pending a fresh isolated hypothesis; this result does
+not write off every narrower domain or response mechanism.
 
 A separate event-level rescreen of the same source-equivalent brake path found 21 achieved-jerk
 peaks across three routes about `0.34..0.73 s` after brake-domain entry, with approximately `2.9x`
@@ -217,23 +226,26 @@ close, all 21 followed coast-to-brake activation, and 19 had no nearby gear chan
 followed that state edge by a median `0.494 s`. Exact onset-limiter routes retained the same split.
 The Bosch logs contain no `0x1E7` pressure frame, so this locates the symptom after command packing
 and brake-state activation without distinguishing Honda's internal pressure loop from physical
-actuator/vehicle response. The retired asymmetric onset limiter already failed three adequately
-exposed road examples and must not be reopened from this repeated symptom alone. Keep raw
-`ACCEL_COMMAND` until a distinct mechanism has isolated evidence against the restored baseline.
+actuator/vehicle response. The earlier onset limiter did not improve its adequately exposed road
+examples, so this repeated downstream symptom alone does not justify restoring that exact arm. Keep
+raw `ACCEL_COMMAND` as the comparison baseline while allowing a distinct onset or response
+mechanism to be tested when its first divergence is isolated.
 
 Brake-state dwell does not supply that mechanism. Across the same 21 events, longer coast and
 received-computer-braking-off dwell did not precede larger jerk; a conditioned subset remained
 inverse but was confounded by wire-command slope, and the 11 exact onset-limiter events supplied no
 independent positive dwell trend. The selector already holds braking through every negative request,
-while historical time-release and width arms failed on road. Do not extend the brake hold from this
-screen.
+while historical time-release and width arms did not establish a benefit in their road exposures.
+This screen alone does not justify extending the brake hold, but it does not make a fresh,
+separately attributable hold hypothesis inadmissible.
 
-The same four-route pool adds no reason to reopen lateral authority. Routes 02, 03, and 05 supplied
+The same four-route pool supplies no current reason to change lateral authority. Routes 02, 03, and 05 supplied
 1.46, 8.72, and 3.31 seconds at the stock 2560 cap with zero steering faults; conditioned response
 ranged from close tracking to strong under-response and did not repeat consistently across matched
 speed and demand bins. The controller reached the exact stock wire cap, so this is physical-
-authority context rather than a DBC loss. Keep stock 2560 unless a repeatable lateral symptom and
-isolated matched comparison contradict the retired 3840 decision.
+authority context rather than a DBC loss. Keep stock 2560 as the comparison until a repeatable
+lateral symptom and isolated matched comparison support another value; the prior 3840 decision is
+not a permanent write-off.
 
 Keep the stopped-lead planner arm and any uphill/model behavior separate from Honda response work.
 Before changing production behavior, show the first divergence, run the focused tests and replay

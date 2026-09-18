@@ -14,6 +14,27 @@ stale — the root file wins, and the conflict is worth fixing in place.
 That was removed 2026-08-06 to stop it reading as directives to any tool doing nested agent-file
 discovery.)
 
+## Evidence reset and fresh-route re-audit (2026-09-18)
+
+At the user's request, every historical keep/change/retire label in this archive is exposure-scoped
+context, not a permanent tuning exclusion. A label means that the cited mechanism did not earn
+retention in the cited comparison; it does not prove that every nearby mechanism is ineffective.
+New exact-provenance full-rate logs may reopen any layer when they locate a repeatable first
+divergence. Preserve raw logs, safety boundaries, and source provenance while rechecking old claims
+against the new exposure.
+
+The newly retained route `00000009--019ee79ffb` is exact `ody-op` parent `6eb188b60df1` with
+nested `c16579385f56`, Alpha Long enabled, and the same small-model blob
+`f030157ccd2bacbdc6d7b98358903cbacc0e0b34` as the current baseline. The other four new logs are
+thin context on the same model/source pair. Route 09 supplied 12.3 engaged minutes; plan to
+`carControl` RMS was `0.0026 m/s2`, gas-wire RMS was `0.0080`, and brake-wire RMS was `0.0172`.
+It therefore does not identify a numeric Honda CAN translation failure. It did show 32 physical
+brake-domain edges, a flagged downhill burst, achieved jerk RMS `0.372` versus commanded `0.242`,
+and five brake takeovers. These are fresh response/domain symptoms to classify, not permission to
+revive a prior arm automatically. The largest negative achieved-jerk peaks followed Honda
+computer-braking activation, while the takeover samples ended control at the press boundary; no
+production behavior change is selected from this route alone.
+
 ## Submodule & Branch Mechanics
 - Honda production logic lives in the [`opendbc_repo`](../opendbc_repo) submodule. If publication is
   requested, publish the child commit before the parent gitlink; pushing never implies deployment.

@@ -4,6 +4,12 @@ This note preserves the evidence behind `ody-op` and its experimental children w
 route history and failed experiments in production comments. Treat it as context to re-verify, not
 a substitute for current code, DBC semantics, or full-rate logs.
 
+Status note (2026-09-18): the historical "retired" and "closed" wording below is scoped to the
+exposures that produced it, not a permanent ban on tuning. New exact-provenance routes may reopen a
+mechanism or a nearby hypothesis after first-divergence and safety checks. Preserve the raw
+measurements and verified safety semantics, but do not let an old lack of attributable improvement
+stand in for current evidence.
+
 ## Current design
 
 - Lateral keeps the stock-derived torque tune, stock 2560 command map, and 0.15 s
