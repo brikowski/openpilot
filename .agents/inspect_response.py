@@ -4,6 +4,8 @@
 import argparse
 from statistics import median
 
+import numpy as np
+
 from extract import PLAN_SOURCE, load
 from tuning_metrics import response_jerk_events
 
@@ -18,12 +20,19 @@ def brake_entry_summary(rows, max_edge_age=0.75):
   if not events:
     return {"count": 0}
   ages = [row["domain_edge_age"] for row in events]
+  command_magnitudes = [abs(row["command_jerk_peak"]) for row in events]
+  response_magnitudes = [abs(row["response_jerk"]) for row in events]
+  correlation = None
+  if len(events) > 1 and np.std(command_magnitudes) > 0.0 and np.std(response_magnitudes) > 0.0:
+    correlation = float(np.corrcoef(command_magnitudes, response_magnitudes)[0, 1])
   return {
     "count": len(events),
     "edge_age_min": min(ages),
     "edge_age_max": max(ages),
     "response_jerk_median": median(row["response_jerk"] for row in events),
+    "command_jerk_abs_median": median(command_magnitudes),
     "amplification_median": median(row["amplification"] for row in events),
+    "jerk_magnitude_correlation": correlation,
     "without_gear_edge": sum(row["gear_edges_in_history"] == 0 for row in events),
     "plan_request_rms_max": max(row["plan_request_rms"] for row in events),
     "request_wire_rms_max": max(row["request_wire_rms"] for row in events),
@@ -33,10 +42,13 @@ def brake_entry_summary(rows, max_edge_age=0.75):
 def print_brake_entry_summary(rows):
   summary = brake_entry_summary(rows)
   if summary["count"]:
+    correlation = ("n/a" if summary["jerk_magnitude_correlation"] is None
+                   else f"{summary['jerk_magnitude_correlation']:+.2f}")
     print("".join((
       f"brake-entry summary: {summary['count']} negative peak(s), edge age ",
       f"{summary['edge_age_min']:.2f}..{summary['edge_age_max']:.2f}s, median response ",
-      f"{summary['response_jerk_median']:+.2f} m/s^3, median amplification ",
+      f"{summary['response_jerk_median']:+.2f} m/s^3, median prior-wire magnitude ",
+      f"{summary['command_jerk_abs_median']:.2f}, |wire|/|response| corr {correlation}, median amplification ",
       f"{summary['amplification_median']:.1f}x, no gear edge ",
       f"{summary['without_gear_edge']}/{summary['count']}, max plan/request/wire RMS ",
       f"{summary['plan_request_rms_max']:.4f}/{summary['request_wire_rms_max']:.4f} m/s^2",

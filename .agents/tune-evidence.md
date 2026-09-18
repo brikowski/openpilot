@@ -4015,7 +4015,8 @@ New diagnostic `.agents/inspect_response.py` ranks achieved-jerk peaks using the
 low-pass/windowed derivative as the validator, retains the strongest wire-command jerk in the
 preceding 1.5 seconds, and reports exact domain-edge age, local plan/request/wire residuals, speed,
 pitch, lead source, gear changes, engine torque, and RPM. Its pure metric is mutation-verified: a
-deliberate loss of causal command history failed the focused assertion, and restoration passed.
+deliberate loss of causal command history and a sign-inverted summary correlation each failed the
+focused assertions, and restoration passed.
 Per-route and combined summaries consume every qualifying event before `--limit` trims detailed
 display rows; this corrected an initial top-N count of 14 to the complete 21-event set below.
 
@@ -4025,14 +4026,18 @@ physical domain edge. Their median achieved-to-wire-jerk amplification was about
 had no gear edge in the preceding 1.5 seconds. The events span positive and negative pitch and both
 lead and cruise sources. Local plan-to-request RMS was at most about `0.024 m/s2`, and local
 request-to-wire RMS was at most about `0.028 m/s2`. Route `00000002` supplied no qualifying
-brake-entry peak and is not counted as a fourth independent example.
+brake-entry peak and is not counted as a fourth independent example. Across the 21 events, median
+prior-wire jerk magnitude was `0.46 m/s3` and absolute wire/response jerk correlation was `+0.50`:
+command slope contributes, but Honda still amplifies it and the discrete transition does not reduce
+to a static command-jerk multiplier.
 
 The same metric was then applied to exact historical asymmetric-onset routes
 `00000010--2b60bf438c`, `00000011--dc727a0bb7`, and `00000012--9ea63a15e3`. Despite the deployed
 `3.0 m/s3` limiter, they retained 11 qualifying delayed brake-entry peaks at `0.45..0.62 s`, with
-median response jerk `-1.56 m/s3` and median amplification `2.7x`. Seven had no nearby gear edge.
-This is not a matched candidate-versus-baseline comparison and route counts must not be compared as
-rates, but it directly confirms that the same delayed response mode survived the retired shaper.
+median response jerk `-1.56 m/s3`, median prior-wire magnitude `0.78 m/s3`, median amplification
+`2.7x`, and absolute wire/response correlation `+0.37`. Seven had no nearby gear edge. This is not
+a matched candidate-versus-baseline comparison and route counts must not be compared as rates, but
+it directly confirms that the same delayed response mode survived the retired shaper.
 
 This is repeatable Honda-response evidence, but it does not identify a new command-translation
 mechanism. The retired `3.0 m/s3` asymmetric onset limiter changed only the first roughly 0.1 second
