@@ -4426,3 +4426,40 @@ exposure, driver overrides, and crest overshoot/jerk against the seven-route bas
 score bridge reversals below `-0.101 m/s2`; score positive bridge exits only after conditioning on
 pitch/grade compensation. Revert for sustained over-response, crest surge, increased jerk,
 material gas rail exposure, or any command/domain/safety regression.
+
+#### First uphill route and request-aware bound (2026-09-19)
+
+Route `0000000d--b4ced526db` is exact root `5821ee978c93` / nested `0a81d3bd4a29`,
+small model `f030157ccd2bacbdc6d7b98358903cbacc0e0b34`, standard personality, Experimental
+off, and Alpha Long enabled. It supplied 14.3 engaged minutes and 14.1 engaged miles. The command
+path remained faithful: planner-to-`carControl` RMS was `0.0025 m/s2`, gas request-to-wire RMS was
+`0.0087 m/s2`, and brake request-to-wire RMS was `0.0080 m/s2`. The candidate added grade load for
+437.5 seconds, with median/p95/max additions of `263/595/763` gas counts and no gas-rail exposure.
+
+Matched steady-climb bins showed a small overall movement toward the requested acceleration:
+candidate-minus-baseline `aEgo-request` error was median `+0.042 m/s2` over 50 route-bins. That
+aggregate concealed a repeatable steep-grade over-response. Three independent climb episodes at
+route-relative `224`, `870`, and `1165` seconds had raw requests of about `+0.83..+0.99 m/s2` and
+median achieved over-response of about `+0.39..+0.52 m/s2`. Steady samples above `+0.06 rad` had
+median error `+0.464 m/s2`; comparable retained-baseline route medians were generally
+`-0.24..-0.34 m/s2`. Other steep episodes with lower raw requests (`+0.13..+0.39 m/s2`) still
+under-responded. This separates the useful low-request load assistance from stacking full gravity
+after longcontrol has already raised its request and the transmission responds.
+
+Five validator brake-takeover flags did not coincide with those three over-response episodes. Three
+presses began after disengagement; the two active presses were near `187` seconds on a descent with
+a negative request and near `1210` seconds during uphill under-response. The route's downhill brake
+cycling and felt-jerk flags therefore remain separate Honda-response findings, not evidence that the
+positive uphill gas term caused driver braking.
+
+**Decision: CHANGE the same uphill hypothesis by bounding only its combined gas-map input.** Nested
+commit `8feab4fe7657a69258cfb8e4717d7e5469f6a3c4` allows full filtered grade assistance while the raw
+request is low, tapers the added term as the raw request approaches `+1.0 m/s2`, and never clips a
+raw request already above that bound. `ACCEL_COMMAND`, command-domain selection, negative-live
+bridge, downhill, stopping, missing-pose, driver-gas, lateral, DBC, and safety behavior are
+unchanged. On the recorded input this reduces median steep-grade added gas from `605` to `182`
+counts while retaining the lower-request assistance; that is a frozen-input command-shape result,
+not closed-loop road proof. Removing the bound made the focused helper test fail. The nested gate
+passed 3,979 tests with 702 skips, and preflash passed seven model tests plus 20 rail tests with 58
+subtests. Use the next supervised route to recheck the same high-grade episodes, under-speed
+recovery, crest response, interventions, and gas rail exposure before keep or revert.

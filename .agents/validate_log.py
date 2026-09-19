@@ -205,6 +205,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "196119896d73": -0.30,  # reverts the failed -0.15 release screen; baseline restored
   "147e1d732eaa": -0.30,  # negative-live gas bridge; brake-domain behavior is unchanged
   "afc133f34": -0.30,  # bounds bridge recovery; brake-domain behavior is unchanged
+  "0a81d3bd4a29": -0.30,  # uphill gas load candidate; brake-domain behavior is unchanged
+  "8feab4fe7657": -0.30,  # request-bounded uphill gas load; brake-domain behavior is unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -243,6 +245,8 @@ THREE_DOMAIN_COMMITS = {
   "196119896d73",  # release-boundary revert; raw three-domain baseline restored
   "147e1d732eaa",  # negative-live gas bridge; raw brake-domain behavior is unchanged
   "afc133f34",  # bounded bridge recovery; raw brake-domain behavior is unchanged
+  "0a81d3bd4a29",  # uphill GAS_COMMAND-only candidate; raw three-domain output is unchanged
+  "8feab4fe7657",  # request-bounded uphill GAS_COMMAND; raw three-domain output is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
