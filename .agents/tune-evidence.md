@@ -4463,3 +4463,35 @@ not closed-loop road proof. Removing the bound made the focused helper test fail
 passed 3,979 tests with 702 skips, and preflash passed seven model tests plus 20 rail tests with 58
 subtests. Use the next supervised route to recheck the same high-grade episodes, under-speed
 recovery, crest response, interventions, and gas rail exposure before keep or revert.
+
+### Odyssey nonlinear 3840 steering road screen (2026-09-19)
+
+The user requested a fresh 3840 trial for today's longer drives, on the single linear `ody-op`
+line. The pre-change pair is root `ecf77f2a9c192e761f14cba4fde4713b62e6d043` and nested
+`8feab4fe7657a69258cfb8e4717d7e5469f6a3c4`. The earlier three-route nonlinear screen
+did not establish an attributable benefit; it is a caution, not a claim that later evidence
+cannot change the decision. The most recent stock route `0000000d--b4ced526db` offered only
+4.9 seconds of high-authority lateral exposure, with actual-minus-desired lateral-acceleration
+RMS `0.174 m/s2`, median under-response `+0.131 m/s2`, and no steering faults.
+
+This candidate restores the exact prior Odyssey-only nonlinear map, breakpoints
+`[0, 2560, 3072]` and values `[0, 2560, 3840]`; lateral torque tuning and delay remain
+`0.9` and `0.15 s`. Because Honda `STEER_MAX` is the last breakpoint, normalized steering
+requests also scale: at 0.5 the command becomes 1536 counts versus the stock 1280. This is a
+combined midrange-gain and peak-authority experiment, not an isolated cap extension. The stock
+camera's observed LKA ceiling of 2560 is not proof that 3840 has equivalent steering authority
+or fault tolerance. No longitudinal, DBC, or safety code changes accompany this experiment;
+today's longitudinal observations must independently account for the still-unproven uphill
+gas-load bound in the pre-change pair.
+
+**Decision: CHANGE for a supervised road screen, not yet KEEP.** The hypothesis is that this
+map reduces high-demand actual-versus-desired lateral-acceleration error without worsening
+steering faults, overrides, oscillation, or comfort. Compare resolved-source full-rate routes
+against stock in matched speed, demand, grade, and authority bins; examine normalized controller
+request to bus-0 wire and physical bus-1 forwarding, as well as actual vehicle response.
+Long mileage alone is not high-authority exposure. Retire via revert if adequately exposed
+routes do not show an attributable gain or show a safety/comfort regression. Preserve the
+pre-change pair as the rollback point. The focused regression was mutation-verified by restoring
+the stock Odyssey map and observing its expected failure. The nested suite passed 3,979 tests
+with 702 skips plus lint, typing, and MISRA; preflash passed seven model tests and 20 command-rail
+tests with 58 subtests. These are software gates, not road proof.
