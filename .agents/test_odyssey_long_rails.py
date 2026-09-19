@@ -37,7 +37,7 @@ def _decode_acc_control(dat):
   return accel, gas, brake_request
 
 
-def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid):
+def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid, gas_pressed=False):
   """Drive the active longitudinal path and check every frame against the real safety hook."""
   CP = _car_params()
   CI = interfaces[PLATFORM](CP.copy())
@@ -52,17 +52,18 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
 
   active_values = np.broadcast_to(np.asarray(long_active, dtype=bool), len(accels))
   aego_values = np.zeros(len(accels)) if aegos is None else np.broadcast_to(np.asarray(aegos, dtype=float), len(accels))
+  gas_pressed_values = np.broadcast_to(np.asarray(gas_pressed, dtype=bool), len(accels))
   rejects, seen = [], []
   for i, accel in enumerate(accels):
     CI.CS.out = structs.CarState(
       vEgo=vego, vEgoRaw=vego, aEgo=float(aego_values[i]), standstill=vego < 0.1,
-      gasPressed=False, brakePressed=False,
+      gasPressed=bool(gas_pressed_values[i]), brakePressed=False,
       cruiseState=structs.CarState.CruiseState(enabled=True, available=True, speed=25.0),
     )
     cc = structs.CarControl(
       enabled=True, latActive=False, longActive=bool(active_values[i]),
       actuators=structs.CarControl.Actuators(accel=float(accel), longControlState=long_control_state),
-      orientationNED=[0.0, float(pitch), 0.0],
+      orientationNED=[] if pitch is None else [0.0, float(pitch), 0.0],
     )
     _, sendcan = CI.apply(cc.as_reader(), int(i * DT_CTRL * 1e9))
     for addr, dat, bus in sendcan:
@@ -160,14 +161,36 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert (gases[50:60] != GAS_INACTIVE).all(), "larger road request did not keep gas active"
     assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
 
-  def test_gas_command_does_not_add_unverified_grade_or_drag(self):
-    """The gas wire must not change solely because the recorded pitch changes."""
-    accels = np.full(40, 0.10)
+  def test_gas_command_adds_only_bounded_uphill_grade(self):
+    """Uphill pitch changes gas only; raw accel, downhill, and non-PID output stay unchanged."""
+    accels = np.full(400, 0.10)
     _, level = _run(True, accels, pitch=0.0, vego=31.0)
     _, downhill = _run(True, accels, pitch=-0.05, vego=31.0)
+    _, uphill = _run(True, accels, pitch=0.05, vego=31.0)
+    _, stopping = _run(True, accels, pitch=0.05, vego=31.0, long_control_state=LongCtrlState.stopping)
+    _, missing_pose = _run(True, accels, pitch=None, vego=31.0)
+    _, driver_gas = _run(True, accels, pitch=0.05, vego=31.0, gas_pressed=True)
+
+    level_accel = np.array([accel for accel, _, _ in level])
+    downhill_accel = np.array([accel for accel, _, _ in downhill])
+    uphill_accel = np.array([accel for accel, _, _ in uphill])
     level_gas = np.array([gas for _, gas, _ in level])
     downhill_gas = np.array([gas for _, gas, _ in downhill])
+    uphill_gas = np.array([gas for _, gas, _ in uphill])
+    stopping_gas = np.array([gas for _, gas, _ in stopping])
+    missing_pose_gas = np.array([gas for _, gas, _ in missing_pose])
+    driver_gas_commands = np.array([gas for _, gas, _ in driver_gas])
+
+    np.testing.assert_array_equal(level_accel, np.full(len(level_accel), 10))
+    np.testing.assert_array_equal(downhill_accel, level_accel)
+    np.testing.assert_array_equal(uphill_accel, level_accel)
     np.testing.assert_array_equal(downhill_gas, level_gas)
+    np.testing.assert_array_equal(stopping_gas, level_gas)
+    np.testing.assert_array_equal(missing_pose_gas, level_gas)
+    np.testing.assert_array_equal(driver_gas_commands, level_gas)
+    assert uphill_gas[-1] > level_gas[-1]
+    assert np.all(np.diff(uphill_gas) >= 0), "filtered uphill gas command did not rise smoothly"
+    assert uphill_gas.max() <= GAS_MAX
 
   def test_gas_command_matches_upstream_direct_request_mapping(self):
     """Odyssey domain selection must not attenuate upstream's request-to-gas calibration."""

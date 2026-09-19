@@ -4382,3 +4382,47 @@ reduced negative-live exposure from the recorded 3.30 seconds to about 1.94 seco
 request-error RMS `0.0056 m/s2`; it does not predict closed-loop response. Deploy this bounded
 revision for the second supervised road example and compare reversal handling and positive exits
 separately before keep or revert.
+
+### Odyssey uphill gas-load candidate (2026-09-18)
+
+Current MVL source was resolved rather than inferred from its branch name: parent
+`08d0461df067227a40684ca633633697a026f9a0` pins nested
+`c68be364cc10a258eea50bce12c57e2b8be2edf9`. Its Honda path combines raw pitch gravity,
+speed-scheduled drag, persistent gas/wind learners, compensated gas/brake domain selection, a
+60-count gas ramp, and a low-speed brake PID. Only the static gravity principle is transferred
+here. The adaptive factors reached both `0.01/3.0` gas-factor rails in frozen-route execution and
+predicted substantial max-gas exposure; frozen response cannot grade the resulting closed loop,
+but it does not establish the full learner as a bounded candidate. The brake PID also modifies
+`ACCEL_COMMAND`, outside this command-fidelity objective.
+
+Seven recent Alpha Long routes (`00000002`, `03`, `04`, `05`, `09`, `0b`, and `0c`) locate the
+repeatable gap after correct command translation. On route `0000000c--25d237b5ee`, planner-to-
+`carControl` RMS was `0.0024 m/s2`, gas request-to-wire RMS was `0.0083 m/s2`, and the qualifying
+uphill hold requested `+0.309 m/s2` while achieving about `+0.005 m/s2` at median pitch
+`+0.072 rad`. Across the seven routes, nominal gravity was `+0.57..+0.71 m/s2` in the selected
+uphill samples. A source-matched shadow of the bounded candidate changed only positive PID gas
+samples: median whole-route additions were `78..181` gas counts, uphill compensation medians were
+`0.44..0.63 m/s2`, and predicted gas-rail exposure was `0.0..2.7%`. These are command-shape and
+exposure results, not closed-loop proof.
+
+Nested commit `0a81d3bd4` adds an Odyssey-only, `0.5 s` filtered uphill load term to the opaque
+`GAS_COMMAND` mapping. It runs only for a positive raw request in PID state, with a valid positive
+pitch and no driver gas, and is capped at `+1.0 m/s2`. `ACCEL_COMMAND`, gas/brake/coast selection,
+downhill output, stopping output, missing-pose output, the negative-request bridge, DBC, safety,
+lateral, and other Honda platforms remain unchanged. The bridge and grade mechanisms occupy
+negative- and positive-request regions respectively; bridge positive exits must still be scored by
+grade so the two effects are not conflated.
+
+Removing the grade term made both the focused helper test and decoded controller-wire regression
+fail before restoration. The full nested gate passed 3,979 tests with 702 skips plus lint, typing,
+MISRA, and code checks. Controller/Panda preflash passed seven model tests and 20 rail tests with 58
+subtests; its strengthened grade regression confirms identical decoded `ACCEL_COMMAND`, level,
+downhill, stopping, missing-pose, and driver-override output while uphill `GAS_COMMAND` rises
+smoothly and remains inside the 2,000-count safety rail.
+
+**Decision: CHANGE to this software-qualified uphill candidate for a supervised road screen.** On
+the same hills, compare steady positive-request `aEgo-carControl` error, speed-gap recovery, gas rail
+exposure, driver overrides, and crest overshoot/jerk against the seven-route baseline. Separately
+score bridge reversals below `-0.101 m/s2`; score positive bridge exits only after conditioning on
+pitch/grade compensation. Revert for sustained over-response, crest surge, increased jerk,
+material gas rail exposure, or any command/domain/safety regression.
