@@ -94,7 +94,8 @@ build/
 !.vscode/*.code-snippets
 
 # agents
-.claude/
+# Project guidance lives in AGENTS.md and .agents/. Keep local editor/agent state untracked.
+.claude/*
 .context/
 PLAN.md
 TASK.md
