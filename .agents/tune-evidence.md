@@ -4868,3 +4868,23 @@ through the applicable steering path without faults and the matched slice does n
 CHANGE no longitudinal production code: the request-ramped candidate remains unpromoted pending a
 third qualifying uphill moderate/high-request exposure. The current rebased/squashed device pair is
 root `d9a951e814e0` / nested `da430e9591b8`; Alpha Long was restored to enabled after this audit.
+
+#### Source-equivalent response timing follow-up (2026-09-22)
+
+`inspect_response.py` adds one qualifying coast-to-brake response event from source-equivalent
+route `00000010--768e1357e5` to two events on `0000001b--7bfc61a2d5`. Across these three events,
+planner-to-request and request-to-wire RMS stay at or below `0.0196/0.0238 m/s2`. Honda's received
+`COMPUTER_BRAKING` state follows the request after a median `0.080 s`; the strongest negative
+achieved-response slope follows that state edge after a median `0.612 s`. Median achieved jerk is
+`-1.66 m/s3` versus `0.68 m/s3` prior wire-command magnitude (`2.4x`), and two of three events have
+no nearby gear edge. This extends the downstream brake-response symptom to the swap-gated but
+command-source-equivalent revision; it does not identify a new controller-to-wire divergence.
+
+An exploratory stable-domain time-shift screen does not support one fixed actuator-delay correction.
+Across routes 10, 12, 1b, 1d, 1f, and 20, the gas-domain RMS-minimizing shift ranges from `0.00` to
+the `1.00 s` search boundary; brake minima range from `0.10` to `0.50 s`, with several brake routes
+providing only thin material-command exposure. Grade, gearing, slowly varying commands, and route
+mix remain confounds. **Decision: no production change.** A fixed delay or command lead would alter
+`carControl` timing without a repeatable response model. Continue using event-level state-edge timing
+and require another independent, adequately exposed route before proposing a distinct brake-response
+mechanism; do not restore the earlier onset limiter merely because the downstream symptom repeats.
