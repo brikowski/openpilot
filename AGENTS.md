@@ -211,15 +211,15 @@ throughout.
 
 ## Current focus
 
-As of 2026-09-23, the device runs rebased/squashed pair root `d9a951e814e0` / nested
-`da430e9591b8` on the single `ody-op` line. It retains the request-ramped uphill `GAS_COMMAND`
-candidate, raw `ACCEL_COMMAND`, three-domain selection, and stock 2560 lateral authority. Alpha
+As of 2026-09-23, the device runs pair root `bc63ee6be25c` / nested `9b4cbf40f63b` on the single
+`ody-op` line. It retains the request-ramped uphill `GAS_COMMAND` candidate with a `0.6` grade gain,
+raw `ACCEL_COMMAND`, three-domain selection, and stock 2560 lateral authority. Alpha
 Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable while it
-is active. Do not use the former lack of a third qualifying uphill route as a decision blocker:
+is active. The guarded deployment verified clean exact SHAs, an idle updater with no exception,
+active manager/Panda services, and no failed services; this is deployment health, not road proof.
+Do not use the former lack of a third qualifying uphill route as a decision blocker:
 the current full-rate pool supports matched response analysis across speed, request, pitch, gear,
-and lead state, and decisions should use that evidence directly. The local linear candidate nested
-`9b4cbf40f` scales the filtered uphill gas-load term to `0.6` from the matched-response optimum;
-publication and device deployment must be tracked separately from this local source state.
+and lead state, and decisions should use that evidence directly.
 The stock-2560 rollback has one new lateral-only route with useful high-authority exposure and no
 faults; it supports retirement of the 3840 arm but is not a same-mode exact-road A/B.
 The dated candidate descriptions below are historical; their uses of “current” do not supersede

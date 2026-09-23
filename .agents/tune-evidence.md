@@ -4943,3 +4943,10 @@ of 3,946 tests with 703 skips plus ruff, codespell, typing, cpplint, and MISRA.
 accuracy decision from the existing matched full-rate evidence, not a request for more examples.
 The next ordinary drive grades the already-chosen candidate against the retained rollback; it does
 not gate making the change.
+
+The nested commit `9b4cbf40f63b` and parent commit `bc63ee6be25c` were published in that order and
+deployed with the guarded `ody-op` workflow. After the offroad build and reboot, the device verified
+branch `ody-op`, exact parent/gitlink/nested SHAs, clean parent and nested trees, comma-owned `.venv`,
+`AlphaLongitudinalEnabled=1`, updater target `ody-op`, updater idle, no available update or updater
+exception, active comma/manager/Panda processes, and no failed services. This proves installation
+health only; the next route is the first closed-loop road result for the `0.6` candidate.
