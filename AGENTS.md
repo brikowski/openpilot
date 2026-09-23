@@ -152,7 +152,10 @@ Use that first divergence to choose the work:
 8. Every unpromoted custom arm gets at most three independent, adequately exposed road examples of
    the same mechanism. If three fail to show an attributable improvement in OpenPilot-command
    following, retire it. Do not count multiple thresholds, metrics, or transitions from one episode
-   as independent examples; a safety regression can retire an arm sooner.
+   as independent examples; a safety regression can retire an arm sooner. This is an upper bound on
+   an inconclusive experiment, not a minimum sample count or a reason to defer a decision. Existing
+   full-rate logs may support a keep/change/retire decision when exact provenance, repeatable first
+   divergence, adequate exposure, and a matched comparison make the direction attributable.
 9. Every candidate must have an explicit keep, change, or retire decision after checking the relevant
    lateral or longitudinal exposure. Do not retain tuning merely because it is historical or already
    present.
@@ -208,12 +211,15 @@ throughout.
 
 ## Current focus
 
-As of 2026-09-22, the device runs rebased/squashed pair root `d9a951e814e0` / nested
+As of 2026-09-23, the device runs rebased/squashed pair root `d9a951e814e0` / nested
 `da430e9591b8` on the single `ody-op` line. It retains the request-ramped uphill `GAS_COMMAND`
 candidate, raw `ACCEL_COMMAND`, three-domain selection, and stock 2560 lateral authority. Alpha
 Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable while it
-is active. Source-equivalent Alpha Long routes have not added a third qualifying uphill
-moderate/high-request exposure, so improved uphill `aEgo-carControl` tracking remains unproven.
+is active. Do not use the former lack of a third qualifying uphill route as a decision blocker:
+the current full-rate pool supports matched response analysis across speed, request, pitch, gear,
+and lead state, and decisions should use that evidence directly. The local linear candidate nested
+`9b4cbf40f` scales the filtered uphill gas-load term to `0.6` from the matched-response optimum;
+publication and device deployment must be tracked separately from this local source state.
 The stock-2560 rollback has one new lateral-only route with useful high-authority exposure and no
 faults; it supports retirement of the 3840 arm but is not a same-mode exact-road A/B.
 The dated candidate descriptions below are historical; their uses of “current” do not supersede

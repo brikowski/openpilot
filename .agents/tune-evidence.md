@@ -4888,3 +4888,58 @@ mix remain confounds. **Decision: no production change.** A fixed delay or comma
 `carControl` timing without a repeatable response model. Continue using event-level state-edge timing
 and require another independent, adequately exposed route before proposing a distinct brake-response
 mechanism; do not restore the earlier onset limiter merely because the downstream symptom repeats.
+
+### Crest and matched grade-gain decision (2026-09-23)
+
+Three new full-rate routes resolve exactly to root `d9a951e814e0` / nested
+`da430e9591b80d38556d8751ab8e67c92637d008`, small model
+`f030157ccd2bacbdc6d7b98358903cbacc0e0b34`, standard personality, Experimental off, and Alpha
+Long enabled: `00000017--fb0d39431f`, `00000018--fb4f0c5faf`, and
+`00000019--5ff1b32941`. They provide 17.1 engaged minutes without a `controlsd` crash. Pooled
+gas-domain achieved-response RMS is `0.215 m/s2` over 824.2 seconds; brake-domain RMS is
+`0.223 m/s2` over 110.9 seconds. Planner-to-`carControl` error remains about `0.001..0.003 m/s2`
+in inspected lead intervals, and request-to-wire RMS is `0.006..0.011 m/s2`. The first repeatable
+gap therefore remains vehicle response after faithful command translation.
+
+The reported crest release is not owned by the raw-pitch zero gate. On route 18 around 109-111
+seconds, pitch remained positive (`+0.057` to `+0.044 rad`) while the planner and `carControl`
+reduced acceleration from about `+0.92 m/s2` to zero, `GAS_COMMAND` fell from 1091 to about 200,
+and the transmission shifted from fifth to sixth; achieved acceleration moved from about `+1.0`
+to `-0.29 m/s2`. Route 19 around 532 seconds similarly changed from lead to cruise planning while
+the request moved from about `+0.54` to `-0.26 m/s2` and the wire followed. The only qualifying
+positive-to-nonpositive raw-pitch edge retained about `+0.0025 rad` filtered pitch and removed an
+estimated 23 gas counts while the planner was already reducing the request. Do not change the raw
+pitch gate to explain the larger crest symptom.
+
+The existing log pool is sufficient to make the grade-gain decision; the prior note that deferred
+action until a third specially shaped uphill route is superseded. `.agents/compare_grade_gain.py`
+uses stable positive-request gas samples, excludes 1.5 seconds around gear changes, and greedily
+matches candidate to pre-grade route `0000000c--25d237b5ee` one-to-one by speed within `2 m/s`,
+request within `0.10 m/s2`, pitch within `0.015 rad`, exact gear, and lead-presence state. Across
+1,816 matched pairs, the full request-ramped grade candidate reduces response MAE from `0.115` to
+`0.106 m/s2` and is closer in 55.9% of pairs. No-lead MAE changes from `0.111` to `0.101`; lead
+MAE changes from `0.126` to `0.121`. Reverting all grade assistance would therefore discard a
+measured aggregate accuracy benefit.
+
+Interpolating only along the observed matched baseline-to-candidate response effect gives a
+minimum-MAE gain of `0.61` overall, `0.67` without a lead, and `0.41` with a lead; least-squares
+fits are `0.49`, `0.58`, and `0.38`. A single `0.6` gain is chosen instead of lead-specific logic:
+it is the rounded overall optimum, agrees with the no-lead fit, and moves lead response toward its
+lower optimum without making Honda translation depend on planner source. This interpolation is an
+observational fit, not a claim of perfectly linear actuator response, so the candidate remains an
+isolated road-test arm rather than a promoted final calibration.
+
+Nested Odyssey code now scales only the filtered positive-pitch load term by `0.6`. Raw
+`ACCEL_COMMAND`, brake/coast/gas domain selection, the negative-live bridge, downhill behavior,
+stopping, DBC, safety, lateral, other Honda platforms, and upstream commands are unchanged. In
+frozen-input replay of route 17's matched lead over-response window at 313-316 seconds, median
+`GAS_COMMAND` falls from 1091 to 807 counts; route 18's 108-112-second crest window falls from
+1091 to 787 counts. This verifies command shape only. The gain check was mutation-verified by
+setting it back to `1.0`, which failed the focused test. Restored `0.6` passes four Honda helper
+tests, seven Odyssey model/interface tests, 20 rail tests with 58 subtests, and the full nested gate
+of 3,946 tests with 703 skips plus ruff, codespell, typing, cpplint, and MISRA.
+
+**Decision: CHANGE the request-ramped uphill candidate to a single `0.6` grade gain.** This is an
+accuracy decision from the existing matched full-rate evidence, not a request for more examples.
+The next ordinary drive grades the already-chosen candidate against the retained rollback; it does
+not gate making the change.
