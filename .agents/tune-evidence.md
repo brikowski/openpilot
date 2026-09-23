@@ -4832,3 +4832,39 @@ optimal at every turn or speed.
 qualifying sustained uphill moderate/high-request comparison. Their small request-to-wire
 residuals and lack of large near-zero live-gas steps do not establish better physical
 `aEgo-carControl` tracking. Continue to evaluate the ramped candidate independently of lateral.
+
+#### Post-rollback and swap-route audit (2026-09-22)
+
+The 48-hour private-log audit retained and ledgered 16 additional routes (215 full-rate segments,
+about 2 GB) rather than selecting by outcome. They span three separate source families and must not
+be pooled by date or device: staging routes with unresolved nested provenance, `ody-op-swap`
+revisions `df01ae3a7925` and `bef3e9148377`, and one `ody-op` stock-lateral route on nested
+`ae81f00f905e`. Several sessions had no engagement or Alpha Long disabled.
+
+Route `00000016--faa3964417` resolves to parent `9b8eb0fe04b6` / nested `ae81f00f905e` and is
+lateral-only because Alpha Long was off. It supplies 88.10 active lateral seconds, 2.16 seconds at
+the 2560 cap, zero steering faults, high-authority actual-versus-desired RMS `0.104 m/s2`, and
+median signed under-response `-0.076 m/s2`. Stock-radar forwarding was counter-matched for 21,992
+frames; its stable-cap median gain was exactly `1.000`, with source/output maxima both 2560. The
+root lateral controller files are unchanged from 3840 route 20. Applying the existing narrow
+20-24 m/s, demand, pitch, slope, and no-override matcher to 3840 route 20 against route 16 matches
+15/46 candidate samples to 10 distinct stock samples: 3840 versus stock MAE is `0.148/0.088 m/s2`,
+RMS `0.166/0.103 m/s2`, and median signed under-response `+0.167/-0.073 m/s2`. Different roads,
+Alpha Long mode, and reused nearest-neighbor samples prevent a causal superiority claim. This new
+exposure nevertheless shows no hidden sharper-turn accuracy benefit that would reopen 3840.
+
+Nested `bef3e9148377` adds only live Alpha Long radar handoff and readiness gating around the same
+settled Odyssey command-domain, bridge, and request-ramped uphill mapping. Exact source diff—not
+the `ody-op-swap` branch name—therefore permits its active-long portions to use the three-domain
+validator model. Route `00000010--768e1357e5` has 4.92 engaged minutes, request-to-wire RMS
+`0.008 m/s2`, gas/brake achieved RMS `0.179/0.209 m/s2`, and no qualifying uphill moderate/high
+episode. Route `00000012--18d8134f31` has 2.75 engaged minutes, request-to-wire RMS `0.005 m/s2`,
+gas achieved RMS `0.121 m/s2`, and zero large uphill near-zero gas steps across 40.79 seconds, but
+also no qualifying moderate/high uphill episode. These are useful response context, not a third
+isolated uphill comparison.
+
+**Decisions:** KEEP the stock-2560 rollback as the lateral baseline; it carried the requested cap
+through the applicable steering path without faults and the matched slice does not reopen 3840.
+CHANGE no longitudinal production code: the request-ramped candidate remains unpromoted pending a
+third qualifying uphill moderate/high-request exposure. The current rebased/squashed device pair is
+root `d9a951e814e0` / nested `da430e9591b8`; Alpha Long was restored to enabled after this audit.

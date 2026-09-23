@@ -208,13 +208,14 @@ throughout.
 
 ## Current focus
 
-As of 2026-09-20, the device has the request-ramped uphill `GAS_COMMAND` candidate from nested
-`d50a3a4843ed` on the single `ody-op` line. It retains raw `ACCEL_COMMAND` and domain selection,
-and was introduced after the previous all-at-once grade addition caused near-zero gas steps.
-Alpha Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable
-while it is active. Road routes on this ramped candidate have not established improved uphill
-`aEgo-carControl` tracking. The separate 3840 lateral trial is being retired on the local line;
-verify the device pair before attributing any new route to that rollback.
+As of 2026-09-22, the device runs rebased/squashed pair root `d9a951e814e0` / nested
+`da430e9591b8` on the single `ody-op` line. It retains the request-ramped uphill `GAS_COMMAND`
+candidate, raw `ACCEL_COMMAND`, three-domain selection, and stock 2560 lateral authority. Alpha
+Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable while it
+is active. Source-equivalent Alpha Long routes have not added a third qualifying uphill
+moderate/high-request exposure, so improved uphill `aEgo-carControl` tracking remains unproven.
+The stock-2560 rollback has one new lateral-only route with useful high-authority exposure and no
+faults; it supports retirement of the 3840 arm but is not a same-mode exact-road A/B.
 The dated candidate descriptions below are historical; their uses of “current” do not supersede
 this state. See the latest dated entry in `.agents/tune-evidence.md` for provenance and uncertainty.
 
