@@ -1,8 +1,9 @@
-# Odyssey tune rationale
+# Odyssey tune rationale (historical)
 
-This note preserves the evidence behind `ody-op` and its experimental children without carrying
-route history and failed experiments in production comments. Treat it as context to re-verify, not
-a substitute for current code, DBC semantics, or full-rate logs.
+This note is a historical summary retained for provenance. It is not an instruction file, and its
+"current," "retired," "required," and route-count language does not constrain present tuning.
+Active rules live in [`../AGENTS.md`](../AGENTS.md); use current code and full-rate evidence for
+decisions. Detailed receipts live in [`tune-evidence.md`](tune-evidence.md).
 
 Status note (2026-09-18): the historical "retired" and "closed" wording below is scoped to the
 exposures that produced it, not a permanent ban on tuning. New exact-provenance routes may reopen a
@@ -10,7 +11,7 @@ mechanism or a nearby hypothesis after first-divergence and safety checks. Prese
 measurements and verified safety semantics, but do not let an old lack of attributable improvement
 stand in for current evidence.
 
-## Current design
+## Historical design summary
 
 - Lateral keeps the stock-derived torque tune, stock 2560 command map, and 0.15 s
   `steerActuatorDelay`. The nonlinear 3840 road arm is retired after routes `5d`, `61`, and `64`
@@ -54,8 +55,8 @@ stand in for current evidence.
 - Longitudinal tune decisions compare achieved `aEgo` with `carControl.actuators.accel` separately in
   live gas and brake domains, using comparable speed, request, and terrain exposure. Request-to-wire
   RMS and `GAS_COMMAND`/`BRAKE_REQUEST` first establish whether any divergence belongs to the Honda
-  translation. Each custom mechanism gets at most three independent exposed road examples; no
-  attributable improvement after all three means removal, while a safety regression can end it sooner.
+  translation. Evidence strength, not a fixed drive count, determines whether a candidate is kept,
+  changed, retired, or remains inconclusive.
 - `ody-op-test` is frozen after its stacked coast, threshold, integral, onset, and release
   experiments failed the reported downhill symptom.
 - The raw upstream-split `ody-op-test2` reference failed its first road screen. The retained
@@ -167,7 +168,7 @@ stand in for current evidence.
   that every numeric brake value in that stack was still provisional. Its `-0.10`, `0.60 m/s3`,
   `10 m/s`, and `-1.5 m/s2` values remain historical hypotheses, not retained behavior.
 
-## Validation and reopening criteria
+## Historical validation notes
 
 - `ody-op` remains the recovery and shared-tooling branch; stock Honda radar remains the road
   fallback. `ody-op-test` is a frozen failed snapshot. The raw-split `ody-op-test2` reference is
@@ -181,7 +182,8 @@ stand in for current evidence.
   numeric `ACCEL_COMMAND` without the correct active domain is not command fidelity. Preserve the
   downstream Honda ECU loop and gas-command safety rails; never reshape a model command to hide an
   upstream defect.
-- Before promotion, require controlled maneuvers and comparable ordinary-road evidence. Measure
-  gas/coast/brake exposure, direct gas/brake handoffs, physical brake transitions, achieved jerk,
-  set-speed error, and driver report. Software, replay, and preflash tests establish correctness and
-  safety rails, not ride quality.
+- For retention, use the strongest source-compatible controlled or ordinary-road evidence available.
+  Measure gas/coast/brake exposure, direct gas/brake handoffs, physical brake transitions, achieved
+  jerk, set-speed error, and driver report. Software, replay, and preflash tests establish
+  correctness and safety rails, not road response; an exact-road A/B is useful but is not the only
+  valid comparison design.

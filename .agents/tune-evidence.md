@@ -1,14 +1,14 @@
 # Odyssey command-following — evidence archive
 
-**This is a reference document, not an instruction file.** The rules that must survive a cold start
-live in the repo-root [`AGENTS.md`](../AGENTS.md), which repository-aware coding agents load as the
-project guidance. This file holds the measurements, failed
-experiments, and reasoning *behind* those rules, and is read on demand — it is deliberately not
-auto-loaded, because at ~86 KB it would crowd out the work.
+**This is a reference document, not an instruction file.** Active rules live in the repo-root
+[`AGENTS.md`](../AGENTS.md); Honda port invariants live in
+[`car-port-standards.md`](car-port-standards.md). This file preserves dated measurements and
+provenance for re-audit.
 
-Read it when you need the receipts: why a threshold is the value it is, what was already tried and
-failed, and which investigations are closed. Conclusions here that conflict with the root file are
-stale — the root file wins, and the conflict is worth fixing in place.
+Imperative wording and labels such as "current," "required," "closed," "failed," or "retired"
+record the decision made at that time. They do not direct future work, impose a route count, or
+prohibit a new evidence-owned hypothesis. When this archive conflicts with current code, logs, or
+the root rules, re-evaluate the underlying exposure rather than inheriting the conclusion.
 
 (Historical note: this file predates the root `AGENTS.md` and once carried an agent persona header.
 That was removed 2026-08-06 to stop it reading as directives to any tool doing nested agent-file
@@ -953,33 +953,10 @@ rather than treating an uncalibrated slew limit as known-good behavior.
   remain historical evidence. The 0.20 retest returned tapping and failed its early rejection rule.
   Preserve both results; do not resume width tuning without a new mechanism-specific symptom.
 
-## Ordered Longitudinal Evidence Queue (agreed 2026-07-31)
-Apply this order as new logs arrive; do not skip ahead because a later idea is easy to code. Lateral
-is stock unless a logged symptom reopens it. The onset-shape and custom brake-PID questions are
-closed by removal; do not couple the remaining gasfactor or offline drag-identification work to a
-new brake arm.
+## Historical tuning notes
 
-1. **Keep the raw-split `ody-op-test2` reference failed and the promoted three-domain behavior
-   bounded to its measured road-screen result.** Before making another longitudinal change, run
-   controlled start, set-speed, moderate brake, and lead-free descent maneuvers in a safe empty area.
-   Then compare new children against `ody-op` using physical `BRAKE_REQUEST` edges, coast exposure,
-   set-speed error, onset timing, interventions, and complete stops. Replay establishes only that the
-   intended CAN shape changed.
-2. **Keep drag identification offline unless it earns a separate gas-side arm.** The existing
-   gas-active-only shadow learns only while `GAS_COMMAND` is live, neither pedal is pressed, the
-   command is away from saturation, and speed/grade are sufficiently steady. Compare its stability
-   and following error with the historical production learner; promote a replacement only after an
-   attributable command hypothesis and isolated road comparison.
-3. **Do not restore a supplemental Honda brake PID from observational logs.** Honda already closes
-   the acceleration loop. Reopening command shaping requires a repeatable first divergence at the
-   wire, a matched controlled road arm, and evidence that an upstream-style limiter cannot address
-   it more honestly.
-4. **Leave the ruled-out cross-brand mechanisms alone without a new logged symptom.** Do not add generic
-   jerk limiting, Ford-style creep subtraction, more brake gain, GM-style actuator blending, or
-   Tesla/Hyundai/VW CAN features Honda does not expose. None can repair a planner `shouldStop=false`
-   event or provide stop-line detection.
-
-## Custom Tuning & Development Guidelines
+The following notes preserve prior reasoning and examples. They are not active development rules;
+use `AGENTS.md` and current evidence instead.
 - Start with current openpilot architecture, DBC semantics, and panda limits. Locate the first logged
   divergence before selecting a parameter or implementation pattern.
 - Cross-brand code is a source of hypotheses, not a recommendation. Transfer a pattern only when the
@@ -991,7 +968,7 @@ new brake arm.
 - **Comments Are a Starting Point, Not Ground Truth**: Custom-tune comments (including "CUSTOM TUNE" blocks and any journal-style writeups) reflect the reasoning *at the time they were written*. Treat them as a lead to verify, not a fact to cite - upstream PRs move, DBC signals get re-checked, and code gets reworked or reverted out from under a comment that still references it. If you find one that's stale, wrong, or points at code that no longer exists, correct or remove it as part of your change rather than leaving it to mislead the next session.
 - **Jotpluggler Layout**: The `brikowski` layout (`openpilot/tools/jotpluggler/layouts/brikowski.json`, launched via the "Run Jotpluggler" task) is the standard layout for reviewing tuning drives. Keep the checked-in JSON minified. Its five tabs cover lateral reference, longitudinal tracking, learned factors, powertrain/CAN, and lead/feedforward attribution. The historical deployed child wrote effective gasfactor and windfactor telemetry into `actuatorsOutput.gas` and `.brake`; the upstream-rooted port restores those fields to actual actuator output, with raw commands remaining in `sendcan`. Any future learner telemetry must use deterministic offline reconstruction or a separately named diagnostic event approved with its schema.
 
-## Known Upstream Constraints (Honda Bosch A/C - not cached locally, re-fetch if reasoning needs re-verifying)
+## Historical upstream context (re-verify before use)
 - **opendbc PR #2165** (github.com/commaai/opendbc/pull/2165): wind drag + hill/pitch compensation for Bosch gas pedal force. Still draft upstream, parked pending a broader drivetrain-torque refactor.
 - **opendbc PR #2347** (github.com/commaai/opendbc/pull/2347): documents that Honda Bosch's own ECU already runs an internal brake PID. Stock `kp=0, ki=0` (pure feedforward) in `interface.py` is deliberate - adding openpilot's own closed-loop kp/ki on top "doubles up... and causes oscillating braking/acceleration strength." Check this before adding closed-loop longitudinal gain on a Honda Bosch car.
 - **opendbc PR #2767** (github.com/commaai/opendbc/pull/2767, closed): a comma engineer tried pitch-compensation on the gas pedal and hit "will need to switch the gas actuator from accel-based to torque-based first." Bosch A has no writable torque CAN signal (`ACC_CONTROL.ACCEL_COMMAND` is a real m/s2 value Honda's ECU closes its own loop on; `ACC_CONTROL.GAS_COMMAND` is opaque/unitless). A torque-based redesign would mean reverse-engineering a speed-dependent `GAS_COMMAND`-to-torque calibration using the car's own `GAS_PEDAL_2.ENGINE_TORQUE_ESTIMATE` telemetry as ground truth.
