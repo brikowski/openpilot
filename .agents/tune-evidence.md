@@ -5097,3 +5097,21 @@ parent/gitlink/nested SHAs, clean parent and nested trees, comma-owned `.venv`,
 `AlphaLongitudinalEnabled=1`, updater target `ody-op`, updater idle, no available update or updater
 exception, two manager processes, one Panda process, and no failed services. This proves exact
 installation health only; closed-loop retention depends on a subsequent full-rate route.
+
+The interrupted companion route `0000001d--cce80a222e` was subsequently recovered in full. It is
+the same exact pre-candidate parent/nested/model/mode pair and contains 46.9 logged minutes with
+7.0 engaged minutes. Source-matched brake wire RMS is `0.0098 m/s2`; achieved gas/brake RMS is
+`0.188/0.249 m/s2`. Whole-route replay changes inactive coast only from 5.46 to 5.26 seconds because
+this route's sustained `-0.20..-0.15` active-gas release-band exposure is slightly downhill at
+median pitch `-0.008 rad`; it is not an uphill domain A/B.
+
+Its positive-pitch negative-gas samples independently support the bounded correction's direction.
+After filtering pitch as the controller does, requiring at least `+0.015 rad`, and aligning response
+by `+0.6 s`, route 1d supplies 3.78 seconds in `-0.20..-0.15 m/s2` with mean
+`aEgo-carControl=-0.277 m/s2`; the candidate adds `+0.094 m/s2` mean gas-map input. Route 1e adds
+1.09 seconds at `-0.218/+0.095`. In `-0.15..-0.10`, route 1d supplies 9.67 seconds at
+`-0.137/+0.070`, and route 1e supplies 2.25 seconds at `-0.124/+0.064`. By contrast, the
+`-0.10..-0.05` response means are approximately zero on both routes while the candidate addition
+is only `+0.029`; the smooth taper toward zero remains necessary and is an explicit over-response
+screen. These frozen-response bins support the candidate's sign and bounded shape but do not replace
+its post-deployment closed-loop check.
