@@ -5288,3 +5288,27 @@ over 32 events and mean error `-0.22 m/s2`). These are evidence for Honda brakin
 work, not evidence that the new downhill branch created the lead oscillation. Keep the
 current candidate pending direct downhill exposure; do not tune Honda gas to erase the
 vision/planner catch/brake cycle.
+
+The post-deployment uphill positive-gas comparison is source-compatible: nested
+`ff33e79f665a` and `6915be202bb7` differ in positive gas only by gain `0.7` versus
+`0.6`, signed descent handling, and a raw/filtered pitch-sign guard. Descent handling
+is inactive on the matched uphill samples; the matcher does not independently verify
+the sign guard's state on every frame, so this remains a conditioned observational screen.
+Using the established one-to-one speed/request/pitch/gear/lead matcher, route 1f versus
+route 22 yields 105 matches. Achieved-error MAE is `0.084 m/s2` at `0.7` versus
+`0.095 m/s2` at `0.6`; interpolated absolute optima are `0.66` by least squares and
+`0.65` by MAE. The 58 no-lead matches favor about `0.68..0.69`, while 47 lead matches
+favor about `0.64`. This is not a basis to restore `0.7` or to make grade gain
+planner-source-specific; retain `0.6` while the exact downhill branch remains unexposed.
+
+Settled road-speed brake-domain samples on the same brake-translation source are also
+mixed: route 1f contributes 370 thinned samples with mean achieved-minus-request
+`-0.105 m/s2`, and route 22 contributes 91 with `-0.126 m/s2`. Projecting an *incremental*
+gain on top of the deployed brake gain `0.3` fits `-0.005` for route 1f but `+0.183` for
+route 22 by least squares. In the narrower uphill highway-lead band
+(`28..36 m/s`, request `-0.6..-0.15 m/s2`, pitch basis `0.1..0.4 m/s2`), the two routes
+have only 20 and 45 thinned samples and mean response errors `-0.208` and
+`-0.109 m/s2`, respectively, despite the same brake source. Thus a single new brake
+grade coefficient is not identified by this symptom; the remaining Honda brake
+overdeceleration and release dynamics need to be separated from grade before changing
+the wire command.
