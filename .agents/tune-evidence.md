@@ -5212,3 +5212,19 @@ independent route counts or proof of the exact map correction. The signed-grade 
 changes downhill gas, while the near-level and request-fall overshoot remain separate Honda-response
 targets for source-compatible conditioning by speed, gear, request, and terrain. The device route
 listing at this evidence check showed no full-rate drive after the signed-grade deployment.
+
+A stricter fourth-gear launch match repeats the near-level over-response independently of the
+Moore lead episode. On pre-candidate routes 1c (`9b4cbf40f63b`), 1e
+(`0fbe4df19eea`), and 1f (`ff33e79f665a`), restrict to active PID, no lead or driver pedals,
+live positive gas, `12..20 m/s`, `+0.8..+1.6 m/s2` request, absolute pitch below `0.025 rad`,
+locally steady request, fourth gear unchanged for at least one second, and `1600..2500 rpm`.
+At 5 Hz, the eligible exposure is only `2.0`, `2.0`, and `3.2 s`, respectively, so this is a
+repeatable direction rather than a fitted gas-scale estimate. The three median requests are
+`+1.106`, `+1.102`, and `+1.087 m/s2`; gas commands `1188`, `1184`, and `1171` counts; speeds
+`13.58`, `13.74`, and `14.29 m/s`; and `aEgo(t+0.6)-carControl(t)` means are `+0.307`,
+`+0.464`, and `+0.415 m/s2`. The positive gas maps differ only in grade gain across these
+revisions, and the matched wire commands are nearly equal. This supports a Honda positive-gas
+response issue around low-road-speed fourth-gear acceleration, separate from the lead planner's
+cycle. It does not identify the exact gas decrement or establish response after the new signed-grade
+candidate, so retain that isolated candidate pending its road readout rather than combining
+mechanisms.
