@@ -165,8 +165,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert (gases[50:60] != GAS_INACTIVE).all(), "larger road request did not keep gas active"
     assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
 
-  def test_uphill_gas_load_tapers_at_zero_and_keeps_raw_accel(self):
-    """Uphill assistance must keep the raw command and avoid the former split-step pulse."""
+  def test_grade_gas_load_tapers_at_zero_and_keeps_raw_accel(self):
+    """Grade translation must keep the raw command and avoid the former split-step pulse."""
     accels = np.full(400, 0.10)
     _, level = _run(True, accels, pitch=0.0, vego=31.0)
     _, downhill = _run(True, accels, pitch=-0.05, vego=31.0)
@@ -188,10 +188,10 @@ class TestOdysseyLongRails(unittest.TestCase):
     np.testing.assert_array_equal(level_accel, np.full(len(level_accel), 10))
     np.testing.assert_array_equal(downhill_accel, level_accel)
     np.testing.assert_array_equal(uphill_accel, level_accel)
-    np.testing.assert_array_equal(downhill_gas, level_gas)
     np.testing.assert_array_equal(stopping_gas, level_gas)
     np.testing.assert_array_equal(missing_pose_gas, level_gas)
     np.testing.assert_array_equal(driver_gas_commands, level_gas)
+    assert np.median(downhill_gas[-50:]) < np.median(level_gas[-50:])
     assert np.median(uphill_gas[-50:]) > np.median(level_gas[-50:])
     assert uphill_gas.max() <= GAS_MAX
 

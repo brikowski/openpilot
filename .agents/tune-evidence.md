@@ -5126,3 +5126,70 @@ at mean error `-0.177 m/s2` on 1d and 3.34 seconds at `-0.155 m/s2` on 1e. The t
 These are the frozen pre-candidate reference values for the next source-exact route, not a
 matched-road verdict. Raising the synthetic test's pitch threshold above its uphill trace makes
 the focused check fail; restored tooling passes all 55 validator tests.
+
+## 2026-09-24 — route 1f lead cycling, launch response, and Experimental hill
+
+Route `0000001f--3c3caa3f64` started at 11:44:58 CDT with exact parent
+`6e14266902f41a100bd29223ec9fcd2e63fd875b` and nested `opendbc`
+`ff33e79f665a518be8812e8346a1f50a10100fe8`. It logged 36.5 minutes and 12.2 engaged
+miles with Alpha Long enabled. Aggregate planner-to-`carControl` RMS was `0.002 m/s2`, gas-wire
+RMS was `0.008 m/s2`, and source-matched brake-wire RMS was `0.010 m/s2`; the route-level
+`aEgo-carControl` RMS was `0.273 m/s2`. Thus the command path remained close while physical
+response did not.
+
+At 11:50:21 the takeover alert was `commIssue/softDisable`: `longitudinalPlan`,
+`driverAssistance`, `alertDebug`, and `lateralManeuverPlan` were invalid, with the last two also
+not alive and below expected frequency. The condition cleared after about 1.9 seconds and no
+managed process crash appeared. This is a root process/service communication fault, not a Honda
+translation or safety divergence, so it is diagnosed here but is outside the behavioral scope.
+
+The 11:50:44–11:53:23 highway lead-following episode was predominantly `lead0`. The planner and
+`carControl` matched at `0.001 m/s2` RMS and raw wire matched `carControl` at `0.018 m/s2` RMS,
+while the `+0.6 s` achieved-response error was `-0.036 m/s2` mean and `0.166 m/s2` RMS. The
+request itself ranged from `-0.514` to `+0.617 m/s2`, producing repeated catch and deceleration
+commands; achieved acceleration ranged from `-0.735` to `+0.952 m/s2` and amplified portions of
+that cycle. The Honda port did not invent the oscillation, but vehicle response made the planner's
+cycle more pronounced.
+
+The 11:55:11–11:55:56 Moore Street episode was also predominantly `lead0`. Planner-to-control RMS
+was `0.002 m/s2`, wire RMS was `0.061 m/s2` including intentional brake-grade compensation, and
+achieved-response error was `+0.148 m/s2` mean and `0.340 m/s2` RMS. During the launch the request
+reached `+1.432 m/s2`; actual acceleration remained around `+1.0 m/s2` after the request had
+fallen to roughly `+0.3`, causing the planner to reverse into braking. Three low-speed-to-road-speed
+accelerations on this route had mean achieved errors of `+0.192`, `+0.315`, and `+0.154 m/s2`.
+Command transport was accurate; the Odyssey accelerated more eagerly and retained response after
+the command fell.
+
+At 12:06:41–12:08:18 in Experimental, planner-to-control RMS remained `0.003 m/s2` and wire RMS
+`0.034 m/s2`, but achieved-response RMS was `0.323 m/s2`. On the steep ascent, at filtered pitch
+near `+0.10 rad`, the Experimental source itself requested approximately `-0.10..-0.17 m/s2`;
+the wire followed and the Odyssey decelerated about `-0.69..-0.82 m/s2`. The first divergence for
+the uphill slowdown is therefore upstream of `carControl`. After the crest, pitch became negative
+while the model requested `+0.17..+0.32 m/s2`; the deployed positive-gas grade map ignored descent
+and the Odyssey reached about `+0.86..+1.18 m/s2` before the planner commanded braking. The
+downhill surge begins upstream but was materially amplified by Honda response and the one-sided
+grade translation.
+
+The source-exact grade screen supplies 448 stable positive-uphill matches across routes 1c and 1f.
+The tested `0.7` gain had `0.112 m/s2` MAE versus `0.106 m/s2` for `0.6`, with fitted absolute
+gain about `0.63`; this supports restoring `0.6`. Removing grade entirely was worse on route 1f
+(`0.144` versus `0.136 m/s2` MAE for the deployed compensation). The current negative-request
+uphill candidate improved comparable lead-present under-response by roughly `0.10 m/s2`, although
+steady no-lead uphill exposure over-corrected; it remains bounded and unpromoted rather than being
+discarded or made planner-source-specific.
+
+The next isolated Honda candidate therefore restores positive-request uphill gain `0.6` and applies
+the same signed grade estimate on descents, flooring the translated gas input at the stock Bosch
+gas breakpoint. Raw `ACCEL_COMMAND`, negative-request uphill behavior, domain selection, DBC, and
+safety are unchanged. Raw and filtered pitch signs must agree before compensation is applied, so a
+stale filter cannot carry uphill compensation through a crest. On route 1f shadow evaluation the
+candidate changed only positive gas: 46.70 downhill seconds changed by median `-4` counts over the
+whole route, median `-151` during Moore Street downhill exposure, and median `-144` during the hill
+crest. The hill-crest minimum was `-269` counts. Open-loop replay kept the same 2,089 negative-live
+bridge frames and brake-domain behavior.
+
+Mutation checks showed that restoring gain `0.7` or disabling downhill compensation fails the
+focused Honda test. The restored candidate passes the Honda helper tests, Odyssey preflash suite,
+and full nested test suite: 3,948 passed and 703 skipped, with lint, type, spelling, C++ style, and
+MISRA checks passing. This is a command-response candidate; its road response is not established by
+the frozen-input shadow.

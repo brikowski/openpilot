@@ -360,3 +360,4 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-09-24 | 0000001c--c1af7573e1 | ody-op | 9b4cbf40f63b | 6.6 | 5.0 | 0 | 0.187 | 0.006 | - | - | 0.008 | 0.011 | 4 | 0.0 | 4.6 | 1950/2560 | 1.2% | 0 | none |
 | 2026-09-24 | 0000001e--295c52755b | ody-op | 0fbe4df19eea | 4.7 | 4.9 | 0 | 0.202 | 0.010 | - | - | 0.008 | 0.028 | 2 | 0.0 | 2.1 | 1513/2560 | 0.7% | 0 | none |
 | 2026-09-24 | 0000001d--cce80a222e | ody-op | 0fbe4df19eea | 7.0 | 5.8 | 0 | 0.195 | 0.017 | - | - | 0.009 | 0.078 | 4 | 0.0 | 7.1 | 2560/2560 | 2.9% | 0 | none |
+| 2026-09-24 | 0000001f--3c3caa3f64 | ody-op | ff33e79f665a | 16.2 | 12.2 | 0 | 0.273 | 0.025 | - | - | 0.008 | 0.081 | 4 | 1.8 | 6.2 | 1782/2560 | 0.9% | 0 | brake takeovers, port-added braking, ride harshness (felt) |
