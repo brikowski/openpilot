@@ -209,6 +209,22 @@ class TestOdysseyLongRails(unittest.TestCase):
     bound_gas = round(np.interp(1.0, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V))
     assert max(gas for _, gas, _ in steep) <= bound_gas
 
+  def test_uphill_negative_request_keeps_existing_gas_until_the_bounded_release(self):
+    """A climb may need engine output for a negative net request, without arming gas from coast."""
+    accels = np.array([0.10] * 200 + [-0.23] * 100 + [-0.27] * 100)
+    _, level = _run(True, accels, pitch=0.0, vego=31.0)
+    rejects, uphill = _run(True, accels, pitch=0.03, vego=31.0)
+    assert not rejects
+
+    level_accel = np.array([accel for accel, _, _ in level])
+    uphill_accel = np.array([accel for accel, _, _ in uphill])
+    level_gas = np.array([gas for _, gas, _ in level])
+    uphill_gas = np.array([gas for _, gas, _ in uphill])
+    np.testing.assert_array_equal(uphill_accel, level_accel)
+    assert (level_gas[100:150] == GAS_INACTIVE).all()
+    assert (uphill_gas[100:150] != GAS_INACTIVE).all()
+    assert (uphill_gas[150:] == GAS_INACTIVE).all()
+
   def test_gas_command_matches_upstream_direct_request_mapping(self):
     """Odyssey domain selection must not attenuate upstream's request-to-gas calibration."""
     params = CarControllerParams(_car_params())

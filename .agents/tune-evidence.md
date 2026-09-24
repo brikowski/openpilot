@@ -5046,3 +5046,47 @@ improve and route 1c is effectively flat (`0.112` to `0.114`), while route 09 wo
 the rounded pooled/route-balanced calibration rather than adding planner-source-dependent behavior.
 Four pure tests cover the trailing stability window, gain recovery, response sensitivity, and
 route/sample weighting. These are still frozen-response projections, not road proof.
+
+### 07:51 lead-following oscillation and bounded uphill gas hold (2026-09-24)
+
+Complete route `0000001e--295c52755b` started at 07:46:24 local and resolves exactly to parent
+`f951584ad758` / nested `0fbe4df19eea`, small model
+`f030157ccd2bacbdc6d7b98358903cbacc0e0b34`, standard personality, Experimental off, and Alpha
+Long enabled. The reported 07:51 event is route-relative 275.35 seconds. The selected lead was
+present and the planner source was `lead0`; across the surrounding 250--325-second window the
+planner used `lead0` for 69.18 of 71.28 engaged seconds. Planner-to-`carControl` RMS was
+`0.0010 m/s2`, and raw `carControl`-to-wire RMS was `0.0138 m/s2`, while achieved
+`aEgo-carControl` RMS was `0.1692 m/s2`.
+
+The first repeatable downstream divergence is the uphill negative gas/coast transition. At
+275.35 seconds the request/wire/actual values were `-0.099/-0.100/-0.223 m/s2` at `+0.0206 rad`
+pitch with live gas. At 276.91 seconds the raw request crossed `-0.201 m/s2`, gas became inactive,
+and actual acceleration was already `-0.269 m/s2`. When the request recovered to `-0.098 m/s2`
+at 281.30 seconds, the `-60` bridge entered but actual acceleration had reached `-0.403 m/s2`.
+Across the full window, mean `aEgo-carControl` error was `+0.024` in live gas but `-0.169` in
+inactive coast and `-0.167 m/s2` in the brake domain. The vehicle therefore lost speed and gap
+in coast/brake, causing the lead planner to request positive recovery acceleration; this is not a
+planner-to-controller or numeric CAN-packing error.
+
+Nested candidate `ff33e79f665a` preserves raw `ACCEL_COMMAND`, positive-request grade mapping,
+fresh coast-to-`-60` bridge entry, level/downhill behavior, low-speed stopping, and raw
+`-0.30 m/s2` brake selection. Only when gas is already active on a positive-pitch road-speed PID
+frame, it adds a smooth negative-request grade term capped at `+0.10 m/s2`. The term is zero at
+both zero request and the raw brake boundary and peaks at the stock gas split, so it neither
+reintroduces the former sign-crossing step nor arms gas from inactive coast. On frozen 1e inputs,
+the candidate reduces inactive coast from 22.96 to 14.11 seconds and coast entries from 12 to 7;
+wire-jerk peak/p99 remain `0.863/0.221 m/s3`, and brake frames remain 530 versus 531 recorded.
+This verifies command shape only, not the closed-loop response.
+
+Setting the new correction cap to zero made two focused Honda tests and the decoded
+controller/Panda lifecycle test fail; restoring `0.10` passes six Honda helper tests and 21 rail
+tests with 60 subtests. The full nested gate passes 3,948 tests with 703 skips plus ruff, codespell,
+typing, cpplint, and MISRA. Preflash passes seven Odyssey model/interface tests and the same 21 rail
+tests with 60 subtests.
+
+**Decision: CHANGE to this bounded uphill negative-request gas-hold candidate for a supervised road
+screen.** Grade the same mild-negative lead-following window by coast dwell/entries,
+`aEgo-carControl`, speed-gap oscillation, gas steps, direct gas/brake handoffs, and interventions.
+Retire for positive surge, renewed near-zero gas pulsing, delayed needed braking, or failure to
+reduce the downstream coast deficit. Keep the `-60` bridge; this candidate prevents avoidable
+uphill releases but does not replace fresh coast recovery.

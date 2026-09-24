@@ -381,8 +381,8 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "9e9eeeb25084", "909b12c8e218", "bee068d882d1", "c16579385f56",
                          "409c25925c19", "196119896d73", "147e1d732eaa", "afc133f34",
                          "359f3574d67f", "69a81e7da7f", "d50a3a4843ed", "ae81f00f905e",
-                         "bef3e9148377", "da430e9591b8", "9b4cbf40f63b", "899548275",
-                         "0fbe4df19"):
+                         "bef3e9148377", "da430e9591b8", "9b4cbf40f63b", "899548275b8f",
+                         "0fbe4df19eea", "ff33e79f665a"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -404,8 +404,10 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   for onset_commit in ("871b98a64f6e", "aa8a2e60fbad", "0bd54951753f"):
     assert onset_commit in BRAKE_ONSET_RATE_LIMIT_COMMITS
     assert not _brake_passthrough_expected(onset_commit)
-  assert "0fbe4df19" in BRAKE_GRADE_TRANSLATION_COMMITS
-  assert not _brake_passthrough_expected("0fbe4df19")
+  assert "0fbe4df19eea" in BRAKE_GRADE_TRANSLATION_COMMITS
+  assert "ff33e79f665a" in BRAKE_GRADE_TRANSLATION_COMMITS
+  assert not _brake_passthrough_expected("0fbe4df19eea")
+  assert not _brake_passthrough_expected("ff33e79f665a")
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.
@@ -438,14 +440,14 @@ def test_expected_brake_command_models_grade_translation_only_in_eligible_state(
   brake = np.ones(400, dtype=bool)
 
   expected, eligible, modeled = _expected_brake_command(
-    "0fbe4df19", requested, speed, pitch, pid, brake, 0.01,
+    "0fbe4df19eea", requested, speed, pitch, pid, brake, 0.01,
   )
   assert modeled and eligible.all()
   assert np.median(expected[-50:]) > -0.5
   assert np.max(expected) <= 0.0
 
   downhill, _, _ = _expected_brake_command(
-    "0fbe4df19", requested, speed, -pitch, pid, brake, 0.01,
+    "0fbe4df19eea", requested, speed, -pitch, pid, brake, 0.01,
   )
   assert np.median(downhill[-50:]) < -0.5
 
@@ -455,13 +457,13 @@ def test_expected_brake_command_models_grade_translation_only_in_eligible_state(
     (speed, pid, np.zeros(400, dtype=bool)),
   ):
     raw, eligible, modeled = _expected_brake_command(
-      "0fbe4df19", requested, case_speed, pitch, case_pid, case_brake, 0.01,
+      "0fbe4df19eea", requested, case_speed, pitch, case_pid, case_brake, 0.01,
     )
     assert modeled and not eligible.any()
     np.testing.assert_array_equal(raw, requested)
 
   raw, eligible, modeled = _expected_brake_command(
-    "899548275", requested, speed, pitch, pid, brake, 0.01,
+    "899548275b8f", requested, speed, pitch, pid, brake, 0.01,
   )
   assert not modeled and not eligible.any()
   np.testing.assert_array_equal(raw, requested)
