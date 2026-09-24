@@ -5115,3 +5115,14 @@ by `+0.6 s`, route 1d supplies 3.78 seconds in `-0.20..-0.15 m/s2` with mean
 is only `+0.029`; the smooth taper toward zero remains necessary and is an explicit over-response
 screen. These frozen-response bins support the candidate's sign and bounded shape but do not replace
 its post-deployment closed-loop check.
+
+The validator now reports those two candidate-specific bands directly on every full-rate route.
+It requires longitudinal PID, no driver pedals, live gas without `BRAKE_REQUEST`, at least
+`10 m/s`, and controller-filtered pitch of at least `+0.015 rad`, then compares achieved
+acceleration `0.6 s` later with the current `carControl` request without interpolating across log
+gaps. On the pre-candidate routes, the combined `-0.20..-0.10 m/s2` band measures 13.45 seconds
+at mean error `-0.177 m/s2` on 1d and 3.34 seconds at `-0.155 m/s2` on 1e. The tapered
+`-0.10..0` guard measures 51.17 seconds at `-0.000 m/s2` and 36.03 seconds at `-0.005 m/s2`.
+These are the frozen pre-candidate reference values for the next source-exact route, not a
+matched-road verdict. Raising the synthetic test's pitch threshold above its uphill trace makes
+the focused check fail; restored tooling passes all 55 validator tests.

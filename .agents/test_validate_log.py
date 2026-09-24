@@ -37,6 +37,7 @@ from tuning_metrics import (
   cruise_input_metrics,
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
+  uphill_negative_gas_tracking_metrics,
   uphill_near_zero_gas_step_metrics,
   uphill_tracking_bin_metrics,
   gas_release_band_metrics,
@@ -721,6 +722,34 @@ def test_uphill_near_zero_gas_steps_exclude_domain_edges_and_flat_terrain():
   assert np.isclose(uphill["uphill_near_zero_gas_step_median"], 270.0)
   assert uphill["uphill_near_zero_gas_exposure_sec"] > 0.5
   assert measure(0.0)["uphill_near_zero_gas_step_events"] == 0
+
+
+def test_uphill_negative_gas_tracking_aligns_response_and_guards_near_zero():
+  grid = np.arange(0.0, 8.0, 0.01)
+  n = len(grid)
+  requested = np.where(grid < 4.0, -0.15, -0.05)
+  actual = np.where(grid < 4.6, -0.25, -0.03)
+  active_pid = np.ones(n, dtype=bool)
+  no_pedal = np.zeros(n, dtype=bool)
+
+  metrics = uphill_negative_gas_tracking_metrics(
+    grid, requested, actual, np.full(n, 20.0), np.full(n, 0.02), active_pid,
+    no_pedal, no_pedal, no_pedal, np.full(n, 100.0), gas_inactive=-30000.0,
+  )
+
+  assert metrics["uphill_negative_transition_events"] == 1
+  assert metrics["uphill_negative_near_zero_events"] == 1
+  assert metrics["uphill_negative_transition_sec"] > 3.0
+  assert metrics["uphill_negative_near_zero_sec"] > 3.0
+  assert np.isclose(metrics["uphill_negative_transition_response_error_mean"], -0.10)
+  assert np.isclose(metrics["uphill_negative_near_zero_response_error_mean"], 0.02)
+
+  flat = uphill_negative_gas_tracking_metrics(
+    grid, requested, actual, np.full(n, 20.0), np.zeros(n), active_pid,
+    no_pedal, no_pedal, no_pedal, np.full(n, 100.0), gas_inactive=-30000.0,
+  )
+  assert flat["uphill_negative_transition_sec"] == 0.0
+  assert flat["uphill_negative_near_zero_sec"] == 0.0
 
 
 def test_active_zero_gas_metric_isolates_state_and_response():

@@ -32,6 +32,7 @@ from tuning_metrics import (
   cruise_input_metrics,
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
+  uphill_negative_gas_tracking_metrics,
   uphill_near_zero_gas_step_metrics,
   uphill_tracking_bin_metrics,
   gas_release_band_metrics,
@@ -1368,6 +1369,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "uphill_near_zero_gas_exposure_sec": None,
          "uphill_near_zero_gas_step_events": None,
          "uphill_near_zero_gas_step_median": None,
+         **uphill_negative_gas_tracking_metrics(
+           [], [], [], [], [], [], [], [], [], [], gas_inactive=GAS_INACTIVE),
          **uphill_tracking_bin_metrics([], [], [], [], [], [], [], [], [], [], [], [], [], []),
          "active_zero_gas_sec": None, "active_zero_gas_events": None,
          "active_zero_gas_short_events": None, "active_zero_gas_longest": None,
@@ -1486,6 +1489,10 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     request_abs_max=UPHILL_GAS_STEP_REQUEST_ABS_MAX,
     request_delta_max=UPHILL_GAS_STEP_REQUEST_DELTA_MAX,
     gas_delta_min=UPHILL_GAS_STEP_COMMAND_DELTA_MIN,
+  ))
+  out.update(uphill_negative_gas_tracking_metrics(
+    grid, requested, aego, vego_all, pitch, pid, gaspressed, brakepressed, BR, GAS,
+    gas_inactive=GAS_INACTIVE,
   ))
   out.update(uphill_tracking_bin_metrics(
     grid, requested, aego, AC, vego, pitch, active, cruise_plan, allow_throttle,
@@ -1968,6 +1975,22 @@ def verdicts(r):
         f"{r['uphill_near_zero_gas_step_events']} step(s) over "
         f"{r['uphill_near_zero_gas_exposure_sec']:.1f}s eligible adjacent samples; "
         f"median jump {median} counts (no calibrated comfort limit)")
+  for band, label in (("transition", "-0.20..-0.10"), ("near_zero", "-0.10..0")):
+    events = r.get(f"uphill_negative_{band}_events")
+    if events is not None:
+      def value(metric_band, field, spec):
+        measured = r.get(f"uphill_negative_{metric_band}_{field}")
+        return format(measured, spec) if measured is not None else "n/a"
+
+      add(f"uphill negative live-gas {label} tracking (diagnostic)", True,
+          f"{events} event(s), {r[f'uphill_negative_{band}_sec']:.2f}s exposure; "
+          f"median request/pitch/gas {value(band, 'request_median', '+.3f')} m/s^2 / "
+          f"{value(band, 'pitch_median', '+.4f')} rad / "
+          f"{value(band, 'gas_median', '.0f')} counts; "
+          f"aEgo(t+0.6s)-request mean/median/RMS "
+          f"{value(band, 'response_error_mean', '+.3f')}/"
+          f"{value(band, 'response_error_median', '+.3f')}/"
+          f"{value(band, 'response_error_rms', '.3f')} m/s^2 (unmatched route readout)")
   for band in ("moderate", "high"):
     episodes = r.get(f"uphill_{band}_episodes")
     if episodes is not None:

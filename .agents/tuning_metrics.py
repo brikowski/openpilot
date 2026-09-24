@@ -660,6 +660,74 @@ def uphill_near_zero_gas_step_metrics(grid, requested, engaged, vego, pitch,
   }
 
 
+def uphill_negative_gas_tracking_metrics(grid, requested, actual_accel, speed, pitch, active_pid,
+                                         gas_pressed, brake_pressed, brake_request, gas_command, *,
+                                         gas_inactive, pitch_min=0.015, speed_min=10.0,
+                                         response_delay_s=0.6, pitch_filter_tau=0.5):
+  """Grade the live-gas uphill bands changed by the bounded negative-request translation."""
+  bands = {"transition": (-0.20, -0.10), "near_zero": (-0.10, 0.0)}
+  fields = ("sec", "events", "request_median", "pitch_median", "gas_median",
+            "response_error_mean", "response_error_median", "response_error_rms")
+  result = {f"uphill_negative_{name}_{field}": (0 if field == "events" else (0.0 if field == "sec" else None))
+            for name in bands for field in fields}
+  arrays = (requested, actual_accel, speed, pitch, active_pid, gas_pressed,
+            brake_pressed, brake_request, gas_command)
+  n = len(grid)
+  if n < 3 or any(len(np.asarray(a)) != n for a in arrays):
+    return result
+
+  grid = np.asarray(grid, dtype=float)
+  dt = float(np.median(np.diff(grid)))
+  if not np.isfinite(dt) or dt <= 0.0:
+    return result
+  requested, actual_accel, speed, pitch, gas_command = (
+    np.asarray(a, dtype=float) for a in (requested, actual_accel, speed, pitch, gas_command))
+  filtered_pitch = causal_lpf(pitch, dt, pitch_filter_tau, initial=0.0)
+  common = (np.asarray(active_pid, dtype=bool) & ~np.asarray(gas_pressed, dtype=bool) &
+            ~np.asarray(brake_pressed, dtype=bool) & ~np.asarray(brake_request, dtype=bool) &
+            (gas_command > gas_inactive) & (speed >= speed_min) & (filtered_pitch >= pitch_min) &
+            np.isfinite(requested) & np.isfinite(actual_accel) & np.isfinite(filtered_pitch))
+
+  target_t = grid + response_delay_s
+  right = np.searchsorted(grid, target_t, side="left")
+  aligned = (right > 0) & (right < n)
+  safe_right = np.clip(right, 1, n - 1)
+  left = safe_right - 1
+  local_gap = grid[safe_right] - grid[left]
+  aligned &= local_gap > 0.0
+  aligned &= local_gap <= 2.5 * dt
+  gap_edges = np.diff(grid) > 2.5 * dt
+  gap_prefix = np.concatenate(([0], np.cumsum(gap_edges)))
+  aligned &= (gap_prefix[safe_right] - gap_prefix[np.arange(n)]) == 0
+  future_accel = np.full(n, np.nan)
+  valid_idx = np.flatnonzero(aligned)
+  if len(valid_idx):
+    weight = ((target_t[valid_idx] - grid[left[valid_idx]]) /
+              (grid[safe_right[valid_idx]] - grid[left[valid_idx]]))
+    future_accel[valid_idx] = (actual_accel[left[valid_idx]] * (1.0 - weight) +
+                               actual_accel[safe_right[valid_idx]] * weight)
+
+  gap_before = np.concatenate(([False], gap_edges))
+  for name, (lower, upper) in bands.items():
+    mask = common & (requested >= lower) & (requested < upper)
+    starts = mask & (~np.roll(mask, 1) | gap_before)
+    starts[0] = mask[0]
+    response_mask = mask & aligned & np.isfinite(future_accel)
+    response_error = future_accel[response_mask] - requested[response_mask]
+    prefix = f"uphill_negative_{name}_"
+    result.update({
+      prefix + "sec": float(mask.sum() * dt),
+      prefix + "events": int(starts.sum()),
+      prefix + "request_median": float(np.median(requested[mask])) if mask.any() else None,
+      prefix + "pitch_median": float(np.median(filtered_pitch[mask])) if mask.any() else None,
+      prefix + "gas_median": float(np.median(gas_command[mask])) if mask.any() else None,
+      prefix + "response_error_mean": float(np.mean(response_error)) if len(response_error) else None,
+      prefix + "response_error_median": float(np.median(response_error)) if len(response_error) else None,
+      prefix + "response_error_rms": float(np.sqrt(np.mean(response_error ** 2))) if len(response_error) else None,
+    })
+  return result
+
+
 def uphill_tracking_bin_metrics(grid, requested, actual_accel, wire_accel, speed, pitch,
                                 active, cruise_plan, allow_throttle, has_lead,
                                 gas_pressed, brake_pressed, brake_request, gas_command, *,
