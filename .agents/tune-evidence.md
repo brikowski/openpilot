@@ -5016,5 +5016,10 @@ unchanged. Frozen replay preserves all 2,620 brake-domain frames and all ten phy
 on route 1c, reduces forceful edges from five to three, and does not increase worst wire jerk; it
 does not predict closed-loop response. Reversing the pitch sign made the focused assertion fail.
 Restored code passes 3,947 nested tests with 703 skips plus lint/type/C safety checks and preflash's
-seven interface/model tests plus 20 rail tests with 60 subtests. Nested commit `0fbe4df19` is
-published; parent publication and guarded deployment are the next installation steps.
+seven interface/model tests plus 20 rail tests with 60 subtests. Nested `0fbe4df19eea` and parent
+`e958229994ff` were published in that order and deployed through the guarded `ody-op` workflow.
+After build and reboot, the device verified those exact parent/gitlink/nested SHAs, clean parent and
+nested trees, comma-owned `.venv`, `AlphaLongitudinalEnabled=1`, updater target `ody-op`, updater
+idle, no available update or updater exception, two manager processes, one Panda process, and no
+failed services. This proves installation health only; the next full-rate route grades the brake
+translation and the already-deployed `0.7` gas gain independently.

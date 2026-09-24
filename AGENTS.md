@@ -174,13 +174,18 @@ refs, and clean state separately from device health and road behavior. Keep the 
 
 ## Current focus
 
-As of 2026-09-24, the device runs pair root `a16e89b1ae97` / nested `899548275b8f` on the single
+As of 2026-09-24, the device runs pair root `e958229994ff` / nested `0fbe4df19eea` on the single
 `ody-op` line. It retains the request-ramped uphill `GAS_COMMAND` candidate with a `0.7` grade gain,
-raw `ACCEL_COMMAND`, three-domain selection, and stock 2560 lateral authority. Alpha
+adds a `0.3` filtered-pitch brake-command translation at road speed in PID control, keeps raw
+three-domain selection, and retains stock 2560 lateral authority. The brake arm leaves level road,
+low speed, stopping, missing pose, and driver-brake behavior raw; its projected response benefit is
+not yet closed-loop road proof. Alpha
 Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable while it
 is active. The guarded deployment verified clean exact SHAs, an idle updater with no exception,
 active manager/Panda services, and no failed services; this is deployment health, not road proof.
 The first deployed `0.6` route and the prior source-compatible full-gain pool independently fit an
-absolute gain near `0.67..0.70`, selecting `0.7`. Judge its physical response from new logs without
-waiting for an arbitrary number of drives. Detailed measurements and prior experiment provenance
-remain in `.agents/tune-evidence.md`; dated directives there do not override this file.
+absolute gas gain near `0.67..0.70`, selecting `0.7`. Seven-route settled-brake evidence independently
+fits a positive grade term on every route and selects the rounded `0.3` brake gain. Judge both
+physical responses from new logs without waiting for an arbitrary number of drives. Detailed
+measurements and prior experiment provenance remain in `.agents/tune-evidence.md`; dated directives
+there do not override this file.
