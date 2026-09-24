@@ -223,6 +223,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "ae81f00f905e": -0.30,  # stock-lateral restoration; longitudinal command mapping unchanged
   "bef3e9148377": -0.30,  # live Alpha handoff only; active-long command mapping unchanged
   "da430e9591b8": -0.30,  # upstream-rebased/squashed current Odyssey command mapping
+  "9b4cbf40f63b": -0.30,  # 0.6 grade gain; brake-domain selection unchanged
+  "899548275": -0.30,  # 0.7 grade gain; brake-domain selection unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -269,6 +271,8 @@ THREE_DOMAIN_COMMITS = {
   "ae81f00f905e",  # restores stock lateral authority; longitudinal domains are unchanged
   "bef3e9148377",  # adds live Alpha handoff gating; settled active-long domains are unchanged
   "da430e9591b8",  # upstream-rebased/squashed current Odyssey three-domain mapping
+  "9b4cbf40f63b",  # 0.6 grade gain; raw three-domain output is unchanged
+  "899548275",  # 0.7 grade gain; raw three-domain output is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",

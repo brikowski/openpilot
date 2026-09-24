@@ -1,6 +1,6 @@
 import numpy as np
 
-from compare_grade_gain import fitted_gains, one_to_one_matches, rolling_span
+from compare_grade_gain import absolute_gain, fitted_gains, one_to_one_matches, rolling_span
 
 
 def test_rolling_span_rejects_edges_and_measures_centered_window():
@@ -26,3 +26,7 @@ def test_fitted_gains_recovers_known_response_scale():
   least_squares, minimum_mae = fitted_gains(candidate, baseline)
   assert np.isclose(least_squares, 20.0 / 29.0)
   assert np.isclose(minimum_mae, 0.67)
+
+
+def test_absolute_gain_maps_between_tested_calibrations():
+  assert np.isclose(absolute_gain(0.2, 0.6, 1.0), 0.68)

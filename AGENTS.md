@@ -184,3 +184,6 @@ The current full-rate pool contains 1,816 source-compatible matched samples acro
 pitch, gear, and lead state; it selected the `0.6` grade gain. Judge its physical response from new
 logs without waiting for an arbitrary number of drives. Detailed measurements and prior experiment
 provenance remain in `.agents/tune-evidence.md`; dated directives there do not override this file.
+The first deployed `0.6` route moved the cross-arm fit to `0.67..0.70`; local nested candidate
+`899548275` therefore changes only the grade gain to `0.7`. Deployment status must be verified
+separately from this source snapshot.

@@ -28,7 +28,7 @@ active safety rails.
   m/s², and active-gas continuity above Honda's upstream -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
   deployed Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
-  request-ramped, bounded pitch load with grade gain `0.6`; it does not change `ACCEL_COMMAND` or
+  request-ramped, bounded pitch load; it does not change `ACCEL_COMMAND` or
   domain selection.
 - Read `values.py`, `hondacan.py`, the DBC, and `safety/modes/honda.h` together before changing a
   rail or signal. Numeric command fidelity is incomplete if the active domain bits disagree.

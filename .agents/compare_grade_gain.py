@@ -93,8 +93,15 @@ def fitted_gains(candidate_error, baseline_error):
   return least_squares, float(grid[np.argmin(mae)])
 
 
+def absolute_gain(relative_gain, baseline_gain, candidate_gain):
+  """Map a fitted interpolation fraction back to the calibration's gain units."""
+  return baseline_gain + relative_gain * (candidate_gain - baseline_gain)
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument("--baseline-gain", type=float, default=0.0)
+  parser.add_argument("--candidate-gain", type=float, default=1.0)
   parser.add_argument("baseline")
   parser.add_argument("candidates", nargs="+")
   args = parser.parse_args()
@@ -115,6 +122,9 @@ def main():
     summary += f"{np.mean(np.abs(candidate_error)):.3f}/{np.mean(np.abs(baseline_error)):.3f}, "
     summary += f"gain least-squares/minimum-MAE={least_squares:.2f}/{minimum_mae:.2f}"
     print(summary)
+    absolute_least_squares = absolute_gain(least_squares, args.baseline_gain, args.candidate_gain)
+    absolute_minimum_mae = absolute_gain(minimum_mae, args.baseline_gain, args.candidate_gain)
+    print(f"  absolute gain least-squares/minimum-MAE={absolute_least_squares:.2f}/{absolute_minimum_mae:.2f}")
 
 
 if __name__ == "__main__":

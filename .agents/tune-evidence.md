@@ -4927,3 +4927,46 @@ branch `ody-op`, exact parent/gitlink/nested SHAs, clean parent and nested trees
 `AlphaLongitudinalEnabled=1`, updater target `ody-op`, updater idle, no available update or updater
 exception, active comma/manager/Panda processes, and no failed services. This proves installation
 health only; the next route is the first closed-loop road result for the `0.6` candidate.
+
+### First closed-loop 0.6 route and grade-gain refinement (2026-09-24)
+
+The all-retained 72-hour pull added three routes on nested `9b4cbf40f63b`. Route
+`0000001a--0505a229ca` is a zero-engagement startup fragment and cannot grade behavior. Route
+`0000001b--6a9525565f` has 3.1 engaged minutes but no qualifying uphill moderate/high-request
+episode. Route `0000001c--c1af7573e1` resolves exactly to deployed root `dbf479df165d`, nested
+`9b4cbf40f63b`, small model `f030157ccd2bacbdc6d7b98358903cbacc0e0b34`, standard personality,
+Experimental off, and Alpha Long enabled. It has 6.56 engaged minutes, no `controlsd` crash, and no
+gas override. Request-to-wire RMS is `0.006 m/s2` overall and `0.0057 m/s2` in its five settled
+moderate-uphill episodes, so the remaining response error is downstream of command translation.
+
+Those five episodes provide 22.23 seconds at median request `+0.146 m/s2`, speed `22.0 m/s`, and
+pitch `+0.0738 rad`. Median achieved `aEgo-carControl` error is `-0.137 m/s2` and RMS is
+`0.211 m/s2`. Matching the route's stable positive-request gas samples one-to-one to the no-grade
+route `0000000c--25d237b5ee` gives 121 pairs: gain `0.6` reduces response MAE from `0.223` to
+`0.180 m/s2`. Interpolating from gain `0.0` to the observed `0.6` response puts the absolute optimum
+at `0.70` by least squares and `0.78` by minimum MAE.
+
+The stronger cross-check matches the same `0.6` route as baseline against all nine source-equivalent
+gain-`1.0` routes used in the earlier 1,816-pair decision. It produces 549 one-to-one pairs. Full
+gain has MAE `0.147 m/s2` versus `0.113 m/s2` at gain `0.6`; interpolation between the two observed
+arms puts the absolute optimum at `0.68` by least squares and `0.67` by minimum MAE. The 539-pair
+no-lead slice gives `0.68/0.65`; the lead slice has only ten pairs and gives `0.68/0.67`, so no
+lead-specific translation is introduced. `.agents/compare_grade_gain.py` now accepts the tested
+baseline and candidate gains and reports these absolute values directly. The complete gain-`1.0`
+pool also reproduces the archived 1,816-pair `0.49/0.61` result; the earlier apparent discrepancy
+came from invoking the tool with only the newest three of the nine source-equivalent routes.
+
+Separately, routes 1b/1c add six coast-to-brake response peaks. Planner/request/wire RMS remains at
+or below `0.0022/0.0200 m/s2`; Honda's received computer-braking state rises after median `0.065 s`,
+and strongest achieved deceleration follows that state after median `0.555 s`, with `6.3x` median
+response-jerk amplification and no nearby gear edge in all six events. This repeats the downstream
+brake-response symptom but does not assign it to the grade gain or justify changing brake commands.
+
+**Decision: CHANGE the single Odyssey grade gain from `0.6` to `0.7`.** The rounded value is shared
+by the independent no-grade-to-0.6 and 0.6-to-full-gain fits. Raw `ACCEL_COMMAND`, filtering,
+request ramp, command domains, braking, negative-live bridge, safety limits, lateral control, and
+other Honda platforms remain unchanged. Nested commit `899548275` contains only the gain and its
+assertion. Mutating the implementation back to `0.6` made the focused test fail; restored `0.7`
+passes four helper tests, the full nested gate of 3,946 tests with 703 skips plus all lint/type/C
+safety checks, and preflash's seven Odyssey interface/model tests plus 20 rail tests with 58
+subtests. This establishes software and command-shape validity, not the new gain's road response.
