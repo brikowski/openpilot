@@ -209,6 +209,13 @@ Near-level mild-negative coast/brake samples have opposite tracking errors at lo
 while highway coast already overdecelerates; a global earlier brake-entry threshold is not
 supported by current road evidence.
 
+A bounded Odyssey-only positive-gas trial is in the nested Honda controller: it trims at most
+200 opaque gas counts for positive PID requests around 12–20 m/s and +0.8–+1.6 m/s2, with smooth
+ramps and no change to raw `ACCEL_COMMAND` or brake/negative-gas domains. Two historical
+source-different matched episodes give its direction and trial size; they do not establish a
+closed-loop gain. The device pair stated above remains the road baseline until exact deployment
+is verified. Keep or retire this unpromoted trial from source-compatible road response.
+
 Alpha Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable
 while it is active. The guarded deployment verified clean exact SHAs, an idle updater with no
 exception, active manager/Panda services, and no failed services; this is deployment health, not

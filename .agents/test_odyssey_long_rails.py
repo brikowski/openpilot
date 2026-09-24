@@ -11,6 +11,7 @@ import numpy as np
 
 from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
+from opendbc.car.honda.carcontroller import odyssey_low_speed_gas_command
 from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -87,6 +88,17 @@ class TestOdysseyLongRails(unittest.TestCase):
     """Keep upstream's Odyssey request-to-gas endpoint."""
     params = CarControllerParams(_car_params())
     assert params.BOSCH_GAS_LOOKUP_V == [0, 2000]
+
+  def test_low_speed_positive_gas_trim_preserves_accel_domain_and_safety(self):
+    rows = {}
+    for speed in (4.0, 14.0, 30.0):
+      rejects, seen = _run(True, [1.1] * 20, pitch=0.0, vego=speed)
+      assert not rejects
+      assert len(seen) == 10
+      assert all(accel == 110 and brake == 0 for accel, _, brake in seen)
+      rows[speed] = np.median([gas for _, gas, _ in seen])
+    assert abs(rows[4.0] - rows[30.0]) <= 1
+    assert abs(rows[14.0] - (rows[30.0] - 200)) <= 1
 
   def test_brake_command_applies_only_road_speed_pid_grade_translation(self):
     """Grade translation must preserve raw level, low-speed, stopping, and missing-pose commands."""
@@ -225,19 +237,20 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert (uphill_gas[100:150] != GAS_INACTIVE).all()
     assert (uphill_gas[150:] == GAS_INACTIVE).all()
 
-  def test_gas_command_matches_upstream_direct_request_mapping(self):
-    """Odyssey domain selection must not attenuate upstream's request-to-gas calibration."""
+  def test_gas_command_matches_bounded_odyssey_translation(self):
+    """Only the targeted speed and demand band may differ from upstream's direct map."""
     params = CarControllerParams(_car_params())
     for vego in (1.0, 8.0, 15.0, 22.0, 31.0):
       for accel in (0.10, 0.50, 1.00):
         with self.subTest(vego=vego, accel=accel):
           _, seen = _run(True, np.full(20, accel), pitch=0.0, vego=vego)
           gas = {command for _, command, _ in seen}
-          expected = round(np.interp(accel, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V))
+          upstream = np.interp(accel, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V)
+          expected = round(odyssey_low_speed_gas_command(upstream, accel, vego))
           assert gas == {expected}
 
   def test_gas_command_has_no_unproven_live_residual_learner(self):
-    """Identical requests and speed must keep upstream gas mapping regardless of tracking error."""
+    """Identical requests and speed must keep the fixed translation regardless of tracking error."""
     accels = np.full(400, 0.50)
     _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20)
     _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20)

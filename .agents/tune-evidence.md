@@ -5378,6 +5378,77 @@ The depth split does not fully explain the route difference, but it makes
 clear that strong-command underbraking and mild-command late overbraking
 must not be collapsed into one static brake gain or one speed-only correction.
 
+### Bounded low-road-speed positive-gas response trial (2026-09-24)
+
+The Honda-owned near-level acceleration overshoot remains visible on the current
+behavioral source. Reapplying the steady fourth-gear screen at `12..20 m/s`,
+`+0.8..+1.6 m/s2` raw request, pitch magnitude below `0.025 rad`, no lead or
+driver pedals, stable gear, and `1600..2500 rpm` gives 2.8 seconds on route
+1f (`ff33e79f665a`) at median request `+1.094`, gas `1178`, and
+`aEgo(t+0.6)-carControl(t)` mean `+0.420 m/s2`. Post-deployment route
+`00000020--f90697dedf` (`6915be202bb7`) contributes only 0.2 seconds
+at request `+1.088`, gas `1172`, and error `+0.317 m/s2`; routes 21 and 22
+do not exercise this narrow band. This is corroboration of direction, not a
+current-build gain fit. A broader `10..22 m/s`, `+0.5..+1.6 m/s2` no-lead
+screen finds 3.0 seconds in fourth gear and 1.8 in fifth on route 1f,
+with mean errors `+0.414` and `+0.478 m/s2`.
+
+For a bounded trial size, seven learner-era routes were screened with the
+same strict fourth-gear conditioning. Only routes `00000061--b8f07e1ca7`,
+`00000062--e38819678c`, and `00000066--a1ef887d10` contain eligible
+samples (five, six, and seven at 5 Hz). One-to-one matching against routes
+1f/20 within `1.5 m/s` speed, `0.1 m/s2` request, `0.01 rad` pitch, and
+`300 rpm` yields three pairs: two are adjacent samples from one route-1f
+episode matched to route 62, and one route-1f sample matches route 61.
+The actual feature differences are tighter than the limits: speed within
+`0.25 m/s`, request `0.007 m/s2`, pitch `0.002 rad`, and RPM `77`.
+Both sources send `ACCEL_COMMAND` within `0.006 m/s2` of raw request.
+Median current versus learner-era gas is `1205` versus `1012` counts;
+median achieved error is `+0.405` versus `+0.158 m/s2`, and the paired
+error difference is `+0.223 m/s2`. These are only two independent old-route
+comparisons, not an isolated gas-count causal experiment: the older Honda
+controller has other changes. The exact `ACC_CONTROL` packing/DBC remains
+the same and positive gas with raw numeric acceleration is comparable, so
+the contrast supplies direction and an approximately 200-count *trial*
+magnitude, not a promoted calibration or predicted road improvement.
+
+The nested Odyssey candidate subtracts at most 200 opaque `GAS_COMMAND`
+counts for positive PID requests with no driver gas. Smooth zero-slope
+ramps make the trim full only from `12..20 m/s` and `+0.8..+1.6 m/s2`,
+tapering to zero by `8/24 m/s` and `+0.4/+2.0 m/s2`. Raw
+`ACCEL_COMMAND`, gas/brake-domain selection, negative-live bridge, brake
+translation, low-speed stop behavior, highway gas, DBC, safety rails, and
+lateral control remain unchanged. On frozen recorded inputs thinned to
+5 Hz, the helper changes 55.2 seconds of positive gas on route 1f
+(median/minimum `-157/-200` counts), 8.2 seconds on route 20
+(`-200/-200`), none on route 21, and 12.8 seconds on route 22
+(`-185/-200`). No sampled negative-request, brake-domain, or speed-at-least-
+24 m/s frame changes. These are command-shape observations only; the
+closed-loop vehicle response to this trim is not yet known.
+
+The focused unit and decoded-controller/Panda tests deliberately fail when
+the 200-count trim is mutated to zero, then pass when restored. The helper
+test also checks dense monotonicity of gas versus request and continuity at
+the four speed-ramp boundaries. Odyssey preflash passes seven interface/model
+tests and 22 rail tests with 60 subtests; Honda helper and safety coverage
+passes 255 tests with 244 skips and 20 safety subtests. A one-segment
+controller replay on route 1f processes 5,974 frames, including 3,656
+engaged frames, retaining two physical brake-domain flips and 46 negative-
+live-gas frames; its numeric `ACCEL_COMMAND` comparison is not a gas-response
+prediction. The broader root-environment nested pytest run gives 3,600
+passes and 1,677 skips; three MISRA mutation-harness cases fail because that
+separate shell script invokes the unavailable nested `uv sync`/Cppcheck
+environment. There are no C or safety-source changes in this candidate.
+**Decision: CHANGE to this bounded, unpromoted positive-gas trial for a
+supervised road screen, not as a confirmed calibration.** Publish/deploy only
+after paired source and device checks; compare source-compatible achieved
+acceleration with the requested value inside and outside the trim band and
+retire the trial if low-speed under-response or lead-gap loss replaces the
+recorded overshoot.
+The isolated nested candidate is published on `ody-op` as `47196b9a4`;
+the parent gitlink and device must match this exact commit for its road
+response to count.
+
 The next threshold screen conditions on active PID, no driver pedals, request
 `-0.30..-0.20 m/s2`, pitch magnitude below `0.03 rad`, at least 0.5 seconds
 before and 0.6 seconds after each sample continuously in the recorded coast
