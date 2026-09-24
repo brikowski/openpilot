@@ -4970,3 +4970,10 @@ assertion. Mutating the implementation back to `0.6` made the focused test fail;
 passes four helper tests, the full nested gate of 3,946 tests with 703 skips plus all lint/type/C
 safety checks, and preflash's seven Odyssey interface/model tests plus 20 rail tests with 58
 subtests. This establishes software and command-shape validity, not the new gain's road response.
+
+Nested `899548275b8f` and parent `a16e89b1ae97` were published in that order and deployed through
+the guarded `ody-op` workflow. After build and reboot, the device verified branch `ody-op`, exact
+parent/gitlink/nested SHAs, clean parent and nested trees, comma-owned `.venv`,
+`AlphaLongitudinalEnabled=1`, updater target `ody-op`, updater idle, no available update or updater
+exception, two manager processes, one Panda process, and no failed services. This is installation
+health only; a subsequent full-rate route will measure the closed-loop `0.7` response.
