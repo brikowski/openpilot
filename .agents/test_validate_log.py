@@ -383,7 +383,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "409c25925c19", "196119896d73", "147e1d732eaa", "afc133f34",
                          "359f3574d67f", "69a81e7da7f", "d50a3a4843ed", "ae81f00f905e",
                          "bef3e9148377", "da430e9591b8", "9b4cbf40f63b", "899548275b8f",
-                         "0fbe4df19eea", "ff33e79f665a", "6915be202bb7"):
+                         "0fbe4df19eea", "ff33e79f665a", "6915be202bb7", "47196b9a4"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -408,9 +408,11 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert "0fbe4df19eea" in BRAKE_GRADE_TRANSLATION_COMMITS
   assert "ff33e79f665a" in BRAKE_GRADE_TRANSLATION_COMMITS
   assert "6915be202bb7" in BRAKE_GRADE_TRANSLATION_COMMITS
+  assert "47196b9a4" in BRAKE_GRADE_TRANSLATION_COMMITS
   assert not _brake_passthrough_expected("0fbe4df19eea")
   assert not _brake_passthrough_expected("ff33e79f665a")
   assert not _brake_passthrough_expected("6915be202bb7")
+  assert not _brake_passthrough_expected("47196b9a4")
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.

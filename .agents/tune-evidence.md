@@ -5445,9 +5445,12 @@ after paired source and device checks; compare source-compatible achieved
 acceleration with the requested value inside and outside the trim band and
 retire the trial if low-speed under-response or lead-gap loss replaces the
 recorded overshoot.
-The isolated nested candidate is published on `ody-op` as `47196b9a4`;
-the parent gitlink and device must match this exact commit for its road
-response to count.
+The isolated nested candidate is published on `ody-op` as `47196b9a4`,
+and parent `a8d11cd9aa` pins it. The first device SSH precheck timed out,
+so no deployment, build, or device-state check was attempted. The last
+verified device pair remains the behavioral road baseline, not proof of its
+current state. Device and parent gitlink must match the exact candidate
+before its road response can count.
 
 The next threshold screen conditions on active PID, no driver pedals, request
 `-0.30..-0.20 m/s2`, pitch magnitude below `0.03 rad`, at least 0.5 seconds
