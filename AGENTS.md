@@ -174,22 +174,32 @@ refs, and clean state separately from device health and road behavior. Keep the 
 
 ## Current focus
 
-As of 2026-09-24, the device runs root `6e14266902f4` / nested `ff33e79f665a` on the single
-`ody-op` line. This candidate retains the
-request-ramped positive `GAS_COMMAND` mapping with a `0.7` grade gain and the `0.3` filtered-pitch
-brake translation, and adds only a smooth, capped uphill correction through an already-active
-negative gas request. It preserves raw `ACCEL_COMMAND`, raw brake selection, fresh `-60` bridge
-entry, level/downhill behavior, and stock 2560 lateral authority. Route
-`0000001e--295c52755b` located the 07:51 lead-following oscillation after accurate planner/request/
-wire translation: uphill coast and brake response averaged about `-0.17 m/s2` beyond the raw
-request. Frozen-input replay reduces inactive coast exposure but does not prove the candidate's
-closed-loop response. Alpha
-Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable while it
-is active. The guarded deployment verified clean exact SHAs, an idle updater with no exception,
-active manager/Panda services, and no failed services; this is deployment health, not road proof.
-The first deployed `0.6` route and the prior source-compatible full-gain pool independently fit an
-absolute gas gain near `0.67..0.70`, selecting `0.7`. Seven-route settled-brake evidence independently
-fits a positive grade term on every route and selects the rounded `0.3` brake gain. Judge both
-physical responses from new logs without waiting for an arbitrary number of drives. Detailed
-measurements and prior experiment provenance remain in `.agents/tune-evidence.md`; dated directives
-there do not override this file.
+As of 2026-09-24, the device runs behavioral root `0bd9816712b1` / nested
+`6915be202bb7` on the single `ody-op` line; later root `3269deef3d7c` adds only its deployment
+receipt. The nested candidate retains raw `ACCEL_COMMAND`, the request-ramped positive
+`GAS_COMMAND` mapping, the smooth capped correction through an already-active uphill negative gas
+request, the `0.3` filtered-pitch brake translation, fresh `-60` bridge entry, and stock 2560
+lateral authority. It changes positive-request gas translation to use signed grade with gain `0.6`
+and requires raw and filtered pitch signs to agree before applying it, preventing stale uphill
+compensation across a crest.
+
+Route `0000001f--3c3caa3f64` locates the reported lead-following cycles after accurate planner to
+`carControl` and controller-to-wire translation: the planner issues real catch/deceleration cycles,
+while Odyssey lag and over-response amplify them. Three low-speed accelerations averaged
+approximately `+0.15..+0.32 m/s2` achieved acceleration beyond the request. During the 12:07
+Experimental hill, the uphill slowdown starts in the upstream command, but the former one-sided
+gas translation amplified the subsequent downhill surge. Source-compatible uphill matching favors
+gain `0.6` over deployed `0.7`; removing grade compensation entirely is worse. The signed-grade
+candidate is deployed but road-unmeasured, so it is not promoted. The retained negative-request
+uphill behavior improved comparable lead-present under-response but over-corrected steady no-lead
+exposure and also remains unpromoted. Do not make translation planner-source-specific or mask the
+upstream cycle; continue isolating Honda-owned positive-gas overshoot and delayed response decay.
+
+Alpha Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable
+while it is active. The guarded deployment verified clean exact SHAs, an idle updater with no
+exception, active manager/Panda services, and no failed services; this is deployment health, not
+road proof. Seven-route settled-brake evidence independently fits a positive grade term on every
+route and retains the rounded `0.3` brake gain. Judge physical response from source-compatible
+full-rate evidence without waiting for an arbitrary drive count. Detailed measurements and prior
+experiment provenance remain in `.agents/tune-evidence.md`; dated directives there do not override
+this file.
