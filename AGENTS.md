@@ -174,8 +174,8 @@ refs, and clean state separately from device health and road behavior. Keep the 
 
 ## Current focus
 
-As of 2026-09-24, the road-known pair before the next deployment is root `f951584ad758` / nested
-`0fbe4df19eea` on the single `ody-op` line. Local nested candidate `ff33e79f665a` retains the
+As of 2026-09-24, the device runs root `6e14266902f4` / nested `ff33e79f665a` on the single
+`ody-op` line. This candidate retains the
 request-ramped positive `GAS_COMMAND` mapping with a `0.7` grade gain and the `0.3` filtered-pitch
 brake translation, and adds only a smooth, capped uphill correction through an already-active
 negative gas request. It preserves raw `ACCEL_COMMAND`, raw brake selection, fresh `-60` bridge
@@ -186,8 +186,7 @@ request. Frozen-input replay reduces inactive coast exposure but does not prove 
 closed-loop response. Alpha
 Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable while it
 is active. The guarded deployment verified clean exact SHAs, an idle updater with no exception,
-active manager/Panda services, and no failed services for the prior pair; this is deployment health,
-not road proof.
+active manager/Panda services, and no failed services; this is deployment health, not road proof.
 The first deployed `0.6` route and the prior source-compatible full-gain pool independently fit an
 absolute gas gain near `0.67..0.70`, selecting `0.7`. Seven-route settled-brake evidence independently
 fits a positive grade term on every route and selects the rounded `0.3` brake gain. Judge both

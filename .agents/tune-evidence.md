@@ -5090,3 +5090,10 @@ screen.** Grade the same mild-negative lead-following window by coast dwell/entr
 Retire for positive surge, renewed near-zero gas pulsing, delayed needed braking, or failure to
 reduce the downstream coast deficit. Keep the `-60` bridge; this candidate prevents avoidable
 uphill releases but does not replace fresh coast recovery.
+
+Nested `ff33e79f665a` and parent `6e14266902f4` were published in that order and deployed through
+the guarded `ody-op` workflow. After the device build and reboot, it verified those exact
+parent/gitlink/nested SHAs, clean parent and nested trees, comma-owned `.venv`,
+`AlphaLongitudinalEnabled=1`, updater target `ody-op`, updater idle, no available update or updater
+exception, two manager processes, one Panda process, and no failed services. This proves exact
+installation health only; closed-loop retention depends on a subsequent full-rate route.
