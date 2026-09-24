@@ -18,6 +18,8 @@ def test_brake_entry_tracking_profile_captures_early_lag_and_late_overresponse()
   rows = brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
   assert len(rows) == 1
   assert rows[0]["time"] == pytest.approx(1.0)
+  assert rows[0]["speed"] == pytest.approx(20.0)
+  assert rows[0]["wire_at_half"] == pytest.approx(-0.3)
   assert rows[0]["errors"][0] > 0.20
   assert rows[0]["errors"][1] > 0.15
   assert rows[0]["errors"][2] < 0.0

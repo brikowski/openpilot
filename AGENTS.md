@@ -200,9 +200,14 @@ also present before this candidate. The retained negative-request
 uphill behavior improved comparable lead-present under-response but over-corrected steady no-lead
 exposure and also remains unpromoted. Do not make translation planner-source-specific or mask the
 upstream cycle; continue isolating Honda-owned positive-gas overshoot and delayed response decay.
-On current-source sustained brake entries, active-wire tracking is initially under-braked and
-later mildly over-braked on routes 1f and 22; a fixed weaker brake command would worsen the
-early phase. Keep the brake-grade gain separate from this transient response target.
+On current-source sustained brake entries at 10–20 m/s, active-wire tracking initially
+under-brakes, then may over-brake; 30–40 m/s entries track much closer. A fixed weaker
+brake command would worsen the lower-speed early phase. Keep the brake-grade gain
+separate from this speed- and demand-conditioned transient response target:
+firm lower-speed brake requests may remain under-braked at one second.
+Near-level mild-negative coast/brake samples have opposite tracking errors at lower speeds,
+while highway coast already overdecelerates; a global earlier brake-entry threshold is not
+supported by current road evidence.
 
 Alpha Long is enabled and remains enabled unless the user changes it; Honda CMBS is unavailable
 while it is active. The guarded deployment verified clean exact SHAs, an idle updater with no

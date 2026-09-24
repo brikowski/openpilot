@@ -105,6 +105,23 @@ def inspect(route, *, threshold, limit, summary_only):
           f"{len(profile)} sustained coast-to-brake edge(s), median aEgo-wire at " +
           ", ".join(f"{age:.1f}s {value:+.3f}" for age, value in
                     zip((0.2, 0.5, 0.8, 1.0), np.median(errors, axis=0), strict=True)) + " m/s^2")
+    speeds = np.asarray([row["speed"] for row in profile])
+    wire_at_half = np.asarray([row["wire_at_half"] for row in profile])
+    for low, high in ((10, 20), (20, 30), (30, 40)):
+      selected = (speeds >= low) & (speeds < high)
+      if np.any(selected):
+        medians = np.median(errors[selected], axis=0)
+        print(f"  {low}..{high} m/s: {np.sum(selected)} edge(s), " +
+              ", ".join(f"{age:.1f}s {value:+.3f}" for age, value in
+                        zip((0.2, 0.5, 0.8, 1.0), medians, strict=True)) + " m/s^2")
+    low_speed = (speeds >= 10) & (speeds < 20)
+    for label, depth in (("mild", wire_at_half > -0.5), ("firm", wire_at_half <= -0.5)):
+      selected = low_speed & depth
+      if np.any(selected):
+        medians = np.median(errors[selected], axis=0)
+        print(f"  10..20 m/s {label} brake: {np.sum(selected)} edge(s), " +
+              ", ".join(f"{age:.1f}s {value:+.3f}" for age, value in
+                        zip((0.2, 0.5, 0.8, 1.0), medians, strict=True)) + " m/s^2")
   else:
     print("brake-entry tracking: no clean sustained coast-to-brake edges")
   if not rows:

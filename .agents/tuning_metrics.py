@@ -56,12 +56,16 @@ def brake_entry_tracking_profile(grid, actual_accel, wire_accel, brake_request, 
         np.any(gear[sl] != gear[i])):
       continue
     errors = []
+    wire_at_half = None
     for offset in offsets:
       j = i + int(round(offset / dt))
       sample = slice(j - window, j + window + 1)
       errors.append(float(np.mean(actual[sample] - wire[sample])))
+      if offset == 0.5:
+        wire_at_half = float(np.mean(wire[sample]))
     if np.all(np.isfinite(errors)):
-      rows.append({"time": float(grid[i]), "errors": tuple(errors)})
+      rows.append({"time": float(grid[i]), "speed": float(speed[i]),
+                   "wire_at_half": wire_at_half, "errors": tuple(errors)})
   return rows
 
 

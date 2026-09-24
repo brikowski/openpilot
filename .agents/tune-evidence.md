@@ -5353,3 +5353,56 @@ coast-only screen found just two comparable negative-command changes, so it
 does not isolate a fixed brake-domain step from all possible powertrain/terrain
 effects. Retain the current brake command while investigating the response
 dynamics rather than treating the `0.3` grade gain as the cause.
+
+Speed conditioning changes the interpretation of that pooled profile. The
+diagnostic now prints entry-speed bins. Route 1f's 20 entries at `10..20 m/s`
+have median active-wire errors `+0.416/+0.295/-0.083/-0.143 m/s2` at
+`+0.2/+0.5/+0.8/+1.0 s`; its three entries at `30..40 m/s` have
+`+0.065/+0.033/+0.018/-0.051`. Route 22's two `10..20 m/s` entries have
+`+0.685/+0.627/+0.318/+0.186`, while its three `30..40 m/s` entries have
+`+0.014/-0.024/-0.054/-0.048`. Route 1e adds three `30..40 m/s` entries
+near the active wire throughout (`-0.013/-0.041/-0.030/-0.079`). These are
+small high-speed event counts, but they establish that the large early lag
+in the pooled current-source screen is concentrated at lower road speeds;
+the 16:42 uphill highway lead episode must not be described as suffering
+the same large early brake lag. The lower-speed pattern is not yet uniform
+in its late phase, so do not infer one speed-scheduled command offset from
+these medians.
+
+The diagnostic now also splits `10..20 m/s` entries by active wire depth at
+`+0.5 s` (`>-0.5` versus `<=-0.5 m/s2`). In route 1f, 17 mild entries have
+median errors `+0.401/+0.264/-0.091/-0.154 m/s2`; three firm entries have
+`+0.863/+0.741/+0.376/-0.006`. Route 22's two lower-speed entries (one per
+depth bin) remain under the active wire at `+1.0 s` by `+0.238/+0.134 m/s2`.
+The depth split does not fully explain the route difference, but it makes
+clear that strong-command underbraking and mild-command late overbraking
+must not be collapsed into one static brake gain or one speed-only correction.
+
+The next threshold screen conditions on active PID, no driver pedals, request
+`-0.30..-0.20 m/s2`, pitch magnitude below `0.03 rad`, at least 0.5 seconds
+before and 0.6 seconds after each sample continuously in the recorded coast
+or brake domain, and 5 Hz thinning. It
+compares `aEgo(t+0.6)-carControl(t)` without treating brake and coast as
+counterfactual pairs. On route 1f at `10..20 m/s`, coast has 30 samples,
+median request `-0.227`, and mean/median tracking error `+0.066/+0.061 m/s2`;
+brake has 50, median request `-0.260`, and `-0.164/-0.173 m/s2`.
+At `30..40 m/s`, route 1e coast has 53 samples and mean error `-0.158`,
+while its brake has 30 and `-0.103`; route 1f coast has seven and `-0.107`,
+brake six and `-0.110`; route 22 coast has only one and `-0.073`, brake
+eight and `-0.106 m/s2`. These domain samples have different prior command
+histories, so the contrast does **not** estimate the response to switching
+the entry threshold. It does rule out the simple assumption that earlier
+braking is uniformly needed: highway coast already overdecelerates, and
+settled lower-speed braking overshoots where coast underdecelerates.
+
+For the 20 eligible `10..20 m/s` route-1f brake entries in the entry-profile
+screen, the median request had already been at or below `-0.20 m/s2` for
+roughly a few tenths of a second before the recorded `-0.30` entry, but the
+duration varies from about `0.06` to `2.23 s` and may include gas-active
+frames. An earlier entry could shift the delayed response, but the available
+request history and settled-domain contrast do not establish a safe net
+benefit or an appropriate speed-dependent threshold. **Decision: KEEP the
+current raw `-0.30` road-speed brake entry.** Do not use a global threshold
+change to mask the upstream lead-estimate cycle; pursue command-conditioned
+Honda brake entry/release response only with a source-compatible mechanism
+that improves both the early and late tracking phases.
