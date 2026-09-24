@@ -2,7 +2,32 @@ import numpy as np
 import pytest
 
 from inspect_response import brake_entry_summary, print_brake_entry_summary
-from tuning_metrics import response_jerk_events
+from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
+
+
+def test_brake_entry_tracking_profile_captures_early_lag_and_late_overresponse():
+  t = np.arange(0.0, 3.0, 0.01)
+  brake = t >= 1.0
+  wire = np.where(brake, -0.3, -0.1)
+  actual = np.where(brake, np.interp(t - 1.0, [0.0, 0.5, 1.0], [0.0, -0.1, -0.5]), 0.0)
+  gas = np.full_like(t, -30000.0)
+  clean = np.ones_like(t, dtype=bool)
+  speed = np.full_like(t, 20.0)
+  gear = np.full_like(t, 6.0)
+
+  rows = brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
+  assert len(rows) == 1
+  assert rows[0]["time"] == pytest.approx(1.0)
+  assert rows[0]["errors"][0] > 0.20
+  assert rows[0]["errors"][1] > 0.15
+  assert rows[0]["errors"][2] < 0.0
+  assert rows[0]["errors"][3] < -0.15
+
+  gas[99] = -60.0
+  assert not brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
+  gas[99] = -30000.0
+  gear[150] = 5.0
+  assert not brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
 
 
 def test_response_jerk_event_preserves_first_divergence_and_domain_context():

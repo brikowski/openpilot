@@ -5331,3 +5331,25 @@ current brake translation; do not delay a lead's requested braking or scale
 `ACCEL_COMMAND` from this event screen alone.** The distinct Honda-side target
 is the post-entry response after computer-braking activation, to be separated
 from requested brake depth and terrain using the retained full-rate pool.
+
+The new `inspect_response.py` brake-entry tracking profile resolves the sign of
+the response error after a physical coast-to-brake edge. It requires 0.3 seconds
+without braking before entry, coast immediately before entry, one continuous
+brake-domain second afterward, PID with no driver pedals, speed at least 10 m/s,
+and unchanged gear. At `+0.2/+0.5/+0.8/+1.0 s`, it compares 0.2-second-filtered
+`aEgo` with the *active* `ACCEL_COMMAND` at the same times; numeric command values
+before the brake-domain edge are not treated as applied brake force. Route 1f
+has 26 eligible edges with median errors `+0.338/+0.243/-0.074/-0.139 m/s2`;
+route 22 has six with `+0.258/+0.235/-0.035/-0.045 m/s2`. Positive means
+less deceleration than the wire request. Route 1e has three edges with
+`-0.013/-0.041/-0.030/-0.079 m/s2`, so this transient is not uniform across
+every exposure. On the 1f/22 events, removing the extra acceleration filter
+still gives early positive and late negative median error (`+0.259/+0.064/-0.151/-0.131`
+and `+0.194/+0.084/-0.169/-0.064 m/s2`). The sign reversal is therefore not
+created by the diagnostic's 0.2-second filter. This is direct current-source
+evidence against a simple static brake-offset change: weakening the wire to fix
+the late overdeceleration would worsen the early underbraking. The local
+coast-only screen found just two comparable negative-command changes, so it
+does not isolate a fixed brake-domain step from all possible powertrain/terrain
+effects. Retain the current brake command while investigating the response
+dynamics rather than treating the `0.3` grade gain as the cause.

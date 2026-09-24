@@ -7,7 +7,7 @@ from statistics import median
 import numpy as np
 
 from extract import PLAN_SOURCE, load
-from tuning_metrics import response_jerk_events
+from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
 
 
 GAS_INACTIVE = -30000
@@ -95,6 +95,18 @@ def inspect(route, *, threshold, limit, summary_only):
   )
 
   print(f"\n=== {data['route']} ===")
+  profile = brake_entry_tracking_profile(
+    data["t"], data["aego"], data["accel_command"], data["brake_request"],
+    data["gas_command"], clean_active & data["pid"], data["vego"], data["gear"],
+  )
+  if profile:
+    errors = np.asarray([row["errors"] for row in profile])
+    print("brake-entry tracking: " +
+          f"{len(profile)} sustained coast-to-brake edge(s), median aEgo-wire at " +
+          ", ".join(f"{age:.1f}s {value:+.3f}" for age, value in
+                    zip((0.2, 0.5, 0.8, 1.0), np.median(errors, axis=0), strict=True)) + " m/s^2")
+  else:
+    print("brake-entry tracking: no clean sustained coast-to-brake edges")
   if not rows:
     print(f"no clean achieved-jerk peaks at or above {threshold:.2f} m/s^3")
     return []

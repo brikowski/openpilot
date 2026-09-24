@@ -21,6 +21,50 @@ def causal_lpf(x, dt, tau, initial=None):
   return y
 
 
+def brake_entry_tracking_profile(grid, actual_accel, wire_accel, brake_request, gas_command,
+                                 clean_active, speed, gear, *, gas_inactive=-30000,
+                                 filter_tau=0.2):
+  """Measure response-minus-active-wire at fixed ages after clean road-speed coast-to-brake edges.
+
+  The numeric wire value before an edge is not a brake request, so this compares only
+  post-edge values. It describes recorded response; it does not predict a changed command.
+  """
+  grid = np.asarray(grid, dtype=float)
+  offsets = (0.2, 0.5, 0.8, 1.0)
+  if len(grid) < 2:
+    return []
+  dt = float(np.median(np.diff(grid)))
+  if not np.isfinite(dt) or dt <= 0:
+    return []
+  pre = int(round(0.3 / dt))
+  post = int(round(1.05 / dt))
+  window = max(1, int(round(0.03 / dt)))
+  brake = np.asarray(brake_request, dtype=bool)
+  gas = np.asarray(gas_command, dtype=float)
+  clean = np.asarray(clean_active, dtype=bool)
+  speed = np.asarray(speed, dtype=float)
+  gear = np.asarray(gear)
+  wire = np.asarray(wire_accel, dtype=float)
+  actual = causal_lpf(np.asarray(actual_accel, dtype=float), dt, filter_tau)
+  rows = []
+  for i in np.flatnonzero(brake[1:] & ~brake[:-1]) + 1:
+    if i < pre or i + post >= len(grid) or gas[i - 1] > gas_inactive:
+      continue
+    sl = slice(i - pre, i + post + 1)
+    if (np.any(brake[i - pre:i]) or not np.all(brake[i:i + post + 1]) or
+        not np.all(clean[sl]) or np.min(speed[sl]) < 10.0 or
+        np.any(gear[sl] != gear[i])):
+      continue
+    errors = []
+    for offset in offsets:
+      j = i + int(round(offset / dt))
+      sample = slice(j - window, j + window + 1)
+      errors.append(float(np.mean(actual[sample] - wire[sample])))
+    if np.all(np.isfinite(errors)):
+      rows.append({"time": float(grid[i]), "errors": tuple(errors)})
+  return rows
+
+
 def sample_rate(t):
   """Sample rate of a series, in Hz. 0.0 when there is not enough to tell."""
   if len(t) < 10:
