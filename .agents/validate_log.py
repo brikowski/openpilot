@@ -229,6 +229,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "899548275b8f": -0.30,  # 0.7 grade gain; brake-domain selection unchanged
   "0fbe4df19eea": -0.30,  # grade-relative brake command; raw domain selection unchanged
   "ff33e79f665a": -0.30,  # bounded uphill active-gas hold; raw brake selection unchanged
+  "6915be202bb7": -0.30,  # signed positive-gas grade only; raw brake selection unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -279,6 +280,7 @@ THREE_DOMAIN_COMMITS = {
   "899548275b8f",  # 0.7 grade gain; raw three-domain output is unchanged
   "0fbe4df19eea",  # grade-relative brake command; three-domain selection is unchanged
   "ff33e79f665a",  # bounded uphill active-gas hold; raw brake selection is unchanged
+  "6915be202bb7",  # signed positive-gas grade only; raw brake selection is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
@@ -288,6 +290,7 @@ BRAKE_ONSET_RATE_LIMIT_COMMITS = {
 BRAKE_GRADE_TRANSLATION_COMMITS = {
   "0fbe4df19eea",
   "ff33e79f665a",
+  "6915be202bb7",
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated

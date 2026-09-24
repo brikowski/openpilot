@@ -5238,3 +5238,53 @@ gas count. Their `1171..1188` count spread is too small to size a correction fro
 under-responded in its recorded cold-start exposure; its result does not identify a current
 low-speed scale either. Preserve the observed overshoot as an actionable response target without
 reviving that old learner or inventing a count decrement from collinear commands.
+
+### 2026-09-24 post-deployment routes and 16:42–16:43 uphill lead cycle
+
+Full-rate routes `00000020--f90697dedf`, `00000021--5468eedff4`, and
+`00000022--1326e023d1` all resolve to behavioral parent `0bd9816712b1`, nested
+`6915be202bb7`, small model `f030157`, Standard mode, and Alpha Long enabled. Their
+engaged exposures are 1.7, 1.6, and 6.8 minutes. These are road exposures for the build,
+but none contains a positive-gas interval with filtered pitch below `-0.015 rad` and raw
+pitch negative lasting at least 0.5 seconds. Thus the new downhill positive-gas branch has
+no relevant road exposure yet; neither benefit nor harm can be assigned to it. The 16:42–16:43
+episode in route 22 is uphill, with pitch approximately `+0.01..+0.03 rad`.
+
+For route 22, 16:42:00–16:43:00 CDT has 59.75 active seconds: 18.74 seconds sourced from
+cruise and 41.01 from `lead0`. Planner-to-`carControl` acceleration RMS is `0.002 m/s2`;
+`carControl`-to-wire RMS is `0.025 m/s2`, including deliberate grade-relative brake
+translation. The request spans `-0.555..+0.689 m/s2`, with 43.2 seconds gas, 1.3 coast,
+and 15.2 brake. Achieved acceleration aligned `+0.6 s` differs from request by
+`-0.078 m/s2` mean and `0.163 m/s2` RMS. The following 16:43:00–16:43:37 `lead0`
+interval is all gas, with planner-to-control RMS `0.0007`, wire RMS `0.004`, and achieved
+error `-0.001` mean / `0.097 m/s2` RMS: positive-gas command following there is close.
+
+The first divergence driving the catch/brake pattern is upstream of `carControl`.
+The raw `modelV2.leadsV3` range/velocity values themselves jump; `radarState` is vision-only
+and reflects those values, rather than inventing the jumps. Around 16:42:21, model lead
+range falls from roughly 75 to 65 m within a second while its reported relative velocity
+is only about `-0.5..-1 m/s`; the planner switches from positive acceleration to braking
+by 16:42:23.52. Around 16:42:56.18–16:42:57.68, raw lead range moves
+`51.8 -> 43.9 -> 56.9 m`; at the middle point the reported lead velocity jumps to
+`35.9 m/s` versus stable model ego speed near `30.3 m/s`, inconsistent with the shrinking
+gap. Lead-presence probability remains about `0.98..1.00` and no lost-lead event appears;
+probability is not a guarantee that range or velocity is accurate. Across 73 one-second
+continuity checks, median range-versus-relative-velocity discrepancy is `1.0 m`, 95th
+percentile `4.13 m`, and seven exceed 3 m. Private road-camera frames show the same dark
+SUV remaining in the lane ahead; a blue SUV passes on the left, without an obvious cut-in.
+The video does not establish precise physical range or acceleration, but it rules out an
+obvious lane-change explanation for the raw-model discontinuities.
+
+Honda response is a secondary, separable contributor. In the 16:42:17–39 and
+16:42:39–16:43:00 `lead0` portions, gas-domain achieved-minus-request mean is about
+`-0.033` and `-0.011 m/s2`, respectively; brake-domain mean is `-0.127` and
+`-0.099 m/s2` even though the grade-relative brake wire command is about `+0.054`
+and `+0.036 m/s2` less negative than raw request. Brake release at 16:42:32.58 and
+16:42:56.42 occurs as the raw request crosses zero, while achieved acceleration remains
+negative for about 0.44 and 0.34 seconds before crossing zero. Source-matched validation
+reports 12.88 seconds of brake-release hold over seven events, with mean achieved error
+`-0.17 m/s2`; this mechanism predates the signed-grade update (route 1f had 50.10 seconds
+over 32 events and mean error `-0.22 m/s2`). These are evidence for Honda braking/response
+work, not evidence that the new downhill branch created the lead oscillation. Keep the
+current candidate pending direct downhill exposure; do not tune Honda gas to erase the
+vision/planner catch/brake cycle.

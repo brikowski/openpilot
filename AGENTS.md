@@ -190,7 +190,13 @@ approximately `+0.15..+0.32 m/s2` achieved acceleration beyond the request. Duri
 Experimental hill, the uphill slowdown starts in the upstream command, but the former one-sided
 gas translation amplified the subsequent downhill surge. Source-compatible uphill matching favors
 gain `0.6` over deployed `0.7`; removing grade compensation entirely is worse. The signed-grade
-candidate is deployed but road-unmeasured, so it is not promoted. The retained negative-request
+candidate has three post-deployment routes, but none exercises its downhill positive-gas branch;
+that branch remains road-unmeasured and the candidate is not promoted. Route
+`00000022--1326e023d1` places the 16:42–16:43 lead cycle on an uphill. Raw vision lead
+range/speed estimates jump despite continuous high lead-presence probability, and the planner
+issues the catch/brake requests that `carControl` and Honda CAN largely follow. Road video shows
+the same in-lane lead through the jumps; Honda brake overdeceleration adds to the cycle but was
+also present before this candidate. The retained negative-request
 uphill behavior improved comparable lead-present under-response but over-corrected steady no-lead
 exposure and also remains unpromoted. Do not make translation planner-source-specific or mask the
 upstream cycle; continue isolating Honda-owned positive-gas overshoot and delayed response decay.
