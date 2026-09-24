@@ -5312,3 +5312,22 @@ have only 20 and 45 thinned samples and mean response errors `-0.208` and
 grade coefficient is not identified by this symptom; the remaining Honda brake
 overdeceleration and release dynamics need to be separated from grade before changing
 the wire command.
+
+The current brake-translation source also reproduces the delayed Honda brake-entry
+response independently of the older seven-route calibration pool. Running the
+full-rate `inspect_response.py` event diagnostic on routes 1f and 22 finds 15 and
+four qualifying negative achieved-jerk peaks, all after coast-to-brake edges and
+all with received `COMPUTER_BRAKING` active at the peak. Combined median
+request-to-state delay is `0.062 s`, state-to-peak delay `0.492 s`, and achieved
+jerk `-1.73 m/s3` versus `0.55 m/s3` median preceding wire-jerk magnitude;
+18/19 have no gear edge. Local plan-to-`carControl` RMS is at most `0.007 m/s2`.
+The two routes' median peak jerk is `-1.60` and `-2.12 m/s3` with median preceding
+wire magnitudes `0.55` and `0.78 m/s3`, respectively. This confirms that the
+grade-translated brake command has not removed the delayed brake-response mode.
+It does not make the old `3.0 m/s3` onset limiter newly attractive: that limiter
+altered only the first roughly 0.1 seconds, while the received-state-to-peak
+delay remained about half a second on its own road arm. **Decision: KEEP the
+current brake translation; do not delay a lead's requested braking or scale
+`ACCEL_COMMAND` from this event screen alone.** The distinct Honda-side target
+is the post-entry response after computer-braking activation, to be separated
+from requested brake depth and terrain using the retained full-rate pool.
