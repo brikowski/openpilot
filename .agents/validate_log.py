@@ -225,6 +225,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "da430e9591b8": -0.30,  # upstream-rebased/squashed current Odyssey command mapping
   "9b4cbf40f63b": -0.30,  # 0.6 grade gain; brake-domain selection unchanged
   "899548275": -0.30,  # 0.7 grade gain; brake-domain selection unchanged
+  "0fbe4df19": -0.30,  # grade-relative brake command; raw domain selection unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -273,11 +274,15 @@ THREE_DOMAIN_COMMITS = {
   "da430e9591b8",  # upstream-rebased/squashed current Odyssey three-domain mapping
   "9b4cbf40f63b",  # 0.6 grade gain; raw three-domain output is unchanged
   "899548275",  # 0.7 grade gain; raw three-domain output is unchanged
+  "0fbe4df19",  # grade-relative brake command; three-domain selection is unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
   "aa8a2e60fbad",
   "0bd54951753f",
+}
+BRAKE_GRADE_TRANSLATION_COMMITS = {
+  "0fbe4df19",
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
@@ -605,7 +610,7 @@ def _brake_passthrough_expected(opendbc_commit):
   """Whether every brake-domain frame should carry the raw controller request."""
   commit = (opendbc_commit or "")[:12]
   return (commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
-          and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS)
+          and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS | BRAKE_GRADE_TRANSLATION_COMMITS)
 
 
 def _jerk(smoothed, dt, active):

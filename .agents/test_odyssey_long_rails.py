@@ -88,13 +88,13 @@ class TestOdysseyLongRails(unittest.TestCase):
     params = CarControllerParams(_car_params())
     assert params.BOSCH_GAS_LOOKUP_V == [0, 2000]
 
-  def test_brake_command_matches_request_without_onset_shaping(self):
-    """Honda ACCEL_COMMAND must carry the raw clipped request at every selected brake entry."""
+  def test_brake_command_applies_only_road_speed_pid_grade_translation(self):
+    """Grade translation must preserve raw level, low-speed, stopping, and missing-pose commands."""
     for name, vego, state, pitch in (
-      ("road", 20.0, LongCtrlState.pid, 0.0),
-      ("descent", 20.0, LongCtrlState.pid, -0.05),
-      ("low_speed", 8.0, LongCtrlState.pid, 0.0),
-      ("stopping", 20.0, LongCtrlState.stopping, 0.0),
+      ("level", 20.0, LongCtrlState.pid, 0.0),
+      ("low_speed", 4.0, LongCtrlState.pid, 0.05),
+      ("stopping", 20.0, LongCtrlState.stopping, 0.05),
+      ("missing_pose", 20.0, LongCtrlState.pid, None),
     ):
       with self.subTest(name=name):
         accels = np.array([0.5] * 20 + [-0.31] * 20 + [-0.6] * 20 + [-2.0] * 20)
@@ -107,6 +107,18 @@ class TestOdysseyLongRails(unittest.TestCase):
           np.array([50] * 10 + [-31] * 10 + [-60] * 10 + [-200] * 10),
         )
 
+    accels = np.array([0.5] * 20 + [-0.31] * 40)
+    for pitch, relation in ((-0.05, "more"), (0.05, "less")):
+      with self.subTest(pitch=pitch):
+        rejects, seen = _run(True, accels, pitch=pitch, vego=20.0)
+        assert not rejects
+        translated = np.array([accel for accel, _, _ in seen[-10:]])
+        if relation == "more":
+          assert np.all(translated < -31)
+        else:
+          assert np.all((-31 < translated) & (translated <= 0))
+        assert all(brake_request for _, _, brake_request in seen[-10:])
+
   def test_road_speed_coasts_through_raw_split_chatter(self):
     """Small negative requests must not alternate Honda's gas and friction-brake domains."""
     for vego in (5.0, 20.0, 31.0):
@@ -117,20 +129,12 @@ class TestOdysseyLongRails(unittest.TestCase):
           accels = np.array(([-0.18] * 4 + [-0.23] * 4) * 20 + [-0.29] * 20 + [-0.31] * 20 + [0.10] * 20)
           rejects, seen = _run(True, accels, pitch=pitch, vego=vego)
           assert not rejects
-          assert {-18, -23, -29, -31, 10}.issubset({accel for accel, _, _ in seen})
-          for accel, gas, brake_request in seen:
-            if accel in (-18, -23):
-              assert gas == GAS_INACTIVE, "negative road request left GAS_COMMAND active"
-              assert brake_request == 0, "raw -0.20 crossing still toggled BRAKE_REQUEST"
-            elif accel == -31:
-              assert gas == GAS_INACTIVE
-              assert brake_request == 1, "stronger road request did not select brake immediately"
-            elif accel == -29:
-              assert gas == GAS_INACTIVE
-              assert brake_request == 0, "mild road request did not remain in coast"
-            elif accel == 10:
-              assert gas != GAS_INACTIVE, "positive road request did not select gas"
-              assert brake_request == 0
+          coast = seen[:90]
+          brake = seen[90:100]
+          gas = seen[100:]
+          assert all(command == GAS_INACTIVE and not brake_request for _, command, brake_request in coast)
+          assert all(command == GAS_INACTIVE and brake_request for _, command, brake_request in brake)
+          assert all(command != GAS_INACTIVE and not brake_request for _, command, brake_request in gas)
 
   def test_road_speed_brake_domain_releases_for_positive_request(self):
     """A settling brake request may cross the coast band, but positive gas releases immediately."""

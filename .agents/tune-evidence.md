@@ -4977,3 +4977,44 @@ parent/gitlink/nested SHAs, clean parent and nested trees, comma-owned `.venv`,
 `AlphaLongitudinalEnabled=1`, updater target `ody-op`, updater idle, no available update or updater
 exception, two manager processes, one Panda process, and no failed services. This is installation
 health only; a subsequent full-rate route will measure the closed-loop `0.7` response.
+
+### Odyssey brake grade translation candidate (2026-09-24)
+
+The retained full-rate pool is sufficient to separate Honda brake response from upstream command
+shape. Across routes `00000003--cb9f703767`, `00000004--ca0260cf8f`,
+`00000005--a5d819505c`, `00000009--019ee79ffb`, `0000000b--c529eb1e28`,
+`0000001b--6a9525565f`, and `0000001c--c1af7573e1`, 62 coast-to-brake response peaks all follow
+Honda's received `COMPUTER_BRAKING` rise. The state-to-peak median is `0.502 s`; median achieved
+jerk is `-1.69 m/s3` versus `0.50 m/s3` median prior-wire magnitude, and planner/request/wire RMS
+is at most `0.024/0.063 m/s2`. Fifty-six events have no nearby gear edge. A separate phase-aligned
+screen of 63 stable entries removes each entry's initial response bias and finds median extra
+deceleration of `-0.283 m/s2` by `0.6 s` and a median peak of `-0.419 m/s2`.
+
+The historical `3.0 m/s3` onset-limiter routes do not identify the solution. Sixteen stable entries
+retain the same response shape; conditioning on pitch, request, request change, and speed estimates
+the limiter at `-0.089 +/- 0.109 m/s2` relative to raw command, while nearest physical-context
+matching gives `-0.090 m/s2` median. Restoring that arm would therefore repeat a mechanism that did
+not improve response. The MVL Boston `0111-op-honda` brake PID is also directionally incompatible:
+its non-positive integral term can only make `ACCEL_COMMAND` more negative when Honda already
+over-decelerates.
+
+Settled response identifies grade as the attributable calibration input. After one second in a
+stable road-speed brake domain, 1,117 samples across all seven routes fit achieved acceleration as
+`-0.081 + 0.849 * lagged ACCEL_COMMAND - 3.163 * pitch - 0.0046 * speed + 0.017 * lead`.
+Projecting only a physical `g*sin(pitch)` command term selects gains `0.313` by least squares and
+`0.271` by minimum MAE; the lead/no-lead least-squares slices select `0.333/0.190`. Every route's
+independent least-squares gain is positive (`0.162..0.516`). A rounded `0.3` gain reduces aggregate
+projected MAE from `0.152` to `0.136 m/s2`; six routes improve or hold and one changes from `0.202`
+to `0.212`. This is an observational response projection, not closed-loop proof.
+
+**Decision: CHANGE to a `0.3` Odyssey brake grade translation as the next supervised road arm.**
+Raw `carControl` still selects the gas/coast/brake domain. Only road-speed brake-domain PID frames
+with valid pose and no driver brake translate the net acceleration target by
+`0.3*g*sin(filtered_pitch)`, capped at zero and the existing acceleration rails. Level road, low
+speed, stopping, missing pose, gas behavior, safety limits, lateral, and other Honda platforms are
+unchanged. Frozen replay preserves all 2,620 brake-domain frames and all ten physical domain edges
+on route 1c, reduces forceful edges from five to three, and does not increase worst wire jerk; it
+does not predict closed-loop response. Reversing the pitch sign made the focused assertion fail.
+Restored code passes 3,947 nested tests with 703 skips plus lint/type/C safety checks and preflash's
+seven interface/model tests plus 20 rail tests with 60 subtests. Nested commit `0fbe4df19` is
+published; parent publication and guarded deployment are the next installation steps.

@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import validate_log
 from validate_log import (
+  BRAKE_GRADE_TRANSLATION_COMMITS,
   BRAKE_ONSET_RATE_LIMIT_COMMITS,
   ODYSSEY,
   LOW_SPEED_BRAKE_PID_COMMITS,
@@ -379,7 +380,8 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "9e9eeeb25084", "909b12c8e218", "bee068d882d1", "c16579385f56",
                          "409c25925c19", "196119896d73", "147e1d732eaa", "afc133f34",
                          "359f3574d67f", "69a81e7da7f", "d50a3a4843ed", "ae81f00f905e",
-                         "bef3e9148377", "da430e9591b8", "9b4cbf40f63b", "899548275"):
+                         "bef3e9148377", "da430e9591b8", "9b4cbf40f63b", "899548275",
+                         "0fbe4df19"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -401,6 +403,8 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   for onset_commit in ("871b98a64f6e", "aa8a2e60fbad", "0bd54951753f"):
     assert onset_commit in BRAKE_ONSET_RATE_LIMIT_COMMITS
     assert not _brake_passthrough_expected(onset_commit)
+  assert "0fbe4df19" in BRAKE_GRADE_TRANSLATION_COMMITS
+  assert not _brake_passthrough_expected("0fbe4df19")
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.
