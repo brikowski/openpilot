@@ -5228,3 +5228,13 @@ response issue around low-road-speed fourth-gear acceleration, separate from the
 cycle. It does not identify the exact gas decrement or establish response after the new signed-grade
 candidate, so retain that isolated candidate pending its road readout rather than combining
 mechanisms.
+
+For this matched positive-request band, the current Odyssey interface selects the upstream
+`[0, 2000]` Bosch gas map over acceleration breakpoints `[-0.2, 2.0]`. At fixed pitch, its
+`GAS_COMMAND` is therefore almost an affine function of the same request carried as
+`ACCEL_COMMAND`; the fourth-gear samples cannot independently identify the vehicle's response per
+gas count. Their `1171..1188` count spread is too small to size a correction from the observed
+`+0.31..+0.46 m/s2` overshoot. The historical static gasfactor seed was materially weaker but
+under-responded in its recorded cold-start exposure; its result does not identify a current
+low-speed scale either. Preserve the observed overshoot as an actionable response target without
+reviving that old learner or inventing a count decrement from collinear commands.
