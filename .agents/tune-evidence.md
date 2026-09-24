@@ -5199,3 +5199,16 @@ with nested `6915be202bb769199905c307e5f72b9bc62345dd`. Post-reboot verification
 trees, updater idle with no available update or exception, active manager and Panda services, no
 failed services, and `AlphaLongitudinalEnabled=1`. This establishes deployment health only; the
 signed-grade candidate remains road-unmeasured.
+
+An additional response-lag screen of the pre-candidate route 1f separates positive-gas overshoot
+from simple time alignment. During 20.34 seconds of active Moore Street positive gas above
+`+0.10 m/s2`, mean `aEgo-carControl` error was `+0.306`, `+0.312`, and `+0.229 m/s2` when
+response was aligned at `0`, `+0.6`, and `+1.5 s`, respectively. At `+0.6 s`, 7.51 seconds of
+locally steady request still averaged `+0.265 m/s2` error; 5.58 seconds of falling request
+averaged `+0.383`. Across this route's 256.06 seconds of positive gas, the `+0.6 s` error was
+`+0.164 m/s2` mean, but terrain conditioning matters: near-level samples averaged `+0.312`,
+uphill `+0.062`, and downhill `+0.703 m/s2`. These are within-route descriptive exposures, not
+independent route counts or proof of the exact map correction. The signed-grade candidate directly
+changes downhill gas, while the near-level and request-fall overshoot remain separate Honda-response
+targets for source-compatible conditioning by speed, gear, request, and terrain. The device route
+listing at this evidence check showed no full-rate drive after the signed-grade deployment.
