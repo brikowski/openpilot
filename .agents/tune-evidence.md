@@ -5193,3 +5193,9 @@ focused Honda test. The restored candidate passes the Honda helper tests, Odysse
 and full nested test suite: 3,948 passed and 703 skipped, with lint, type, spelling, C++ style, and
 MISRA checks passing. This is a command-response candidate; its road response is not established by
 the frozen-input shadow.
+
+The candidate was published and installed offroad as parent `0bd9816712b10f66ef7bf7aeb96947e03f1eca45`
+with nested `6915be202bb769199905c307e5f72b9bc62345dd`. Post-reboot verification found clean paired
+trees, updater idle with no available update or exception, active manager and Panda services, no
+failed services, and `AlphaLongitudinalEnabled=1`. This establishes deployment health only; the
+signed-grade candidate remains road-unmeasured.
