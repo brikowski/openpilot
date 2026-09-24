@@ -5033,3 +5033,16 @@ brake-domain eligibility, zero cap, and Honda acceleration rails. Candidate rows
 RMS and translation exposure/delta separately. Reversing the diagnostic gain sign fails the focused
 synthetic assertion; restored code passes all 54 validator tests. This is offline attribution
 tooling only and does not alter vehicle behavior.
+
+`.agents/compare_brake_grade_gain.py` makes the pre-deployment gain fit reproducible from the seven
+named full-rate routes. It requires PID, no pedals, road speed, at least one second in the brake
+domain, and no more than `0.08 m/s2` request span over the prior 0.5 seconds; it uses the exact
+zero-initialized 0.5-second pitch filter and thins each route to 5 Hz. The resulting 1,132 samples
+fit gain `0.305/0.263` by least squares/minimum MAE, with projected MAE changing from `0.153` to
+`0.139 m/s2` at gain `0.3`. Equal route weighting fits `0.272/0.187` and changes MAE from `0.144`
+to `0.135`. All seven route-level least-squares gains remain positive (`0.155..0.473`); six routes
+improve and route 1c is effectively flat (`0.112` to `0.114`), while route 09 worsens (`0.205` to
+`0.215`). Lead/no-lead fits are `0.325/0.301` and `0.182/0.152`; the single `0.3` candidate remains
+the rounded pooled/route-balanced calibration rather than adding planner-source-dependent behavior.
+Four pure tests cover the trailing stability window, gain recovery, response sensitivity, and
+route/sample weighting. These are still frozen-response projections, not road proof.
