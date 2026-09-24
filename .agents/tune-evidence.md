@@ -5023,3 +5023,13 @@ nested trees, comma-owned `.venv`, `AlphaLongitudinalEnabled=1`, updater target 
 idle, no available update or updater exception, two manager processes, one Panda process, and no
 failed services. This proves installation health only; the next full-rate route grades the brake
 translation and the already-deployed `0.7` gas gain independently.
+
+The first 48-hour device query after deployment found 18 retained routes, all already validated and
+none recorded after the candidate installation. No closed-loop brake-grade result is therefore
+claimed. Before the next route, `validate_log.py` gained an exact `0fbe4df19` expected-wire model:
+it reconstructs the controller's 0.5-second pitch filter, `0.3*g*sin(pitch)` term, road-speed/PID/
+brake-domain eligibility, zero cap, and Honda acceleration rails. Candidate rows now grade
+`ACCEL_COMMAND` against that source-matched expectation while retaining raw wire-minus-`carControl`
+RMS and translation exposure/delta separately. Reversing the diagnostic gain sign fails the focused
+synthetic assertion; restored code passes all 54 validator tests. This is offline attribution
+tooling only and does not alter vehicle behavior.

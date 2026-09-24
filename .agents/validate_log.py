@@ -182,6 +182,7 @@ DOWNHILL_PITCH = -0.012       # rad (~-0.7 deg / -1.2% grade, -0.12 m/s^2 of hil
 DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode is >=0.5 s of
                               # longActive & request > 0.02 & BRAKE_REQUEST & pitch < DOWNHILL_PITCH
 DOMAIN_PITCH_FILTER_TAU = 0.5  # Legacy ody-op compensated-domain model.
+ODYSSEY_BRAKE_GRADE_GAIN = 0.3  # MUST track honda/carcontroller.py.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
 THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRAKE_ENTRY.
@@ -611,6 +612,23 @@ def _brake_passthrough_expected(opendbc_commit):
   commit = (opendbc_commit or "")[:12]
   return (commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
           and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS | BRAKE_GRADE_TRANSLATION_COMMITS)
+
+
+def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_request, dt):
+  """Reconstruct source-matched ACCEL_COMMAND without conflating translation with wire error."""
+  requested = np.asarray(requested, dtype=float)
+  expected = requested.copy()
+  commit = (opendbc_commit or "")[:12]
+  if commit not in BRAKE_GRADE_TRANSLATION_COMMITS:
+    return expected, np.zeros(len(expected), dtype=bool), False
+
+  filtered_pitch = _causal_lpf(np.asarray(pitch, dtype=float), dt, DOMAIN_PITCH_FILTER_TAU, initial=0.0)
+  eligible = (np.asarray(speed, dtype=float) >= LOW_SPEED_DOMAIN_VEGO) & np.asarray(pid, dtype=bool) & \
+             np.asarray(brake_request, dtype=bool)
+  translated = np.minimum(requested + np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY * ODYSSEY_BRAKE_GRADE_GAIN,
+                          0.0)
+  expected[eligible] = np.clip(translated[eligible], HondaParams.BOSCH_ACCEL_MIN, HondaParams.BOSCH_ACCEL_MAX)
+  return expected, eligible, True
 
 
 def _jerk(smoothed, dt, active):
@@ -1312,6 +1330,9 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   """
   source_commit = (opendbc_commit or "")[:12]
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
+         "brake_expected_wire_rms": None, "brake_expected_wire_mean": None,
+         "brake_translation_sec": None, "brake_translation_delta_median": None,
+         "brake_translation_delta_min": None, "brake_translation_delta_max": None,
          "gas_achieved_sec": None, "gas_achieved_rms": None,
          "gas_achieved_error_mean": None, "gas_achieved_under_median": None,
          "gas_achieved_under_frac": None, "gas_achieved_request_abs_median": None,
@@ -1553,8 +1574,21 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   follow_bd = bd
   if follow_bd.sum() > 50:
     out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[follow_bd] ** 2)))
-    # Fresh brake semantics are passthrough, so a nonzero mean identifies port-side divergence.
     out["follow_brake_mean"] = float(np.nanmean(err[follow_bd]))
+    expected_brake, translated, has_translation = _expected_brake_command(
+      source_commit, requested, vego_all, pitch, pid, BR, dt,
+    )
+    if has_translation:
+      expected_error = AC - expected_brake
+      out["brake_expected_wire_rms"] = float(np.sqrt(np.nanmean(expected_error[follow_bd] ** 2)))
+      out["brake_expected_wire_mean"] = float(np.nanmean(expected_error[follow_bd]))
+      translated &= follow_bd
+      out["brake_translation_sec"] = float(translated.sum() * dt)
+      if translated.any():
+        delta = expected_brake[translated] - requested[translated]
+        out["brake_translation_delta_median"] = float(np.nanmedian(delta))
+        out["brake_translation_delta_min"] = float(np.nanmin(delta))
+        out["brake_translation_delta_max"] = float(np.nanmax(delta))
 
   # The wire checks above locate car-port divergence. These separate achieved-response readouts
   # answer the road question for each domain without averaging gas and brake together. Driver gas
@@ -1821,11 +1855,22 @@ def verdicts(r):
                if r["follow_gas_rms"] > FOLLOW_GAS_RMS_LIMIT else None)
   if r.get("follow_brake_rms") is not None:
     passthrough = r.get("brake_passthrough_expected", False)
-    brake_limit = FOLLOW_BRAKE_RMS_PASSTHROUGH if passthrough else FOLLOW_BRAKE_RMS_LEGACY
-    add("following - brake domain", r["follow_brake_rms"] <= brake_limit,
-        f"RMS {r['follow_brake_rms']:.4f}, mean {r['follow_brake_mean']:+.4f} m/s^2 extra brake "
-        f"({r['brake_domain_frac']*100:.0f}% of engaged frames in brake domain; <= {brake_limit:.2f})",
-        status="brake command diverging beyond its source-matched bound" if r["follow_brake_rms"] > brake_limit else None)
+    translation_rms = r.get("brake_expected_wire_rms")
+    graded_rms = translation_rms if translation_rms is not None else r["follow_brake_rms"]
+    brake_limit = FOLLOW_BRAKE_RMS_PASSTHROUGH if passthrough or translation_rms is not None else FOLLOW_BRAKE_RMS_LEGACY
+    translation_detail = ""
+    if translation_rms is not None:
+      delta_median = r.get("brake_translation_delta_median")
+      delta_detail = ("no eligible delta" if delta_median is None else
+                      f"delta median/range {delta_median:+.3f} "
+                      f"[{r['brake_translation_delta_min']:+.3f},{r['brake_translation_delta_max']:+.3f}]")
+      translation_detail = (f"; raw RMS/mean {r['follow_brake_rms']:.4f}/{r['follow_brake_mean']:+.4f}; "
+                            f"translation {r['brake_translation_sec']:.2f}s, {delta_detail}")
+    add("following - brake domain", graded_rms <= brake_limit,
+        f"source-matched RMS {graded_rms:.4f}, mean "
+        f"{(r.get('brake_expected_wire_mean') if translation_rms is not None else r['follow_brake_mean']):+.4f} m/s2 "
+        f"({r['brake_domain_frac']*100:.0f}% of engaged frames; <= {brake_limit:.2f}){translation_detail}",
+        status="brake command diverging beyond its source-matched bound" if graded_rms > brake_limit else None)
   for prefix in ("gas", "brake"):
     if r.get(f"{prefix}_achieved_rms") is not None:
       under = r.get(f"{prefix}_achieved_under_median")

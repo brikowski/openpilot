@@ -17,6 +17,7 @@ from validate_log import (
   _base_route,
   _brake_passthrough_expected,
   _domain_model,
+  _expected_brake_command,
   _has_learner_telemetry,
   _local_segment_names,
   _model_provenance,
@@ -429,6 +430,43 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert not valid and "unmapped" in note
 
 
+def test_expected_brake_command_models_grade_translation_only_in_eligible_state():
+  requested = np.full(400, -0.5)
+  speed = np.full(400, 20.0)
+  pitch = np.full(400, 0.05)
+  pid = np.ones(400, dtype=bool)
+  brake = np.ones(400, dtype=bool)
+
+  expected, eligible, modeled = _expected_brake_command(
+    "0fbe4df19", requested, speed, pitch, pid, brake, 0.01,
+  )
+  assert modeled and eligible.all()
+  assert np.median(expected[-50:]) > -0.5
+  assert np.max(expected) <= 0.0
+
+  downhill, _, _ = _expected_brake_command(
+    "0fbe4df19", requested, speed, -pitch, pid, brake, 0.01,
+  )
+  assert np.median(downhill[-50:]) < -0.5
+
+  for case_speed, case_pid, case_brake in (
+    (np.full(400, 4.0), pid, brake),
+    (speed, np.zeros(400, dtype=bool), brake),
+    (speed, pid, np.zeros(400, dtype=bool)),
+  ):
+    raw, eligible, modeled = _expected_brake_command(
+      "0fbe4df19", requested, case_speed, pitch, case_pid, case_brake, 0.01,
+    )
+    assert modeled and not eligible.any()
+    np.testing.assert_array_equal(raw, requested)
+
+  raw, eligible, modeled = _expected_brake_command(
+    "899548275", requested, speed, pitch, pid, brake, 0.01,
+  )
+  assert not modeled and not eligible.any()
+  np.testing.assert_array_equal(raw, requested)
+
+
 def test_learner_telemetry_is_only_read_from_legacy_caroutput_semantics():
   assert not _has_learner_telemetry("3169fd4cc3fa")
   assert not _has_learner_telemetry("f453a51e0081")
@@ -492,6 +530,32 @@ def test_verdict_records_alpha_long_mode_without_grading_the_mode():
   assert mode["ok"]
   assert mode["status"] is None
   assert mode["detail"] == "disabled (stock radar longitudinal)"
+
+
+def test_verdict_uses_source_matched_brake_wire_error_without_requiring_grade_exposure():
+  route = {
+    "crashes": 0,
+    "track_rms": None,
+    "passthrough_rms": None,
+    "gasf_eff_mean": None,
+    "windf_mean": None,
+    "overshoot_frac": 0.0,
+    "creep_frames": 0,
+    "follow_brake_rms": 0.12,
+    "follow_brake_mean": 0.08,
+    "brake_expected_wire_rms": 0.01,
+    "brake_expected_wire_mean": 0.001,
+    "brake_translation_sec": 0.0,
+    "brake_translation_delta_median": None,
+    "brake_domain_frac": 0.1,
+  }
+
+  brake = next(v for v in validate_log.verdicts(route)
+               if v["check"] == "following - brake domain")
+
+  assert brake["ok"]
+  assert "source-matched RMS 0.0100" in brake["detail"]
+  assert "no eligible delta" in brake["detail"]
 
 
 def test_causal_lpf_can_reproduce_a_zero_initialized_controller_filter():
