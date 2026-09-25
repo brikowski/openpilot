@@ -108,6 +108,90 @@ def test_joint_screen_fits_only_training_routes(monkeypatch):
   assert len(seen) == 40
 
 
+def residual_data():
+  t = np.arange(250) * .02
+  return {'t': t, 'dt': .02, 'residual': np.full(len(t), .2),
+          'eligible': np.ones(len(t), dtype=bool), 'mask': np.ones(len(t), dtype=bool),
+          'domain': np.ones(len(t), dtype=int)}
+
+
+def test_response_alignment_uses_only_published_state_and_rejects_staleness():
+  data = {'t': np.array([-.01, 0., .01, .025, .03, .10]), 't0': 0.}
+  state_t = np.array([0., .03])
+  values = np.array([[10., -.2, 0., 0.], [11., -.4, 1., 0.]])
+  held = response_model.latest_response_state(data, state_t, values)
+  np.testing.assert_allclose(held['aego'], [np.nan, -.2, -.2, -.2, -.4, -.4])
+  np.testing.assert_array_equal(held['response_state_fresh'], [False, True, True, True, True, False])
+  np.testing.assert_array_equal(held['gas_pressed'][1:5], [False, False, False, True])
+  values[1, 1] = 100.
+  changed = response_model.latest_response_state(data, state_t, values)
+  np.testing.assert_allclose(changed['aego'][:4], held['aego'][:4])
+
+
+def test_residual_observer_is_bounded_causal_and_resets_after_invalid_history():
+  data = residual_data()
+  data['residual'][:] = 10.
+  out, segment, age = response_model.observe_residual(data, .1, True)
+  assert 0. < out[0] < .5 and np.max(out) <= .5
+  data['residual'][-1] = -10.
+  changed = response_model.observe_residual(data, .1, True)[0]
+  np.testing.assert_allclose(changed[:-1], out[:-1])
+  data['eligible'][60] = False
+  data['t'][120:] += .1
+  out, segment, age = response_model.observe_residual(data, .1, True)
+  assert out[60] == out[120] == 0.
+  assert age[60] == age[120] == 0.
+  assert segment[61] > segment[59] and segment[121] > segment[119]
+  assert out[61] == pytest.approx(.5 / 6)
+
+
+def test_domain_reset_changes_estimate_not_the_forecast_cohort():
+  data = residual_data()
+  data['domain'][100:] = 2
+  data['residual'][100:] = -.2
+  carried = response_model.observe_residual(data, .1, False)
+  reset = response_model.observe_residual(data, .1, True)
+  assert carried[0][100] > 0. and reset[0][100] < 0.
+  np.testing.assert_array_equal(carried[1], reset[1])
+  np.testing.assert_array_equal(carried[2], reset[2])
+  a = response_model.residual_forecast_errors(data, carried)
+  b = response_model.residual_forecast_errors(data, reset)
+  np.testing.assert_array_equal(a[0], b[0])
+  np.testing.assert_array_equal(a[2], b[2])
+
+
+def test_forecast_scoring_rejects_intervening_invalid_samples_and_route_end():
+  data = residual_data()
+  data['eligible'][60] = False
+  observer = response_model.observe_residual(data, .1, False)
+  valid, error, raw, future = response_model.residual_forecast_errors(data, observer, .3)
+  assert valid[30]
+  assert not valid[50]  # both endpoints valid but intervening sample 60 is invalid
+  assert not valid[-1]
+  assert .3 <= data['t'][future[30]] - data['t'][30] < .33
+  np.testing.assert_allclose(error[valid], raw[valid] - observer[0][valid])
+
+
+def test_residual_screen_keeps_evaluation_out_of_both_model_and_filter_selection(monkeypatch):
+  training, evaluation = residual_data(), residual_data()
+  training['actual'], evaluation['actual'] = training['residual'], -evaluation['residual']
+  calls = []
+  def model(groups, carry=True):
+    assert len(groups) == 1 and groups[0] is training
+    calls.append('model')
+    return ((0., 0.), (0., 0.)), np.zeros(5)
+  def select(groups, reset):
+    assert len(groups) == 1 and groups[0] is training
+    calls.append('filter')
+    return .5
+  monkeypatch.setattr(response_model, 'prepare_joint', lambda d: d)
+  monkeypatch.setattr(response_model, 'fit_joint_model', model)
+  monkeypatch.setattr(response_model, 'select_residual_filter', select)
+  monkeypatch.setattr(response_model, 'joint_matrix', lambda d, *args: np.zeros((len(d['t']), 5)))
+  response_model.inspect_residuals(['train'], [training], ['eval'], [evaluation])
+  assert calls == ['model', 'filter', 'filter']
+
+
 def test_delay_filter_is_causal_and_preserves_negative_brake_input():
   signal = np.array([0., -1., -1., -1., -1.])
   np.testing.assert_allclose(delayed_response(signal, .1, .1, 0.), [np.nan, 0., -1., -1., -1.])

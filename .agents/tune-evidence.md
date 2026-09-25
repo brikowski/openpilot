@@ -6351,3 +6351,84 @@ wire for raw request, use future commands, weight by event count, leak evaluatio
 fit, discard residual actuator state, treat inactive wire as braking, or decimate before checking
 driver interventions each fail their relevant regression. This is diagnostic/evidence publication
 on linear `ody-op`; nested f697 remains unchanged and no device deployment is needed.
+
+## 2026-09-25 — causal residual forecasting before actuator correction
+
+Continued the joint observer design using the same exact-source training routes 25/26/27 and
+held-out f697 routes 28/29 listed immediately above. No new road exposure is required to run this
+test. The question is narrower than command calibration: does the unexplained acceleration error
+persist far enough into the future to estimate it before an actuator could respond?
+
+Added `--residual-forecast` to `.agents/inspect_response_model.py`; use the preceding command
+with that mode flag instead of `--joint`. In this mode speed, aEgo, and driver pedals are held
+from the latest *published* raw carState at each control timestamp. They are not interpolated
+using a later state, as in the exploratory cache. Missing initial state and state age >=40 ms
+are ineligible. Other cached CAN inputs remain ZOH; independent CAN receive/transmit freshness
+is still not certified. This is causal availability by publication time, not a claim that card's
+subscription consumed every message at that instant. Exact-cycle reconstruction remains the
+separate replay check. The older interpolated joint screens are descriptive results, not proof
+of online estimator causality.
+
+The same training-only joint selection still chooses gas delay/filter 0.1/0.25 s and brake
+0.3/0.1 s. Refitting on latest-published state gives [gas, brake, speed²/1000, grade, offset]
+coefficients [1.386081, 1.032857, -0.239510, -0.732321, 0.022857]. This does not establish
+identifiable inverse actuator gains. Both the model and subsequent observer filter are selected
+using only training routes; evaluation routes never participate in either fit.
+
+Define residual as aEgo minus the joint model's prediction on actual wire commands. A causal
+low-pass estimate clips its *input residual* to ±0.5 m/s²; that analysis bound is not proposed
+actuator authority. Invalid driver/gear/gap/signal history clears its state. Two policies are
+compared: retain the residual estimate across gas/brake/coast changes, or reset that estimate
+at the transition. Both policies retain the separate fading physical actuator states. Resetting
+an error estimate is not clearing the modeled remaining gas/brake effort, nor does either policy
+continue sending a released command.
+
+At time t, score the estimate against residual at t+0.3 s. The future residual label necessarily
+uses future recorded wire commands and response; those values are never estimator inputs. Thus
+this is a test of residual persistence, not an end-to-end forecast of unknown future carControl
+or vehicle motion. Require uninterrupted eligible history through the forecast endpoint and a
+0.5 s initial observer history; domain reset does not restart that *evaluation* history. This
+keeps both arms on identical cohorts rather than making a resetting estimator look better by
+silently removing its post-transition samples. Also inspect 0.1 and 0.6 s forecast horizons.
+
+Train-only filter choices from {0.05,0.1,0.2,0.5,1,2,5} s are 0.2 s for carried residual and
+0.5 s for reset residual, with equal route weights. Held-out 0.3 s residual RMS:
+
+| Route / current domain | Rows | Zero estimate | Carried residual | Reset residual |
+| --- | ---: | ---: | ---: | ---: |
+| 28 / gas | 1754 | .1392 | .1426 | .1355 |
+| 28 / brake | 369 | .1439 | .1147 | .1087 |
+| 29 / gas | 2493 | .1147 | .0767 | .0721 |
+| 29 / brake | 183 | .2252 | .1312 | .1286 |
+| 28 / domain changes before forecast endpoint | 72 | .1177 | .1338 | .1192 |
+| 29 / domain changes before forecast endpoint | 84 | .1254 | .0882 | .0948 |
+
+All units are m/s²; rows are correlated ~10 Hz observations, not independent experiments. The
+reset observer improves held-out gas/brake residual prediction at all three checked horizons,
+but prospective domain changes remain mixed: at 0.6 s it is .1592 versus zero-estimate .1521 on
+route 28, and .1335 versus .1293 on route 29. Training route 25 also retains a braking regression
+(.1405 versus .1347 at 0.3 s). Do not describe this as universally predictive or as a demonstrated
+physical acceleration-following gain. The road traces and deployed commands are unchanged.
+
+An exploratory confidence-weighted prototype in `/private/tmp/ody_residual_forecast.py` learns a
+bounded 0..1 residual-persistence weight from lagged residual products, separately by domain.
+Its filter/memory/regularizer candidates are selected on training only, then checked against the
+same held-out routes. It improves over a zero residual estimate but does not consistently beat
+the simpler reset observer; its additional learner state has no established incremental value
+for the controller yet. Do not add that complexity now or treat this screen as a permanent
+exclusion. Earlier scratch output that restarted evaluation warmup on domain reset is not a
+paired-policy comparison; the committed scorer explicitly keeps cohort membership identical.
+
+Decision: CHANGE the observer design from carrying a single unexplained-error estimate across
+domains to the simpler reset-on-domain-change candidate, while KEEPING the independent physical
+response states across transitions. KEEP current runtime f697 as an unpromoted baseline. The
+remaining controller task is to translate predictable residual and nominal mapping error into
+bounded, correctly signed actuator adjustments and verify their closed-loop interaction with
+Honda's own control. These forecast results do not identify the inverse map or authorize copying
+a generic PID onto ACCEL_COMMAND. Upstream stop intent and raw releases remain untouched.
+
+Eighty-five focused tests and configured lint pass. Mutations that read future carState, remove
+the residual bound, ignore invalid history, change the evaluation cohort on domain reset, score
+across an intervening invalid sample, or leak held-out routes into either model/filter selection
+each fail their regression. No nested source, safety rail, lateral behavior, or Alpha Long
+setting changed. This is diagnostic/evidence publication only; no device deployment is needed.
