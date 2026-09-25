@@ -5699,7 +5699,7 @@ it became settled for only 0.78/1.37 s of the route-26/27 steep shortfall,
 because ordinary lead-following requests and grade changes repeatedly reset
 it. The delay-aligned candidate becomes eligible for 3.73/6.05 s and applies
 positive correction for 2.84/6.05 s respectively. In route 26/27 full-rate
-frozen-input replay, same-domain gas-step max/p99 are 228/28 and 221/24
+frozen-input replay, same-domain gas-step max/p99 were initially reported as 228/28 and 221/24
 counts versus the recorded prior-source wire's 325/47 and 248/40; steps
 above 100 counts are 2 versus 5 and 8 versus 8. The current candidate cannot
 predict its own on-road response from recorded `aEgo`; these figures bound
@@ -5734,3 +5734,28 @@ gate and restored afterward with unchanged SHA-256
 the temporary duplicate stash was removed after verification. This proves
 installation health only. The dynamic gas candidate is unpromoted until its
 source-compatible full-rate road response is assessed.
+
+### Replay frame-rate correction (2026-09-25)
+
+The replay gas-step collector appended the parser's held value on every
+100 Hz controller update; the recorded arm collected actual 50 Hz CAN
+frames. Extra zero steps understated replay p99. Both arms now collect
+only physical bus-1 ACC_CONTROL frames, preserving repeated values when
+they were actually transmitted. Domain occupancy still uses held values
+on the controller grid; this correction changes only wire-step statistics.
+Duplicate/reversed timestamps and gaps of 40 ms or more are excluded from
+adjacent-frame steps.
+
+On unchanged nested `f697fa4c6`, corrected route-26 replay/recorded p99 is
+37.34/47 counts across 2,667/2,670 eligible pairs; route 27 is 34/40 across
+16,294/16,277 pairs. Maxima remain 228/325 and 221/248, and counts above
+100 remain 2/5 and 8/8. These replace the earlier replay p99 values of
+28 and 24. The arms are separately scheduled recorded and replayed CAN;
+their small pair-count differences and frozen vehicle inputs mean these
+statistics do not establish closed-loop smoothness or exact-cycle equivalence.
+
+Two focused regression tests pass. Deliberately restoring held samples
+on empty controller ticks in memory fails the transmitted-frame test.
+This diagnostic correction makes no vehicle behavior change. Device
+inventory still contains no new unvalidated drive; the candidate remains
+unpromoted pending its physical response evidence.

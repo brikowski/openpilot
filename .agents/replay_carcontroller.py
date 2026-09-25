@@ -36,6 +36,25 @@ from validate_log import GAS_INACTIVE, JERK_SMOOTH_TAU, JERK_WIN_S, _local_segme
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"
 
 
+def gas_command_samples(mono, sends):
+  """Keep physical Alpha Long ACC_CONTROL frames, including repeated transmitted values."""
+  return [(mono / 1e9, int.from_bytes(dat[:2], "big", signed=True))
+          for addr, dat, bus in sends if addr == 0x1DF and bus == 1]
+
+
+def same_domain_gas_steps(samples):
+  if len(samples) < 2:
+    return {"max": 0.0, "p99": 0.0, "over_100": 0, "pairs": 0}
+  arr = np.asarray(samples, dtype=float)
+  gaps = np.diff(arr[:, 0])
+  valid = ((arr[1:, 1] > GAS_INACTIVE) & (arr[:-1, 1] > GAS_INACTIVE) &
+           (gaps > 0.0) & (gaps < 0.04))
+  steps = np.abs(np.diff(arr[:, 1]))[valid]
+  return {"max": float(np.max(steps)) if len(steps) else 0.0,
+          "p99": float(np.percentile(steps, 99)) if len(steps) else 0.0,
+          "over_100": int(np.sum(steps > 100)), "pairs": len(steps)}
+
+
 class _ZeroDict(dict):
   """Stock HUD signal dicts; missing keys read 0 so HUD packing can't crash the replay."""
   def __missing__(self, k):
@@ -81,7 +100,7 @@ def main(argv=None):
 
   cs_shim = _CSShim()
   t, requested, wire, active, sendcans, gas_feedback, pitch, aego, feedback_age = [], [], [], [], [], [], [], [], []
-  rec_t, rec_wire, rec_gas = [], [], []
+  rec_t, rec_wire, rec_gas, replay_gas = [], [], [], []
   for m in msgs:
     w = m.which()
     if w == "carState":
@@ -91,9 +110,7 @@ def main(argv=None):
       rec_t.append(m.logMonoTime / 1e9)
       rec_wire.append(float(m.carOutput.actuatorsOutput.accel))
     elif w == "sendcan":
-      for frame in m.sendcan:
-        if frame.address == 0x1DF and frame.src == 1:
-          rec_gas.append((m.logMonoTime / 1e9, int.from_bytes(frame.dat[:2], "big", signed=True)))
+      rec_gas.extend(gas_command_samples(m.logMonoTime, [(f.address, f.dat, f.src) for f in m.sendcan]))
     elif w == "carControl" and cs_shim.out is not None:
       actuators, can_sends = cc.update(m.carControl, cs_shim, m.logMonoTime)
       t.append(m.logMonoTime / 1e9)
@@ -101,6 +118,7 @@ def main(argv=None):
       wire.append(float(actuators.accel))
       active.append(bool(m.carControl.longActive))
       sendcans.append((m.logMonoTime, can_sends))
+      replay_gas.extend(gas_command_samples(m.logMonoTime, can_sends))
       gas_feedback.append(float(cc.odyssey_gas_response.correction))
       pitch.append(float(m.carControl.orientationNED[1]) if len(m.carControl.orientationNED) == 3 else np.nan)
       aego.append(float(cs_shim.out.aEgo))
@@ -155,19 +173,8 @@ def main(argv=None):
   steep_nearzero = act & (pitch >= 0.05) & (np.abs(requested) <= 0.15)
   steep_shortfall = steep_nearzero & ((requested - aego) >= 0.15)
 
-  def same_domain_gas_steps(samples):
-    if len(samples) < 2:
-      return {"max": 0, "p99": 0, "over_100": 0}
-    arr = np.asarray(samples, dtype=float)
-    valid = (arr[1:, 1] > GAS_INACTIVE) & (arr[:-1, 1] > GAS_INACTIVE) & (np.diff(arr[:, 0]) < 0.04)
-    steps = np.abs(np.diff(arr[:, 1]))[valid]
-    return {"max": float(np.max(steps)) if len(steps) else 0.0,
-            "p99": float(np.percentile(steps, 99)) if len(steps) else 0.0,
-            "over_100": int(np.sum(steps > 100))}
-
   # true domain handoff, decoded from the CAN this controller would actually have sent
   flips = forceful = coast_entries = 0
-  replay_gas = []
   brake_domain_frames = gas_domain_frames = coast_domain_frames = 0
   negative_live_gas_frames = negative_live_gas_events = 0
   total_edges = []
@@ -182,7 +189,6 @@ def main(argv=None):
         br = int(cp.vl["ACC_CONTROL"]["BRAKE_REQUEST"])
         ac = float(cp.vl["ACC_CONTROL"]["ACCEL_COMMAND"])
         gas = float(cp.vl["ACC_CONTROL"]["GAS_COMMAND"])
-        replay_gas.append((mono / 1e9, gas))
         if act[i]:
           domain = "brake" if br else ("gas" if gas > GAS_INACTIVE else "coast")
           negative_live = domain == "gas" and gas < 0
