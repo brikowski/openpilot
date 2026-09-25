@@ -2,8 +2,9 @@
 """Screen gas/brake acceleration models with whole-route holdouts.
 
 Observational prediction only: coefficients are not identified actuator gains and must not be
-inverted into a controller. Excludes transitions; uses cached ZOH CAN, not independently checked
-sent-frame freshness. Separate gas and brake fits preserve their distinct command units.
+inverted into a controller. Settled fits exclude transitions. The optional brake-entry screen
+reuses the existing event detector and fits only a unit-gain delay/filter, not a brake map.
+Uses cached ZOH CAN, not independently checked sent-frame freshness.
 """
 import argparse
 import json
@@ -12,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from extract import load
-from tuning_metrics import causal_lpf
+from tuning_metrics import brake_entry_tracking_profile, causal_lpf
 
 
 def delayed_response(signal, dt, delay, tau):
@@ -97,18 +98,180 @@ def inspect(routes, data, domain):
           round(float(np.sqrt(np.mean(static_error ** 2))), 4), 'bias', round(float(np.mean(error)), 4))
 
 
+def brake_entry_events(data, min_coast_s=0.0):
+  """Reuse brake-entry selection; retain initial response and uninterrupted coast history."""
+  clean = data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed']
+  rows = brake_entry_tracking_profile(data['t'], data['aego'], data['accel_command'], data['brake_request'],
+                                      data['gas_command'], clean, data['vego'], data['gear'],
+                                      filter_tau=0., requested_accel=data['request'])
+  t = data['t']
+  events = []
+  for row in rows:
+    edge = row['time']
+    index = int(np.searchsorted(t, edge))
+    start = index
+    while (start > 0 and clean[start - 1] and not data['brake_request'][start - 1] and
+           data['gas_command'][start - 1] == -30000 and data['gear'][start - 1] == data['gear'][index] and
+           0 < t[start] - t[start - 1] < .04):
+      start -= 1
+    coast_s = edge - t[start]
+    pre = (t >= edge - .1) & (t < edge)
+    post = (t >= edge) & (t <= edge + 1.0)
+    interval = t[(t >= edge - .3) & (t <= edge + 1.05)]
+    if (coast_s < min_coast_s or not pre.any() or np.any(np.diff(interval) >= .04) or
+        np.any(np.diff(interval) <= 0)):
+      continue
+    initial = float(np.mean(data['aego'][pre]))
+    request, actual = data['request'][post], data['aego'][post]
+    if not (np.isfinite(initial) and np.all(np.isfinite(request)) and np.all(np.isfinite(actual))):
+      continue
+    events.append({'time': edge, 'speed': row['speed'], 'coast_s': coast_s,
+                   't': t[post] - edge, 'request': request, 'actual': actual, 'initial': initial})
+  return events
+
+
+def entry_response(event, delay, tau):
+  """Causal unit-gain hypothesis; never use the observed post-entry response as input."""
+  t = np.asarray(event['t'])
+  request = np.asarray(event['request'])
+  output = np.full(len(t), event['initial'], dtype=float)
+  for i, time in enumerate(t):
+    if time < delay:
+      continue
+    target = request[max(0, np.searchsorted(t, time - delay, side='right') - 1)]
+    if tau == 0:
+      output[i] = target
+    elif i:
+      dt = t[i] - t[i - 1]
+      output[i] = output[i - 1] + dt / (tau + dt) * (target - output[i - 1])
+  return output
+
+
+def select_entry_dynamics(training, candidates):
+  """Select on training routes only, balancing routes and then events within each route."""
+  nonempty = [events for events in training if events]
+  if not nonempty:
+    return None
+  def loss(params):
+    return np.mean([np.mean([np.mean((entry_response(event, *params) - event['actual']) ** 2)
+                             for event in events]) for events in nonempty])
+  return min(candidates, key=loss)
+
+
+def inspect_brake_entries(train_routes, train_data, evaluation_routes, evaluation_data):
+  candidates = [(delay, tau) for delay in np.arange(0., .81, .05) for tau in np.arange(0., .61, .05)]
+  for min_coast in (0., .3, 1.):
+    training = [brake_entry_events(d, min_coast) for d in train_data]
+    selected = select_entry_dynamics(training, candidates)
+    print('brake entries, minimum prior continuous coast', min_coast, 'training counts',
+          dict(zip(train_routes, map(len, training), strict=True)), 'selected delay/tau', selected)
+    if selected is None:
+      continue
+    evaluated = training + [brake_entry_events(d, min_coast) for d in evaluation_data]
+    for i, (route, events) in enumerate(zip(train_routes + evaluation_routes, evaluated, strict=True)):
+      if not events:
+        print(route, 'no qualifying events')
+        continue
+      predicted_errors = [e['actual'] - entry_response(e, *selected) for e in events]
+      request_errors = [e['actual'] - e['request'] for e in events]
+      def rms(errors):
+        return float(np.sqrt(np.mean([np.mean(x ** 2) for x in errors])))
+      late_error = np.mean([np.mean(error[e['t'] >= .7]) for e, error in zip(events, predicted_errors, strict=True)])
+      print(route, 'training' if i < len(training) else 'held-out', 'events', len(events),
+            'raw/model RMSE', round(rms(request_errors), 4), round(rms(predicted_errors), 4),
+            'late actual-model', round(float(late_error), 4))
+
+
+def prepare_joint(data):
+  """Keep clean gas/brake/coast transitions; only driver/gear/gap history breaks eligibility."""
+  ix = np.arange(0, len(data['t']), 2)
+  t = data['t'][ix]
+  domain = np.where(data['brake_request'][ix], 2, np.where(data['gas_command'][ix] > -30000, 1, 0))
+  gas = np.maximum(data['gas_command'][ix], 0.) / 1000.
+  brake = np.where(domain == 2, data['accel_command'][ix], 0.)
+  context = np.column_stack((data['vego'][ix] ** 2 / 1000, 9.81 * np.sin(data['pitch'][ix]), np.ones(len(t))))
+  actual = data['aego'][ix]
+  # Check history before decimating so a one-control-frame intervention is not skipped.
+  valid = (data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed'] &
+           (data['vego'] >= 8) & np.isfinite(data['aego']) & np.isfinite(data['pitch']) &
+           np.isfinite(data['vego']) & np.isfinite(data['gas_command']) & np.isfinite(data['accel_command']))
+  mask = continuous_mask(valid, data['gear'], data['t'])[ix] & (np.arange(len(t)) % 5 == 0)
+  age = np.zeros(len(t))
+  last = 0
+  for i in range(1, len(t)):
+    if domain[i] != domain[i - 1]:
+      last = i
+    age[i] = t[i] - t[last]
+  return {'gas': gas, 'brake': brake, 'context': context, 'actual': actual, 'domain': domain,
+          'age': age, 'mask': mask, 'dt': float(np.median(np.diff(t)))}
+
+
+def joint_matrix(prepared, gas_dynamics, brake_dynamics, carry=True):
+  """Two causal actuator states; carry=False ablates residual effort outside its input domain."""
+  gas = delayed_response(prepared['gas'], prepared['dt'], *gas_dynamics)
+  brake = delayed_response(prepared['brake'], prepared['dt'], *brake_dynamics)
+  if not carry:
+    gas = np.where(prepared['domain'] == 1, gas, 0.)
+    brake = np.where(prepared['domain'] == 2, brake, 0.)
+  return np.column_stack((gas, brake, prepared['context']))[prepared['mask']]
+
+
+def inspect_joint(train_routes, train_data, evaluation_routes, evaluation_data):
+  """Prediction/ablation only; free fitted coefficients are not calibrated inverse gains."""
+  data = [prepare_joint(d) for d in train_data + evaluation_data]
+  targets = [d['actual'][d['mask']] for d in data[:len(train_data)]]
+  if any(len(y) == 0 for y in targets):
+    print('No joint fit: at least one training route has no selected exposure.')
+    return
+  candidates = [(g, b) for g in ((0., 0.), (.1, .25), (.5, 0.), (.2, .5))
+                for b in ((0., 0.), (.3, .1), (.35, .2), (.05, .3), (.5, 0.))]
+  for carry in (True, False):
+    matrices = [[joint_matrix(d, *p, carry) for d in data] for p in candidates]
+    fits = [fit_balanced(x[:len(train_data)], targets) for x in matrices]
+    best = min(range(len(fits)), key=lambda i: fits[i][1])
+    coef = fits[best][0]
+    print('joint carry', carry, 'gas delay/tau; brake delay/tau', candidates[best],
+          'coefficients gas/brake/speed2/grade/bias', np.round(coef, 4))
+    for i, (route, d) in enumerate(zip(train_routes + evaluation_routes, data, strict=True)):
+      error = matrices[best][i] @ coef - d['actual'][d['mask']]
+      domain, age = d['domain'][d['mask']], d['age'][d['mask']]
+      for name, selected in (('all', np.ones(len(error), dtype=bool)), ('gas', domain == 1),
+                             ('brake', domain == 2), ('coast', domain == 0),
+                             ('brake-first-second', (domain == 2) & (age <= 1.)),
+                             ('gas-first-second', (domain == 1) & (age <= 1.))):
+        if selected.any():
+          print(route, 'training' if i < len(train_data) else 'held-out', name, 'rows', int(selected.sum()),
+                'prediction RMSE/bias', round(float(np.sqrt(np.mean(error[selected] ** 2))), 4),
+                round(float(np.mean(error[selected])), 4))
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('routes', nargs='+')
   parser.add_argument('--opendbc', required=True, help='Exact full nested revision required for every route')
+  mode = parser.add_mutually_exclusive_group()
+  mode.add_argument('--brake-entries', action='store_true', help='Screen entry dynamics instead of settled fits')
+  mode.add_argument('--joint', action='store_true', help='Screen two actuator states including domain transitions')
+  parser.add_argument('--evaluation-routes', nargs='+', default=[], help='Held-out routes, never used for fitting')
+  parser.add_argument('--evaluation-opendbc', help='Exact nested revision of held-out routes; audit source compatibility separately')
   args = parser.parse_args()
   if len(set(args.routes)) < 2 or len(set(args.routes)) != len(args.routes):
     parser.error('Provide at least two distinct routes to separate training from held-out evaluation')
+  if args.evaluation_routes and (not (args.brake_entries or args.joint) or not args.evaluation_opendbc):
+    parser.error('Evaluation routes require --brake-entries/--joint and --evaluation-opendbc; audit source compatibility separately')
+  if len(set(args.routes + args.evaluation_routes)) != len(args.routes + args.evaluation_routes):
+    parser.error('Training and evaluation routes must be distinct and nonduplicated')
   ledger = {row['route']: row for row in map(json.loads, Path(__file__).with_name('log-validation-ledger.jsonl').read_text().splitlines())}
-  for route in args.routes:
-    if route not in ledger or ledger[route].get('opendbc_commit_full') != args.opendbc or route.startswith('00000005--'):
-      parser.error(f'{route}: missing/mismatched nested provenance or excluded route')
+  for routes, revision in ((args.routes, args.opendbc), (args.evaluation_routes, args.evaluation_opendbc)):
+    for route in routes:
+      if (route not in ledger or ledger[route].get('opendbc_commit_full') != revision or
+          ledger[route].get('qlog_fallback') or route.startswith('00000005--')):
+        parser.error(f'{route}: missing/mismatched nested provenance, qlog fallback, or excluded route')
   data = [load(route) for route in args.routes]
+  if args.brake_entries or args.joint:
+    screen = inspect_brake_entries if args.brake_entries else inspect_joint
+    screen(args.routes, data, args.evaluation_routes, [load(r) for r in args.evaluation_routes])
+    return
   for domain in ('gas', 'brake'):
     inspect(args.routes, data, domain)
 

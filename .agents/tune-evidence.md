@@ -6248,3 +6248,106 @@ Alpha Long setting change. Seventy-three focused tests and configured lint pass.
 removing platform initialization, sampling the post-state control, counting diagnostic sends,
 or hiding unmatched wire cycles makes the corresponding regression fail. Nested source is
 unchanged; this is diagnostic/evidence publication and does not require a device deployment.
+
+## 2026-09-25 — brake-entry dynamics and a joint response-state screen
+
+Extended the existing `.agents/inspect_response_model.py`; no new event detector or runtime
+controller is introduced. The brake-entry mode reuses `brake_entry_tracking_profile` with no
+extra response filter, and adds initial measured acceleration, uninterrupted prior coast age,
+and timestamp-gap rejection. Its predicted response is a causal unit-gain delayed first-order
+response to raw carControl, initialized only from the preceding 0.1 s of aEgo. Post-entry aEgo is
+an evaluation target, never a predictor input. It fits delay/filter time only, not a brake gain.
+
+Training routes are `00000025--65f310df96`, `00000026--a324cbacbc`, and
+`00000027--543105a0ab`, each ledger-resolved full-rate nested
+`47196b9a4a72f4509f9cddd5d114d44bdd46e167`, parent
+`652e1692804fdb48a3f078f0b5d5f23b64eeff35`. Whole-route evaluation is strictly held out:
+`00000028--0a9feaa46c` and `00000029--8532e5621f`, nested
+`f697fa4c6588839976b00218f584916632747dcb`, parent
+`771287d09ff8f1b76e3dd71627417d53e90da051`. Rechecked the source diff: gas feedback changes,
+but brake domain/translation, DBC, and vehicle source are unchanged. Model/mode provenance is
+in the preceding road receipt. Gas comparisons here model actual sent gas, not counterfactual
+baseline requests. The fit remains observational, not causal identification.
+
+Reproduce either mode with the same exact provenance and train/evaluation split:
+
+```sh
+.venv/bin/python .agents/inspect_response_model.py \
+  00000025--65f310df96 00000026--a324cbacbc 00000027--543105a0ab \
+  --opendbc 47196b9a4a72f4509f9cddd5d114d44bdd46e167 --brake-entries \
+  --evaluation-routes 00000028--0a9feaa46c 00000029--8532e5621f \
+  --evaluation-opendbc f697fa4c6588839976b00218f584916632747dcb
+```
+
+Replace `--brake-entries` with `--joint` for the two-actuator-state screen below. The CLI rejects
+duplicate/shared training/evaluation routes, missing/mismatched SHAs, qlog fallback, and excluded
+route 05. Source compatibility beyond the exact ledger hashes still requires the source audit;
+the CLI does not infer behavioral equivalence from a supplied second SHA.
+
+Brake-entry fitting weights routes equally, then events within each route. Delay candidates
+are 0..0.8 s and filter constants 0..0.6 s at 0.05 s spacing. Default eligibility retains all
+14 previous and 14 new sustained same-gear coast-to-brake events. The fit selects delay 0.30 s,
+filter 0.10 s. On held-out route 28, one-second prediction RMS is 0.1757 versus contemporaneous
+carControl tracking RMS 0.2686 m/s² (8 entries); route 29 is 0.1457 versus 0.3077 (6 entries).
+These compare descriptions of the same measured road response, not an achieved tuning gain.
+Mean actual-minus-model over 0.7..1.0 s remains -0.1374/-0.1085 m/s² respectively.
+
+Prior actuator history changes that result. The existing detector requires an immediately
+preceding coast sample and no prior brake for 0.3 s, not 0.3 s continuously without gas. Requiring
+0.3 s uninterrupted clean same-gear coast leaves training counts 2/2/3 and selects delay/filter
+0.05/0.30 s; requiring 1.0 s leaves 1/0/2 and selects 0.35/0.20 s. The latter has only 1/3
+held-out events, RMS 0.1925/0.1110 and late actual-minus-model -0.0060/-0.0180. These nested
+subsets differ in road/grade/demand exposure, so they do not prove prior gas is the sole cause.
+They do show that a fixed late brake offset or a supposedly universal brake delay is not
+identified by the pooled entry averages. Known route-28 event membership was checked directly:
+316.66, 333.66, 472.69, 475.78, 528.20, 547.86, 564.45, 583.85 s; only 472.69 remains after
+the 1 s coast requirement. Coast age is elapsed continuous history, not percentage of samples.
+
+The joint screen models independent gas and brake response states plus shared speed², pitch,
+and offset terms. Inputs are positive physical GAS_COMMAND/1000 and signed ACCEL_COMMAND only
+when BRAKE_REQUEST is active; an inactive numeric acceleration word is not brake authority.
+Negative bridge commands map to zero in this exploratory model, not a proven physical equivalence
+to coast. Both response states decay across domain transitions. The ablation instead zeroes
+each state's contribution immediately outside its command domain; it does not retain commands.
+Gas/brake remain mutually exclusive on the wire in every recorded input.
+
+Eligibility requires 2 s uninterrupted clean PID/longActive history, v>=8 m/s, finite signals,
+unchanged transmission gear, and no log gaps. Unlike the earlier settled fit, transitions remain
+eligible. The validity/history check runs on the native control grid before sampling at ~50 Hz
+for model states and ~10 Hz for scoring, so even a one-frame pedal override interrupts exposure.
+Cached ZOH CAN is used; independent physical-frame freshness is not certified here.
+
+Twenty dynamics pairs are screened on training routes only: gas (delay,filter) in
+{(0,0),(.1,.25),(.5,0),(.2,.5)} and brake in {(0,0),(.3,.1),(.35,.2),(.05,.3),(.5,0)}.
+Both carried-state and ablated fits select gas (.1,.25), brake (.3,.1). The carried-state fitted
+coefficients [gas, brake, speed²/1000, 9.81 sin(pitch), offset] are
+[1.3877, 1.0316, -0.2401, -0.7325, 0.0227]. They are predictive correlations, not calibrated
+torque/drag/grade gains or permission to invert the model into actuator commands.
+
+| Held-out exposure | 10 Hz rows | Prediction RMS, carried / ablated states (m/s²) |
+| --- | ---: | ---: |
+| Route 28, first second in gas | 85 | .1474 / .1534 |
+| Route 29, first second in gas | 90 | .1265 / .1542 |
+| Route 28, first second in brake | 80 | .1372 / .1393 |
+| Route 29, first second in brake | 68 | .1514 / .1631 |
+| Route 28, coast | 113 | .1219 / .1299 |
+| Route 29, coast | 198 | .0968 / .1050 |
+
+Rows within events are correlated, not independent trials. Aggregate carried-state prediction
+RMS is .1371/.1222 on routes 28/29, but route 29 retains substantial gas/brake prediction bias
+(-.0823/-.1109) and overall brake RMS .2206. This model is not sufficient as a direct inverse,
+nor does it cover low-speed creep, gear shifts, inactive/driver control, or arbitrary brake
+demand. In particular, do not copy its delays or gains blindly into the deployed feedback.
+
+Decision: keep the independent, history-carrying gas/brake response-state architecture as a
+coordinated observer candidate; do not replace it with a universal brake reduction or immediate
+domain-reset assumption. Next controller work must distinguish persistent model/load residual
+from transient response, validate how that residual translates to actuator authority, and preserve
+raw upstream intent and immediate releases. Remembering predicted residual acceleration is not a
+brake-until-zero latch. No runtime, safety limit, lateral tune, or Alpha Long setting changes here.
+
+Eighty focused tests and configured lint pass. Mutations that ignore continuous coast, substitute
+wire for raw request, use future commands, weight by event count, leak evaluation routes into either
+fit, discard residual actuator state, treat inactive wire as braking, or decimate before checking
+driver interventions each fail their relevant regression. This is diagnostic/evidence publication
+on linear `ody-op`; nested f697 remains unchanged and no device deployment is needed.
