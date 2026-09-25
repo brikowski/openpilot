@@ -5912,3 +5912,37 @@ Decision: retain low-speed acceleration-response mismatch as a supported target 
 gas/brake design. Do not copy MVL's accumulated extra braking or infer a universal brake gain
 from this interval. The road-speed early-lag/late-overresponse evidence still applies separately.
 This update records evidence and scope only; nested runtime behavior and device are unchanged.
+
+## 2026-09-25 — initial cross-route gas-signal response model screen
+
+Exploratory script `/private/tmp/ody_gas_model_screen.py` decodes actual bus-1 0x130 updates
+for routes 26/27 (same root `652e1692804f` / nested `47196b9a4a72`). It holds CAR_GAS onto
+a 50 Hz grid, rejects received-gas age >=0.06 s and control-grid gaps >=0.04 s, and uses the
+existing ZOH sent GAS_COMMAND. Exposure is active PID, no driver pedals, brake inactive,
+positive wire gas, speed >=8 m/s, and two continuous seconds of those conditions with unchanged
+target gear. Every candidate uses the identical mask; scoring subsamples to 10 Hz. These rows
+are correlated observations, not independent experiments. Initial gas-entry transients are
+excluded, and separate sent-frame freshness is not reconstructed by this exploratory script.
+
+Fit `CAR_GAS = gain * LPF(max(GAS_COMMAND, 0), tau)(t-delay) + offset` by least squares,
+sweeping delay 0/0.1/0.2/0.4/0.6 s and tau 0/0.1/0.25/0.5/1.0 s. Select on one route
+and evaluate its unchanged coefficients on the other:
+
+| Training route | Scored rows | Selected delay / tau | Gain / offset | Training RMSE | Other-route RMSE / bias |
+| --- | ---: | --- | --- | ---: | --- |
+| 26 | 206 | 0 / 0 | 0.08774 / 10.88658 | 7.42187 | 5.32856 / -1.82486 |
+| 27 | 2415 | 0 / 0 | 0.09079 / 11.97440 | 4.96775 | 7.92785 / +2.61791 |
+
+Errors/offsets are raw CAR_GAS counts, not acceleration or percent pedal. Both routes select
+the static affine model; thus selected-model and static-baseline validation scores coincide.
+A synthetic stepped-input case with known delay=0.2 s, tau=0.25 s, gain=0.09, offset=11
+recovers those dynamics with RMSE <1e-12. Removing delay/smoothing from that synthetic case
+raises RMSE to 16.61 counts, demonstrating that the grid search can distinguish the hypotheses.
+
+Decision: do not assume MVL Nidec's learned pedal-smoothing mechanism transfers to Bosch. This
+screen does not identify a nonzero lag between sent gas and CAR_GAS in the selected exposure.
+CAR_GAS may still be an ECU target/proxy rather than an independently measured physical pedal;
+its correlation alone cannot resolve that semantic question. Nor does this prove zero physical
+acceleration delay, transient performance, model linearity across gear/speed, or a safe inverse
+gas calibration. Separate wire-to-CAR_GAS behavior from CAR_GAS-to-acceleration response when
+designing dynamic feedback. No runtime change follows from this exploratory fit alone.
