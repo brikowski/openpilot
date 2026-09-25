@@ -43,10 +43,10 @@ def trim_weight(speed, request):
 
 
 def trial_points(d, *, stride=20):
-  """Return stable gas samples: speed/request/pitch/rpm, gear/lead/source, gas/error/weight."""
+  """Return stable gas samples, including an episode ID for dependence accounting."""
   t = np.asarray(d["t"], dtype=float)
   if len(t) < 3:
-    return np.empty((0, 10))
+    return np.empty((0, 11))
   dt = float(np.median(np.diff(t)))
   lag = round(0.6 / dt)
   radius = round(0.5 / dt)
@@ -63,6 +63,8 @@ def trial_points(d, *, stride=20):
           np.isfinite(gear) & np.isfinite(d["rpm"]) & np.isfinite(d["aego"]))
   for edge in np.flatnonzero(np.diff(gear, prepend=gear[0]) != 0):
     mask[np.abs(t - t[edge]) < 1.5] = False
+  for gap in np.flatnonzero(np.diff(t) > 2.5 * dt):
+    mask[max(0, gap - radius):min(len(t), gap + radius + 1)] = False
   mask[-lag:] = False
   ix = np.flatnonzero(mask & (np.arange(len(t)) % stride == 0))
   ix = ix[(t[ix + lag] - t[ix] <= 0.65) &
@@ -71,9 +73,23 @@ def trial_points(d, *, stride=20):
           (np.abs(request[ix + lag] - request[ix]) <= 0.10) &
           d["active"][ix + lag] & ~d["gas_pressed"][ix + lag] &
           ~d["brake_pressed"][ix + lag]]
+  episodes = np.cumsum(~mask)[ix]
   return np.column_stack((speed[ix], request[ix], d["pitch"][ix], d["rpm"][ix],
                           gear[ix], d["has_lead"][ix].astype(float), d["plan_source"][ix],
-                          d["gas_command"][ix], d["aego"][ix + lag] - request[ix], weight[ix]))
+                          d["gas_command"][ix], d["aego"][ix + lag] - request[ix], weight[ix], episodes))
+
+
+def pooled_points(routes):
+  """Keep episode IDs distinct while pooling source-compatible routes."""
+  blocks = []
+  offset = 0
+  for route in routes:
+    points = trial_points(load(route))
+    if len(points):
+      points[:, 10] += offset
+      offset = int(np.max(points[:, 10])) + 1
+    blocks.append(points)
+  return np.vstack(blocks)
 
 
 def one_to_one_matches(trial, baseline, limits=MATCH_LIMITS):
@@ -102,11 +118,15 @@ def one_to_one_matches(trial, baseline, limits=MATCH_LIMITS):
 
 def summarize(trial, baseline, limits=MATCH_LIMITS):
   ci, bi = one_to_one_matches(trial, baseline, limits)
-  result = {"trial_samples": len(trial), "baseline_samples": len(baseline), "matched": len(ci)}
+  result = {"trial_samples": len(trial), "baseline_samples": len(baseline), "matched": len(ci),
+            "trial_episodes": len(np.unique(trial[:, 10])) if len(trial) else 0,
+            "baseline_episodes": len(np.unique(baseline[:, 10])) if len(baseline) else 0}
   if not len(ci):
     return result
   c, b = trial[ci], baseline[bi]
-  return {**result, "trial_error_mae": float(np.mean(np.abs(c[:, 8]))),
+  return {**result, "matched_trial_episodes": len(np.unique(c[:, 10])),
+          "matched_baseline_episodes": len(np.unique(b[:, 10])),
+          "trial_error_mae": float(np.mean(np.abs(c[:, 8]))),
           "baseline_error_mae": float(np.mean(np.abs(b[:, 8]))),
           "paired_error_delta": float(np.median(c[:, 8] - b[:, 8])),
           "wire_gas_delta": float(np.median(c[:, 7] - b[:, 7])),
@@ -127,8 +147,8 @@ def main():
       actual = source_for_route(route)
       if not actual.startswith(expected):
         parser.error(f"{route}: nested {actual}, expected {expected}")
-  baseline = np.vstack([trial_points(load(route)) for route in args.baseline])
-  trial = np.vstack([trial_points(load(route)) for route in args.trial])
+  baseline = pooled_points(args.baseline)
+  trial = pooled_points(args.trial)
   for name, limits in (("strict", MATCH_LIMITS / 2), ("nominal", MATCH_LIMITS),
                        ("broad", MATCH_LIMITS * 1.5)):
     for lead_name, lead in (("all", None), ("no-lead", 0.0), ("lead", 1.0)):

@@ -22,6 +22,7 @@ def test_trial_points_keep_only_stable_active_wire_exposure():
   d = _route()
   points = trial_points(d)
   assert len(points) > 20
+  assert len(np.unique(points[:, 10])) == 1
   np.testing.assert_allclose(points[:, 8], 0.2)
   np.testing.assert_allclose(points[:, 9], 1.0)
   assert len(trial_points({**d, "gas_pressed": np.ones(len(d["t"]), dtype=bool)})) == 0
@@ -30,6 +31,9 @@ def test_trial_points_keep_only_stable_active_wire_exposure():
   gap_t = d["t"].copy()
   gap_t[300:] += 10.0
   assert len(trial_points({**d, "t": gap_t})) < len(points)
+  interrupted_gas = d["gas_command"].copy()
+  interrupted_gas[250:350] = 0.0
+  assert len(np.unique(trial_points({**d, "gas_command": interrupted_gas})[:, 10])) == 2
 
 
 def test_trim_weight_is_zero_outside_trial_and_full_in_core():
@@ -49,6 +53,7 @@ def test_matching_is_one_to_one_and_preserves_gear_and_lead():
   assert len(ci) == len(bi) == 1
   result = summarize(trial, baseline)
   assert result["matched"] == 1
+  assert result["matched_trial_episodes"] == result["matched_baseline_episodes"] == 1
   assert np.isclose(result["wire_gas_delta"], -200.0)
   assert np.isclose(result["expected_trim"], -200.0)
   assert np.isclose(result["paired_error_delta"], -0.1)

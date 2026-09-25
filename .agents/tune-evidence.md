@@ -5495,7 +5495,7 @@ result to keep, reshape, or retire the trial and only then consider a
 compact conditioned feedforward map. The method does not impose a fixed
 route count or bar any later well-evidenced adaptive mechanism.
 The exact-source baseline routes 20–23 currently contribute only two
-5 Hz sampled frames (0.4 s, not independent episodes) after the comparator's PID, no-pedal,
+5 Hz sampled frames (0.4 s from one episode) after the comparator's PID, no-pedal,
 stable-request/gear, near-level, positive-wire, and future-state guards;
 route 20 supplies both. There is no route yet on the trial nested source.
 The current evidence therefore cannot identify a multi-parameter map or
