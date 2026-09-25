@@ -91,6 +91,10 @@ Use that first divergence to choose the work:
   Honda translation.
 - If numeric CAN and its domain are correct but `aEgo` bites or lags, calibrate Honda actuator
   response without reshaping the model command.
+- At very low speed, correct failure to achieve the requested acceleration, not failure to stop
+  by itself. If the vehicle follows `carControl` but upstream does not request a complete stop,
+  leave that upstream behavior unchanged. Do not add a stop-until-zero latch or retain braking
+  against a released upstream request merely to complete a stop.
 - Apply the same boundary to lateral behavior: do not use Honda steering shaping to compensate for an
   upstream lateral-plan or controller error, and do not retune a correct command path without a
   repeatable vehicle-response symptom.

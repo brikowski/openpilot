@@ -5831,3 +5831,84 @@ The synthetic regression separates raw request (-0.4), wire (-0.3), and response
 identical event selection, and rejects nonfinite request samples. An in-memory mutation using
 wire instead of raw request makes the regression fail; the unmodified five focused tests pass.
 Focused lint and git diff whitespace checks pass. The unrelated user `uv.lock` change is preserved.
+
+## 2026-09-25 — Odyssey actuator-feedback availability after MVL review
+
+The live MVL branch review resolved root `de0d24fba5ee29d7d58e5b5fbfcba8507ace7577`
+and nested `49318feced896fb0e967695bb959feeedd8ff6a8`. The cached GitHub page instead
+showed nested `170af1b8`; the live API gitlink was used for conclusions. Nidec's applied-pedal
+response model and gated, speed-banded learning are design references, not Bosch drop-in code.
+
+Direct full-rate decoding of route `00000026--a324cbacbc` (root `652e1692804f`, nested
+`47196b9a4a72`) supplies a candidate intermediate actuator measurement. The exact active
+`acura_rdx_2020_can_generated` DBC imports `_honda_common.dbc`: bus-1 `GAS_PEDAL_2`
+(0x130) includes `CAR_GAS`, `ENGINE_TORQUE_REQUEST`, and `ENGINE_TORQUE_ESTIMATE`.
+Only actual parser updates for the specific address were counted, not repeated held rows.
+Across 29,062 incoming 0x130 update events CAR_GAS spans 0..136 with 135 distinct values.
+Torque request spans -132..2180 and estimate -1851..2086 in the DBC-labelled Nm units.
+Those extremes warn against assuming these torque fields are calibrated physical measurements;
+their encoding/validity needs verification before use in an actuator model.
+
+For each 0x130 update, hold the latest carControl.longActive, carState.gasPressed, and
+bus-1 sendcan ACC_CONTROL. Require wire age <0.1 s for automated-domain comparisons:
+
+| Condition | Update events | CAR_GAS median / p95 / max | Zero fraction |
+| --- | ---: | ---: | ---: |
+| Long active, no driver gas, GAS_COMMAND >0, BRAKE_REQUEST=0 | 5,195 | 59 / 94 / 136 | 0.346% |
+| Long active, no driver gas, BRAKE_REQUEST=1 | 2,394 | 0 / 0 / 0 | 100% |
+| Driver gas pressed (no active/wire-age restriction) | 5,652 | 40 / 73 / 97 | 0.159% |
+
+In the automated gas subset, contemporaneous GAS_COMMAND/CAR_GAS correlation is 0.835.
+Wire gas bins [0,100), [100,300), [300,600), [600,1000), [1000,2001) contain
+94/1322/1001/1611/1167 updates with CAR_GAS medians 10.5/25/47/79/78. These are
+unconditioned availability statistics, not fitted gain, delay, or proof of saturation. The last
+two bins especially do not justify copying Nidec's fixed pedal-to-command scale.
+
+Bus-1 VSA_STATUS (0x1a4) supplies 14,849 update events: USER_BRAKE spans -0.0625..3.34375
+and COMPUTER_BRAKING is binary. The active generated DBC does not import the Nidec
+BRAKE_PRESSURE message. Neither a field name nor the binary braking indication establishes a
+continuous, calibrated brake-actuator feedback signal on this Odyssey.
+
+Decision: use CAR_GAS as a candidate intermediate response observation for the coordinated
+design, first checking timing, speed/gear dependence, validity, and domain transitions. Distinguish
+wire-to-observed-gas dynamics from observed-gas-to-net-acceleration dynamics. Braking requires
+its own observation model; do not transplant Nidec pedal or pressure semantics. This finding
+advances the dynamic-control design using existing logs; no vehicle behavior changed.
+
+## 2026-09-25 — low-speed creep attribution and request-only boundary
+
+The user clarified that a failure to stop is not a Honda-port tuning target when the car actually
+follows carControl. Do not add stop intent, a stop-until-zero latch, or extra hold against an
+upstream release. Low-speed response correction, if implemented, must remain acceleration
+tracking rather than autonomous stop completion. This boundary is recorded in AGENTS.md.
+
+Screened existing full-rate routes 25/26/27 for continuously active, no-driver-pedal exposure at
+0.15..1.5 m/s lasting at least 1 s. Route 27 (`00000027--543105a0ab`, root `652e1692804f`,
+nested `47196b9a4a72`) contains a decelerating event at route-relative t=619.15..622.89 s.
+It remains PID with planner shouldStop=false and BRAKE_REQUEST=true. This is not evidence of
+an upstream explicit stopping state or a brake-domain release before the driver intervenes.
+
+Direct source-log confirmation, holding the latest carControl and bus-1 ACC_CONTROL at each
+of 179 carState messages during t=621.0..622.8 s, gives mean request -0.17614 m/s²,
+wire -0.17827 m/s², aEgo +0.04949 m/s², speed 0.42060 m/s. All samples have longActive=true,
+driver brake=false, and BRAKE_REQUEST=true. Numeric wire/request RMS is 0.00474 m/s².
+Cached ZOH COMPUTER_BRAKING also remains true. Thus transmission fidelity is close while
+physical response has the opposite mean sign; absence of upstream shouldStop does not erase
+the independently requested deceleration.
+
+Low-speed measurement sensitivity: on the same raw carState messages, vEgoRaw has 33 distinct
+values, range 0.375..0.488889 m/s, and a fitted time slope +0.06570 m/s². Mean vEgoRaw rises
+from 0.39205 in t=621.0..621.3 to 0.48046 in t=622.5..622.8; filtered vEgo rises from
+0.39093 to 0.48264. Standstill remains false. Therefore the speed increase is not solely an
+aEgo filter artifact (vEgoRaw is still a vehicle-reported speed, not an independent ground-truth
+sensor). Local carstate blends transmission/wheel speed, using transmission speed at low speed.
+
+At t≈622.90 the driver brakes and longActive becomes false; by t≈623.00 the OpenPilot brake
+request is off. That subsequent release must not be misclassified as the cause of the preceding
+creep. Stopping intent appears later while the driver has already taken over. No claim is made
+that this is the exact event the user recalled, nor that forcing a stop would be appropriate.
+
+Decision: retain low-speed acceleration-response mismatch as a supported target in the combined
+gas/brake design. Do not copy MVL's accumulated extra braking or infer a universal brake gain
+from this interval. The road-speed early-lag/late-overresponse evidence still applies separately.
+This update records evidence and scope only; nested runtime behavior and device are unchanged.
