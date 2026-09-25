@@ -5478,6 +5478,21 @@ near-level sustained positive-response screen has zero qualifying seconds
 on route 23. **Decision: keep the unpromoted trial pending its own
 source-compatible road exposure; do not treat either route as a trial A/B.**
 
+Route 23's five sustained coast-to-brake entries (all 20–30 m/s) repeat a
+Honda-response timing pattern seen on route 22, the same nested source:
+median `aEgo - wire ACCEL_COMMAND` is `+0.221` at 0.2 s and `+0.178 m/s2`
+at 0.5 s after entry, then `-0.027` at 0.8 s and `-0.038 m/s2` at 1.0 s.
+Route 22's six entries give `+0.258`, `+0.235`, `-0.035`, and `-0.045`
+at the same ages, but span 10–40 m/s and are not a matched brake-gain fit.
+On route 23 the two ranked negative jerk peaks occur roughly 0.58–0.61 s
+after the physical brake edge, with `COMPUTER_BRAKING` active; the upstream
+plan/request/wire mismatch at those peaks is small. Grade-relative wire
+commands and mixed terrain limit the interpretation of small late residuals.
+The repeatable first large discrepancy is delayed physical brake response,
+not a missing numeric wire request. **Decision: retain the current brake
+translation while the separate positive-gas trial is evaluated; do not
+globally increase brake gain to fix the early phase and worsen the late one.**
+
 The next threshold screen conditions on active PID, no driver pedals, request
 `-0.30..-0.20 m/s2`, pitch magnitude below `0.03 rad`, at least 0.5 seconds
 before and 0.6 seconds after each sample continuously in the recorded coast
