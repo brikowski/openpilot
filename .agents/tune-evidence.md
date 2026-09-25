@@ -5452,6 +5452,18 @@ verified device pair remains the behavioral road baseline, not proof of its
 current state. Device and parent gitlink must match the exact candidate
 before its road response can count.
 
+The later guarded offroad deployment of parent `652e169280` / nested
+`47196b9a4` passed seven Odyssey interface/model tests and 22 command/safety
+rail tests (60 subtests), published the already-paired source, switched and
+built the device, then rebooted. Post-reboot verification showed branch
+`ody-op`, exact parent/gitlink/nested SHAs, clean device repositories and
+comma-owned `.venv`, Alpha Long `1`, updater target `ody-op` and state `idle`,
+no update exception or failed services, and active comma/manager/Panda
+services. The unrelated local `uv.lock` edit was stashed only for the clean
+deploy gate and restored afterward. This proves installation health, not
+physical command-following improvement; the bounded trim remains unpromoted
+until source-compatible road response is inspected.
+
 The next threshold screen conditions on active PID, no driver pedals, request
 `-0.30..-0.20 m/s2`, pitch magnitude below `0.03 rad`, at least 0.5 seconds
 before and 0.6 seconds after each sample continuously in the recorded coast

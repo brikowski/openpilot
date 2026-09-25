@@ -174,10 +174,11 @@ refs, and clean state separately from device health and road behavior. Keep the 
 
 ## Current focus
 
-At the last successful 2026-09-24 verification, the device ran behavioral root
-`0bd9816712b1` / nested `6915be202bb7` on the single `ody-op` line; later root
-`3269deef3d7c` adds only its deployment
-receipt. The nested candidate retains raw `ACCEL_COMMAND`, the request-ramped positive
+At the latest successful 2026-09-24 verification, the device ran root
+`652e169280` / nested `47196b9a4` on the single `ody-op` line. The previous
+road baseline was behavioral root `0bd9816712b1` / nested `6915be202bb7`;
+root `3269deef3d7c` added only its deployment receipt. The nested candidate
+retains raw `ACCEL_COMMAND`, the request-ramped positive
 `GAS_COMMAND` mapping, the smooth capped correction through an already-active uphill negative gas
 request, the `0.3` filtered-pitch brake translation, fresh `-60` bridge entry, and stock 2560
 lateral authority. It changes positive-request gas translation to use signed grade with gain `0.6`
@@ -210,17 +211,17 @@ Near-level mild-negative coast/brake samples have opposite tracking errors at lo
 while highway coast already overdecelerates; a global earlier brake-entry threshold is not
 supported by current road evidence.
 
-A bounded Odyssey-only positive-gas trial is published as root `a8d11cd9aa` /
+A bounded Odyssey-only positive-gas trial is deployed as root `652e169280` /
 nested `47196b9a4`: it trims at most 200 opaque gas counts for positive PID
 requests around 12–20 m/s and +0.8–+1.6 m/s2, with smooth
 ramps and no change to raw `ACCEL_COMMAND` or brake/negative-gas domains. Two historical
 source-different matched episodes give its direction and trial size; they do not establish a
-closed-loop gain. The device did not answer the first offroad SSH check, so this pair is not
-deployed or road-validated; the last verified device pair remains the road baseline. Keep or
-retire this unpromoted trial from source-compatible road response after deployment.
+closed-loop gain. The guarded offroad switch, build, reboot, and exact-pair
+health checks passed; that is not road validation. Keep or retire this
+unpromoted trial from source-compatible road response.
 
-Alpha Long was enabled at the last device verification. Do not disable it for this trial;
-Honda CMBS is unavailable while it is active. The preceding guarded deployment verified
+Alpha Long remained enabled at the latest device verification. Do not disable it for this trial;
+Honda CMBS is unavailable while it is active. The guarded deployment verified
 clean exact SHAs, an idle updater with no
 exception, active manager/Panda services, and no failed services; this is deployment health, not
 road proof. Seven-route settled-brake evidence independently fits a positive grade term on every
