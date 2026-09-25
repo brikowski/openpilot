@@ -23,11 +23,13 @@ def causal_lpf(x, dt, tau, initial=None):
 
 def brake_entry_tracking_profile(grid, actual_accel, wire_accel, brake_request, gas_command,
                                  clean_active, speed, gear, *, gas_inactive=-30000,
-                                 filter_tau=0.2):
+                                 filter_tau=0.2, requested_accel=None):
   """Measure response-minus-active-wire at fixed ages after clean road-speed coast-to-brake edges.
 
   The numeric wire value before an edge is not a brake request, so this compares only
   post-edge values. It describes recorded response; it does not predict a changed command.
+  Optional raw-request errors use the identical events and response samples, separating
+  net acceleration tracking from tracking the grade-translated wire command.
   """
   grid = np.asarray(grid, dtype=float)
   offsets = (0.2, 0.5, 0.8, 1.0)
@@ -45,6 +47,7 @@ def brake_entry_tracking_profile(grid, actual_accel, wire_accel, brake_request, 
   speed = np.asarray(speed, dtype=float)
   gear = np.asarray(gear)
   wire = np.asarray(wire_accel, dtype=float)
+  requested = None if requested_accel is None else np.asarray(requested_accel, dtype=float)
   actual = causal_lpf(np.asarray(actual_accel, dtype=float), dt, filter_tau)
   rows = []
   for i in np.flatnonzero(brake[1:] & ~brake[:-1]) + 1:
@@ -56,16 +59,22 @@ def brake_entry_tracking_profile(grid, actual_accel, wire_accel, brake_request, 
         np.any(gear[sl] != gear[i])):
       continue
     errors = []
+    request_errors = []
     wire_at_half = None
     for offset in offsets:
       j = i + int(round(offset / dt))
       sample = slice(j - window, j + window + 1)
       errors.append(float(np.mean(actual[sample] - wire[sample])))
+      if requested is not None:
+        request_errors.append(float(np.mean(actual[sample] - requested[sample])))
       if offset == 0.5:
         wire_at_half = float(np.mean(wire[sample]))
-    if np.all(np.isfinite(errors)):
-      rows.append({"time": float(grid[i]), "speed": float(speed[i]),
-                   "wire_at_half": wire_at_half, "errors": tuple(errors)})
+    if np.all(np.isfinite(errors)) and np.all(np.isfinite(request_errors)):
+      row = {"time": float(grid[i]), "speed": float(speed[i]),
+             "wire_at_half": wire_at_half, "errors": tuple(errors)}
+      if requested is not None:
+        row["request_errors"] = tuple(request_errors)
+      rows.append(row)
   return rows
 
 

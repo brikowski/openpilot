@@ -159,11 +159,17 @@ runtime behavior changes. Evidence or ledger updates may be a separate commit wh
 for reproducibility, but they must not be mixed with unrelated changes.
 
 A production commit or promotion additionally requires exact route, parent, and nested `opendbc`
-provenance; first-divergence ownership; one hypothesis; source-compatible full-rate comparison with
+provenance; first-divergence ownership; a coherent, attributable design; source-compatible full-rate comparison with
 adequate exposure; an attributable improvement or required safety fix without unacceptable
 regression; and an explicit keep/change/retire decision. Resolve DBC signal meaning from the exact
 nested revision; do not infer alignment from matching signal names across `ody-op`,
 `sunnypilot/staging`, or another branch.
+
+Gas response, brake response, and their transitions may be changed together as a coordinated
+design. There is no one-change-at-a-time requirement. Validate each affected domain and their
+interactions, and use component-level tests or offline ablations when needed for attribution;
+separate road deployments are not mandatory for each component. Retain overlapping corrections
+only with a stated role and supporting evidence, not merely because they were already deployed.
 
 A candidate is committed directly to `ody-op` to preserve reproducibility, but the commit is not a
 promotion. After the source, mutation, focused-test, preflash, and provenance gates pass, deployment

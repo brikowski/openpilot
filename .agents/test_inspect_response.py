@@ -5,6 +5,25 @@ from inspect_response import brake_entry_summary, print_brake_entry_summary
 from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
 
 
+def test_brake_profile_separates_raw_request_from_grade_translated_wire():
+  t = np.arange(0.0, 3.0, 0.01)
+  brake = t >= 1.0
+  request = np.full_like(t, -0.4)
+  wire = request + 0.1
+  actual = np.full_like(t, -0.45)
+  args = (t, actual, wire, brake, np.full_like(t, -30000),
+          np.ones_like(t, dtype=bool), np.full_like(t, 20), np.full_like(t, 6))
+  baseline = brake_entry_tracking_profile(*args, filter_tau=0.0)
+  rows = brake_entry_tracking_profile(*args, filter_tau=0.0, requested_accel=request)
+  assert len(rows) == len(baseline) == 1
+  assert rows[0]["time"] == baseline[0]["time"]
+  np.testing.assert_allclose(rows[0]["errors"], baseline[0]["errors"])
+  np.testing.assert_allclose(rows[0]["errors"], -0.15)
+  np.testing.assert_allclose(rows[0]["request_errors"], -0.05)
+  request[150] = np.nan
+  assert not brake_entry_tracking_profile(*args, filter_tau=0.0, requested_accel=request)
+
+
 def test_brake_entry_tracking_profile_captures_early_lag_and_late_overresponse():
   t = np.arange(0.0, 3.0, 0.01)
   brake = t >= 1.0

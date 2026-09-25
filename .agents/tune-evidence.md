@@ -5789,3 +5789,45 @@ the cap to address the observed hill shortfall. This audit establishes
 command application and bounds, not physical improvement. Decision: retain
 the deployed candidate and its bounds while its road response is unresolved;
 do not add another correction based solely on the frozen-input residual.
+
+## 2026-09-25 — coordinated gas/brake scope and net brake tracking
+
+The user explicitly permits gas response, brake response, and transitions to change together.
+The single-hypothesis wording in AGENTS.md is replaced with a coherent-design requirement;
+component tests and offline ablations can supply attribution without separate road deployments
+for every component. The full acceleration-following objective remains incomplete.
+
+The existing brake-entry profile measured filtered aEgo minus the grade-translated CAN request.
+It now optionally reports aEgo minus raw carControl on the identical qualifying events. This
+extends the existing metric rather than creating a second event detector. The CLI prints both;
+the source-compatible routes below retain 5, 3, and 6 qualifying entries respectively. These are
+clean, PID, same-gear, sustained coast-to-brake entries above 10 m/s, not all braking exposure.
+The ledger resolves all three to root `652e1692804fdb48a3f078f0b5d5f23b64eeff35` /
+nested `47196b9a4a72f4509f9cddd5d114d44bdd46e167`, not the deployed feedback source.
+
+Median aEgo minus raw carControl (m/s²), with the existing 0.2 s response filter:
+
+| Route | 0.2 s | 0.5 s | 0.8 s | 1.0 s |
+| --- | ---: | ---: | ---: | ---: |
+| `00000025--65f310df96` | +0.362 | +0.256 | -0.181 | -0.284 |
+| `00000026--a324cbacbc` | +0.227 | +0.134 | -0.053 | -0.142 |
+| `00000027--543105a0ab` | +0.343 | +0.271 | -0.096 | -0.111 |
+
+Sensitivity with no additional response filtering retains the early-positive/late-negative
+pattern: respective 0.2 s errors are +0.380/+0.117/+0.365 and 1.0 s errors are
+-0.219/-0.145/-0.168. However, 0.5 s errors become -0.074/-0.001/+0.062 rather than
+the positive filtered errors above. A 0.1 s filter produces intermediate 0.5 s errors
++0.120/+0.081/+0.215. Thus these profiles support addressing a transient, not a constant brake
+offset, and do not identify a brake delay from the filtered half-second error. The values compare
+contemporaneous requests; they are not fitted actuator transfer functions or delay-aligned errors.
+
+Decision: pursue coordinated gas/brake translation and response correction, but do not copy the
+gas feedback gain/delay into braking based on these profiles. Account for measurement filtering,
+Honda's internal brake loop, domain entry/release, and changing demand in the response model.
+This is a design constraint from existing evidence, not a requirement to collect a fixed number
+of additional drives. No runtime change or deployment is made by this diagnostic update.
+
+The synthetic regression separates raw request (-0.4), wire (-0.3), and response (-0.45), verifies
+identical event selection, and rejects nonfinite request samples. An in-memory mutation using
+wire instead of raw request makes the regression fail; the unmodified five focused tests pass.
+Focused lint and git diff whitespace checks pass. The unrelated user `uv.lock` change is preserved.

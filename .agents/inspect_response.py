@@ -98,9 +98,15 @@ def inspect(route, *, threshold, limit, summary_only):
   profile = brake_entry_tracking_profile(
     data["t"], data["aego"], data["accel_command"], data["brake_request"],
     data["gas_command"], clean_active & data["pid"], data["vego"], data["gear"],
+    requested_accel=data["request"],
   )
   if profile:
     errors = np.asarray([row["errors"] for row in profile])
+    request_errors = np.asarray([row["request_errors"] for row in profile])
+    print("brake-entry net tracking: " +
+          f"{len(profile)} same edge(s), median aEgo-carControl at " +
+          ", ".join(f"{age:.1f}s {value:+.3f}" for age, value in
+                    zip((0.2, 0.5, 0.8, 1.0), np.median(request_errors, axis=0), strict=True)) + " m/s^2")
     print("brake-entry tracking: " +
           f"{len(profile)} sustained coast-to-brake edge(s), median aEgo-wire at " +
           ", ".join(f"{age:.1f}s {value:+.3f}" for age, value in
