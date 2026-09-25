@@ -5545,3 +5545,106 @@ current raw `-0.30` road-speed brake entry.** Do not use a global threshold
 change to mask the upstream lead-estimate cycle; pursue command-conditioned
 Honda brake entry/release response only with a source-compatible mechanism
 that improves both the early and late tracking phases.
+
+## 2026-09-25 — steep-climb near-zero gas response and bounded Honda candidate
+
+Routes `00000025--65f310df96`, `00000026--a324cbacbc`, and
+`00000027--543105a0ab` are full-rate, Alpha Long, standard-personality,
+Experimental-off drives on exact parent `652e1692804f` / nested
+`47196b9a4a72` with the same small-model blob
+`f030157ccd2bacbdc6d7b98358903cbacc0e0b34`. All three have ledger rows.
+Nested `47196b9a4` differs from prior `6915be202bb7` only by the positive
+low-speed gas trim; their negative-request gas behavior is source-identical.
+
+At 12:05:15–20 on route 26, median pitch was +3.6 degrees and the logged lead
+gap grew from 24.8 to 30.7 m. Plan, `carControl`, and raw `ACCEL_COMMAND`
+averaged about +0.01 m/s2, `BRAKE_REQUEST` was off, but achieved `aEgo`
+averaged -0.268 m/s2; speed fell 39.5 to 36.6 mph. At 12:05:25–31 the lead
+closed and the planner legitimately asked -0.807 m/s2; the vehicle averaged
+-0.993 m/s2, while grade-translated wire `ACCEL_COMMAND` averaged -0.592.
+When the lead pulled away again at 12:05:31–32, the requested deceleration
+weakened to -0.238 while achieved acceleration remained -1.046. Immediately
+before the driver's gas press at 12:05:32, the request and wire had risen to
+about +0.10 m/s2 but `aEgo` was still near -1.07 m/s2. This later residual is
+a separate release/vehicle-response transient; increasing uphill gas alone
+cannot be called a brake-release fix.
+
+At 12:39:52–58 on route 27, the car fell 45.3 to 40.1 mph on a +3.7-degree
+climb while plan/request/wire averaged -0.106/-0.106/-0.105 m/s2, gas was
+live, brake inactive, and achieved acceleration averaged -0.383 m/s2. The
+logged lead gap grew 31.7 to 35.1 m. At 12:40:08–16 a subsequent closing
+lead caused real planner braking (-0.220 m/s2 mean); grade-adjusted wire was
+-0.148 and actual was -0.396. Route 27 has no logged gas override. Both
+selected leads are vision-only in the cited windows; these logs establish the
+published lead trajectory, not independent ground truth about the lead car.
+
+A conservative 5 Hz gas-only screen required PID, no driver pedals, live gas,
+no brake, 10–26 m/s, request -0.15..+0.15 m/s2, unchanged gear, at most
+0.12 m/s2 request span over -0.5..+0.6 seconds, and +0.6-second achieved
+response. On exact current source, steep (at least 0.05 rad) lead samples
+average -0.306 m/s2 over 1.4 s/2 episodes on route 26 and -0.262 over
+2.2 s/2 episodes on route 27. Steep no-lead samples average -0.104 over
+11.8 s/8 episodes on route 25 and -0.064 over 9.2 s/11 episodes on route
+27. Mild (0.015..0.03 rad) route-27 lead and cruise samples average +0.051
+and +0.040 m/s2 over 9.6 and 55.0 seconds. Prior negative-gas-compatible
+route 1f independently has 4.4 s steep lead exposure averaging -0.327;
+its positive gas grade differs, so do not pool that arm into a source-exact
+fit. The direction is terrain-conditioned, not a basis for a blanket uphill
+gain or planner-source-specific translation. The response samples are
+observational and not an identified count-to-acceleration gain.
+
+The candidate adds a smooth steep-grade term only to Odyssey `GAS_COMMAND`
+mapping around -0.10..+0.20 m/s2, at pitch above 0.03 rad and speed above
+5 m/s (smoothly reaching full effect at 8 m/s). It reaches at
+most +0.15 m/s2 of lookup input near zero request by 0.055 rad pitch, is
+zero at the request-band edges and below the pitch threshold, and preserves
+the prior positive/negative grade maps elsewhere. Raw `ACCEL_COMMAND`,
+gas/brake domain selection, low-speed/stopping behavior, `-60` bridge,
+brake grade translation, DBC, Panda safety, and lateral control are unchanged.
+The new term is applied after domain selection, capped at 0.15 m/s2 lookup
+input, and allowed to rise by at most 20 opaque counts per 50 Hz update.
+It is suppressed while the negative-gas bridge is active; this preserves the
+bridge's first live-gas step rather than adding the full correction to it.
+It does not address the separate planner-requested catch/brake cycle or
+Honda's late brake-release response.
+
+Two-controller frozen-input replay against the exact incumbent function
+changes active gas on routes 25/26/27 for 52.31/5.96/77.90 seconds, with
+median changed-frame increases of 13/41/22 opaque counts and maxima
+100/137/137. All changed frames increase gas; `ACCEL_COMMAND` and
+`BRAKE_REQUEST` are identical on every replay frame. In route 26's
+12:05:15–19 climb window the candidate increases gas by up to
+137 counts; in route 27's 12:39:53–58 window it changes 2.05 seconds
+and adds up to 137 counts. Replay cannot predict the closed-loop vehicle
+response or certify that these added counts are optimal.
+Across routes 25/26/27, the 99th-percentile adjacent continuous-gas step
+changes from 34/36/28 to 32/34/25 counts; the maxima remain
+265/270/261 counts, and the counts of steps above 100 remain 3/3/10.
+An earlier unslewed candidate raised route 27's maximum from 261 to 394
+counts at a bridge exit and was changed before publication.
+
+The focused Honda helper test and actual Panda-TX rail test both fail when
+the new cap is deliberately set to zero and pass when restored. Raising the
+new-gas rise limit to 1,000 counts deliberately fails the decoded
+bridge-exit test; restoring 20 passes. The helper checks monotonicity of
+the combined gas map and continuity across the four request boundaries and
+multiple pitches, while the decoded rail test checks the bridge-exit rise.
+The active Odyssey rail suite passes 24 tests/60 subtests;
+Honda helper/safety passes 256 tests/244 skips/20 subtests. Standard
+`preflash.py` passes seven archived Odyssey interface/model cases plus the
+24 rail tests after its official fixture was fetched. A second seven-case
+run against local route 26 also passes. Root/nested Ruff and diff checks
+pass. The nested suite excluding the unrelated MISRA mutation harness gives
+3,600 passes and 1,677 skips; the unfiltered run has exactly three MISRA
+mutation-harness failures because its nested `uv sync`/Cppcheck environment
+is unavailable, with no C or safety-source changes in this candidate.
+
+**Decision: CHANGE to an unpromoted, bounded gas-only supervised road
+candidate.** Keep the exact incumbent root/nested pair reachable. Once
+published and guardedly deployed offroad, inspect source-compatible steep
+near-zero lead and no-lead gas response, gas handoff steps, lead-gap loss,
+overshoot, and brake timing. Retire or reshape for a positive surge,
+gas pulsing, no-lead over-response, worse following, or unsafe domain
+behavior. Device health and replay remain distinct from road proof.
+The nested candidate is committed linearly on `ody-op` as `1ff3bb131`;
+the paired parent publication and device state are recorded separately.

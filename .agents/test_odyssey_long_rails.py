@@ -100,6 +100,29 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert abs(rows[4.0] - rows[30.0]) <= 1
     assert abs(rows[14.0] - (rows[30.0] - 200)) <= 1
 
+  def test_steep_uphill_near_zero_gas_load_keeps_raw_accel_and_safety(self):
+    values = {}
+    for pitch in (0.0, 0.06):
+      rejects, seen = _run(True, [0.2] * 120 + [0.0] * 120,
+                           pitch=pitch, vego=18.0)
+      assert not rejects
+      assert len(seen) == 120
+      assert all(accel == 0 and brake == 0 for accel, _, brake in seen[-10:])
+      values[pitch] = np.median([gas for _, gas, _ in seen[-10:]])
+    assert 120 <= values[0.06] - values[0.0] <= 140
+
+  def test_steep_uphill_gas_load_rises_smoothly_after_bridge(self):
+    rows = {}
+    for pitch in (0.0, 0.06):
+      rejects, seen = _run(True, [-0.10] * 200 + [0.0] * 20,
+                           pitch=pitch, vego=18.0)
+      assert not rejects
+      rows[pitch] = [gas for _, gas, _ in seen]
+      assert all(gas == -60 for gas in rows[pitch][:100])
+    assert rows[0.06][100] == rows[0.0][100]
+    assert 0 < rows[0.06][101] - rows[0.0][101] <= 20
+    assert 120 <= rows[0.06][-1] - rows[0.0][-1] <= 140
+
   def test_brake_command_applies_only_road_speed_pid_grade_translation(self):
     """Grade translation must preserve raw level, low-speed, stopping, and missing-pose commands."""
     for name, vego, state, pitch in (

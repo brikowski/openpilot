@@ -220,6 +220,18 @@ closed-loop gain. The guarded offroad switch, build, reboot, and exact-pair
 health checks passed; that is not road validation. Keep or retire this
 unpromoted trial from source-compatible road response.
 
+The 2026-09-25 full-rate routes `00000025--65f310df96`,
+`00000026--a324cbacbc`, and `00000027--543105a0ab` identify a separate
+steep-climb near-zero gas-response gap despite close planner/request/wire
+agreement. Route 26's 12:05 override also includes legitimate planner
+braking and a distinct late vehicle-response transient; do not treat either
+as cured by added uphill gas. Nested `1ff3bb131` is an unpromoted,
+speed-gated, bounded, bridge-slewed gas-only candidate on `ody-op`.
+Its exact-input replay leaves `ACCEL_COMMAND` and brake domains unchanged
+and avoids enlarging the incumbent maximum live-gas step. This is software
+evidence, not road improvement. Judge steep lead and no-lead response,
+bridge exits, and overshoot from source-compatible post-deployment logs.
+
 Alpha Long remained enabled at the latest device verification. Do not disable it for this trial;
 Honda CMBS is unavailable while it is active. The guarded deployment verified
 clean exact SHAs, an idle updater with no
