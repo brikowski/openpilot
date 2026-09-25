@@ -6049,6 +6049,10 @@ git diff whitespace passes. No nested runtime behavior or device settings were c
 
 ## 2026-09-25 — feedback direction-veto counterfactual
 
+Replay setup correction: the measurements in this section used the default 1600 gas map and
+controlsd-clock replay. They are superseded by the corrected 2000-map/card-cycle rerun below.
+Preserve them as an audit trail, not current command-shape evidence.
+
 Audited the deployed `f697fa4c6` response helper before extending it into coordinated control.
 Its request-direction guard limits the correction target, then slews the existing correction
 toward that target. Earlier prose saying positive correction cannot be inherited at all on a
@@ -6144,3 +6148,103 @@ count is required. These logs remove the earlier road-evidence availability bloc
 gas/brake implementation remains unfinished. Seventy focused tests and configured lint pass;
 source-table mutations fail as intended. This commit changes diagnostics/evidence only, not
 vehicle runtime, Alpha Long settings, or the deployed nested source.
+
+## 2026-09-25 — gas replay initialization/timing repair and matched feedback response
+
+Current nested source remains `f697fa4c6588839976b00218f584916632747dcb`. No vehicle-runtime
+change is included here. Two diagnostic defects were found while reconstructing route 28's
+uphill response shortfall:
+
+- Honda's interface initializes the Odyssey class-level gas lookup to `[0, 2000]`, outside
+  serialized CarParams. Direct controller construction left replay at the default `[0, 1600]`.
+  Replay now invokes parameter construction to initialize candidate platform constants, but
+  retains the original recorded CarParams object and all its fields. It never invokes ECU init.
+- card samples carControl before publishing carState and applies that snapshot on its send
+  cycle. Updating on every carControl publication did not reproduce that ordering. Replay now
+  sorts relevant events, snapshots control at carState, and updates on recorded controller
+  sendcan cycles. Separate startup UDS/fingerprinting sends are excluded by the absence of
+  Honda's every-cycle STEERING_CONTROL. Only the first longitudinal phase is seeded; later
+  mismatches are not hidden by phase resets.
+
+This invalidates prior absolute replay gas magnitudes, step/exposure summaries, and claims of
+same-source replay fidelity that relied only on ACCEL_COMMAND. It does not mean the device ran
+the wrong gas map, invalidate raw road measurements, or establish a physical response change.
+Older counterfactuals must be rerun with corrected setup before reuse. Replay output now records
+the clock and gas map and compares GAS_COMMAND on exact send timestamps, explicitly reporting
+unpaired cycles and domain disagreements rather than shifting timestamps to improve agreement.
+
+Current-source full-route checks using `.agents/replay_carcontroller.py`:
+
+| Full-rate route | Paired physical ACC_CONTROL frames | Exact GAS_COMMAND matches | Active-gas matches | Unpaired frames |
+| --- | ---: | ---: | ---: | ---: |
+| `00000028--0a9feaa46c` | 72,823 | 72,823 | 14,735 / 14,735 | 0 |
+| `00000029--8532e5621f` | 54,177 | 54,177 | 16,848 / 16,848 | 0 |
+
+The routes record parent `771287d09ff8f1b76e3dd71627417d53e90da051` and nested f697 above.
+Maximum gas error is zero, including inactive-domain values. This proves gas-command
+reconstruction on these inputs, not ECU acceptance, physical improvement, or a full-payload CAN
+equivalence claim. The separate carOutput acceleration RMS is still ~0.0063/0.0051 m/s² because
+that older summary interpolates an asynchronously published, preceding-cycle actuator output;
+do not confuse it with this exact-cycle physical gas comparison.
+
+An independent chronological replay (`/private/tmp/ody_replay_wire_audit.py`) reproduces the same
+gas commands and reconstructs the route-28 event, relative to first carControl publication:
+
+| Seconds | Mean request | Mean aEgo | Recorded/replayed gas | Mean feedback correction |
+| --- | ---: | ---: | ---: | ---: |
+| 379..381 | -0.095 | -0.197 | 152.8 | +19.2 |
+| 381..382 | -0.186 | -0.286 | 106.3 | +20.5 |
+| 382..382.5 | +0.535 | -0.102 | 867.6 | +4.0 |
+| 382.5..383 | +0.777 | +0.128 | 1120.9 | +30.0 |
+| 383..383.5 | +0.776 | +0.185 | 1188.6 | +97.6 |
+
+Request/aEgo are m/s²; gas/correction are opaque counts. History stays full (26 entries), so
+an observer reset is not causing this shortfall. The feedback nears its 100-count bound late in
+the transient. Its gear guard consumes gearShifter (drive/reverse/etc.), not the transmission's
+9→8 gear change observed near request onset. The driver's later disengagement truncates the
+response. This distinguishes a saturated transient from the sustained near-zero hill gap;
+neither alone identifies a safe larger gain/cap or a brake calibration. Do not label it cured.
+
+Road-only matched screen (`/private/tmp/ody_feedback_matched.py`): baseline full routes
+`00000025--65f310df96`, `00000026--a324cbacbc`, `00000027--543105a0ab` resolve to nested
+`47196b9a4a72f4509f9cddd5d114d44bdd46e167`; candidates are the two f697 routes above. Source
+diff and model/mode provenance were established in the preceding receipt. Eligibility requires
+PID/longActive, no driver pedals, positive live gas and no brake bit, v>=8 m/s, finite response,
+gear/RPM, pitch magnitude<0.09, request -0.3..1.5, and wire-request disagreement<0.05. The whole
+±0.6 s window must remain eligible with request span<=0.10; exclude transmission gear edges
+±1.5 s and timestamp-gap neighborhoods. Sample every 20 control frames (~5 Hz), then match
+without reuse on exact gear/lead/plan source and speed/request/pitch/RPM tolerances of
+1.5 m/s, 0.10 m/s², 0.01 rad, 300 RPM. Test half and 1.5× tolerances and response offsets
+0/0.3/0.6 s. This is exploratory observational conditioning, not an identified causal model.
+
+| Nominal matching group | Matched pairs / candidate-baseline episodes | Mean absolute aEgo-request, candidate / baseline, at 0 / 0.3 / 0.6 s |
+| --- | --- | --- |
+| All eligible gas | 838 / 38-43 | .0818/.0868; .0769/.0791; .0815/.0851 |
+| Uphill near-zero (pitch>=.02, request ±.15) | 518 / 23-33 | .0732/.0796; .0706/.0731; .0698/.0770 |
+| Steep near-zero (pitch>=.05) | 32 / 3-6 | .1040/.1059; .0949/.1342; .0960/.1094 |
+| Positive request (.15..1.5) | 34 / 4-4 | .1482/.1319; .1232/.1476; .1587/.1592 |
+
+Broad uphill-near-zero improvement remains small but has the same direction across all tested
+offsets/tolerances (0.6 s tight/loose: .0684/.0753 and .0710/.0779). Steep matching is sensitive
+to timing: the tight zero-offset comparison is slightly worse (.1035/.1005), and median gas
+separation is only +2.5 counts at nominal matching. Positive-request results change with timing
+and match tolerance, including tight 0.6 s .1307/.0938 versus loose .1435/.1571. These do not
+support a broad tracking-improvement claim or blindly increasing correction authority. They
+also do not justify retiring feedback merely because it has not solved the whole problem.
+
+Corrected direction-veto twin replay of baseline routes 26/27, using current f697 behavior on
+frozen inputs, supersedes the earlier table: flagged frames 14/41, of which 13/32 still agree
+with contemporaneous request-minus-aEgo sign; changed wire frames 14/45; maximum gas differences
+90/71 counts. Immediate post-slew sign veto increases >100-count same-domain steps from 5→6
+and 9→11. Maximum steps remain 325/248; p99 changes 47.31→48.31 and stays 42. Non-gas payload
+bits (excluding checksum), other messages, addresses/buses, and send counts still match across
+twins. Decision remains not to deploy this standalone veto: no established response benefit,
+and it introduces additional command discontinuities. This is not a closed-loop result.
+
+Decision: keep deployed feedback as an unpromoted baseline, retain the corrected replay, and
+continue coordinated gas/brake response work from the identified persistent and transient
+errors. No added stop intent, brake latch, upstream behavior change, authority increase, or
+Alpha Long setting change. Seventy-three focused tests and configured lint pass. Deliberately
+removing platform initialization, sampling the post-state control, counting diagnostic sends,
+or hiding unmatched wire cycles makes the corresponding regression fail. Nested source is
+unchanged; this is diagnostic/evidence publication and does not require a device deployment.

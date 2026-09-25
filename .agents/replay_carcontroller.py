@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Open-loop counterfactual replay of honda/carcontroller.py over a recorded route.
 
-Drives CarController directly with the route's own carControl (the planner command) and carState
-(the car's recorded response), exactly as card.py does -- card passes the capnp readers straight
-into CI.apply, so the controller duck-types on them and no openpilot native build is needed.
+Drives CarController with the route's carControl request and recorded carState response on
+logged card send cycles. Like card.py, each state publication uses the control sampled before
+that state, not the next controlsd publication. This reconstructs subscription timing from log
+timestamps; same-source wire agreement must verify it before interpreting internal state.
 
 Because both inputs are recorded, they are byte-identical across opendbc branches: any difference
 in the resulting wire command (ACCEL_COMMAND) is purely our carcontroller. That makes the replay
@@ -25,9 +26,10 @@ from pathlib import Path
 import numpy as np
 
 from openpilot.tools.lib.logreader import LogReader
-from opendbc.car import Bus
+from opendbc.car import Bus, gen_empty_fingerprint
 from opendbc.car.values import PLATFORMS
 from opendbc.car.honda.carcontroller import ODYSSEY_RESPONSE_DELAY_FRAMES, CarController
+from opendbc.car.honda.interface import CarInterface
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tuning_metrics import causal_lpf, windowed_jerk
@@ -36,10 +38,64 @@ from validate_log import GAS_INACTIVE, JERK_SMOOTH_TAU, JERK_WIN_S, _local_segme
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"
 
 
+def make_replay_controller(recorded_params):
+  """Initialize candidate platform constants but retain the route's recorded CarParams.
+
+  Honda's interface sets class-level gas maps outside the serialized CarParams. Constructing
+  only CarController silently leaves the default map in place. The throwaway parameters below
+  initialize those constants; they must not replace recorded flags, limits, or tuning.
+  This calls parameter construction only, never the interface's ECU-disabling init method.
+  """
+  CarInterface.get_params(recorded_params.carFingerprint, gen_empty_fingerprint(),
+                          list(recorded_params.carFw), recorded_params.openpilotLongitudinalControl,
+                          False, False)
+  dbc = PLATFORMS[recorded_params.carFingerprint].config.dbc_dict
+  return CarController({Bus.pt: dbc[Bus.pt]}, recorded_params)
+
+
 def gas_command_samples(mono, sends):
   """Keep physical Alpha Long ACC_CONTROL frames, including repeated transmitted values."""
   return [(mono / 1e9, int.from_bytes(dat[:2], "big", signed=True))
           for addr, dat, bus in sends if addr == 0x1DF and bus == 1]
+
+
+def replay_inputs(messages):
+  """Yield send cycles with the state and control card could have consumed.
+
+  Input must be chronological. card samples carControl before publishing carState, and then
+  actuates that snapshot; a newer carControl arriving before sendcan belongs to the next cycle.
+  Honda sends STEERING_CONTROL every controller cycle. Exclude separate UDS/fingerprinting
+  sends, which must not advance controller state or the 50 Hz longitudinal phase.
+  """
+  latest_control = control = state = None
+  for message in messages:
+    kind = message.which()
+    if kind == "carControl":
+      latest_control = message.carControl
+    elif kind == "carState":
+      state = message.carState
+      control = latest_control
+    elif (kind == "sendcan" and state is not None and control is not None and
+          any(frame.address in (0xE4, 0x194) for frame in message.sendcan)):
+      yield message, control, state
+
+
+def gas_wire_comparison(recorded, replayed):
+  """Compare actual TX cycles without shifting timestamps to maximize agreement."""
+  rec, rep = dict(recorded), dict(replayed)
+  if len(rec) != len(recorded) or len(rep) != len(replayed):
+    raise ValueError("multiple ACC_CONTROL frames at one send timestamp")
+  shared = rec.keys() & rep.keys()
+  pairs = np.asarray([(rec[t], rep[t]) for t in sorted(shared)], dtype=float).reshape(-1, 2)
+  error = np.abs(pairs[:, 0] - pairs[:, 1])
+  gas = np.all(pairs > GAS_INACTIVE, axis=1)
+  return {"paired": len(shared), "recorded_unpaired": len(rec.keys() - rep.keys()),
+          "replayed_unpaired": len(rep.keys() - rec.keys()),
+          "exact": int(np.sum(error == 0)),
+          "max_abs_error": float(np.max(error)) if len(error) else None,
+          "active_gas_paired": int(np.sum(gas)),
+          "active_gas_exact": int(np.sum(gas & (error == 0))),
+          "active_gas_max_abs_error": float(np.max(error[gas])) if gas.any() else None}
 
 
 def same_domain_gas_steps(samples):
@@ -92,37 +148,39 @@ def main(argv=None):
       sys.exit(f"no local segments for {seg_range}")
   else:
     src = seg_range
-  msgs = list(LogReader(src))
+  streams = {"carParams", "carControl", "carState", "carOutput", "sendcan"}
+  msgs = sorted((m for m in LogReader(src) if m.which() in streams), key=lambda m: m.logMonoTime)
 
   CP = next(m.carParams for m in msgs if m.which() == "carParams")
-  dbc = PLATFORMS[CP.carFingerprint].config.dbc_dict
-  cc = CarController({Bus.pt: dbc[Bus.pt]}, CP)
+  cc = make_replay_controller(CP)
 
   cs_shim = _CSShim()
   t, requested, wire, active, sendcans, gas_feedback, pitch, aego, feedback_age = [], [], [], [], [], [], [], [], []
   rec_t, rec_wire, rec_gas, replay_gas = [], [], [], []
   for m in msgs:
     w = m.which()
-    if w == "carState":
-      cs_shim.out = m.carState
-    elif w == "carOutput":
+    if w == "carOutput":
       # the wire the OLD controller actually put out on this drive (the baseline arm)
       rec_t.append(m.logMonoTime / 1e9)
       rec_wire.append(float(m.carOutput.actuatorsOutput.accel))
     elif w == "sendcan":
       rec_gas.extend(gas_command_samples(m.logMonoTime, [(f.address, f.dat, f.src) for f in m.sendcan]))
-    elif w == "carControl" and cs_shim.out is not None:
-      actuators, can_sends = cc.update(m.carControl, cs_shim, m.logMonoTime)
-      t.append(m.logMonoTime / 1e9)
-      requested.append(float(m.carControl.actuators.accel))
-      wire.append(float(actuators.accel))
-      active.append(bool(m.carControl.longActive))
-      sendcans.append((m.logMonoTime, can_sends))
-      replay_gas.extend(gas_command_samples(m.logMonoTime, can_sends))
-      gas_feedback.append(float(cc.odyssey_gas_response.correction))
-      pitch.append(float(m.carControl.orientationNED[1]) if len(m.carControl.orientationNED) == 3 else np.nan)
-      aego.append(float(cs_shim.out.aEgo))
-      feedback_age.append(len(cc.odyssey_gas_response.requests))
+  for m, control, state in replay_inputs(msgs):
+    cs_shim.out = state
+    # Seed only the initial longitudinal phase; do not hide missing cycles by reseeding later.
+    if not t and CP.openpilotLongitudinalControl and CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR":
+      cc.frame = 0 if any(f.address == 0x1DF and f.src == 1 for f in m.sendcan) else 1
+    actuators, can_sends = cc.update(control, cs_shim, m.logMonoTime)
+    t.append(m.logMonoTime / 1e9)
+    requested.append(float(control.actuators.accel))
+    wire.append(float(actuators.accel))
+    active.append(bool(control.longActive))
+    sendcans.append((m.logMonoTime, can_sends))
+    replay_gas.extend(gas_command_samples(m.logMonoTime, can_sends))
+    gas_feedback.append(float(cc.odyssey_gas_response.correction))
+    pitch.append(float(control.orientationNED[1]) if len(control.orientationNED) == 3 else np.nan)
+    aego.append(float(cs_shim.out.aEgo))
+    feedback_age.append(len(cc.odyssey_gas_response.requests))
 
   t = np.array(t)
   requested = np.array(requested, dtype=float)
@@ -215,6 +273,8 @@ def main(argv=None):
 
   res = {
     "seg_range": seg_range,
+    "replay_clock": "recorded_sendcan_with_pre_state_control_snapshot",
+    "gas_lookup_values": list(cc.params.BOSCH_GAS_LOOKUP_V),
     "frames": int(len(t)), "engaged_frames": int(act.sum()),
     "replayed": {**stats(wire, act), "domain_flips_open_loop_only": flips,
                  "domain_forceful_open_loop_only": forceful,
@@ -230,6 +290,7 @@ def main(argv=None):
     "replay_vs_recorded_rms": float(np.sqrt(np.nanmean((wire[act] - rec[act]) ** 2))) if act.sum() else None,
     "same_domain_gas_steps": {"replayed": same_domain_gas_steps(replay_gas),
                               "recorded": same_domain_gas_steps(rec_gas)},
+    "same_cycle_gas_wire_comparison": gas_wire_comparison(rec_gas, replay_gas),
     "gas_feedback": {
       "positive_seconds": float(np.sum(gas_feedback > 0) * dt),
       "negative_seconds": float(np.sum(gas_feedback < 0) * dt),
