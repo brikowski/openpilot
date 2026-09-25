@@ -6467,3 +6467,73 @@ retaining physical response state. Keep current nested runtime unchanged. Any fu
 feedback needs to distinguish target-gear transition from actual transient response and show a
 bounded, correctly signed correction across comparable shift and no-shift exposure. The raw
 `carControl` request, active domains, upstream stop intent, and Alpha Long state remain untouched.
+
+## 2026-09-25 — low-speed trim, grade cap, and response-feedback overlap
+
+Screened the existing 200-count positive-gas trim and `+1.0 m/s²` grade-adjusted gas-lookup cap
+against the full-rate current-source routes 28/29, using the same nested `f697fa4c6588`, small
+model blob `f030157ccd2bacbdc6d7b98358903cbacc0e0b34`, Alpha Long, and standard
+personality. Route 27 is the exact nested `47196b9a4a72` comparison source with the same model,
+mode, trim, grade cap, DBC, and safety; the Honda source diff adds only gas-response feedback.
+These are observational response comparisons. Scratch reproductions are
+`/private/tmp/ody_trim_feedback_audit.py`, `/private/tmp/ody_grade_cap_audit.py`, and
+`/private/tmp/ody_feedback_gain_audit.py`; recorded-current gas from the controller replay is
+exact for all 72,823 and 54,177 route-28/29 frames. Cached receive-CAN pitch/gear are ZOH and
+not independently certified fresh at every controller call.
+
+The existing stable, near-level trim-band mask (8–24 m/s, request +0.4..+2.0 m/s², pitch
+`|p|<0.03`, no driver pedals, stable gear/request, 0.6 s future response) gives 34 10-Hz samples
+over nine mask-contiguous spans on route 28 and 13 over three on route 29. Route 28 has 20
+samples with future overshoot >0.1 m/s², 18 of those with negative replayed feedback; its seven
+under-response samples all lie near t=108.7–110.2 s in fifth gear, six with positive feedback.
+Route 29 has eight future-overshoot samples, none with positive feedback, and no >0.1 m/s²
+undershoot samples. The fifth-gear route-28 undershoot interval's pitch rises from about +0.028
+to +0.045 rad; the near-level cutoff admits only brief slices of an uphill passage. Therefore a
+blanket removal of the trim would also raise gas in the exposed overshoot samples, and the
+trim/feedback corrections are not generally fighting each other.
+
+For a separate uphill screen, require active PID, positive gas, no pedals or brake, speed 8–30
+m/s, request +0.6..+1.5 m/s² stable within 0.10 over 1 s, pitch >+0.02 rad, unchanged target
+gear outside ±1.5 s of an edge, valid future state, and a 10-Hz sample stride. A *proxy* for
+grade removed by the lookup cap is `request + 0.6·9.81·sin(raw pitch) -
+max(request, min(request + 0.6·9.81·sin(raw pitch), 1.0))`; the production code instead uses
+filtered pitch and a pose-sign gate. At proxy loss >0.05 m/s², fifth-gear 0.6-s median
+`aEgo(t+0.6)-carControl(t)` is -0.139, -0.130, and -0.104 m/s² on routes 27, 28, and 29,
+from 77/96/82 correlated samples across 1/2/2 mask-contiguous spans. Fourth-gear cap exposure
+is 9/1/9 samples on those routes and has positive median response error on 27 and 29. The
+fifth-gear negative medians remain at 0.4- and 0.8-s horizons and with a stricter 0.10-m/s²
+cap-loss cutoff. This is a repeatable Honda-response shortfall, not proof that removing the cap
+would improve it; speed, gear, and powertrain response differ between the fourth- and fifth-
+gear exposure.
+
+On current-source capped fifth-gear samples, the replayed response correction's median is
++19.6 counts on route 28 and +26.9 on route 29, versus the 200-count trim at these speeds.
+Its sign opposes the future 0.6-s response error in 66/96 and 77/82 sampled rows respectively;
+the route-28 wrong-sign rows mostly have small future errors (median +0.045 m/s²). A separate
+one-to-one contemporaneous match of route 27 versus pooled routes 28/29 in capped fifth-gear
+conditions, with exact gear/lead and speed/request/pitch tolerances 2 m/s, 0.10 m/s², 0.015
+rad, yields 65 correlated pairs. The feedback-source gas residual is median +28.8 counts,
+response-error median improves by +0.037 m/s², and MAE is 0.155→0.111 m/s². Halving the
+matching tolerances leaves 33 pairs, +16.6 gas counts, and MAE 0.168→0.112; median error
+change becomes zero. This supports the direction of the existing feedback but does not identify
+an inverse gas gain from passive observational data.
+
+A frozen twin replay increased only the existing feedback slope from 200 to 350 or 500
+counts/(m/s²), retaining the ±100-count feedback bound, 10-count/update slew, domain selection,
+and all other CAN payload fields besides gas and its checksum. At 350, fifth-gear cap-exposed
+gas changes by median +14/+18 counts on routes 28/29; at 500 it changes by +22/+37. Across
+*all* gas frames, however, the larger gain changes 12,097/14,570 frames on those routes, with
+maximum same-frame differences of
+60 counts. Same-domain gas-step p99 is 42→44 and 32→33 counts; >100-count step counts do not
+increase. On the stable capped fifth-gear cohort, the 500-gain command change points toward
+the recorded 0.6-s error in 67/96 and 76/82 rows, but away in 20 and one. This is command
+shape and sign alignment on the **unchanged recorded vehicle response**, not predicted closed-
+loop performance; gain 350 has nearly the same sign counts. A global slope increase would alter
+many unrelated gas situations, so this replay alone does not justify that runtime change.
+
+Decision: KEEP the trim and current bounded feedback as unpromoted; RETIRE blanket trim removal
+and a simple global feedback-gain increase as current proposals. CHANGE the next design target
+to a dynamic, cap-aware correction that uses persistent achieved-versus-requested acceleration
+without changing raw `ACCEL_COMMAND`, gas/brake domains, brake release, or upstream stopping
+intent. Assess its sign and transition behavior in frozen replay and the existing full-rate
+evidence before selecting a supervised road trial. No runtime or device setting changed here.
