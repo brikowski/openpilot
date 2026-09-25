@@ -5946,3 +5946,103 @@ its correlation alone cannot resolve that semantic question. Nor does this prove
 acceleration delay, transient performance, model linearity across gear/speed, or a safe inverse
 gas calibration. Separate wire-to-CAR_GAS behavior from CAR_GAS-to-acceleration response when
 designing dynamic feedback. No runtime change follows from this exploratory fit alone.
+
+## 2026-09-25 — gas-input to net-acceleration model, whole-route holdouts
+
+Extended the preceding screen in `/private/tmp/ody_acceleration_model_screen.py` to route 25
+as well as 26/27, all exact nested `47196b9a4a72`. Preserve the same two-second, same-target-gear,
+continuous active gas eligibility. Scored 10 Hz rows are 1530/206/2415 respectively; no gas/brake
+entry or release claim follows from this exposure. These are correlated observations.
+
+For each input (wire GAS_COMMAND/1000 or received CAR_GAS/100), fit measured aEgo as
+`b0*LPF(input,tau)(t-delay) + b1*vEgo²/1000 + b2*9.81*sin(pitch) + b3`. Pitch here is
+the logged orientation, not the port's filtered pitch. Use the preceding 25 delay/tau pairs;
+fit on two routes with equal total squared-error weight per route, select delay/tau on training
+error, then evaluate untouched coefficients on the third route. No training sample comes from
+the held-out route, but ordinary closed-loop observational confounding still applies.
+
+| Input | Held-out route | Selected delay / tau (s) | Dynamic RMSE | Static-model RMSE | Dynamic bias |
+| --- | --- | --- | ---: | ---: | ---: |
+| Wire gas | 25 | 0.1 / 0.25 | 0.1315 | 0.1260 | +0.0873 |
+| Wire gas | 26 | 0.1 / 0.25 | 0.0827 | 0.1159 | +0.0463 |
+| Wire gas | 27 | 0.1 / 0.25 | 0.1193 | 0.1308 | -0.0354 |
+| CAR_GAS | 25 | 0.1 / 0.25 | 0.0994 | 0.0922 | +0.0395 |
+| CAR_GAS | 26 | 0 / 0.5 | 0.1440 | 0.1642 | +0.0668 |
+| CAR_GAS | 27 | 0.1 / 0.25 | 0.1300 | 0.1402 | -0.0359 |
+
+Errors are m/s²; bias is predicted minus measured acceleration. Static baseline coefficients
+are independently fitted on the same training routes with delay=tau=0. The dynamic model
+improves route 26/27 prediction but slightly worsens route 25 for both inputs. It is not a
+uniform winner. CAR_GAS improves route 25 over wire gas but worsens 26/27, so it is not
+established as a superior feedback signal. Raw request-vs-aEgo RMSE on these masks is
+0.1200/0.3209/0.1823; this is a tracking descriptor, not a fair alternative fitted-model score.
+
+Wire-model coefficients (gas, speed², grade, intercept) by held-out route:
+25: [1.4686, +0.0046, -0.9588, -0.0336];
+26: [1.3876, -0.3084, -0.8804, +0.1131];
+27: [1.4204, -0.2302, -0.9401, +0.0515].
+The speed coefficient's variation, including a near-zero positive fit, warns against treating
+this as an identified drag model or independently learning its physical terms without further
+conditioning. The model omits gear-dependent gains, RPM effects, and braking dynamics.
+
+A synthetic model with known 0.1 s delay, 0.25 s smoothing, and all four independently excited
+coefficients recovers those parameters within 1e-10; removing dynamics yields MSE 0.10741
+instead of numerical zero. This checks the fitting calculation, not its physical identification.
+
+Decision: carry wire-based first-order response modeling forward as a candidate for the shared
+observer, not as an immediately deployable inverse controller or a replacement fixed delay.
+Do not transplant Nidec's pedal-response learner or claim that selecting 0.1/0.25 proves a
+universal Honda delay. Next design work must cover brake response and transitions, test robustness
+to conditioning/model error, and bound corrections to the live carControl request. No runtime
+change or device deployment is made by this analysis.
+
+## 2026-09-25 — reusable gas/brake whole-route response screen
+
+Added `.agents/inspect_response_model.py` and three focused tests. This replaces the wire-input
+portion of the scratch analysis with a repository-owned gas/brake screen; it does not add a new
+validator verdict or claim broader event coverage. It retains cached ZOH CAN, samples every
+second actual carControl timestamp (approximately 50 Hz), and scores every fifth row. The mask
+requires 2 s of uninterrupted active PID, no driver pedal, unchanged target gear, speed >=8 m/s,
+and the selected domain. Gas requires positive GAS_COMMAND and no brake; brake requires
+BRAKE_REQUEST and GAS_COMMAND=-30000. Control-grid gaps >=0.04 s restart exposure. Independent
+sent-frame freshness and low-speed/transition behavior are explicitly outside this screen.
+
+Command:
+` .venv/bin/python .agents/inspect_response_model.py --opendbc 47196b9a4a72f4509f9cddd5d114d44bdd46e167 00000025--65f310df96 00000026--a324cbacbc 00000027--543105a0ab `
+
+The CLI requires exact full nested provenance in the authoritative ledger before loading routes;
+it rejects route 05 and duplicate routes. At least two routes are mathematically necessary to
+separate training and evaluation here, not a general route-count gate for tuning. Each held-out
+route is excluded from coefficient fitting and delay/tau selection. Same route-balanced linear
+model/grid as above; brake input is signed metric ACCEL_COMMAND, zero outside brake domain,
+while gas input is GAS_COMMAND/1000, zero outside positive gas domain. Negative brake input must
+not pass through the scratch gas helper's nonnegative clipping.
+
+Eligible rows for gas are 1521/206/2399 on routes 25/26/27. Selected gas delay/tau remains
+0.1/0.25 s on all folds. Dynamic/static held-out RMSE is 0.1259/0.1203, 0.0842/0.1233,
+0.1258/0.1352 m/s² respectively. Small differences from the scratch values follow the actual-
+timestamp sampling, domain-masked filter input, and exposure-mask changes; do not merge the two
+tables as identical samples.
+
+| Brake held-out route | Rows | Delay / tau (s) | Dynamic / static RMSE (m/s²) | Prediction bias (m/s²) |
+| --- | ---: | --- | --- | ---: |
+| 25 | 36 | 0.4 / 0.1 | 0.0911 / 0.1161 | -0.0013 |
+| 26 | 58 | 0 / 0.25 | 0.2245 / 0.2436 | +0.1231 |
+| 27 | 128 | 0.1 / 0.25 | 0.1251 / 0.1458 | -0.0189 |
+
+Brake input/speed²/grade/intercept coefficients by held-out route:
+25: [0.5898, 0.6551, -0.3800, -0.4716];
+26: [0.7168, 0.1027, -0.6625, -0.1711];
+27: [0.3932, 0.9551, -0.3348, -0.6732].
+The limited selected brake exposure and varying coefficients/dynamics do not identify a safe
+inverse brake model. Positive speed² coefficients are descriptive, not identified aerodynamic
+drag. Dynamic prediction modestly improves all three brake folds, but residual bias and
+different selected delays argue against copying the gas dynamics or deploying these coefficients.
+
+Decision: keep separate gas/brake response models as design candidates, not runtime calibration.
+The joint controller remains unfinished; this screen does not evaluate domain transitions or
+driver-intervention/low-speed behavior. Directly inverting these fits is not justified.
+Tests check causal signed-input filtering, uninterrupted/same-gear exposure, and route-balanced
+fitting. In-memory mutations that discard negative braking input, ignore gear changes, or weight
+by row count each fail their respective test. All 69 focused hook tests and tooling lint pass;
+git diff whitespace passes. No nested runtime behavior or device settings were changed.
