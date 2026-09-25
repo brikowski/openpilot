@@ -5478,6 +5478,30 @@ near-level sustained positive-response screen has zero qualifying seconds
 on route 23. **Decision: keep the unpromoted trial pending its own
 source-compatible road exposure; do not treat either route as a trial A/B.**
 
+The next calibration direction is a Honda-port-local feedforward translation
+fitted from measured command-to-response effects, not a cross-brand live
+learner or a succession of guessed gas-count offsets. `ACCEL_COMMAND` remains
+the numeric request; `GAS_COMMAND` is the opaque Honda actuator input to
+calibrate. Within one source, gas is mostly determined by request and pitch,
+so passive baseline response alone cannot identify the effect of changing
+gas independently. The deployed bounded trim supplies that perturbation.
+`.agents/compare_low_speed_gas.py` requires exact nested-source ledger
+provenance, full-rate logs, stable PID/gas-domain windows, and one-to-one
+matches on speed, request, pitch, RPM, gear, lead state, and planner source.
+It reports actual wire-gas separation and matched response under multiple
+matching tolerances; insufficient overlap or gas separation is an
+identifiability result, not evidence for a larger correction. Use the
+result to keep, reshape, or retire the trial and only then consider a
+compact conditioned feedforward map. The method does not impose a fixed
+route count or bar any later well-evidenced adaptive mechanism.
+The exact-source baseline routes 20–23 currently contribute only two
+5 Hz sampled frames (0.4 s, not independent episodes) after the comparator's PID, no-pedal,
+stable-request/gear, near-level, positive-wire, and future-state guards;
+route 20 supplies both. There is no route yet on the trial nested source.
+The current evidence therefore cannot identify a multi-parameter map or
+even the deployed trim's effect; the guarded comparison is ready to report
+whatever overlap a post-deployment route actually supplies.
+
 Route 23's five sustained coast-to-brake entries (all 20–30 m/s) repeat a
 Honda-response timing pattern seen on route 22, the same nested source:
 median `aEgo - wire ACCEL_COMMAND` is `+0.221` at 0.2 s and `+0.178 m/s2`
