@@ -6432,3 +6432,38 @@ the residual bound, ignore invalid history, change the evaluation cohort on doma
 across an intervening invalid sample, or leak held-out routes into either model/filter selection
 each fail their regression. No nested source, safety rail, lateral behavior, or Alpha Long
 setting changed. This is diagnostic/evidence publication only; no device deployment is needed.
+
+## 2026-09-25 — target-gear reset counterfactual
+
+The current `OdysseyGasResponse` gear-change guard receives `gearShifter`, which remains `drive`
+through ordinary transmission shifts. The Odyssey DBC separately decodes
+`GEARBOX_AUTO.TRANS_TARGET_GEAR` from frame 419. That signal is a *target gear*, not verified
+completion of the physical shift. A frozen-input twin replay substituted the latest extracted
+target gear only for the feedback helper's gear argument; all other Honda controller inputs and
+logic remained on the current `f697fa4c6` path. The unchanged arm matched every recorded
+`GAS_COMMAND` frame on both exact-source routes: 72,823/72,823 on
+`00000028--0a9feaa46c`, and 54,177/54,177 on `00000029--8532e5621f`, with the Odyssey
+2000-count lookup. The exploratory audit is `/private/tmp/ody_gear_guard_audit.py`; it uses
+cached receive-CAN zero-order-hold, so the substituted gear's exact card-cycle freshness is
+not independently proven. Neither replay arm can establish a counterfactual vehicle response.
+
+The substitution changes 3,919 of 14,735 active-gas frames on route 28 and 2,718 of 16,848
+on route 29, including observer-history effects after the initial edge. Within one second of a
+target-gear edge, 2,031 and 1,454 active-gas frames respectively change. Effects have both
+signs, not a uniform reduction in gas. On route 28's reported climb, target gear changes 9→8
+at about 382.37 s relative to first control publication. Between 382.65 and 383.00 s, a
+`+0.777 m/s²` request is underachieved by about `0.652 m/s²` while the reset twin sends a
+mean 1107.5 rather than 1134.8 gas counts; from 383.00 to 383.50 s both twins reach about
+1189 counts. Another 7→8 edge near 272.82 s cuts the reset twin by about 75 counts across
+34 changed frames while contemporaneous request-minus-`aEgo` is about +0.766 m/s². These
+comparisons identify command changes and the direction of the observed tracking error, not
+the causal effect of 27 or 75 gas counts on later acceleration.
+
+Decision: RETIRE the simple target-gear-reset proposal as an unpromoted controller change. It
+would remove gas during two already-underachieved requests and has no demonstrated smoothing or
+tracking benefit. This does **not** establish that ignoring shifts is optimal, and it does not
+conflict with resetting the *unexplained residual estimate* on gas/brake domain changes while
+retaining physical response state. Keep current nested runtime unchanged. Any future shift-aware
+feedback needs to distinguish target-gear transition from actual transient response and show a
+bounded, correctly signed correction across comparable shift and no-shift exposure. The raw
+`carControl` request, active domains, upstream stop intent, and Alpha Long state remain untouched.
