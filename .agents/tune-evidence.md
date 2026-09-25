@@ -5759,3 +5759,33 @@ on empty controller ticks in memory fails the transmitted-frame test.
 This diagnostic correction makes no vehicle behavior change. Device
 inventory still contains no new unvalidated drive; the candidate remains
 unpromoted pending its physical response evidence.
+
+### Feedback authority audit (2026-09-25)
+
+Device inventory again contains no new unvalidated route. Two independent
+instances of exact nested `f697fa4c6588` were replayed on the same recorded
+carControl/carState frames from full-rate routes 25–27. The reference instance
+returned zero from its gas-response update; all other controller code and
+inputs were identical. Every transmitted frame was compared: addresses,
+buses, all non-ACC_CONTROL payloads, and all ACC_CONTROL bits except gas and
+its checksum remained identical across 104,882/14,694/59,028 longitudinal
+frames. This directly checks that the response correction cannot alter the
+brake bits, numeric acceleration request, steering, or message schedule in
+these frozen-input routes.
+
+Using one 20 ms period per transmitted frame, correction magnitude above one
+count was proposed for 176.18/31.86/258.28 s and reached CAN for
+174.66/31.62/253.96 s. Bounds attenuated it by more than one count for
+3.06/0.38/7.20 s; proposed nonzero corrections were reduced to at most one
+count for 1.52/0.24/4.32 s. Median transmitted gas in the attenuated samples
+was zero on all three routes, at median raw requests -0.184/-0.150/-0.197
+m/s². Gas-only feedback has no further negative authority once gas reaches
+zero; this is not evidence to alter raw brake selection.
+
+Effective gas differences ranged -70..+96, -100..+86, and -82..+100 counts.
+The internal correction reached its cap for 0.00/1.32/0.06 s: negative on
+route 26 and positive on route 27. Thus these traces do not support raising
+the cap to address the observed hill shortfall. This audit establishes
+command application and bounds, not physical improvement. Decision: retain
+the deployed candidate and its bounds while its road response is unresolved;
+do not add another correction based solely on the frozen-input residual.
