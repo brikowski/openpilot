@@ -5464,6 +5464,20 @@ deploy gate and restored afterward. This proves installation health, not
 physical command-following improvement; the bounded trim remains unpromoted
 until source-compatible road response is inspected.
 
+The two additional full-rate routes pulled immediately after deployment are
+**pre-deployment** source, parent `0bd9816712b1` / nested `6915be202bb7`.
+Route `00000024--0f7a5c0d48` has 35.5 logged minutes but zero engaged
+time, so it provides no command-following exposure. Route
+`00000023--f870871d00` has 2.9 engaged minutes: gas-domain numeric
+wire-minus-request RMS is `0.0055 m/s2`, source-matched brake RMS is
+`0.0052 m/s2`, achieved-minus-request gas-domain mean is `+0.091 m/s2`
+over 124.72 seconds, and brake-domain mean is `-0.146 m/s2` over 25.56
+seconds. The latter whole-domain means mix commands, speeds, and grades;
+they do not estimate the low-speed positive-gas trim's effect. The
+near-level sustained positive-response screen has zero qualifying seconds
+on route 23. **Decision: keep the unpromoted trial pending its own
+source-compatible road exposure; do not treat either route as a trial A/B.**
+
 The next threshold screen conditions on active PID, no driver pedals, request
 `-0.30..-0.20 m/s2`, pitch magnitude below `0.03 rad`, at least 0.5 seconds
 before and 0.6 seconds after each sample continuously in the recorded coast
