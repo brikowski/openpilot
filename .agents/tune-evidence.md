@@ -6595,3 +6595,42 @@ if the fifth-gear shortfall does not improve without unacceptable regressions. U
 intent remains outside the Honda correction. Publication and deployment remain pending explicit
 confirmation of the configured remote as an approved destination; Alpha Long settings are not
 changed locally.
+
+## 2026-09-25 — smooth the cap-aware gain near level grade
+
+Before publishing or deploying the preceding unpromoted candidate, inspected its high-request
+limit: for `carControl` above the 1.0-m/s² lookup cap, the *fraction* of grade omitted is one
+even if uphill pitch tends to zero. That made the extra feedback gain jump from zero to full
+at an infinitesimal positive grade. The new continuity test deliberately failed on nested
+`f11197eef` (`1.0` rather than `<0.001` at request +1.2 m/s² and pitch +0.00001 rad).
+
+Nested `16f0ec75fa50bac3ef52a49f85256eb48d48cb5b` keeps the gas-map input and all
+previous limits unchanged. It multiplies the clipped-grade fraction by a zero-slope smoothstep
+of the actual positive grade load over the existing 0.30-m/s² grade ramp scale. The extra
+feedback gain therefore fades continuously as *clipped load*, not merely its fractional share,
+vanishes. There is no new gear- or Odyssey-route-specific threshold. The helper's second return
+value and response argument are named a `cap_weight` to distinguish this smooth weight from a
+literal clipped fraction. The raw `carControl` request, domain bits, negative request release,
+and Alpha Long setting remain untouched.
+
+The revised helper passes the new near-zero-grade continuity test and the earlier cap-boundary,
+lookup-equivalence, delay, bound, slew, and reset tests. In exact-cycle frozen replay of the
+same recorded `f697fa4c6` routes, changed gas frames move from 883→879 of 72,823 on route 28
+and 946→943 of 54,177 on route 29 relative to the unsmoothed candidate. Maximum difference
+from recorded gas is 57/60 counts, and same-domain gas-step maximum, p99, and >100-count
+counts remain 253/42/8 and 245/about-32/4. A separate recorded-wire comparison finds zero
+changed frames with non-positive `carControl` requests, inactive gas, or negative-live gas on
+either route. It also finds zero changed frames with less than 0.01 m/s² *proxy* clipped grade
+load or filtered pitch below +0.01 rad on these drives; that is exposure-specific, not a
+substitute for the mathematical continuity test. The same two short no-lead uphill request
+falls retain nine frames with at most 23/21 extra gas counts while request is still positive.
+Those remain explicit road-test risks, not closed-loop proof.
+
+The focused Honda/safety run passes 260 tests (244 skipped, 20 safety subtests); preflash passes
+seven interface/model tests and 24 command/rail tests (60 subtests). `ruff`, `ty`, and nested
+diff-whitespace checks pass. Mutating away the cap-dependent gain or returning zero cap weight
+fails the focused tests, and the pre-fix near-zero discontinuity fails the new test. No device
+build or physical response has been measured for this candidate. Decision: CHANGE the local
+road-test candidate from `f11197eef` to `16f0ec75f`; KEEP `f11197eef` reachable for the
+linear rollback history and retain `f697fa4c6` as the last road-known source. Publishing and
+guarded deployment still await explicit approval of both configured GitHub destinations.
