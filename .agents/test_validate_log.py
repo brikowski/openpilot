@@ -383,7 +383,7 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
                          "409c25925c19", "196119896d73", "147e1d732eaa", "afc133f34",
                          "359f3574d67f", "69a81e7da7f", "d50a3a4843ed", "ae81f00f905e",
                          "bef3e9148377", "da430e9591b8", "9b4cbf40f63b", "899548275b8f",
-                         "0fbe4df19eea", "ff33e79f665a", "6915be202bb7", "47196b9a4"):
+                         "0fbe4df19eea", "ff33e79f665a", "6915be202bb7", "47196b9a4a72", "f697fa4c6588"):
     _, current_threshold, valid, note = _domain_model(
       current_commit, requested, speed, pitch, windfactor, 0.01,
     )
@@ -408,11 +408,13 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   assert "0fbe4df19eea" in BRAKE_GRADE_TRANSLATION_COMMITS
   assert "ff33e79f665a" in BRAKE_GRADE_TRANSLATION_COMMITS
   assert "6915be202bb7" in BRAKE_GRADE_TRANSLATION_COMMITS
-  assert "47196b9a4" in BRAKE_GRADE_TRANSLATION_COMMITS
+  assert "47196b9a4a72" in BRAKE_GRADE_TRANSLATION_COMMITS
+  assert "f697fa4c6588" in BRAKE_GRADE_TRANSLATION_COMMITS
   assert not _brake_passthrough_expected("0fbe4df19eea")
   assert not _brake_passthrough_expected("ff33e79f665a")
   assert not _brake_passthrough_expected("6915be202bb7")
-  assert not _brake_passthrough_expected("47196b9a4")
+  assert not _brake_passthrough_expected("47196b9a4a72")
+  assert not _brake_passthrough_expected("f697fa4c6588")
 
   # Historical route provenance must retain the threshold that was actually deployed, even when
   # the current candidate's default has moved.
@@ -435,6 +437,22 @@ def test_domain_model_selects_exact_opendbc_source_semantics():
   )
   assert switch is threshold is None
   assert not valid and "unmapped" in note
+
+
+def test_deployed_and_comparison_full_revisions_resolve_brake_translation():
+  request = np.full(100, -0.5)
+  speed = np.full(100, 20.)
+  pitch = np.full(100, .05)
+  enabled = np.ones(100, dtype=bool)
+  for revision in ("47196b9a4a72f4509f9cddd5d114d44bdd46e167", "f697fa4c6588839976b00218f584916632747dcb"):
+    _, threshold, valid, _ = _domain_model(revision, request, speed, pitch, np.ones(100), .01)
+    assert valid
+    np.testing.assert_allclose(threshold, -.3)
+    expected, eligible, modeled = _expected_brake_command(revision, request, speed, pitch, enabled, enabled, .01)
+    assert modeled and eligible.all()
+    assert expected[-1] > request[-1] + .1
+    assert not _brake_passthrough_expected(revision)
+    assert not _has_learner_telemetry(revision)
 
 
 def test_expected_brake_command_models_grade_translation_only_in_eligible_state():

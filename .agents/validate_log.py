@@ -230,7 +230,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "0fbe4df19eea": -0.30,  # grade-relative brake command; raw domain selection unchanged
   "ff33e79f665a": -0.30,  # bounded uphill active-gas hold; raw brake selection unchanged
   "6915be202bb7": -0.30,  # signed positive-gas grade only; raw brake selection unchanged
-  "47196b9a4": -0.30,  # bounded positive-gas trim only; raw brake selection unchanged
+  "47196b9a4a72": -0.30,  # bounded positive-gas trim only; raw brake selection unchanged
+  "f697fa4c6588": -0.30,  # gas-response feedback only; brake selection unchanged
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -282,7 +283,8 @@ THREE_DOMAIN_COMMITS = {
   "0fbe4df19eea",  # grade-relative brake command; three-domain selection is unchanged
   "ff33e79f665a",  # bounded uphill active-gas hold; raw brake selection is unchanged
   "6915be202bb7",  # signed positive-gas grade only; raw brake selection is unchanged
-  "47196b9a4",  # bounded positive-gas trim only; raw brake selection is unchanged
+  "47196b9a4a72",  # bounded positive-gas trim only; raw brake selection is unchanged
+  "f697fa4c6588",  # gas-response feedback only; brake selection unchanged
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
@@ -293,7 +295,8 @@ BRAKE_GRADE_TRANSLATION_COMMITS = {
   "0fbe4df19eea",
   "ff33e79f665a",
   "6915be202bb7",
-  "47196b9a4",
+  "47196b9a4a72",
+  "f697fa4c6588",
 }
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
@@ -1030,8 +1033,8 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   r["vego_max"] = float(np.nanmax(vego)) if len(vego) else 0.0
   thin = r["engaged_min"] < THIN_ENGAGED_MIN
   if thin:
-    r["notes"].append(f"THIN SAMPLE: only {r['engaged_min']:.1f} min engaged - treat this row as "
-                      f"context, not evidence (rate-based checks are reported but not graded).")
+    r["notes"].append(f"LIMITED RATE EXPOSURE: {r['engaged_min']:.1f} min engaged; "
+                      f"rate-based checks are reported but not graded. Individual events remain evidence.")
 
   # === convergence ===
   # ANCHOR THIS TO THE CAR-PORT INPUT, not to longitudinalPlan.aTarget. Per the model-following

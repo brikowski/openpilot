@@ -6082,3 +6082,65 @@ command discontinuity without demonstrated tracking benefit. Carry this failure 
 coordinated observer design: current request, residual error, actuator dynamics, and domain
 authority must be considered together; neither request trend alone nor filtered old error alone
 is sufficient. Existing bounds remain unchanged, not promoted as proven optimal.
+
+## 2026-09-25 — first downloaded f697fa4c6 road evidence and validator repair
+
+Device access returned after the blocked checks. Live git reads again showed root
+`771287d09ff8f1b76e3dd71627417d53e90da051` / nested
+`f697fa4c6588839976b00218f584916632747dcb`. AlphaLongitudinalEnabled=1;
+UpdaterState was `finalizing update...`, LastUpdateException absent, and IsOnroad absent.
+Do not infer offroad state or completed updater health from those observations.
+
+The completed all-new pull downloaded and validated 44 full-rate segments (~418 MB):
+`00000028--0a9feaa46c` (25 segments, 24.4 logged / 5.9 engaged minutes) and
+`00000029--8532e5621f` (19 segments, 18.2 logged / 6.4 engaged minutes). Both record the
+exact parent/nested pair above, small model blob `f030157ccd2bacbdc6d7b98358903cbacc0e0b34`,
+Experimental=false, standard personality, Alpha Long=true. The unrelated older local route
+`00000028--342d541799` is not either new drive; resolve the entire route ID, not its counter.
+
+The first route-29 validation exposed a real diagnostic defect: f697fa4c6588 was missing from
+the source tables, suppressing domain checks and treating its expected brake-grade term as wire
+error. The comparison revision 47196b9a4a72 was also registered with only nine characters,
+where lookup uses twelve. Source diff 47196b9a4a72..f697fa4c6588 confirms brake selection and
+brake-grade translation are unchanged; only gas feedback differs. Registered both exact twelve-
+character keys in domain/threshold/brake-grade tables. Added a regression using both full SHAs;
+removing the deployed domain entry or brake-grade entry makes it fail. The restored check passes.
+Changed the short-route note to limit rate grading without declaring individual events unusable.
+No rate threshold was changed. Revalidated routes 25/26/27/29; route 28's initial validation
+already ran the corrected code. The authoritative ledger now contains the corrected results.
+
+Source-corrected brake-wire RMS is 0.0050 m/s² on route 28 and 0.0085 on route 29. The latter
+was initially reported as 0.1158 because the grade term was not recognized. Comparison routes
+25/26/27 now report 0.0149/0.0105/0.0103 source-corrected brake-wire RMS. These corrections
+change attribution, not physical aEgo: do not treat them as a road-response improvement.
+
+New-route whole-domain descriptive aEgo-minus-carControl RMS is gas 0.206/0.143 and brake
+0.276/0.282 m/s² (routes 28/29 respectively). They are unmatched mixtures, not a candidate A/B.
+Both have zero reported controlsd crashes, no steering faults, and stock 2560 steering cap.
+Lateral high-authority exposure differs substantially (7.99/0.88 s); there is no lateral change
+decision from these whole-route summaries.
+
+Clean sustained brake-entry profiles retain the early-lag/late-overresponse pattern:
+
+| Route | Entries | Median aEgo-carControl at 0.2 / 0.5 / 0.8 / 1.0 s (m/s²) |
+| --- | ---: | --- |
+| 28 | 8 | +0.117 / +0.048 / -0.104 / -0.080 |
+| 29 | 6 | +0.296 / +0.248 / -0.040 / -0.068 |
+
+These use the existing 0.2 s response filter and eligibility mask, with the previously documented
+filter timing caveat. They support separate brake-response work despite close CAN translation;
+they do not show that gas feedback caused or cured the pattern.
+
+Preliminary event lead: route 28 t≈382.5..383.5 s carries request ≈+0.78 m/s² and positive gas
+1091..1191 counts while aEgo is roughly +0.16..+0.32. Target gear changes 9→8 near request
+onset, and longActive ends before the driver's gas press at t≈384.34. Thus this is a transient
+uphill under-response lead, not a settled same-gear gain measurement or an engaged gas override.
+Route 29's engaged gas press at t≈865.29 instead follows a mixed gas/brake interval averaging
+request -0.393 and aEgo -0.406 m/s²; do not assign the same cause to both pedal events.
+
+Decision: retain the bounded feedback candidate as unpromoted while comparing matched response
+and causal command histories from these actual-source drives; no arbitrary additional route
+count is required. These logs remove the earlier road-evidence availability blocker. The joint
+gas/brake implementation remains unfinished. Seventy focused tests and configured lint pass;
+source-table mutations fail as intended. This commit changes diagnostics/evidence only, not
+vehicle runtime, Alpha Long settings, or the deployed nested source.
