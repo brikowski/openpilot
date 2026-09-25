@@ -35,8 +35,11 @@ active safety rails.
 - The deployed unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
   near-zero lookup term. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` and applies a bounded, slewed correction to
-  `GAS_COMMAND` only. A stronger current deceleration request cannot inherit positive
-  correction from an older command. Gas/brake domain selection, raw gas-domain
+  `GAS_COMMAND` only. A request decrease relative to the delayed request vetoes a positive
+  correction target (and an increase vetoes a negative target), but existing correction unwinds
+  under its slew limit; this is not an immediate sign veto on the transmitted correction.
+  Request direction alone does not establish whether residual correction opposes the current
+  acceleration-tracking error. Gas/brake domain selection, raw gas-domain
   `ACCEL_COMMAND`, the negative bridge, and brake translation remain unchanged. Replay
   establishes command shape, not that the resulting vehicle acceleration is improved.
 - Read `values.py`, `hondacan.py`, the DBC, and `safety/modes/honda.h` together before changing a

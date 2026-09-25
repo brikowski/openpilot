@@ -6046,3 +6046,39 @@ Tests check causal signed-input filtering, uninterrupted/same-gear exposure, and
 fitting. In-memory mutations that discard negative braking input, ignore gear changes, or weight
 by row count each fail their respective test. All 69 focused hook tests and tooling lint pass;
 git diff whitespace passes. No nested runtime behavior or device settings were changed.
+
+## 2026-09-25 — feedback direction-veto counterfactual
+
+Audited the deployed `f697fa4c6` response helper before extending it into coordinated control.
+Its request-direction guard limits the correction target, then slews the existing correction
+toward that target. Earlier prose saying positive correction cannot be inherited at all on a
+stronger deceleration request overstated the implementation; car-port-standards now describes
+the actual behavior. Tests already explicitly require unwinding rather than an instantaneous
+zero. This documentation correction does not establish that the existing policy is optimal.
+
+`/private/tmp/ody_feedback_direction_audit.py` runs two controllers on identical full-rate route
+inputs. One is unchanged; the other additionally clips the post-slew correction to <=0 when the
+current request is below the 0.5 s delayed request by >0.08 m/s², and to >=0 for the opposite
+change. This is a counterfactual immediate sign-veto, with no source-file/runtime changes.
+All non-gas ACC_CONTROL bits (excluding the gas-dependent checksum), all other CAN payloads,
+message addresses/buses, and send counts agree across twins. Source routes 26/27 remain nested
+`47196b9a4a72`; replay is not a road test of the feedback controller.
+
+| Route | Direction-flagged TX frames | Flagged correction still agrees with current request-minus-aEgo sign | Maximum flagged correction | Changed wire frames |
+| --- | ---: | ---: | ---: | ---: |
+| 26 | 13 | 12 | 90 counts | 13 |
+| 27 | 37 | 27 | 71.20 counts | 39 |
+
+The extra changed frames arise from evolving candidate correction state. Maximum twin wire
+difference is 90/71 gas counts. Same-domain gas steps >100 counts increase from 2 to 3 on route
+26 and 8 to 9 on route 27. Maximum steps remain 228/221; p99 moves 37.34 to 38 on route 26
+and stays 34 on route 27. This is a measured command-shape tradeoff, not proof of unsafe or
+worse physical response. Agreement with contemporaneous acceleration-error sign likewise does
+not prove a correction remains useful after actuator delay.
+
+Decision: do not deploy the immediate direction veto as a standalone improvement. Most flagged
+corrections still point toward the current measured acceleration target, and the veto adds a
+command discontinuity without demonstrated tracking benefit. Carry this failure mode into the
+coordinated observer design: current request, residual error, actuator dynamics, and domain
+authority must be considered together; neither request trend alone nor filtered old error alone
+is sufficient. Existing bounds remain unchanged, not promoted as proven optimal.
