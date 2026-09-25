@@ -5666,8 +5666,9 @@ reviewed against the source-compatible incumbent.
 
 ## 2026-09-25 — delay-aligned Odyssey gas-response candidate
 
-The exact deployed pair remains parent `4ef98509ea97` / nested `1ff3bb1311c8`;
-no post-`1ff3bb131` full-rate route was on the device at the latest inventory.
+At the start of this candidate analysis, the exact deployed pair was parent
+`4ef98509ea97` / nested `1ff3bb1311c8`; no post-`1ff3bb131` full-rate route
+was on the device at that inventory.
 The pinned `LongControl` computes `aTarget - aEgo`, but Honda Bosch keeps the
 base interface's zero `kiV`, so this route has no effective upstream
 acceleration-error correction. The Honda ECU still has its own response loop;
@@ -5718,3 +5719,18 @@ retire it if it causes a surge at crest or after a shift, gas pulsing,
 unacceptable lead-gap behavior, or greater same-domain command steps.
 The nested candidate is committed on `ody-op` as `f697fa4c6`; the paired
 parent publication and device state are recorded separately.
+
+The guarded 2026-09-25 deployment published nested `f697fa4c6588` before
+parent `771287d09ff8`; the parent gitlink pins that exact nested SHA. The
+offroad device switched, synchronized, built, and rebooted successfully.
+Read-only verification then showed `ody-op`, exact parent/gitlink/nested
+SHAs, clean device repositories and comma-owned `.venv`, Alpha Long `1`,
+updater target `ody-op` and state `idle`, no available update or exception,
+active comma/manager/Panda services, and no failed services. The prior
+deployed pair `4ef98509ea97` / `1ff3bb1311c8` remains reachable for rollback.
+The unrelated local `uv.lock` edit was temporarily stashed for the clean-tree
+gate and restored afterward with unchanged SHA-256
+`c430b3105a85941100469625ff8341a382c078dc62d396eabc8bcb6154c35ec5`;
+the temporary duplicate stash was removed after verification. This proves
+installation health only. The dynamic gas candidate is unpromoted until its
+source-compatible full-rate road response is assessed.

@@ -32,7 +32,7 @@ active safety rails.
   `ACCEL_COMMAND` adds a bounded Odyssey-calibrated grade term so Honda's grade-relative brake
   request follows the controller's net-acceleration target. Level road, low speed, stopping,
   missing-pose behavior, and domain selection remain raw.
-- The pending Odyssey gas-response candidate replaces the unpromoted fixed steep-climb
+- The deployed unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
   near-zero lookup term. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` and applies a bounded, slewed correction to
   `GAS_COMMAND` only. A stronger current deceleration request cannot inherit positive

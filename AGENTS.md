@@ -175,8 +175,9 @@ refs, and clean state separately from device health and road behavior. Keep the 
 ## Current focus
 
 At the latest successful 2026-09-25 verification, the device ran root
-`4ef98509ea` / nested `1ff3bb131` on the single `ody-op` line. The immediately
-prior deployed pair was root `652e169280` / nested `47196b9a4`; the previous
+`771287d09f` / nested `f697fa4c6` on the single `ody-op` line. The immediately
+prior deployed pair was root `4ef98509ea` / nested `1ff3bb131`; before that,
+root `652e169280` / nested `47196b9a4` was deployed. The previous
 road baseline before that was behavioral root `0bd9816712b1` / nested `6915be202bb7`;
 root `3269deef3d7c` added only its deployment receipt. The nested candidate
 retains raw `ACCEL_COMMAND`, the request-ramped positive
@@ -217,9 +218,9 @@ The 2026-09-25 full-rate routes `00000025--65f310df96`,
 steep-climb near-zero gas-response gap despite close planner/request/wire
 agreement. Route 26's 12:05 override also includes legitimate planner
 braking and a distinct late vehicle-response transient; do not treat either
-as cured by added uphill gas. Deployed nested `1ff3bb131` is an unpromoted
-fixed steep-climb term without post-deployment road response yet. Nested
-`f697fa4c6` on `ody-op` replaces that term with a delay-aligned, bounded
+as cured by added uphill gas. The prior nested `1ff3bb131` was an unpromoted
+fixed steep-climb term without post-deployment road response. Deployed nested
+`f697fa4c6` replaces that term with a delay-aligned, bounded
 gas-domain response correction. It preserves the current `carControl` request,
 raw-request domain decisions, and brake translation. Frozen-input replay
 shows command exposure and smoothness, not physical improvement. Judge
