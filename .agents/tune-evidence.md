@@ -6537,3 +6537,61 @@ to a dynamic, cap-aware correction that uses persistent achieved-versus-requeste
 without changing raw `ACCEL_COMMAND`, gas/brake domains, brake release, or upstream stopping
 intent. Assess its sign and transition behavior in frozen replay and the existing full-rate
 evidence before selecting a supervised road trial. No runtime or device setting changed here.
+
+## 2026-09-25 — cap-aware gas-response candidate, local-only
+
+The fifth-gear cap-bound response screen above provides a Honda-owned trial target: sustained
+positive `carControl` acceleration with accurate raw `ACCEL_COMMAND`, but achieved acceleration
+about 0.10–0.14 m/s² low while the current delayed gas feedback is only about +20–27 counts.
+Nested `opendbc` commit `f11197eefd424996be360d98e57d57cfc64b30d8` is an **unpromoted
+road-test candidate**, not a claim that 500 counts/(m/s²) is an identified inverse actuator
+gain. It retains the existing grade-adjusted gas-map input and extracts the fraction of the
+positive uphill grade term removed by its 1.0-m/s² gas-lookup cap. Only when valid filtered
+pitch agrees in sign with raw pose, active PID/no-driver gas permits grade mapping, and the
+gas-response helper is otherwise eligible does that fraction smoothly interpolate the
+feedback slope from 200 to at most 500 counts/(m/s²). The existing ±100-count correction bound,
+10-count/update slew, 0.5-s delay, request-direction veto, trim, raw `ACCEL_COMMAND`, domain
+selection, negative bridge, brake mapping, lateral map, DBC, and safety rails remain unchanged.
+This is a cap-aware response *gain*; it does not force grade gas on every uphill or retain gas
+after a released non-positive request.
+
+Two independent frozen-input twin screens preceded the source edit. A global 500 slope altered
+12,097/14,570 active-gas frames on routes 28/29; weighting it by the actual clipped grade
+fraction altered only 883/946. The cap-aware twin changed fifth-gear cap-exposed gas by median
++20/+30 counts (the strict stable cohort +23.5/+37.5), with up to 60 counts difference from
+recorded gas. The same-domain gas-step maximum/p99/>100-count tally stayed 253/42/8 on route
+28 and 245/about-32/4 on route 29. On the strict stable capped fifth-gear cohort, the changed
+gas direction opposes recorded 0.6-s acceleration error in 67/96 and 76/82 rows; it agrees
+with the wrong direction in 20 and one. This is **not** an achieved-response prediction because
+the vehicle's recorded response is fixed while the candidate command is replayed.
+
+Production-source replay after the edit reproduced those exact 883/946 changed gas frames
+against all 72,823/54,177 recorded same-cycle ACC_CONTROL frames. Forcing the new cap fraction
+to zero in the same source restores exact recorded `GAS_COMMAND` on every frame of both routes,
+showing that the refactored grade lookup has no incidental gas-map change. Numeric acceleration
+and gas/brake/coast-domain counts match the unchanged baseline replay. On both routes, **zero**
+candidate frames differ at a non-positive `carControl` request, inactive gas, or negative-live
+gas. Nine frames across two short no-lead uphill releases still have up to 24 extra gas counts
+while `carControl` has fallen from about +0.9 to +0.8 m/s² but remains positive; observed
+0.6-s error at those moments is near zero. This is the clearest transition risk for the road
+trial, not a reason to claim success from replay.
+
+Mutation-verified tests cover cap-fraction continuity, no cap bonus on negative/downhill or
+uncapped requests, bounded/slewed feedback, and eligibility reset. The focused Honda helper
+tests pass 11/11; the Honda/safety suite passes 259 with 244 skips and 20 safety subtests.
+Odyssey preflash passes seven interface/model and 24 command/rail tests (60 subtests); `ruff`,
+`ty`, and both root/nested diff-whitespace checks pass. Runtime mutations that remove the
+cap-dependent gain or always report zero cap fraction each make the new tests fail. The full
+nested `test.sh` was not run: its setup performs `uv sync`, while this environment lacks
+`cpplint`/`cppcheck`; no safety C or DBC changed. No device build or road response is claimed.
+
+Decision: CHANGE to this bounded, cap-aware candidate for a supervised Alpha Long road trial
+once the paired parent/nested commits can be published and the guarded device workflow can
+verify exact SHAs. KEEP the prior `f697fa4c6` pair reachable as rollback. Judge achieved
+acceleration versus `carControl` in comparable cap-bound fifth-gear and fourth-gear exposure,
+plus request-fall/crest surge, lead-gap oscillation, domain transitions, and driver overrides.
+Retire or revise the candidate if the extra positive gas on request falls produces overshoot or
+if the fifth-gear shortfall does not improve without unacceptable regressions. Upstream stop
+intent remains outside the Honda correction. Publication and deployment remain pending explicit
+confirmation of the configured remote as an approved destination; Alpha Long settings are not
+changed locally.
