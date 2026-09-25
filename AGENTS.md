@@ -212,26 +212,19 @@ Near-level mild-negative coast/brake samples have opposite tracking errors at lo
 while highway coast already overdecelerates; a global earlier brake-entry threshold is not
 supported by current road evidence.
 
-A bounded Odyssey-only positive-gas trial is deployed as root `652e169280` /
-nested `47196b9a4`: it trims at most 200 opaque gas counts for positive PID
-requests around 12–20 m/s and +0.8–+1.6 m/s2, with smooth
-ramps and no change to raw `ACCEL_COMMAND` or brake/negative-gas domains. Two historical
-source-different matched episodes give its direction and trial size; they do not establish a
-closed-loop gain. The guarded offroad switch, build, reboot, and exact-pair
-health checks passed; that is not road validation. Keep or retire this
-unpromoted trial from source-compatible road response.
-
 The 2026-09-25 full-rate routes `00000025--65f310df96`,
 `00000026--a324cbacbc`, and `00000027--543105a0ab` identify a separate
 steep-climb near-zero gas-response gap despite close planner/request/wire
 agreement. Route 26's 12:05 override also includes legitimate planner
 braking and a distinct late vehicle-response transient; do not treat either
-as cured by added uphill gas. Nested `1ff3bb131` is an unpromoted,
-speed-gated, bounded, bridge-slewed gas-only candidate on `ody-op`.
-Its exact-input replay leaves `ACCEL_COMMAND` and brake domains unchanged
-and avoids enlarging the incumbent maximum live-gas step. This is software
-evidence, not road improvement. Judge steep lead and no-lead response,
-bridge exits, and overshoot from source-compatible post-deployment logs.
+as cured by added uphill gas. Deployed nested `1ff3bb131` is an unpromoted
+fixed steep-climb term without post-deployment road response yet. Nested
+`f697fa4c6` on `ody-op` replaces that term with a delay-aligned, bounded
+gas-domain response correction. It preserves the current `carControl` request,
+raw-request domain decisions, and brake translation. Frozen-input replay
+shows command exposure and smoothness, not physical improvement. Judge
+response, bridge exits, crest/shift surge, and overshoot from exact-source
+post-deployment full-rate logs without a fixed route-count gate.
 
 Alpha Long remained enabled at the latest device verification. Do not disable it for this trial;
 Honda CMBS is unavailable while it is active. The guarded deployment verified

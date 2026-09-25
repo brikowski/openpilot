@@ -27,7 +27,7 @@ import numpy as np
 from openpilot.tools.lib.logreader import LogReader
 from opendbc.car import Bus
 from opendbc.car.values import PLATFORMS
-from opendbc.car.honda.carcontroller import CarController
+from opendbc.car.honda.carcontroller import ODYSSEY_RESPONSE_DELAY_FRAMES, CarController
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tuning_metrics import causal_lpf, windowed_jerk
@@ -80,8 +80,8 @@ def main(argv=None):
   cc = CarController({Bus.pt: dbc[Bus.pt]}, CP)
 
   cs_shim = _CSShim()
-  t, requested, wire, active, sendcans = [], [], [], [], []
-  rec_t, rec_wire = [], []
+  t, requested, wire, active, sendcans, gas_feedback, pitch, aego, feedback_age = [], [], [], [], [], [], [], [], []
+  rec_t, rec_wire, rec_gas = [], [], []
   for m in msgs:
     w = m.which()
     if w == "carState":
@@ -90,6 +90,10 @@ def main(argv=None):
       # the wire the OLD controller actually put out on this drive (the baseline arm)
       rec_t.append(m.logMonoTime / 1e9)
       rec_wire.append(float(m.carOutput.actuatorsOutput.accel))
+    elif w == "sendcan":
+      for frame in m.sendcan:
+        if frame.address == 0x1DF and frame.src == 1:
+          rec_gas.append((m.logMonoTime / 1e9, int.from_bytes(frame.dat[:2], "big", signed=True)))
     elif w == "carControl" and cs_shim.out is not None:
       actuators, can_sends = cc.update(m.carControl, cs_shim, m.logMonoTime)
       t.append(m.logMonoTime / 1e9)
@@ -97,11 +101,19 @@ def main(argv=None):
       wire.append(float(actuators.accel))
       active.append(bool(m.carControl.longActive))
       sendcans.append((m.logMonoTime, can_sends))
+      gas_feedback.append(float(cc.odyssey_gas_response.correction))
+      pitch.append(float(m.carControl.orientationNED[1]) if len(m.carControl.orientationNED) == 3 else np.nan)
+      aego.append(float(cs_shim.out.aEgo))
+      feedback_age.append(len(cc.odyssey_gas_response.requests))
 
   t = np.array(t)
   requested = np.array(requested, dtype=float)
   wire = np.array(wire, dtype=float)
   act = np.array(active, dtype=bool)
+  gas_feedback = np.array(gas_feedback, dtype=float)
+  pitch = np.array(pitch, dtype=float)
+  aego = np.array(aego, dtype=float)
+  feedback_age = np.array(feedback_age, dtype=int)
   if len(t) < 50:
     print(f"TOO FEW FRAMES ({len(t)}) - aborting")
     sys.exit(2)
@@ -140,9 +152,22 @@ def main(argv=None):
 
   # recorded baseline, resampled onto the same grid so both arms are measured identically
   rec = np.interp(t, np.array(rec_t), np.array(rec_wire)) if rec_t else np.full_like(t, np.nan)
+  steep_nearzero = act & (pitch >= 0.05) & (np.abs(requested) <= 0.15)
+  steep_shortfall = steep_nearzero & ((requested - aego) >= 0.15)
+
+  def same_domain_gas_steps(samples):
+    if len(samples) < 2:
+      return {"max": 0, "p99": 0, "over_100": 0}
+    arr = np.asarray(samples, dtype=float)
+    valid = (arr[1:, 1] > GAS_INACTIVE) & (arr[:-1, 1] > GAS_INACTIVE) & (np.diff(arr[:, 0]) < 0.04)
+    steps = np.abs(np.diff(arr[:, 1]))[valid]
+    return {"max": float(np.max(steps)) if len(steps) else 0.0,
+            "p99": float(np.percentile(steps, 99)) if len(steps) else 0.0,
+            "over_100": int(np.sum(steps > 100))}
 
   # true domain handoff, decoded from the CAN this controller would actually have sent
   flips = forceful = coast_entries = 0
+  replay_gas = []
   brake_domain_frames = gas_domain_frames = coast_domain_frames = 0
   negative_live_gas_frames = negative_live_gas_events = 0
   total_edges = []
@@ -157,6 +182,7 @@ def main(argv=None):
         br = int(cp.vl["ACC_CONTROL"]["BRAKE_REQUEST"])
         ac = float(cp.vl["ACC_CONTROL"]["ACCEL_COMMAND"])
         gas = float(cp.vl["ACC_CONTROL"]["GAS_COMMAND"])
+        replay_gas.append((mono / 1e9, gas))
         if act[i]:
           domain = "brake" if br else ("gas" if gas > GAS_INACTIVE else "coast")
           negative_live = domain == "gas" and gas < 0
@@ -196,6 +222,21 @@ def main(argv=None):
     # fidelity: on the SAME branch that produced the log this must be ~0. If it is not, the
     # replay is not reproducing the drive and no A/B conclusion drawn from it is trustworthy.
     "replay_vs_recorded_rms": float(np.sqrt(np.nanmean((wire[act] - rec[act]) ** 2))) if act.sum() else None,
+    "same_domain_gas_steps": {"replayed": same_domain_gas_steps(replay_gas),
+                              "recorded": same_domain_gas_steps(rec_gas)},
+    "gas_feedback": {
+      "positive_seconds": float(np.sum(gas_feedback > 0) * dt),
+      "negative_seconds": float(np.sum(gas_feedback < 0) * dt),
+      "positive_max_counts": float(np.max(gas_feedback)),
+      "negative_max_counts": float(np.min(gas_feedback)),
+      "max_step_counts": float(np.max(np.abs(np.diff(gas_feedback)))),
+      "steep_nearzero_seconds": float(np.sum(steep_nearzero) * dt),
+      "steep_nearzero_positive_seconds": float(np.sum(steep_nearzero & (gas_feedback > 0)) * dt),
+      "steep_nearzero_median_counts": float(np.median(gas_feedback[steep_nearzero])) if steep_nearzero.any() else None,
+      "steep_shortfall_seconds": float(np.sum(steep_shortfall) * dt),
+      "steep_shortfall_delay_aligned_seconds": float(np.sum(steep_shortfall & (feedback_age > ODYSSEY_RESPONSE_DELAY_FRAMES)) * dt),
+      "steep_shortfall_positive_seconds": float(np.sum(steep_shortfall & (gas_feedback > 0)) * dt),
+    },
   }
   with open(out_path, "w") as f:
     json.dump(res, f, indent=2)

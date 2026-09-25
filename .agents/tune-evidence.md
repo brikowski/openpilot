@@ -5663,3 +5663,58 @@ deployment gate, restored afterward, and its SHA-256 checksum remained
 This is exact installation health; there is no post-candidate road-response
 proof yet. The candidate remains unpromoted until its full-rate exposure is
 reviewed against the source-compatible incumbent.
+
+## 2026-09-25 — delay-aligned Odyssey gas-response candidate
+
+The exact deployed pair remains parent `4ef98509ea97` / nested `1ff3bb1311c8`;
+no post-`1ff3bb131` full-rate route was on the device at the latest inventory.
+The pinned `LongControl` computes `aTarget - aEgo`, but Honda Bosch keeps the
+base interface's zero `kiV`, so this route has no effective upstream
+acceleration-error correction. The Honda ECU still has its own response loop;
+the new candidate corrects only the opaque gas command, not `carControl` or
+the metric `ACCEL_COMMAND`.
+The older full-rate routes 25–27 are exact nested `47196b9a4` source, so their
+frozen-input replay is a command-shape stress test, not a closed-loop A/B with
+the deployed steep lookup candidate. They show actual uphill under-response
+after planner/request/wire attribution: route 26 had 4.37 s and route 27
+6.94 s of steep, near-zero request minus measured response above 0.15 m/s².
+
+The new nested Honda candidate removes only the unroad-verified fixed steep
+near-zero gas term. In the active gas domain above 8 m/s, with valid pitch,
+PID control, and no driver pedal, it compares current measured `aEgo` with
+the `carControl` request sent 0.5 s earlier. It applies at most ±100 opaque
+`GAS_COMMAND` counts, limited to 10 counts per 50 Hz update. Current demand
+toward braking blocks inherited positive correction; demand toward acceleration
+blocks inherited negative correction. It clears command history on domain exit,
+driver input, gear-shifter change, or a material drop from the highest filtered
+pitch, and decays any still-active correction under its slew limit. Raw
+`ACCEL_COMMAND`, brake translation, raw-request domain decisions, low-speed
+behavior, `-60` bridge, safety rails, and lateral control are unchanged.
+The 200 counts/(m/s²) response coefficient and ±100-count limit bound an
+initial trial; they are not an identified Honda plant gain.
+
+An initial steady-request/steady-grade observer was discarded after replay:
+it became settled for only 0.78/1.37 s of the route-26/27 steep shortfall,
+because ordinary lead-following requests and grade changes repeatedly reset
+it. The delay-aligned candidate becomes eligible for 3.73/6.05 s and applies
+positive correction for 2.84/6.05 s respectively. In route 26/27 full-rate
+frozen-input replay, same-domain gas-step max/p99 are 228/28 and 221/24
+counts versus the recorded prior-source wire's 325/47 and 248/40; steps
+above 100 counts are 2 versus 5 and 8 versus 8. The current candidate cannot
+predict its own on-road response from recorded `aEgo`; these figures bound
+command shape only. A proposed 0.15 m/s² per-frame `aEgo` jump guard reduced
+route-27 delay-aligned steep exposure to 2.07 s and was removed: it treated
+noisy measured acceleration as a gear shift and prevented useful correction.
+
+The Honda helper suite passes 9 tests; the decoded Odyssey rail suite passes
+24 tests/60 subtests, and Honda helper/safety passes 257 tests/244 skips/20
+subtests. `preflash.py` passes seven archived Odyssey interface/model cases
+plus the 24 rail tests. Setting the response coefficient to zero deliberately
+fails the decoded bidirectional gas-response test; restoring it passes.
+Publication/deployment receipts are recorded separately. **Decision: CHANGE the
+unpromoted fixed steep term to an unpromoted bounded response-feedback road
+candidate**, subject to full-rate source-compatible road response. Explicitly
+retire it if it causes a surge at crest or after a shift, gas pulsing,
+unacceptable lead-gap behavior, or greater same-domain command steps.
+The nested candidate is committed on `ody-op` as `f697fa4c6`; the paired
+parent publication and device state are recorded separately.

@@ -32,11 +32,13 @@ active safety rails.
   `ACCEL_COMMAND` adds a bounded Odyssey-calibrated grade term so Honda's grade-relative brake
   request follows the controller's net-acceleration target. Level road, low speed, stopping,
   missing-pose behavior, and domain selection remain raw.
-- The current unpromoted steep-climb candidate adds only a bounded near-zero `GAS_COMMAND`
-  lookup term after raw-request domain selection, above 5 m/s and steep positive pitch.
-  Its additional opaque counts rise at a limited rate after a `-60` bridge exit;
-  `ACCEL_COMMAND` and brake selection remain on their existing paths. Do not
-  interpret replayed extra gas as measured vehicle acceleration.
+- The pending Odyssey gas-response candidate replaces the unpromoted fixed steep-climb
+  near-zero lookup term. After 0.5 s of continuous active gas, it compares the earlier
+  `carControl` request with measured `aEgo` and applies a bounded, slewed correction to
+  `GAS_COMMAND` only. A stronger current deceleration request cannot inherit positive
+  correction from an older command. Gas/brake domain selection, raw gas-domain
+  `ACCEL_COMMAND`, the negative bridge, and brake translation remain unchanged. Replay
+  establishes command shape, not that the resulting vehicle acceleration is improved.
 - Read `values.py`, `hondacan.py`, the DBC, and `safety/modes/honda.h` together before changing a
   rail or signal. Numeric command fidelity is incomplete if the active domain bits disagree.
 

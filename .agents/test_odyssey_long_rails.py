@@ -100,28 +100,27 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert abs(rows[4.0] - rows[30.0]) <= 1
     assert abs(rows[14.0] - (rows[30.0] - 200)) <= 1
 
-  def test_steep_uphill_near_zero_gas_load_keeps_raw_accel_and_safety(self):
-    values = {}
-    for pitch in (0.0, 0.06):
-      rejects, seen = _run(True, [0.2] * 120 + [0.0] * 120,
-                           pitch=pitch, vego=18.0)
-      assert not rejects
-      assert len(seen) == 120
-      assert all(accel == 0 and brake == 0 for accel, _, brake in seen[-10:])
-      values[pitch] = np.median([gas for _, gas, _ in seen[-10:]])
-    assert 120 <= values[0.06] - values[0.0] <= 140
+  def test_gas_response_corrects_measured_shortfall_without_changing_request_or_rails(self):
+    requests = [0.2] * 20 + [0.0] * 160
+    _, matched = _run(True, requests, pitch=0.0, vego=18.0, aegos=0.0)
+    rejects, shortfall = _run(True, requests, pitch=0.0, vego=18.0, aegos=-0.3)
+    assert not rejects
+    assert all(accel == 0 and brake == 0 for accel, _, brake in shortfall[10:])
+    matched_gas = np.array([gas for _, gas, _ in matched])
+    shortfall_gas = np.array([gas for _, gas, _ in shortfall])
+    np.testing.assert_array_equal(shortfall_gas[10:36], matched_gas[10:36])
+    assert 0 < shortfall_gas[-1] - matched_gas[-1] <= 100
+    assert shortfall_gas.max() <= GAS_MAX
 
-  def test_steep_uphill_gas_load_rises_smoothly_after_bridge(self):
-    rows = {}
-    for pitch in (0.0, 0.06):
-      rejects, seen = _run(True, [-0.10] * 200 + [0.0] * 20,
-                           pitch=pitch, vego=18.0)
-      assert not rejects
-      rows[pitch] = [gas for _, gas, _ in seen]
-      assert all(gas == -60 for gas in rows[pitch][:100])
-    assert rows[0.06][100] == rows[0.0][100]
-    assert 0 < rows[0.06][101] - rows[0.0][101] <= 20
-    assert 120 <= rows[0.06][-1] - rows[0.0][-1] <= 140
+  def test_gas_response_waits_for_negative_bridge_exit(self):
+    rejects, seen = _run(True, [-0.10] * 200 + [0.0] * 160,
+                         pitch=0.06, vego=18.0, aegos=-0.3)
+    assert not rejects
+    gas = np.array([command for _, command, _ in seen])
+    assert (gas[:100] == -60).all()
+    assert (gas[100:126] == gas[100]).all()
+    assert 0 < gas[-1] - gas[100] <= 100
+    assert np.max(np.diff(gas[100:])) <= 10
 
   def test_brake_command_applies_only_road_speed_pid_grade_translation(self):
     """Grade translation must preserve raw level, low-speed, stopping, and missing-pose commands."""
@@ -203,12 +202,12 @@ class TestOdysseyLongRails(unittest.TestCase):
   def test_grade_gas_load_tapers_at_zero_and_keeps_raw_accel(self):
     """Grade translation must keep the raw command and avoid the former split-step pulse."""
     accels = np.full(400, 0.10)
-    _, level = _run(True, accels, pitch=0.0, vego=31.0)
-    _, downhill = _run(True, accels, pitch=-0.05, vego=31.0)
-    _, uphill = _run(True, accels, pitch=0.05, vego=31.0)
-    _, stopping = _run(True, accels, pitch=0.05, vego=31.0, long_control_state=LongCtrlState.stopping)
-    _, missing_pose = _run(True, accels, pitch=None, vego=31.0)
-    _, driver_gas = _run(True, accels, pitch=0.05, vego=31.0, gas_pressed=True)
+    _, level = _run(True, accels, pitch=0.0, vego=31.0, aegos=0.10)
+    _, downhill = _run(True, accels, pitch=-0.05, vego=31.0, aegos=0.10)
+    _, uphill = _run(True, accels, pitch=0.05, vego=31.0, aegos=0.10)
+    _, stopping = _run(True, accels, pitch=0.05, vego=31.0, aegos=0.10, long_control_state=LongCtrlState.stopping)
+    _, missing_pose = _run(True, accels, pitch=None, vego=31.0, aegos=0.10)
+    _, driver_gas = _run(True, accels, pitch=0.05, vego=31.0, aegos=0.10, gas_pressed=True)
 
     level_accel = np.array([accel for accel, _, _ in level])
     downhill_accel = np.array([accel for accel, _, _ in downhill])
@@ -236,9 +235,9 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert np.all(crossing_gas != GAS_INACTIVE)
     assert np.max(np.abs(np.diff(crossing_gas))) < 50, "near-zero request switched uphill gas load on and off"
 
-    _, climb_level = _run(True, np.full(400, 0.30), pitch=0.0, vego=31.0)
-    _, climb = _run(True, np.full(400, 0.30), pitch=0.072, vego=31.0)
-    _, steep = _run(True, np.full(400, 0.83), pitch=0.072, vego=31.0)
+    _, climb_level = _run(True, np.full(400, 0.30), pitch=0.0, vego=31.0, aegos=0.30)
+    _, climb = _run(True, np.full(400, 0.30), pitch=0.072, vego=31.0, aegos=0.30)
+    _, steep = _run(True, np.full(400, 0.83), pitch=0.072, vego=31.0, aegos=0.83)
     assert np.median([gas for _, gas, _ in climb[-50:]]) > np.median([gas for _, gas, _ in climb_level[-50:]])
     params = CarControllerParams(_car_params())
     bound_gas = round(np.interp(1.0, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V))
@@ -272,14 +271,16 @@ class TestOdysseyLongRails(unittest.TestCase):
           expected = round(odyssey_low_speed_gas_command(upstream, accel, vego))
           assert gas == {expected}
 
-  def test_gas_command_has_no_unproven_live_residual_learner(self):
-    """Identical requests and speed must keep the fixed translation regardless of tracking error."""
+  def test_gas_response_is_bounded_and_bidirectional(self):
+    """A settled response mismatch may adjust gas without reshaping ACCEL_COMMAND."""
     accels = np.full(400, 0.50)
     _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20)
     _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20)
     under_gas = np.array([gas for _, gas, _ in under_response])
     over_gas = np.array([gas for _, gas, _ in over_response])
-    np.testing.assert_array_equal(under_gas, over_gas)
+    np.testing.assert_array_equal(under_gas[:25], over_gas[:25])
+    assert 0 < under_gas[-1] - over_gas[-1] <= 200
+    assert all(accel == 50 and brake == 0 for accel, _, brake in under_response + over_response)
 
   def test_unidentified_windfactor_is_not_production_state(self):
     """Keep unidentified drag learning offline until it has an attributable command benefit."""
