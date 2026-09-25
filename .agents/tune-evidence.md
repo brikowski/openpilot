@@ -5648,3 +5648,18 @@ gas pulsing, no-lead over-response, worse following, or unsafe domain
 behavior. Device health and replay remain distinct from road proof.
 The nested candidate is committed linearly on `ody-op` as `1ff3bb131`;
 the paired parent publication and device state are recorded separately.
+
+The guarded 2026-09-25 deployment published nested `1ff3bb1311c8` before
+parent `4ef98509ea97`, whose gitlink pins that nested SHA. The device was
+offroad and clean before the switch. After `uv sync`, build, and reboot,
+read-only verification showed branch `ody-op`, exact parent/gitlink/nested
+SHAs, clean device repositories and comma-owned `.venv`, Alpha Long `1`,
+updater target `ody-op` and state `idle`, no available update or exception,
+active comma/manager/Panda services, and no failed services. The prior
+deployed pair `652e169280` / `47196b9a4` remains reachable for rollback.
+The unrelated local `uv.lock` modification was stashed only for the clean
+deployment gate, restored afterward, and its SHA-256 checksum remained
+`c430b3105a85941100469625ff8341a382c078dc62d396eabc8bcb6154c35ec5`.
+This is exact installation health; there is no post-candidate road-response
+proof yet. The candidate remains unpromoted until its full-rate exposure is
+reviewed against the source-compatible incumbent.

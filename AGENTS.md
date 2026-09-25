@@ -174,9 +174,10 @@ refs, and clean state separately from device health and road behavior. Keep the 
 
 ## Current focus
 
-At the latest successful 2026-09-24 verification, the device ran root
-`652e169280` / nested `47196b9a4` on the single `ody-op` line. The previous
-road baseline was behavioral root `0bd9816712b1` / nested `6915be202bb7`;
+At the latest successful 2026-09-25 verification, the device ran root
+`4ef98509ea` / nested `1ff3bb131` on the single `ody-op` line. The immediately
+prior deployed pair was root `652e169280` / nested `47196b9a4`; the previous
+road baseline before that was behavioral root `0bd9816712b1` / nested `6915be202bb7`;
 root `3269deef3d7c` added only its deployment receipt. The nested candidate
 retains raw `ACCEL_COMMAND`, the request-ramped positive
 `GAS_COMMAND` mapping, the smooth capped correction through an already-active uphill negative gas
