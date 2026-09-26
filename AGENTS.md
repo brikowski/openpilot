@@ -185,8 +185,10 @@ refs, and clean state separately from device health and road behavior. Keep the 
 ## Current focus
 
 At the latest successful 2026-09-25 verification, the device ran root
-`771287d09f` / nested `f697fa4c6` on the single `ody-op` line. The immediately
-prior deployed pair was root `4ef98509ea` / nested `1ff3bb131`; before that,
+`4adda40295` / nested `16f0ec75f` on the single `ody-op` line. The latest
+engaged full-rate route still records the prior deployed pair root `771287d09f` /
+nested `f697fa4c6`; it is not a road test of the new cap-aware gas candidate. Before that,
+the deployed pair was root `4ef98509ea` / nested `1ff3bb131`; before that,
 root `652e169280` / nested `47196b9a4` was deployed. The previous
 road baseline before that was behavioral root `0bd9816712b1` / nested `6915be202bb7`;
 root `3269deef3d7c` added only its deployment receipt. The nested candidate
@@ -236,6 +238,15 @@ raw-request domain decisions, and brake translation. Frozen-input replay
 shows command exposure and smoothness, not physical improvement. Judge
 response, bridge exits, crest/shift surge, and overshoot from exact-source
 post-deployment full-rate logs without a fixed route-count gate.
+The current nested `16f0ec75f` adds bounded cap-aware gas feedback with a
+smooth fade at vanishing grade load; no post-deployment engaged road response
+has been measured. Prior-source route `0000002b--6472adcaf4` adds six clean
+coast-to-brake entries with early under-braking and late over-braking despite
+source-corrected wire fidelity, and 9.29 seconds at the 2560 steering cap with
+median lateral under-response about 0.13 m/s2. Treat those as separate Honda
+brake-response and lateral-authority investigations, not evidence that the new
+gas candidate helped or harmed either. Route `0000002a--996d0b7551` has no
+engaged control exposure.
 
 Alpha Long remained enabled at the latest device verification. Do not disable it for this trial;
 Honda CMBS is unavailable while it is active. The guarded deployment verified

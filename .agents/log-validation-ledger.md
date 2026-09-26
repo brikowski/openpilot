@@ -371,3 +371,5 @@ Auto-maintained by `.agents/validate_log.py`; authoritative data is the sibling 
 | 2026-09-25 | 00000025--65f310df96 | ody-op | 47196b9a4a72 | 3.7 | 3.6 | 0 | 0.170 | 0.011 | - | - | 0.007 | 0.068 | 8 | 0.0 | 5.4 | 1041/2560 | 0.0% | 0 | brake-domain transition bursts |
 | 2026-09-25 | 00000026--a324cbacbc | ody-op | 47196b9a4a72 | 1.3 | 0.6 | 0 | 0.317 | 0.072 | - | - | 0.008 | 0.138 | 2 | 7.6 | 0.0 | 1507/2466 | 0.0% | 0 | ride harshness (felt) |
 | 2026-09-25 | 00000027--543105a0ab | ody-op | 47196b9a4a72 | 6.6 | 4.7 | 0 | 0.212 | 0.017 | - | - | 0.008 | 0.069 | 7 | 0.0 | 7.6 | 2560/2560 | 2.8% | 0 | brake-domain transition bursts, ride harshness (felt) |
+| 2026-09-26 | 0000002b--6472adcaf4 | ody-op | f697fa4c6588 | 6.3 | 4.8 | 0 | 0.191 | 0.007 | - | - | 0.007 | 0.077 | 8 | 0.0 | 4.8 | 2070/2560 | 1.3% | 0 | brake-domain transition bursts, ride harshness (felt) |
+| 2026-09-26 | 0000002a--996d0b7551 | ody-op | f697fa4c6588 | 0.0 | 0.0 | 0 | - | - | - | - | - | - | - | 0.0 | 0.0 | - | - | - | none |

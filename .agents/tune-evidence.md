@@ -6634,3 +6634,39 @@ build or physical response has been measured for this candidate. Decision: CHANG
 road-test candidate from `f11197eef` to `16f0ec75f`; KEEP `f11197eef` reachable for the
 linear rollback history and retain `f697fa4c6` as the last road-known source. Publishing and
 guarded deployment still await explicit approval of both configured GitHub destinations.
+
+## 2026-09-25 — verified candidate deployment and first non-gas follow-up
+
+After the user confirmed the brikowski repositories and device availability, the guarded flow
+published nested `16f0ec75fa50bac3ef52a49f85256eb48d48cb5b` and parent
+`4adda40295898dfdb7d2eb136af4a014302b10a9` to their `ody-op` refs, built the offroad
+device, and verified that exact clean pair after reboot. Alpha Long remained enabled; updater
+was idle with no exception, comma/manager/Panda services were active, and no services failed.
+This is installation health, not road response or promotion.
+
+Pulled and validated the two then-unvalidated full-rate routes. Both record the **prior** pair
+root `771287d09ff8f1b76e3dd71627417d53e90da051` / nested
+`f697fa4c6588839976b00218f584916632747dcb`; neither can evaluate `16f0ec75f` on road.
+`0000002a--996d0b7551` has 0.0 engaged minutes. `0000002b--6472adcaf4` has 6.30 engaged
+minutes and 14.60 seconds of active brake-domain response. Its source-corrected brake-wire RMS
+is 0.0085 m/s², while achieved brake-domain RMS versus raw request is 0.294 m/s². Six eligible
+sustained coast-to-brake entries have median aEgo-minus-raw-request +0.638/+0.380/-0.190/-0.318
+m/s² at ages 0.2/0.5/0.8/1.0 seconds using the existing 0.2-second response filter. Five
+negative jerk peaks follow the physical brake edge by 0.49–0.58 seconds with computer braking
+active. This reinforces a transient Honda brake-response target, not a constant gain increase;
+the filter timing and changing request remain important caveats. The validator flags 11 physical
+brake-domain edges and 2.4x achieved-versus-commanded jerk RMS, but those flags alone do not
+assign each edge to the Honda port rather than upstream demand.
+
+Route 2b also has 9.29 seconds at the stock 2560 steering cap with median sign-corrected
+lateral under-response +0.127 m/s² and no steer fault. This is a lateral target to revisit by
+matched desired-versus-achieved acceleration and command/authority exposure, not proof that the
+historical 3840 map should return. No lateral or brake runtime behavior changed; retain the
+current gas candidate for exact-source road evaluation, and pursue a conditioned brake transient
+design independently of gas.
+
+The puller had been re-running validation through `uv run`, which regenerated an unrelated
+Panda-metadata `uv.lock` diff. It now reuses its own interpreter; VS Code analysis tasks use
+`uv run --frozen`, and the tracked lockfile is restored. A mutation-verified regression fails
+with the old validation command and passes with the new command. The two ledger rows and this
+receipt are diagnostic/evidence changes only and do not require a device deployment.
