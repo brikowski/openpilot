@@ -7696,3 +7696,58 @@ release, and near-level non-regression on exact-source closed-loop roads.
 The nested `e82025624994` still has no locally complete engaged drive: route
 2d's segment 1 is only an `.rsync-partial` directory, and device SSH timed
 out during this check. No Honda runtime or device setting changed.
+
+### Coast-exit timing and early-forecast falsification (2026-09-26)
+
+The stable-coast screen above selected intervals *because* coast persisted
+through its 0.4-s outcome. It cannot show whether a live response trigger
+would arrive early enough to change the vehicle. A separate exploratory
+full-rate screen used the same exact nested `f697fa4c6588` routes 28/29/2b.
+It grouped continuous engaged, fresh-state, no-pedal, 15–30 m/s coast frames
+with raw request in `[-0.20,-0.10)` m/s² and constant target gear. Episodes
+had to last at least 0.3 s. A hypothetical observation time was the first
+point where the trailing 0.2-s median of *current* `aEgo-carControl` exceeded
+`+0.10 m/s²`; GPS velocity grade at that point had to be fresh within 1.5 s
+and agree with car speed within 2 m/s. The threshold is an offline timing
+probe, **not** a proposed Honda controller constant.
+
+This screen found 4/3/8 qualifying downhill observation times by route,
+plus one near-GPS-level time on route 29. Only 2/2/4 of the downhill times
+had at least 0.5 s remaining **in that raw-request band**. The other seven
+did *not* exit the coast wire domain immediately: six crossed above
+`-0.10 m/s²` toward *less* requested deceleration and one moved below
+`-0.20 m/s²`. Therefore the earlier phrase "before coast ends" would be
+wrong. A fixed 0.2-s observation window plus the measured order-of-0.5-s
+brake response delay could produce brake action after upstream demand had
+already eased on six intervals. The near-level observation is not proof of
+a false trigger: GPS grade and response can change within an episode.
+
+Also screened an early open-loop forecast at 0.1 s into qualified coast-band
+episodes lasting at least 0.7 s. Natural-coast and carried gas/brake-state
+fits were trained only on source-compatible nested `47196b9a4a72` routes
+25/27; nested `f697fa4c6588` routes 28/29/2b were held out. These revisions
+retain the same coast selector but not identical gas feedback. The forecast
+held the then-current speed/pitch context and assumed gas/brake remained
+inactive through the 0.6-s target, verified by
+episode selection. On the five intervals that actually followed a physical
+gas-to-coast edge (1/3/1 by held-out route), mean absolute error against
+`aEgo(t+0.6)-carControl(t+0.1)` was current measured error
+`0.064/0.081/0.112 m/s²`, natural-coast forecast
+`0.111/0.165/0.055`, and carried-state forecast
+`0.051/0.085/0.081`. Neither fit improves all routes or reliably warns
+earlier than measured error. On route 29, two genuine future excesses near
+`+0.19 m/s²` were already visible as current errors `+0.20/+0.31`, while
+the natural forecast gave `-0.02/+0.04` and the carried forecast
+`+0.05/+0.10`. Other qualified episodes began only when the raw request
+entered the band while coast was already active; they must not be called
+physical coast entries. Small episode counts and frozen future inputs do not
+prove a live controller benefit.
+
+**Decision: do not add a response-threshold brake entry or reuse the existing
+natural/carry fit as a live coast predictor.** Continue toward a dynamic
+gas/coast/brake translation only if its causal estimate is earlier and more
+selective than current response on held-out source-compatible episodes, and
+its fresh brake-entry and release effects survive closed-loop validation.
+The deployed `e82025624994` trial remains ungraded on-road because the
+device's configured SSH address timed out again. No runtime behavior,
+upstream command, safety rule, or Alpha Long setting changed.
