@@ -6492,6 +6492,23 @@ to +0.045 rad; the near-level cutoff admits only brief slices of an uphill passa
 blanket removal of the trim would also raise gas in the exposed overshoot samples, and the
 trim/feedback corrections are not generally fighting each other.
 
+An additional held-out screen on exact nested `f697fa4c6588` route
+`0000002b--6472adcaf4` uses the same near-level trim mask and 0.6-s future
+response (`/private/tmp/ody_trim_feedback_audit.py 0000002b--6472adcaf4`).
+It selects 69 correlated 10-Hz rows in six mask-contiguous spans. Eighteen
+rows in three spans overshoot the request by more than `0.1 m/s²`; twelve in
+three spans undershoot by more than `0.1 m/s²`. Both groups have a median
+200-count trim. Replaying *current* nested `e82025624994` on this earlier
+route's frozen inputs gives positive/negative feedback counts of 8/9 in the
+overshoot rows and 6/4 in the undershoot rows. This is a candidate-controller
+screen, not the recorded `f697fa4c6588` feedback or a closed-loop outcome:
+15,690 of 17,221 paired active-gas frames match the recorded gas command
+exactly, and the largest active-gas difference is 60 counts. The opposite
+response signs under the same full trim reinforce **KEEP pending a
+state-conditioned replacement**, not a global increase or removal of trim.
+The relevant next design must distinguish these response states and validate
+its transitions, rather than infer gas-count efficacy from the frozen replay.
+
 For a separate uphill screen, require active PID, positive gas, no pedals or brake, speed 8–30
 m/s, request +0.6..+1.5 m/s² stable within 0.10 over 1 s, pitch >+0.02 rad, unchanged target
 gear outside ±1.5 s of an edge, valid future state, and a 10-Hz sample stride. A *proxy* for
