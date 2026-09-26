@@ -232,6 +232,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "6915be202bb7": -0.30,  # signed positive-gas grade only; raw brake selection unchanged
   "47196b9a4a72": -0.30,  # bounded positive-gas trim only; raw brake selection unchanged
   "f697fa4c6588": -0.30,  # gas-response feedback only; brake selection unchanged
+  "16f0ec75fa50": -0.30,  # cap-aware gas feedback only; brake selection unchanged
+  "e82025624994": -0.30,  # response-qualified early release keeps the raw brake entry
 }
 RAW_DOMAIN_COMMITS = {
   "f6e4f07bdc61",  # ody-op-test2 fresh brake-source reset
@@ -285,6 +287,8 @@ THREE_DOMAIN_COMMITS = {
   "6915be202bb7",  # signed positive-gas grade only; raw brake selection is unchanged
   "47196b9a4a72",  # bounded positive-gas trim only; raw brake selection is unchanged
   "f697fa4c6588",  # gas-response feedback only; brake selection unchanged
+  "16f0ec75fa50",  # cap-aware gas feedback only; brake selection unchanged
+  "e82025624994",  # response-qualified release only after an already-active brake
 }
 BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "871b98a64f6e",
@@ -297,7 +301,10 @@ BRAKE_GRADE_TRANSLATION_COMMITS = {
   "6915be202bb7",
   "47196b9a4a72",
   "f697fa4c6588",
+  "16f0ec75fa50",
+  "e82025624994",
 }
+RESPONSE_QUALIFIED_BRAKE_RELEASE_COMMITS = {"e82025624994"}
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
 # as upstream actuator-output semantics until the source proves otherwise, so a new route cannot
@@ -602,7 +609,9 @@ def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
   if commit in THREE_DOMAIN_COMMITS:
     road_entry = THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT.get(commit, THREE_DOMAIN_ROAD_BRAKE_ENTRY)
     entry_threshold = np.where(speed < LOW_SPEED_DOMAIN_VEGO, 0.0, road_entry)
-    return requested, entry_threshold, True, "raw three-domain coast split"
+    note = ("raw entry with response-qualified active-brake release" if commit in RESPONSE_QUALIFIED_BRAKE_RELEASE_COMMITS
+            else "raw three-domain coast split")
+    return requested, entry_threshold, True, note
   if commit in RAW_DOMAIN_COMMITS:
     return requested, np.full_like(requested, HondaParams.BOSCH_GAS_LOOKUP_BP[0]), True, "raw upstream split"
   if commit in COMPENSATED_DOMAIN_COMMITS:

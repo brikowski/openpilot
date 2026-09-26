@@ -6998,3 +6998,35 @@ and no failed services. The immediate rollback pair is root `4adda40295898dfdb7d
 with nested `16f0ec75fa50bac3ef52a49f85256eb48d48cb5b`; the latest engaged
 full-rate route still predates both. Installation health is verified; this trial has
 no post-deployment closed-loop road result and remains unpromoted.
+
+### Wider brake-release screen and exact-source validator readiness
+
+The device inventory after the guarded install still ended at prior-source route
+`0000002b--6472adcaf4`; there was no engaged `e82025624994` drive to grade. A wider
+held-out screen using older, domain-compatible nested `47196b9a4a72` routes
+25/26/27 found a real limitation of the release hypothesis. Fitting the response
+model on routes 25/26 and evaluating route 27 projects three selected descent
+releases in the improving direction (`0.516→0.479`, `0.443→0.397`, and
+`0.424→0.350 m/s²` tracking RMS). Leave-one-route-out route 25 instead projects
+two releases as flat/slightly worse (`0.412→0.413`, `0.444→0.466 m/s²`). The
+route-25 baseline-model errors are `0.280/0.326 m/s²`, far larger than those
+projected harms. Those events occur in repeated downhill catch/brake cycles at
+about 22.5 m/s, gear 7, pitch near `-0.03 rad`; the source-matched route-2b
+projected-benefit events are also downhill, often *steeper* near `-0.04 rad`,
+at about 18 m/s in gear 6. A fixed downhill veto would therefore discard the
+target events rather than resolve the response ambiguity. These screens neither
+prove the candidate works nor establish a road regression. Keep the unpromoted
+trial and grade its actual response, especially repeated-release cycles and
+gas re-entry, before promotion or retirement.
+
+The validator previously treated both nested `16f0ec75fa50` and `e82025624994`
+as unknown sources, suppressing its source-matched brake-domain diagnostics.
+Their exact Honda source diff confirms the unchanged `-0.30 m/s²` raw brake
+entry and `0.3` grade translation; only `e82025624994` permits response-qualified
+release of an *already-active* mild brake. The validator now maps both exact
+revisions and labels the latter distinctly, so its `brake_release_hold` metric
+remains an observation of retained braking above the entry threshold, not a
+claim to reconstruct the new release decision. The exact-source regression
+failed before the mapping and passes afterward, along with all 57 validator
+tests and focused lint. This is diagnostic/tooling only; the device behavior
+and deployed gitlink are unchanged.

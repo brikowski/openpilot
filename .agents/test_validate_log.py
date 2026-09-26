@@ -455,6 +455,23 @@ def test_deployed_and_comparison_full_revisions_resolve_brake_translation():
     assert not _has_learner_telemetry(revision)
 
 
+def test_current_trial_revisions_keep_brake_entry_and_grade_model_with_release_distinction():
+  request = np.full(100, -0.5)
+  speed = np.full(100, 20.)
+  pitch = np.full(100, .05)
+  enabled = np.ones(100, dtype=bool)
+  for revision, note in (("16f0ec75fa50bac3ef52a49f85256eb48d48cb5b", "raw three-domain coast split"),
+                         ("e820256249942e78cd3a34759e21b92146084da0", "raw entry with response-qualified active-brake release")):
+    switch, threshold, valid, actual_note = _domain_model(revision, request, speed, pitch, np.ones(100), .01)
+    assert valid and actual_note == note
+    np.testing.assert_array_equal(switch, request)
+    np.testing.assert_allclose(threshold, -.3)
+    expected, eligible, modeled = _expected_brake_command(revision, request, speed, pitch, enabled, enabled, .01)
+    assert modeled and eligible.all()
+    assert expected[-1] > request[-1] + .1
+    assert not _brake_passthrough_expected(revision)
+
+
 def test_expected_brake_command_models_grade_translation_only_in_eligible_state():
   requested = np.full(400, -0.5)
   speed = np.full(400, 20.0)
