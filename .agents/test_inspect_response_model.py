@@ -216,6 +216,44 @@ def test_continuity_rejects_pedals_gear_changes_and_log_gaps():
   assert not continuous_mask(valid, gear, t, .1)[15]
 
 
+def test_coast_fit_excludes_transients_stale_state_and_gear_changes():
+  t = np.arange(0., 2., .01)
+  data = {'t': t, 'gas_command': np.full(len(t), -30000.),
+          'brake_request': np.zeros(len(t), dtype=bool), 'active': np.ones(len(t), dtype=bool),
+          'pid': np.ones(len(t), dtype=bool), 'gas_pressed': np.zeros(len(t), dtype=bool),
+          'brake_pressed': np.zeros(len(t), dtype=bool), 'vego': np.full(len(t), 20.),
+          'request': np.full(len(t), -.2), 'aego': np.full(len(t), -.1),
+          'pitch': np.zeros(len(t)), 'gear': np.full(len(t), 6.),
+          'response_state_fresh': np.ones(len(t), dtype=bool)}
+  data['gas_command'][:50] = 100.
+  data['response_state_fresh'][100] = False
+  data['gear'][150:] = 5.
+  prepared = response_model.prepare_coast(data)
+  assert prepared['opportunity'][50] and not prepared['settled'][50]
+  assert prepared['settled'][80]
+  assert not prepared['settled'][100] and not prepared['settled'][120]
+  assert prepared['settled'][140]
+  assert not prepared['settled'][150] and prepared['settled'][180]
+
+
+def test_coast_screen_never_fits_heldout_outcomes(monkeypatch, capsys):
+  base = {'context': np.ones((10, 3)), 'actual': np.full(10, -.2),
+          'settled': np.ones(10, dtype=bool), 'opportunity': np.ones(10, dtype=bool),
+          'request': np.full(10, -.3), 't': np.arange(10) * .1}
+  training = [base, {**base, 'actual': np.full(10, -.1)}]
+  heldout = {**base, 'actual': np.full(10, 100.)}
+  seen = []
+  def fit(groups):
+    assert all(group is not heldout for group in groups)
+    seen.append(len(groups))
+    return np.array([0., 0., -.1])
+  monkeypatch.setattr(response_model, 'prepare_coast', lambda d: d)
+  monkeypatch.setattr(response_model, 'fit_coast', fit)
+  response_model.inspect_coast(['a', 'b'], training, ['held'], [heldout])
+  assert seen == [2, 1, 1]
+  assert 'held held-out settled RMSE/bias' in capsys.readouterr().out
+
+
 def test_fit_balances_routes_not_row_counts():
   coef, loss = fit_balanced([np.ones((2, 1)), np.ones((20, 1))], [np.zeros(2), np.full(20, 2.)])
   np.testing.assert_allclose(coef, [1.])

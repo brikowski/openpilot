@@ -363,6 +363,65 @@ def inspect_residuals(train_routes, train_data, evaluation_routes, evaluation_da
                   name, 'rows', int(selected.sum()), 'zero/estimated residual RMS', np.round(rms, 4))
 
 
+def prepare_coast(data):
+  """Select settled coast for fitting; retain clean coast for opportunity screening."""
+  t = data['t']
+  coast = (data['gas_command'] == -30000) & ~data['brake_request']
+  valid = (data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed'] &
+           (data['vego'] >= 8.) & (-.30 < data['request']) & (data['request'] < 0.) &
+           np.isfinite(data['aego']) & np.isfinite(data['vego']) & np.isfinite(data['pitch']) &
+           np.isfinite(data['gear']) & data['response_state_fresh'])
+  clean = valid & coast
+  sampled = np.arange(len(t)) % 10 == 0
+  settled = continuous_mask(clean, data['gear'], t, .3) & sampled
+  context = np.column_stack((data['vego'] ** 2 / 1000., 9.81 * np.sin(data['pitch']), np.ones(len(t))))
+  return {'t': t, 'context': context, 'actual': data['aego'], 'request': data['request'],
+          'settled': settled, 'opportunity': clean & sampled}
+
+
+def fit_coast(training):
+  """Equal-route observational fit; held-out outcomes never choose coefficients."""
+  targets = [d['actual'][d['settled']] for d in training]
+  if not training or any(len(y) < 5 for y in targets):
+    raise ValueError('Each coast training route needs at least five settled samples')
+  return fit_balanced([d['context'][d['settled']] for d in training], targets)[0]
+
+
+def inspect_coast(train_routes, train_data, evaluation_routes, evaluation_data):
+  """Check natural deceleration predictability, not the outcome of a brake-domain change."""
+  training = [prepare_coast(d) for d in train_data]
+  evaluation = [prepare_coast(d) for d in evaluation_data]
+  for route, d in zip(train_routes + evaluation_routes, training + evaluation, strict=True):
+    print(route, 'settled/all-coast rows', int(d['settled'].sum()), int(d['opportunity'].sum()))
+  try:
+    coef = fit_coast(training)
+  except ValueError as error:
+    print('No coast fit:', error)
+    return
+  print('coast speed2/grade/bias coefficients', np.round(coef, 4))
+  for i, (route, d) in enumerate(zip(train_routes + evaluation_routes, training + evaluation, strict=True)):
+    # Training routes use leave-one-route-out fits. Evaluation never participates in fitting.
+    if i < len(training):
+      try:
+        route_coef = fit_coast(training[:i] + training[i + 1:])
+      except ValueError:
+        print(route, 'leave-one-route-out unavailable')
+        continue
+    else:
+      route_coef = coef
+    prediction = d['context'] @ route_coef
+    mask = d['settled']
+    if mask.any():
+      error = prediction[mask] - d['actual'][mask]
+      print(route, 'leave-one-route-out' if i < len(training) else 'held-out',
+            'settled RMSE/bias', round(float(np.sqrt(np.mean(error ** 2))), 4),
+            round(float(np.mean(error)), 4))
+    opportunity = d['opportunity'] & (prediction - d['request'] > .2)
+    if opportunity.any():
+      print(route, 'coast shortfall screen rows/observed-above-request',
+            int(opportunity.sum()), round(float(np.mean(d['actual'][opportunity] > d['request'][opportunity])), 3))
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('routes', nargs='+')
@@ -371,12 +430,13 @@ def main():
   mode.add_argument('--brake-entries', action='store_true', help='Screen entry dynamics instead of settled fits')
   mode.add_argument('--joint', action='store_true', help='Screen two actuator states including domain transitions')
   mode.add_argument('--residual-forecast', action='store_true', help='Forecast model residual with latest-published carState')
+  mode.add_argument('--coast-authority', action='store_true', help='Screen held-out natural-coast response, not brake counterfactuals')
   parser.add_argument('--evaluation-routes', nargs='+', default=[], help='Held-out routes, never used for fitting')
   parser.add_argument('--evaluation-opendbc', help='Exact nested revision of held-out routes; audit source compatibility separately')
   args = parser.parse_args()
   if len(set(args.routes)) < 2 or len(set(args.routes)) != len(args.routes):
     parser.error('Provide at least two distinct routes to separate training from held-out evaluation')
-  comparison_mode = args.brake_entries or args.joint or args.residual_forecast
+  comparison_mode = args.brake_entries or args.joint or args.residual_forecast or args.coast_authority
   if args.evaluation_routes and (not comparison_mode or not args.evaluation_opendbc):
     parser.error('Evaluation routes require a comparison mode and --evaluation-opendbc; audit source compatibility separately')
   if len(set(args.routes + args.evaluation_routes)) != len(args.routes + args.evaluation_routes):
@@ -387,10 +447,11 @@ def main():
       if (route not in ledger or ledger[route].get('opendbc_commit_full') != revision or
           ledger[route].get('qlog_fallback') or route.startswith('00000005--')):
         parser.error(f'{route}: missing/mismatched nested provenance, qlog fallback, or excluded route')
-  loader = load_forecast_data if args.residual_forecast else load
+  loader = load_forecast_data if args.residual_forecast or args.coast_authority else load
   data = [loader(route) for route in args.routes]
   if comparison_mode:
-    screen = inspect_residuals if args.residual_forecast else inspect_brake_entries if args.brake_entries else inspect_joint
+    screen = (inspect_residuals if args.residual_forecast else inspect_coast if args.coast_authority else
+              inspect_brake_entries if args.brake_entries else inspect_joint)
     screen(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes])
     return
   for domain in ('gas', 'brake'):

@@ -6785,3 +6785,37 @@ Decision: RETIRE a standalone derivative lead and do not add an earlier brake do
 itself. Continue a coordinated dynamic coast/brake authority and release design that models
 downhill load and remaining brake state, verifies numeric command and domain changes together,
 and stays within Honda's safety and upstream-intent boundaries.
+
+### Reproducible causal-input coast screen
+
+`.agents/inspect_response_model.py --coast-authority` now fits natural-coast acceleration from
+speed squared, `9.81 sin(pitch)`, and a bias. It uses the latest published `carState` rather
+than future-interpolated response samples, requires fresh state and 0.3 s of uninterrupted
+same-gear inactive gas/brake for fitting, balances routes, and keeps the evaluation routes out
+of both the full fit and leave-one-route-out checks. The existing validator already counts
+coast exposure; this screen adds a request-relative coast-response estimate. A deliberate
+held-out-data leak made its focused test fail, then was removed. It is diagnostic only: a
+coast-response estimate is not an identified brake actuator map or a brake-entry policy.
+
+On nested `47196b9a4` training routes 25/26/27, settled 10-Hz support is 32/6/192 rows.
+Coefficients for speed-squared/grade/bias are -0.468/-0.872/+0.087; leave-one-route-out
+settled RMS is 0.079/0.062/0.094 m/s². On held-out nested `f697fa4c6` routes 28/29/2b,
+which retain the same coast-domain selector, support is 80/178/144 rows and settled RMS is
+0.083/0.087/0.105 m/s². The tool reports prediction-minus-observation bias, respectively
+-0.003/-0.021/+0.054 m/s². Route 26 has only six sampled settled rows, so it is not strong
+independent calibration exposure. Excluding it shifts coefficients to
+-0.398/-0.898/+0.047 and held-out RMS to 0.084/0.086/0.098 m/s², which leaves the direction
+of the held-out coast-shortfall screen unchanged. A one-route fit using only route 25 predicts
+route 27 poorly (0.403 m/s² leave-one-out RMS); do not treat this model as universally
+identified from one drive.
+
+For negative requests above -0.30 m/s², the full-fit model marks 29/52/96 sampled coast
+rows on held-out routes 28/29/2b where predicted natural acceleration exceeds the request
+by more than 0.2 m/s². Observed acceleration exceeds the request in 100/100/99% of those
+rows; serial correlation means the row count is not an independent event count. On route 2b,
+sampled flags appear approximately 0.12/0.20/0.24/0.28 s before the four short-coast
+brake entries near t=277.45/280.14/282.59/285.34 s. This validates the mask against
+the reported event, not the benefit or timing of a hypothetical earlier brake request.
+Next design work must compare a complete coast-to-brake response and release trajectory,
+including prior domain state and grade, against the raw `carControl` target; do not deploy
+the coast estimate alone as a threshold.
