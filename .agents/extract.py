@@ -58,7 +58,7 @@ def _segments(route):
                 key=lambda s: int(s.rsplit("--", 1)[-1]))
   if not segs:
     raise SystemExit(f"no local segments matching '{route}' under {Paths.log_root()}\n"
-                     f"pull it first: uv run python .agents/pull_logs.py --route {route}")
+                     f"pull it first: .venv/bin/python .agents/pull_logs.py --route {route}")
   full = {s.rsplit("--", 1)[0] for s in segs}
   if len(full) != 1:
     raise SystemExit(f"'{route}' matches {len(full)} routes: {sorted(full)}")

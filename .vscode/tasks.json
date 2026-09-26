@@ -4,7 +4,7 @@
     {
       "label": "Pull and Validate New Logs",
       "type": "shell",
-      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run python .agents/pull_logs.py --all-new",
+      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen python .agents/pull_logs.py --all-new",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -19,7 +19,7 @@
     {
       "label": "Validate One Route",
       "type": "shell",
-      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run python .agents/validate_log.py \"${input:routeArg}\"",
+      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen python .agents/validate_log.py \"${input:routeArg}\"",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -34,7 +34,7 @@
     {
       "label": "Inspect Following Trace",
       "type": "shell",
-      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run python .agents/inspect_following.py \"${input:routeArg}\"",
+      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen python .agents/inspect_following.py \"${input:routeArg}\"",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -64,7 +64,7 @@
     {
       "label": "Sync Upstream Locally",
       "type": "shell",
-      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run python .agents/sync_upstream.py",
+      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen python .agents/sync_upstream.py",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -79,7 +79,7 @@
     {
       "label": "Run Jotpluggler",
       "type": "shell",
-      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run openpilot/tools/jotpluggler/jotpluggler --layout brikowski --data-dir /Users/travisbadgley/.comma/media/0/realdata \"${input:jotplugglerArg}\"",
+      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen openpilot/tools/jotpluggler/jotpluggler --layout brikowski --data-dir /Users/travisbadgley/.comma/media/0/realdata \"${input:jotplugglerArg}\"",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -94,7 +94,7 @@
     {
       "label": "Run Cabana",
       "type": "shell",
-      "command": "ARG=\"${input:cabanaArg}\" && if [ \"$ARG\" = \"live\" ]; then UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run openpilot/tools/cabana/cabana --zmq tcp://192.168.1.200; else UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run openpilot/tools/cabana/cabana \"$ARG\"; fi",
+      "command": "ARG=\"${input:cabanaArg}\" && if [ \"$ARG\" = \"live\" ]; then UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen openpilot/tools/cabana/cabana --zmq tcp://192.168.1.200; else UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen openpilot/tools/cabana/cabana \"$ARG\"; fi",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -124,7 +124,7 @@
     {
       "label": "Run Odyssey software checks",
       "type": "shell",
-      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache lefthook run pre-commit && UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run python -m pytest .agents/test_odyssey_long_rails.py .agents/test_sync_upstream.py -q && UV_CACHE_DIR=/private/tmp/openpilot-uv-cache opendbc_repo/test.sh",
+      "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache lefthook run pre-commit && UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen python -m pytest .agents/test_odyssey_long_rails.py .agents/test_sync_upstream.py -q && UV_CACHE_DIR=/private/tmp/openpilot-uv-cache opendbc_repo/test.sh",
       "options": {
         "cwd": "${workspaceFolder}"
       },

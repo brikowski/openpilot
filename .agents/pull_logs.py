@@ -2,9 +2,9 @@
 """Pull private full-rate rlogs from the comma device and validate them.
 
 Usage modes:
-    uv run python .agents/pull_logs.py --route 0000001f--765ef47daf ["note"]
-    uv run python .agents/pull_logs.py --since-hours 48 ["note"]     # everything new
-    uv run python .agents/pull_logs.py --all-new ["note"]             # every retained route not in ledger
+    .venv/bin/python .agents/pull_logs.py --route 0000001f--765ef47daf ["note"]
+    .venv/bin/python .agents/pull_logs.py --since-hours 48 ["note"]     # everything new
+    .venv/bin/python .agents/pull_logs.py --all-new ["note"]             # every retained route not in ledger
 
 SSH preserves private full-rate evidence that is not automatically available through hosted route
 sources. Qlogs are too decimated for transition and jerk metrics.
@@ -189,7 +189,7 @@ def pull(rid, expected_segments=None):
 
 
 def validate(rid, desc):
-  return subprocess.run(["uv", "run", "python", ".agents/validate_log.py", rid, desc],
+  return subprocess.run([sys.executable, ".agents/validate_log.py", rid, desc],
                         cwd=REPO).returncode
 
 

@@ -89,3 +89,17 @@ def test_pull_rejects_noncontiguous_local_segments(monkeypatch, tmp_path):
   errors = [json.loads(line) for line in pull_logs._pull_error_log().read_text().splitlines()]
   assert errors[-1]["completed_segments"] == 2
   assert "non-contiguous local segments" in errors[-1]["detail"]
+
+
+def test_validate_uses_current_interpreter_without_refreshing_lock(monkeypatch):
+  calls = []
+
+  def fake_run(cmd, **kwargs):
+    calls.append((cmd, kwargs))
+    return subprocess.CompletedProcess(cmd, 0)
+
+  monkeypatch.setattr(pull_logs.subprocess, "run", fake_run)
+
+  assert pull_logs.validate("0000002b--6472adcaf4", "diagnostic") == 0
+  assert calls == [([sys.executable, ".agents/validate_log.py", "0000002b--6472adcaf4", "diagnostic"],
+                   {"cwd": pull_logs.REPO})]
