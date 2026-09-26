@@ -1411,6 +1411,60 @@ def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitc
   }
 
 
+def mild_negative_brake_release_events(grid, requested, actual_accel, speed, pitch, active, pid,
+                                       gas_pressed, brake_pressed, brake_request, gas_command, *,
+                                       gas_inactive, entry_threshold, min_speed=8.):
+  """Describe physical brake-to-coast releases while carControl remains mildly negative.
+
+  Follow-up response and next domain edges are observations, not a counterfactual benefit.
+  These releases are a subset of brake toggles and the complement of retained-brake exposure.
+  """
+  grid = np.asarray(grid, dtype=float)
+  if len(grid) < 2:
+    return []
+  arrays = [requested, actual_accel, speed, pitch, active, pid, gas_pressed, brake_pressed,
+            brake_request, gas_command, entry_threshold]
+  if any(len(values) != len(grid) for values in arrays):
+    raise ValueError("release trace arrays must match the time grid")
+  dt = float(np.median(np.diff(grid)))
+  if not np.isfinite(dt) or dt <= 0:
+    return []
+  requested, actual_accel, speed, pitch, gas_command = (
+    np.asarray(values, dtype=float) for values in (requested, actual_accel, speed, pitch, gas_command))
+  entry_threshold = np.asarray(entry_threshold, dtype=float)
+  brake_request = np.asarray(brake_request, dtype=bool)
+  clean = (np.asarray(active, dtype=bool) & np.asarray(pid, dtype=bool) &
+           ~np.asarray(gas_pressed, dtype=bool) & ~np.asarray(brake_pressed, dtype=bool) &
+           (speed >= min_speed) & np.isfinite(requested) & np.isfinite(actual_accel) &
+           np.isfinite(speed) & np.isfinite(pitch))
+  post_frames = int(round(.6 / dt))
+  transition_frames = int(round(1. / dt))
+  rows = []
+  for i in np.flatnonzero(brake_request[:-1] & ~brake_request[1:]) + 1:
+    if not (clean[i - 1] and clean[i] and entry_threshold[i] < requested[i] < 0. and
+            gas_command[i] <= gas_inactive):
+      continue
+    end = min(len(grid), i + transition_frames + 1)
+    interrupted = np.flatnonzero(~clean[i:end])
+    if len(interrupted):
+      end = i + int(interrupted[0])
+    rebrake = np.flatnonzero(brake_request[i + 1:end])
+    gas_reentry = np.flatnonzero(gas_command[i + 1:end] > gas_inactive)
+    j = i + post_frames
+    post_valid = j < end
+    rows.append({
+      "edge_s": float(grid[i] - grid[0]), "request": float(requested[i]),
+      "aego": float(actual_accel[i]), "error": float(actual_accel[i] - requested[i]),
+      "speed": float(speed[i]), "pitch": float(pitch[i]),
+      "post_error_0p6": float(actual_accel[j] - requested[j]) if post_valid else None,
+      "request_change_0p6": float(requested[j] - requested[i]) if post_valid else None,
+      "rebrake_s": float(grid[i + 1 + rebrake[0]] - grid[i]) if len(rebrake) else None,
+      "gas_reentry_s": float(grid[i + 1 + gas_reentry[0]] - grid[i]) if len(gas_reentry) else None,
+      "observed_s": float(grid[end - 1] - grid[i]),
+    })
+  return rows
+
+
 def brake_release_hold_metrics(switch_accel, entry_threshold, requested, actual_accel,
                                brake_request, active, *, dt):
   """Measure braking retained after the production domain input clears its entry threshold."""

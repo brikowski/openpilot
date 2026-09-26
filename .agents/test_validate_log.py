@@ -44,6 +44,7 @@ from tuning_metrics import (
   hold_last,
   level_positive_response_metrics,
   max_edges_in_window,
+  mild_negative_brake_release_events,
   negative_live_gas_bridge_metrics,
   negative_request_gas_metrics,
   physical_edges,
@@ -1106,6 +1107,56 @@ def test_release_hold_uses_compensated_entry_predicate_and_measures_runs():
   assert np.isclose(metrics["brake_release_hold_max"], 0.04)
   assert np.isclose(metrics["brake_release_hold_force_margin_mean"], np.mean([0.01, 0.1, 0.2, 0.3, 0.05, 0.15, 0.25]))
   assert np.isclose(metrics["brake_release_hold_tracking_mean"], -0.2)
+
+
+def test_mild_negative_release_records_physical_edge_and_observed_followup_only():
+  grid = np.arange(20) * 0.1
+  requested = np.full(20, -.2)
+  actual = np.full(20, -.4)
+  requested[11] = -.1
+  actual[11] = -.15
+  requested[15:] = .1  # ordinary positive-request release is not the trial mechanism
+  brake = np.zeros(20, dtype=bool)
+  brake[:5] = True
+  brake[13:15] = True
+  gas = np.full(20, -30000.)
+  gas[10:13] = -60.
+  good = np.ones(20, dtype=bool)
+  idle = np.zeros(20, dtype=bool)
+  events = mild_negative_brake_release_events(
+    grid, requested, actual, np.full(20, 18.), np.full(20, -.04), good, good,
+    idle, idle, brake, gas, gas_inactive=-30000., entry_threshold=np.full(20, -.3))
+  assert len(events) == 1  # subset of all physical brake-release edges, not the hold metric
+  event = events[0]
+  assert np.isclose(event["edge_s"], .5)
+  assert np.isclose(event["request"], -.2)
+  assert np.isclose(event["error"], -.2)
+  assert np.isclose(event["post_error_0p6"], -.05)
+  assert np.isclose(event["request_change_0p6"], .1)
+  assert np.isclose(event["gas_reentry_s"], .5)
+  assert np.isclose(event["rebrake_s"], .8)
+
+  # A released brake at low speed or with active gas is outside this precise coast-edge mask.
+  assert not mild_negative_brake_release_events(
+    grid, requested, actual, np.full(20, 4.), np.full(20, -.04), good, good,
+    idle, idle, brake, gas, gas_inactive=-30000., entry_threshold=np.full(20, -.3))
+  gas[5] = -60.
+  assert not mild_negative_brake_release_events(
+    grid, requested, actual, np.full(20, 18.), np.full(20, -.04), good, good,
+    idle, idle, brake, gas, gas_inactive=-30000., entry_threshold=np.full(20, -.3))
+  gas[5] = -30000.
+  interrupted = good.copy()
+  interrupted[8] = False
+  censored = mild_negative_brake_release_events(
+    grid, requested, actual, np.full(20, 18.), np.full(20, -.04), interrupted, good,
+    idle, idle, brake, gas, gas_inactive=-30000., entry_threshold=np.full(20, -.3))
+  assert len(censored) == 1
+  assert censored[0]["post_error_0p6"] is None
+  assert censored[0]["rebrake_s"] is None
+  assert censored[0]["gas_reentry_s"] is None
+  assert not mild_negative_brake_release_events(
+    grid, requested, actual, np.full(20, 18.), np.full(20, -.04), good, good,
+    idle, idle, brake, gas, gas_inactive=-30000., entry_threshold=np.full(20, -.1))
 
 
 def _descent_hold_trace(n=300, request=0.1, pitch_val=-0.02, hold_frames=80):

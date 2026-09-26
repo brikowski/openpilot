@@ -7030,3 +7030,33 @@ claim to reconstruct the new release decision. The exact-source regression
 failed before the mapping and passes afterward, along with all 57 validator
 tests and focused lint. This is diagnostic/tooling only; the device behavior
 and deployed gitlink are unchanged.
+
+### Direct mild-negative brake-release outcome diagnostic
+
+The existing `brake_release_hold` metric measures **continued** braking after the
+raw entry threshold has cleared; physical brake-toggle counts include every edge.
+Neither directly isolates this trial's early brake-to-coast action. A new pure
+`mild_negative_brake_release_events` metric takes the source-resolved entry threshold,
+100 Hz zero-order-held Honda bus-1 `BRAKE_REQUEST`/`GAS_COMMAND`, and the matched
+`carControl` request. It selects only clean, engaged PID, >=8 m/s physical
+brake-to-coast edges (gas inactive) while the request remains between the brake
+entry and zero.
+Each event records request, measured `aEgo`, speed, pitch, and current response
+error; it also reports the **observed**, not counterfactual, request and response
+0.6 s later plus any gas re-entry or rebrake within 1 s. Disengagement, pedal
+input, or loss of the clean speed/PID state censors the follow-up rather than
+counting the absence of another edge as success. A changing upstream request
+and Honda response delay remain visible, so the post-edge error is not labeled
+as the effect of the release by itself.
+
+Mask overlap is deliberate: this is a subset of physical brake-off edges and
+complements retained-brake exposure, not another brake-toggle verdict. A
+synthetic trace selects one mild-negative release and excludes a later ordinary
+positive-request release; mutating away the negative-request boundary makes
+that test fail with two selected events. Separate cases reject low speed and
+active gas at the edge, and censor a post-release disengagement. The known
+prior-source `0000002b--6472adcaf4` route reports zero selected early releases
+but 4.14 s across five retained-brake episodes with mean
+`aEgo-request=-0.27 m/s²`. That is the expected baseline exposure, not evidence of the deployed
+candidate's physical benefit. This is root diagnostic tooling only; no Honda
+runtime behavior or device deployment changes.

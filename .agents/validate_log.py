@@ -38,6 +38,7 @@ from tuning_metrics import (
   gas_release_band_metrics,
   hold_last as _hold_last,
   level_positive_response_metrics,
+  mild_negative_brake_release_events,
   negative_live_gas_bridge_metrics,
   negative_request_gas_metrics,
   max_edges_in_window as _max_edges_in_window,
@@ -1371,6 +1372,10 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "brake_release_hold_sec": None, "brake_release_hold_events": None,
          "brake_release_hold_max": None, "brake_release_hold_force_margin_mean": None,
          "brake_release_hold_request_mean": None, "brake_release_hold_tracking_mean": None,
+         "mild_negative_release_events": None, "mild_negative_release_rebrake_1s": None,
+         "mild_negative_release_gas_reentry_1s": None,
+         "mild_negative_release_post_error_0p6_mean": None,
+         "mild_negative_release_details": [],
          "sign_disagree_sec": None, "sign_disagree_events": None, "sign_disagree_longest": None,
          "sign_disagree_withheld_integral": None, "sign_disagree_withheld_worst": None,
          "low_speed_conflict_sec": None, "low_speed_conflict_events": None,
@@ -1647,6 +1652,16 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
       switch_accel, entry_threshold, requested, aego, BR, active,
       dt=dt,
     ))
+  if model_valid and source_commit in BRAKE_GRADE_TRANSLATION_COMMITS:
+    releases = mild_negative_brake_release_events(
+      grid, requested, aego, vego_all, pitch, active, pid, gaspressed,
+      brakepressed, BR, GAS, gas_inactive=GAS_INACTIVE, entry_threshold=entry_threshold)
+    post_errors = [row["post_error_0p6"] for row in releases if row["post_error_0p6"] is not None]
+    out["mild_negative_release_events"] = len(releases)
+    out["mild_negative_release_rebrake_1s"] = sum(row["rebrake_s"] is not None for row in releases)
+    out["mild_negative_release_gas_reentry_1s"] = sum(row["gas_reentry_s"] is not None for row in releases)
+    out["mild_negative_release_post_error_0p6_mean"] = float(np.mean(post_errors)) if post_errors else None
+    out["mild_negative_release_details"] = releases
 
   # Measure the driver-felt symptom directly: physical BRAKE_REQUEST bursts. The known tapping
   # route 2f produced 18 real edges in 10 s, failed BRAKE_RELEASE_HOLD produced 10, while the
@@ -2097,6 +2112,15 @@ def verdicts(r):
         f"{r['brake_release_hold_force_margin_mean']:+.2f}, request "
         f"{r['brake_release_hold_request_mean']:+.2f}, aEgo-request "
         f"{r['brake_release_hold_tracking_mean']:+.2f} m/s^2")
+  if r.get("mild_negative_release_events") is not None:
+    release_error = r.get("mild_negative_release_post_error_0p6_mean")
+    release_error_text = f"{release_error:+.3f}" if release_error is not None else "n/a"
+    add("mild-negative brake release (diagnostic)", True,
+        f"{r['mild_negative_release_events']} physical brake-to-coast edge(s) while carControl stays negative; "
+        f"{r['mild_negative_release_rebrake_1s']} rebrake, "
+        f"{r['mild_negative_release_gas_reentry_1s']} gas re-entry within 1s; "
+        f"observed +0.6s mean aEgo-request {release_error_text} m/s^2 "
+        "(not a counterfactual benefit)")
   if r.get("brake_toggle_max_10s") is not None:
     burst_bad = r["brake_toggle_max_10s"] > BRAKE_TOGGLE_BURST_FLAG
     dn = (f", {r['downhill_toggles_per_min']:.0f}/min on descents over {r['downhill_min']:.1f} min"
