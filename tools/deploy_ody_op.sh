@@ -116,8 +116,14 @@ deploy_device() {
   git diff --check
   git -C opendbc_repo diff --check
   .venv/bin/python .agents/preflash.py
-  git -C opendbc_repo push origin "$BRANCH"
-  git push origin "$BRANCH"
+  if test "$(git -C opendbc_repo ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" != "$OPENDBC_SHA"; then
+    git -C opendbc_repo push origin "$BRANCH"
+  fi
+  if test "$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" != "$PARENT_SHA"; then
+    git push origin "$BRANCH"
+  fi
+  test "$(git -C opendbc_repo ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" = "$OPENDBC_SHA"
+  test "$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" = "$PARENT_SHA"
 
   local marker=ODY_OP_DEPLOY_COMPLETE
   local command="
