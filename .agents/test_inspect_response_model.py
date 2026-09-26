@@ -108,6 +108,44 @@ def test_joint_screen_fits_only_training_routes(monkeypatch):
   assert len(seen) == 40
 
 
+def test_coast_transition_bins_require_fresh_same_domain_rows():
+  joint = {'t': np.arange(8) * .02, 'eligible': np.array([1, 0, 1, 1, 1, 1, 1, 1], dtype=bool),
+           'domain': np.array([0, 0, 0, 1, 0, 0, 0, 0]),
+           'age': np.array([0., .02, .1, .12, .3, .32, .6, .62])}
+  coast = {'t': np.arange(16) * .01,
+           'opportunity': np.ones(16, dtype=bool)}
+  coast['opportunity'][10] = False
+  masks = response_model.coast_transition_bins(joint, coast)
+  assert {name: np.flatnonzero(mask).tolist() for name, mask in masks.items()} == {
+    '0-.1': [0], '.1-.3': [2], '.3-.6': [4], '.6+': [6, 7]}
+  coast['t'][4] += .01
+  with pytest.raises(ValueError, match='timelines'):
+    response_model.coast_transition_bins(joint, coast)
+
+
+def test_coast_transition_fits_training_only(monkeypatch, capsys):
+  train, evaluation = object(), object()
+  t = np.arange(4) * .01
+  train_coast = {'t': t, 'opportunity': np.ones(4, dtype=bool), 'context': np.ones((4, 3))}
+  eval_coast = {**train_coast, 'context': np.full((4, 3), 10000.)}
+  train_joint = {'t': t[::2], 'eligible': np.ones(2, dtype=bool), 'domain': np.zeros(2, dtype=int),
+                 'age': np.array([0., .2]), 'actual': np.ones(2)}
+  eval_joint = {**train_joint, 'actual': np.full(2, 10000.)}
+  monkeypatch.setattr(response_model, 'prepare_coast', lambda d: train_coast if d is train else eval_coast)
+  monkeypatch.setattr(response_model, 'prepare_joint', lambda d: train_joint if d is train else eval_joint)
+  def fit_coast(training):
+    assert training == [train_coast]
+    return np.zeros(3)
+  def fit_joint(training, carry):
+    assert training == [train_joint]
+    return ((0., 0.), (0., 0.)), np.zeros(5)
+  monkeypatch.setattr(response_model, 'fit_coast', fit_coast)
+  monkeypatch.setattr(response_model, 'fit_joint_model', fit_joint)
+  monkeypatch.setattr(response_model, 'joint_matrix', lambda d, *args: np.zeros((len(d['t']), 5)))
+  response_model.inspect_coast_transition(['train'], [train], ['eval'], [evaluation])
+  assert 'eval held-out coast age' in capsys.readouterr().out
+
+
 def residual_data():
   t = np.arange(250) * .02
   return {'t': t, 'dt': .02, 'residual': np.full(len(t), .2),

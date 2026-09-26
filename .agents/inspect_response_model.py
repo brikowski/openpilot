@@ -457,6 +457,41 @@ def inspect_coast(train_routes, train_data, evaluation_routes, evaluation_data):
             int(opportunity.sum()), round(float(np.mean(d['actual'][opportunity] > d['request'][opportunity])), 3))
 
 
+def coast_transition_bins(joint, coast):
+  """Use the same fresh, clean 10-Hz coast rows for every transition model."""
+  if len(joint['t']) != len(coast['t'][::2]) or not np.allclose(joint['t'], coast['t'][::2], atol=.001, rtol=0.):
+    raise ValueError('Joint and coast timelines do not align')
+  selected = joint['eligible'] & (joint['domain'] == 0) & coast['opportunity'][::2]
+  age = joint['age']
+  return {'0-.1': selected & (age < .1), '.1-.3': selected & (age >= .1) & (age < .3),
+          '.3-.6': selected & (age >= .3) & (age < .6), '.6+': selected & (age >= .6)}
+
+
+def inspect_coast_transition(train_routes, train_data, evaluation_routes, evaluation_data):
+  """Compare natural-coast and carried actuator states on identical held-out coast rows."""
+  train_coast = [prepare_coast(d) for d in train_data]
+  coast_coef = fit_coast(train_coast)
+  train_joint = [prepare_joint(d) for d in train_data]
+  carry_dynamics, carry_coef = fit_joint_model(train_joint, True)
+  reset_dynamics, reset_coef = fit_joint_model(train_joint, False)
+  print('coast transition fits: coast', np.round(coast_coef, 4),
+        'carry dynamics/coef', carry_dynamics, np.round(carry_coef, 4),
+        'reset dynamics/coef', reset_dynamics, np.round(reset_coef, 4))
+  for route, d in zip(evaluation_routes, evaluation_data, strict=True):
+    joint, coast = prepare_joint(d), prepare_coast(d)
+    dense = {**joint, 'mask': np.ones(len(joint['t']), dtype=bool)}
+    predictions = {'natural': coast['context'][::2] @ coast_coef,
+                   'carry': joint_matrix(dense, *carry_dynamics, True) @ carry_coef,
+                   'reset': joint_matrix(dense, *reset_dynamics, False) @ reset_coef}
+    for name, mask in coast_transition_bins(joint, coast).items():
+      if mask.any():
+        scores = {model: (round(float(np.sqrt(np.mean((prediction[mask] - joint['actual'][mask]) ** 2))), 4),
+                          round(float(np.mean(prediction[mask] - joint['actual'][mask])), 4))
+                  for model, prediction in predictions.items()}
+        print(route, 'held-out coast age', name, 'rows', int(mask.sum()),
+              'RMSE/bias natural/carry/reset', scores)
+
+
 def exploratory_brake_release(data, error_margin=.2, torque_drop=None):
   """Frozen-input release schedule; a renewed strong request immediately restores brake."""
   if error_margin <= 0.:
@@ -540,6 +575,7 @@ def main():
   mode.add_argument('--joint', action='store_true', help='Screen two actuator states including domain transitions')
   mode.add_argument('--residual-forecast', action='store_true', help='Forecast model residual with latest-published carState')
   mode.add_argument('--coast-authority', action='store_true', help='Screen held-out natural-coast response, not brake counterfactuals')
+  mode.add_argument('--coast-transition', action='store_true', help='Compare held-out natural coast with carried and reset actuator states by coast age')
   mode.add_argument('--brake-release-screen', action='store_true', help='Screen a rising-request overdecel release, not closed-loop road behavior')
   parser.add_argument('--release-error-margin', type=float, default=.2, help='Exploratory overdeceleration margin for the release screen')
   parser.add_argument('--release-torque-drop', type=float, help='Require this much 0.2-s received engine-torque decrease for the release screen')
@@ -548,7 +584,10 @@ def main():
   args = parser.parse_args()
   if len(set(args.routes)) < 2 or len(set(args.routes)) != len(args.routes):
     parser.error('Provide at least two distinct routes to separate training from held-out evaluation')
-  comparison_mode = args.brake_entries or args.joint or args.residual_forecast or args.coast_authority or args.brake_release_screen
+  comparison_mode = (args.brake_entries or args.joint or args.residual_forecast or args.coast_authority or
+                     args.coast_transition or args.brake_release_screen)
+  if args.coast_transition and not args.evaluation_routes:
+    parser.error('--coast-transition requires held-out --evaluation-routes')
   if args.evaluation_routes and (not comparison_mode or not args.evaluation_opendbc):
     parser.error('Evaluation routes require a comparison mode and --evaluation-opendbc; audit source compatibility separately')
   if len(set(args.routes + args.evaluation_routes)) != len(args.routes + args.evaluation_routes):
@@ -559,14 +598,15 @@ def main():
       if (route not in ledger or ledger[route].get('opendbc_commit_full') != revision or
           ledger[route].get('qlog_fallback') or route.startswith('00000005--')):
         parser.error(f'{route}: missing/mismatched nested provenance, qlog fallback, or excluded route')
-  loader = load_forecast_data if args.residual_forecast or args.coast_authority or args.brake_release_screen else load
+  loader = load_forecast_data if args.residual_forecast or args.coast_authority or args.coast_transition or args.brake_release_screen else load
   data = [loader(route) for route in args.routes]
   if comparison_mode:
     if args.brake_release_screen:
       inspect_brake_release(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes],
                             args.release_error_margin, args.release_torque_drop)
       return
-    screen = (inspect_residuals if args.residual_forecast else inspect_coast if args.coast_authority else
+    screen = (inspect_residuals if args.residual_forecast else inspect_coast_transition if args.coast_transition else
+              inspect_coast if args.coast_authority else
               inspect_brake_entries if args.brake_entries else inspect_joint)
     screen(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes])
     return

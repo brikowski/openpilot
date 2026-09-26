@@ -7149,6 +7149,60 @@ selector intact but add an unroad-tested, torque-qualified early brake release.
 **Decision: KEEP the current coast selector pending a coherent dynamic
 gas/coast/brake response design; do not revert it merely for non-stock status.**
 
+### Fresh-coast response needs carried actuator state (2026-09-26)
+
+The device inventory contains 15 retained routes, all already validated; none
+adds an engaged `e82025624994` drive. To avoid treating a settled-coast
+estimate as an immediate gas-off response, the new
+`.agents/inspect_response_model.py --coast-transition` screen compares three
+causal-input models on **identical** held-out fresh-coast samples by age: a
+speed²/grade/bias natural-coast fit, a joint gas/brake response fit retaining
+its decaying actuator states across domain changes, and the same joint fit
+resetting those states outside their own domains. All use the latest published
+`carState` and zero-order-held CAN, with continuous clean PID history; routes
+25/27 train both fits, while exact-selector-compatible routes 28/29/2b are
+held out. Route 26 is omitted because it supplies only six settled coast rows.
+Reproduce with training nested `47196b9a4a72` and evaluation nested
+`f697fa4c6588` using the tool's exact-SHA arguments. Those revisions retain
+the same coast selector but change the gas-response correction, so the joint
+fit is a held-out transfer check on actual sent gas, not a same-source
+calibration claim.
+
+```sh
+.venv/bin/python .agents/inspect_response_model.py \
+  00000025--65f310df96 00000027--543105a0ab \
+  --opendbc 47196b9a4a72f4509f9cddd5d114d44bdd46e167 --coast-transition \
+  --evaluation-routes 00000028--0a9feaa46c 00000029--8532e5621f 0000002b--6472adcaf4 \
+  --evaluation-opendbc f697fa4c6588839976b00218f584916632747dcb
+```
+
+| Held-out route | Coast age | Rows at 10 Hz | Natural / carry / reset RMSE (m/s²) |
+| --- | --- | ---: | --- |
+| 28 | 0–0.1 s | 12 | 0.356 / 0.322 / 0.336 |
+| 28 | 0.1–0.3 s | 21 | 0.203 / 0.120 / 0.140 |
+| 29 | 0–0.1 s | 13 | 0.250 / 0.132 / 0.176 |
+| 29 | 0.1–0.3 s | 18 | 0.218 / 0.127 / 0.138 |
+| 2b | 0–0.1 s | 18 | 0.153 / 0.084 / 0.113 |
+| 2b | 0.1–0.3 s | 25 | 0.136 / 0.082 / 0.101 |
+
+The natural-coast estimate systematically underpredicts initial measured
+acceleration (prediction-minus-observation bias `-0.11..-0.22 m/s²` before
+0.3 s), consistent with residual powertrain response after gas is deactivated.
+Carrying the causal gas/brake state reduces early error on all three held-out
+routes and beats resetting it. By 0.6 s of coast, however, natural-coast RMSE
+is lower than the joint fit on every route (`0.076/0.063/0.103` versus
+`0.101/0.098/0.133`). Route 28's first 0.1 s remains poorly predicted even
+with carry (`0.322 m/s²`), so the joint fit is not an identified live coast
+controller or an inverse brake map. Serially correlated rows and frozen
+recorded inputs cannot prove a changed brake entry would improve the drive.
+
+**Decision: CHANGE the design target, not the live selector.** A dynamic
+gas/coast/brake translation must represent the residual actuator state just
+after gas release and the later natural grade/speed coast, then separately
+validate fresh brake entry and release. The settled natural-coast predictor
+alone is not a safe earlier-brake trigger. No car behavior or device setting
+changed in this screen.
+
 ### Fresh brake-entry check on the same source (2026-09-25)
 
 To test whether the favorable *already-active* downhill brake samples above
