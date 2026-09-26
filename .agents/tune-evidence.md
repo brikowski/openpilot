@@ -7074,3 +7074,44 @@ candidate replay reports four internal triggers and four corresponding physical
 brake-to-coast releases; the no-release ablation reports zero. This verifies the
 command-domain effect only. The release trial still lacks a post-deployment
 closed-loop drive and remains unpromoted.
+
+### Current-source mild-negative coast terrain screen (2026-09-25)
+
+The device's retained inventory still has no engaged route from deployed nested
+`e82025624994`; the most recent exact-source road-response cohort remains the
+three engaged `f697fa4c6588` routes 28/29/2b. An exploratory screen sampled
+their full-rate extracts at 10 Hz while active in PID, with no driver pedals,
+speed 15–30 m/s, constant target gear and zero-order-held Honda gas/coast/brake
+domain from 0.1 s before through 0.4 s after the sample, request range at most
+0.10 m/s², and endpoint timing within 0.35–0.50 s. The outcome is
+`aEgo(t+0.4 s)-carControl(t)`; overlapping samples are correlated and are
+**not** independent trials. This exploratory grid is not the exact-cycle
+edge attribution used by the physical release diagnostic.
+
+At pitch below -0.01 rad and raw request -0.20 to -0.10 m/s², stable inactive
+coast supplied 112 samples across nine contiguous episodes on all three
+routes: median response error +0.169 m/s². Already-active brake supplied 24
+samples across four episodes on those routes: median -0.037 m/s². A cross-route
+one-to-one *episode* match requiring the same target gear and lead state,
+request within 0.03 m/s², speed within 2 m/s, and pitch within 0.015 rad
+yielded only two independent pairs, both with smaller absolute response error
+in brake. Tightening to 0.02 m/s², 1.5 m/s, and 0.010 rad left one pair, also
+favoring brake. Fifteen frame-level matches that all favored brake collapse
+to those two episode pairs and must not be counted as 15 replications.
+
+The opposite grade sign matters: for uphill pitch above +0.01 rad in the same
+request band, coast's 21 stable samples from *one* route had median error
+-0.323 m/s², while live gas's 232 samples across three routes had median
++0.002 m/s². These are not matched episode comparisons. They show why a
+global wider coast band or globally earlier brake entry is not a coherent
+response correction. Brake samples here are an *already-active* domain, so
+their favorable downhill outcome does not prove that entering brake fresh at
+the same request would produce the same response or avoid transition jerk.
+
+**Decision: KEEP the current selector for now, with its near -0.20 m/s² coast
+utility bounded by prior matched evidence.** Do not remove coast wholesale or
+move the fixed -0.30 m/s² brake-entry threshold from this screen. The new
+Honda-owned hypothesis is a state-dependent downhill coast deficit, distinct
+from the deployed mild-brake *release* trial. Any entry candidate must prove
+fresh-entry response and transition behavior against the exact command and
+domain history; replay alone cannot establish physical benefit.
