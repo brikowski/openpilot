@@ -467,6 +467,14 @@ def coast_transition_bins(joint, coast):
           '.3-.6': selected & (age >= .3) & (age < .6), '.6+': selected & (age >= .6)}
 
 
+def transition_error_stats(prediction, actual, mask):
+  """Keep typical and tail error visible beside outlier-sensitive RMSE."""
+  error = np.asarray(prediction)[mask] - np.asarray(actual)[mask]
+  absolute = np.abs(error)
+  return (round(float(np.sqrt(np.mean(error ** 2))), 4), round(float(np.mean(error)), 4),
+          round(float(np.median(absolute)), 4), round(float(np.percentile(absolute, 90)), 4))
+
+
 def inspect_coast_transition(train_routes, train_data, evaluation_routes, evaluation_data):
   """Compare natural-coast and carried actuator states on identical held-out coast rows."""
   train_coast = [prepare_coast(d) for d in train_data]
@@ -485,11 +493,14 @@ def inspect_coast_transition(train_routes, train_data, evaluation_routes, evalua
                    'reset': joint_matrix(dense, *reset_dynamics, False) @ reset_coef}
     for name, mask in coast_transition_bins(joint, coast).items():
       if mask.any():
-        scores = {model: (round(float(np.sqrt(np.mean((prediction[mask] - joint['actual'][mask]) ** 2))), 4),
-                          round(float(np.mean(prediction[mask] - joint['actual'][mask])), 4))
+        scores = {model: transition_error_stats(prediction, joint['actual'], mask)
                   for model, prediction in predictions.items()}
+        selected = np.flatnonzero(mask)
+        worst = selected[np.argmax(np.abs(predictions['carry'][selected] - joint['actual'][selected]))]
         print(route, 'held-out coast age', name, 'rows', int(mask.sum()),
-              'RMSE/bias natural/carry/reset', scores)
+              'RMSE/bias/median-abs/p90-abs natural/carry/reset', scores,
+              'worst carry time/error', round(float(joint['t'][worst]), 3),
+              round(float(predictions['carry'][worst] - joint['actual'][worst]), 3))
 
 
 def exploratory_brake_release(data, error_margin=.2, torque_drop=None):

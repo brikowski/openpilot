@@ -7191,10 +7191,28 @@ acceleration (prediction-minus-observation bias `-0.11..-0.22 m/s²` before
 Carrying the causal gas/brake state reduces early error on all three held-out
 routes and beats resetting it. By 0.6 s of coast, however, natural-coast RMSE
 is lower than the joint fit on every route (`0.076/0.063/0.103` versus
-`0.101/0.098/0.133`). Route 28's first 0.1 s remains poorly predicted even
-with carry (`0.322 m/s²`), so the joint fit is not an identified live coast
+`0.101/0.098/0.133`). Route 28's first-0.1-s carry RMSE is `0.322 m/s²`,
+but see the single-sample sensitivity below; do not interpret it as a typical
+actuator-response miss. The joint fit is not an identified live coast
 controller or an inverse brake map. Serially correlated rows and frozen
 recorded inputs cannot prove a changed brake entry would improve the drive.
+
+The follow-up worst-sample audit locates route 28's dominant error at
+`t=197.894 s`: carry predicts `-0.047 m/s²`, published `aEgo` is
+`-1.092 m/s²`, and raw request is `-0.108 m/s²`. With that *one* of the 12
+first-0.1-s samples omitted, carry RMSE is `0.118` rather than `0.322 m/s²`;
+the untrimmed median absolute error is `0.080 m/s²`. Direct full-rate
+`carState` around the event shows `vEgoRaw` oscillating from `22.535` to
+`21.983` and back to `22.550 m/s` within about 70 ms, with no driver pedal
+or Honda brake request, and with gas still at `-60` on adjacent frames.
+This is a speed-estimate transient, potentially from road disturbance, and
+is not attributable to a Honda gas-off command from these data; the logged
+`carState.wheelSpeeds` fields are zero and do not independently resolve
+individual wheels. Do not delete the event or call it a physical actuator
+response. The diagnostic now reports median and p90 absolute error plus the
+worst carry time/error beside RMSE so that sensitivity is visible on all
+held-out routes. A mean-for-median mutation failed its focused regression
+before restoration.
 
 **Decision: CHANGE the design target, not the live selector.** A dynamic
 gas/coast/brake translation must represent the residual actuator state just

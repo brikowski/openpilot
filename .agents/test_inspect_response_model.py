@@ -123,6 +123,14 @@ def test_coast_transition_bins_require_fresh_same_domain_rows():
     response_model.coast_transition_bins(joint, coast)
 
 
+def test_coast_transition_reports_tail_and_typical_error_separately():
+  predicted = np.array([0., .2, 1., 100.])
+  actual = np.zeros(4)
+  selected = np.array([True, True, True, False])
+  assert response_model.transition_error_stats(predicted, actual, selected) == (
+    .5888, .4, .2, .84)
+
+
 def test_coast_transition_fits_training_only(monkeypatch, capsys):
   train, evaluation = object(), object()
   t = np.arange(4) * .01
