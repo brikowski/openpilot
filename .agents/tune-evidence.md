@@ -7642,3 +7642,57 @@ on independent GPS velocity grade where available, and distinguish body
 pitch, grade, actuator state, and upstream request before proposing a dynamic
 correction. Do not add a global `-0.022 rad` runtime subtraction from this
 screen. No vehicle behavior, Alpha Long setting, or device deployment changed.
+
+### GPS-grade-conditioned mild-negative coast response (2026-09-26)
+
+The new independent-grade diagnostic can recheck whether the existing coast
+selector's response is conditional on terrain rather than pitch-label bias.
+Reproduce on the exact `f697fa4c6588` routes 28/29/2b:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python .agents/inspect_pitch_grade.py \
+  00000028--0a9feaa46c 00000029--8532e5621f 0000002b--6472adcaf4 \
+  --opendbc f697fa4c6588839976b00218f584916632747dcb --coast-response
+```
+
+It uses fixed *observational* masks, not a candidate Honda
+controller: fresh GPS velocity grade age below 0.5 s, engaged PID, no driver
+pedals, 15–30 m/s, raw request `[-0.20,-0.10)` m/s², 10-Hz sampling, stable
+wire gas/coast/brake domain and clean state from 0.1 s before to 0.4 s after
+each row, same target gear, and request movement at most 0.10 m/s² throughout.
+The outcome is
+published `aEgo(t+0.4)-carControl(t)`. Rows overlap and should not be counted
+as independent trials; adjacent qualifying rows are grouped into episodes.
+
+On GPS-velocity downhill grade below `-0.01 rad`, coast has 23/26/24 rows
+across 6/7/10 episodes on routes 28/29/2b. Median future response errors are
+`+0.125/+0.197/+0.104 m/s²`; 5/6, 7/7, and 10/10 episode medians are
+positive. Tightening the GPS age from 1.5 to 0.5 s halves the row exposure
+but preserves this direction. Route 29's near-GPS-level coast instead has 12
+rows across five episodes and median error `-0.219 m/s²`. A global earlier
+brake command would therefore move some already-overdecelerating exposure
+the wrong way.
+
+Current measured `aEgo-carControl > +0.10 m/s²` coincides with a future
+`>+0.10` error on 12/22/12 of the selected downhill coast rows, with **zero**
+future `<-0.10` rows among those current-error-positive samples. This is a
+causal-input diagnostic lead for dynamic state feedback, but selection on
+future stable coast makes it unsuitable as trigger precision/recall on all
+possible domain transitions. It also cannot account for the physical brake
+onset lag or subsequent overdeceleration.
+
+Already-active brake on downhill has median future error
+`+0.023/-0.036/-0.273 m/s²` on 7/7/1 rows, but median GPS grade is
+`-0.068/-0.060/-0.059 rad`, steeper than the coast rows' roughly
+`-0.032/-0.035/-0.029 rad`. They are not a matched coast-to-brake causal
+comparison. Do not infer that moving entry earlier will reproduce the
+already-active brake outcome.
+
+**Decision: KEEP the current selector and the deployed brake-release trial;
+CHANGE the next hypothesis to response-qualified coast exit, not a wider or
+narrower fixed coast band.** A candidate should use current measured error
+and carried actuator state, then demonstrate fresh brake-entry timing,
+release, and near-level non-regression on exact-source closed-loop roads.
+The nested `e82025624994` still has no locally complete engaged drive: route
+2d's segment 1 is only an `.rsync-partial` directory, and device SSH timed
+out during this check. No Honda runtime or device setting changed.

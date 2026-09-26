@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from inspect_pitch_grade import aligned_pitch_grade, gas_lookup_delta, gps_velocity_grade, leave_one_route_out
+from inspect_pitch_grade import aligned_pitch_grade, gas_lookup_delta, gps_coast_response, gps_velocity_grade, leave_one_route_out
 
 
 def test_gps_ned_grade_sign_tracks_climb_and_descent():
@@ -38,3 +38,24 @@ def test_pitch_offset_holdout_cannot_fit_the_held_route():
 
 def test_feedforward_sensitivity_uses_1600_count_honda_lookup():
   assert gas_lookup_delta(.3, .03, .022) == pytest.approx(-94.2, abs=.5)
+
+
+def test_gps_coast_response_requires_recent_gps_and_keeps_coast_separate_from_brake():
+  t = np.arange(200) * .01
+  data = {'t0': 100., 't': t, 'active': np.ones(200, bool), 'pid': np.ones(200, bool),
+          'gas_pressed': np.zeros(200, bool), 'brake_pressed': np.zeros(200, bool),
+          'response_state_fresh': np.ones(200, bool), 'vego': np.full(200, 20.),
+          'request': np.full(200, -.15), 'gear': np.full(200, 7), 'aego': np.full(200, .1),
+          'gas_command': np.full(200, -30000.), 'brake_request': np.zeros(200, bool)}
+  gps = np.array([[100., -.02, 20.]])
+  rows = gps_coast_response(data, gps)
+  assert len(rows) == 1
+  assert rows[0]['terrain'] == 'downhill' and rows[0]['domain'] == 'coast'
+  assert rows[0]['rows'] == 5 and rows[0]['positive_episodes'] == 1
+  assert rows[0]['median_future_error'] == pytest.approx(.25)
+  assert gps_coast_response(data, gps, max_age=1.5)[0]['rows'] > rows[0]['rows']
+  data['brake_request'][:] = True
+  rows = gps_coast_response(data, gps)
+  assert len(rows) == 1 and rows[0]['domain'] == 'brake'
+  data['brake_request'][30:60] = False
+  assert not gps_coast_response(data, gps)

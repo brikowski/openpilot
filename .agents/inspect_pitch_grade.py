@@ -109,16 +109,69 @@ def positive_gas_sensitivity(data, gps, offset):
   return changes, errors, spans
 
 
+def gps_coast_response(data, gps, max_age=.5):
+  """Descriptive settled-domain response, not a fresh brake-entry counterfactual."""
+  t = data['t']
+  gps_t = gps[:, 0] - data['t0']
+  gi = np.searchsorted(gps_t, t, side='right') - 1
+  safe_gi = np.clip(gi, 0, len(gps_t) - 1)
+  age = t - gps_t[safe_gi]
+  grade = gps[safe_gi, 1]
+  prior = np.searchsorted(t, t - .1)
+  future = np.searchsorted(t, t + .4)
+  valid_future = future < len(t)
+  future = np.clip(future, 0, len(t) - 1)
+  gas = data['gas_command'] > -30000
+  domains = {'coast': ~gas & ~data['brake_request'], 'brake': data['brake_request'] & ~gas}
+  clean = (data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed'] &
+           data['response_state_fresh'])
+  base = (clean & (data['vego'] >= 15.) & (data['vego'] < 30.) &
+          (data['request'] >= -.2) & (data['request'] < -.1) &
+          (gi >= 0) & (age >= 0.) & (age < max_age) &
+          (np.abs(gps[safe_gi, 2] - data['vego']) < 2.) &
+          valid_future & (t[future] - t >= .4) & (t[future] - t < .43) &
+          (np.abs(data['request'][future] - data['request']) <= .1) &
+          (data['gear'] == data['gear'][future]) & data['active'][future] &
+          data['response_state_fresh'][future] & np.isfinite(data['aego'][future]))
+  result = []
+  for terrain, terrain_mask in (('downhill', grade < -.01), ('near_level', np.abs(grade) < .01),
+                                ('uphill', grade > .01)):
+    for domain_name, domain_mask in domains.items():
+      ix = np.flatnonzero(base & terrain_mask & domain_mask & (np.arange(len(t)) % 10 == 0))
+      ix = np.array([i for i in ix if (np.all(domain_mask[prior[i]:future[i] + 1] & clean[prior[i]:future[i] + 1]) and
+                                            np.all(data['gear'][prior[i]:future[i] + 1] == data['gear'][i]) and
+                                            np.max(np.abs(data['request'][prior[i]:future[i] + 1] - data['request'][i])) <= .1)],
+                    dtype=int)
+      if not len(ix):
+        continue
+      current_error = data['aego'][ix] - data['request'][ix]
+      future_error = data['aego'][future[ix]] - data['request'][ix]
+      episodes = np.split(np.arange(len(ix)), np.flatnonzero(np.diff(t[ix]) > .15) + 1)
+      episode_errors = np.array([np.median(future_error[span]) for span in episodes])
+      result.append({'terrain': terrain, 'domain': domain_name, 'rows': len(ix), 'episodes': len(episodes),
+                     'positive_episodes': int(np.sum(episode_errors > 0.)),
+                     'median_request': float(np.median(data['request'][ix])),
+                     'median_grade': float(np.median(grade[ix])),
+                     'median_future_error': float(np.median(future_error)),
+                     'current_over_future_over': int(np.sum((current_error > .1) & (future_error > .1))),
+                     'current_over_future_under': int(np.sum((current_error > .1) & (future_error < -.1)))})
+  return result
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('routes', nargs='+')
   parser.add_argument('--opendbc', required=True, help='Full exact nested revision shared by all routes')
   parser.add_argument('--feedforward-offset', type=float, help='Optional frozen-input pitch-offset sensitivity, in radians')
+  parser.add_argument('--coast-response', action='store_true', help='GPS-grade-conditioned stable coast/brake response screen')
+  parser.add_argument('--coast-gps-max-age', type=float, default=.5, help='Maximum held GPS age for --coast-response (seconds)')
   args = parser.parse_args()
   if len(args.routes) < 3 or len(set(args.routes)) != len(args.routes):
     parser.error('Provide at least three distinct routes for leave-one-route-out validation')
   if args.feedforward_offset is not None and not 0. < args.feedforward_offset < .1:
     parser.error('Feedforward offset must be between zero and 0.1 radians')
+  if not 0. < args.coast_gps_max_age <= 2.:
+    parser.error('Coast GPS maximum age must be within (0, 2] seconds')
   ledger_path = Path(__file__).with_name('log-validation-ledger.jsonl')
   ledger = {row['route']: row for row in map(json.loads, ledger_path.read_text().splitlines())}
   groups = []
@@ -141,6 +194,9 @@ def main():
             'median count change', round(float(np.median(changes)), 1) if len(changes) else None,
             'future over/under/middle', int(np.sum(errors > .1)), int(np.sum(errors < -.1)),
             int(np.sum(np.abs(errors) <= .1)))
+    if args.coast_response:
+      for row in gps_coast_response(data, gps, max_age=args.coast_gps_max_age):
+        print(route, 'GPS coast response', row)
   for width, name in ((1, 'constant'), (2, 'acceleration'), (3, 'acceleration+speed2')):
     for held, route in enumerate(args.routes):
       coef, error = leave_one_route_out(groups, held, width)
