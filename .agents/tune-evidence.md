@@ -7176,3 +7176,19 @@ from this screen.** Most selected correction signs oppose the later recorded
 error; the few wrong-sign rows do not identify a repeatable request-fall
 mechanism or the causal effect of changing opaque gas counts. No Honda runtime,
 DBC, safety, upstream controller, or device setting changed.
+
+An additional transient screen removed the future-stable-request condition
+instead of treating its zero request-fall count as exculpatory. It required a
+>0.10 m/s² request drop over the preceding 0.5 s, current positive gas,
+active/no-pedal state 0.6 s later, and positive recorded gas at that future
+point so the response was not contaminated by a brake/coast takeover. The
+three routes provided 125/63/89 correlated 10-Hz sampled rows, with median
+feedback correction -8.2/-8.4/0.0 counts. Only 2/0/3 rows retained positive
+feedback above five counts; 1/0/2 of those had >+0.10 m/s² recorded
+overacceleration versus the *future* request. Their sample size and frozen
+prior-source response cannot support a global fast-unwind or crest clamp.
+They do narrow the plausible issue: the current controller usually has
+nonpositive feedback by these sampled gas-domain request falls; this screen
+does not isolate which part of its correction logic caused that outcome.
+Abrupt drop-to-coast and physical response after a changed gas command remain
+separate questions; the latter cannot be inferred from this replay.
