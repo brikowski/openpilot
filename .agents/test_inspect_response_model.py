@@ -128,6 +128,18 @@ def test_response_alignment_uses_only_published_state_and_rejects_staleness():
   np.testing.assert_allclose(changed['aego'][:4], held['aego'][:4])
 
 
+def test_torque_alignment_requires_an_actual_recent_receive_update():
+  data = {'t': np.array([-.01, 0., .02, .04, .10]), 't0': 0.}
+  updates = np.array([0., .04])
+  values = np.array([[-130., 0.], [-180., 0.]])
+  held = response_model.latest_received_torque(data, updates, values)
+  np.testing.assert_allclose(held['engine_torque_rx'], [np.nan, -130., -130., -180., -180.])
+  np.testing.assert_array_equal(held['torque_rx_fresh'], [False, True, True, True, False])
+  values[1, 0] = 999.
+  changed = response_model.latest_received_torque(data, updates, values)
+  np.testing.assert_allclose(changed['engine_torque_rx'][:3], held['engine_torque_rx'][:3])
+
+
 def test_residual_observer_is_bounded_causal_and_resets_after_invalid_history():
   data = residual_data()
   data['residual'][:] = 10.
@@ -261,6 +273,7 @@ def test_exploratory_brake_release_requires_rising_request_and_restores_strong_b
   second = (t >= 2.3) & (t < 3.)
   request[first] = -.28 + .26 * (t[first] - 1.)
   request[second] = -.28 + .26 * (t[second] - 2.3)
+  original_request = request.copy()
   d = {'t': t, 'request': request, 'brake_request': (t >= .5) & (t < 3.),
        'aego': np.full(len(t), -.8), 'active': np.ones(len(t), dtype=bool),
        'pid': np.ones(len(t), dtype=bool), 'gas_pressed': np.zeros(len(t), dtype=bool),
@@ -277,6 +290,19 @@ def test_exploratory_brake_release_requires_rising_request_and_restores_strong_b
   assert not response_model.exploratory_brake_release(d)[0].any()
   with pytest.raises(ValueError, match='positive'):
     response_model.exploratory_brake_release(d, 0.)
+  d['request'] = original_request
+  d['aego'][:] = -.8
+  d['engine_torque_rx'] = -100. - 200. * t
+  d['car_gas_rx'] = np.zeros(len(t))
+  d['torque_rx_fresh'] = np.ones(len(t), dtype=bool)
+  assert response_model.exploratory_brake_release(d, torque_drop=25.)[0].any()
+  d['engine_torque_rx'][:] = -100.
+  assert not response_model.exploratory_brake_release(d, torque_drop=25.)[0].any()
+  d['engine_torque_rx'] = -100. - 200. * t
+  d['torque_rx_fresh'][:] = False
+  assert not response_model.exploratory_brake_release(d, torque_drop=25.)[0].any()
+  with pytest.raises(ValueError, match='positive'):
+    response_model.exploratory_brake_release(d, torque_drop=0.)
 
 
 def test_release_screen_fits_only_other_training_routes(monkeypatch):
@@ -285,7 +311,7 @@ def test_release_screen_fits_only_other_training_routes(monkeypatch):
                'actual': np.zeros(2), 'mask': np.ones(2, dtype=bool)} for d in raw]
   seen = []
   monkeypatch.setattr(response_model, 'prepare_joint', lambda d: prepared[next(i for i, item in enumerate(raw) if item is d)])
-  monkeypatch.setattr(response_model, 'exploratory_brake_release', lambda d, margin: (np.zeros(4, dtype=bool), []))
+  monkeypatch.setattr(response_model, 'exploratory_brake_release', lambda d, margin, torque: (np.zeros(4, dtype=bool), []))
   monkeypatch.setattr(response_model, 'joint_matrix', lambda p, *args: np.zeros((len(p['t']), 5)))
   def fit(groups):
     assert all(group is not prepared[2] for group in groups)

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from extract import load, _segments
+from extract import ODYSSEY_PT_DBC, load, _segments
 from tuning_metrics import brake_entry_tracking_profile, causal_lpf
 
 JOINT_DYNAMICS = [(g, b) for g in ((0., 0.), (.1, .25), (.5, 0.), (.2, .5))
@@ -36,15 +36,50 @@ def latest_response_state(data, state_t, values):
   return out
 
 
+def latest_received_torque(data, receive_t, values):
+  """Hold actual 0x130 updates; reject missing or stale torque instead of interpolating CAN."""
+  receive_t, values = np.asarray(receive_t), np.asarray(values)
+  if not len(receive_t) or np.any(np.diff(receive_t) < 0):
+    raise ValueError('GAS_PEDAL_2 timestamps must be nonempty and chronological')
+  grid = data['t'] + data['t0']
+  ix = np.searchsorted(receive_t, grid, side='right') - 1
+  safe_ix = np.maximum(ix, 0)
+  age = grid - receive_t[safe_ix]
+  out = data.copy()
+  out['engine_torque_rx'] = np.where(ix >= 0, values[safe_ix, 0], np.nan)
+  out['car_gas_rx'] = np.where(ix >= 0, values[safe_ix, 1], np.nan)
+  out['torque_rx_fresh'] = (ix >= 0) & (age >= 0.) & (age < .06)
+  return out
+
+
 def load_forecast_data(route):
   from openpilot.tools.lib.logreader import LogReader
+  from opendbc.can.parser import CANParser
   data = load(route)
   _, paths = _segments(route)
-  states = sorted(([m.logMonoTime / 1e9, m.carState.vEgo, m.carState.aEgo,
-                    m.carState.gasPressed, m.carState.brakePressed]
-                   for m in LogReader(paths) if m.which() == 'carState'), key=lambda row: row[0])
+  states, torque = [], []
+  recv = CANParser(ODYSSEY_PT_DBC, [('GAS_PEDAL_2', 0)], 1)
+  for m in LogReader(paths):
+    if m.which() == 'carState':
+      states.append([m.logMonoTime / 1e9, m.carState.vEgo, m.carState.aEgo,
+                     m.carState.gasPressed, m.carState.brakePressed])
+    elif m.which() == 'can':
+      frames = [(c.address, c.dat, c.src) for c in m.can if c.address == 0x130 and c.src == 1]
+      if frames:
+        recv.update([(m.logMonoTime, frames)])
+        signals = recv.vl['GAS_PEDAL_2']
+        torque.append([m.logMonoTime / 1e9, signals['ENGINE_TORQUE_ESTIMATE'], signals['CAR_GAS']])
+  states.sort(key=lambda row: row[0])
   states = np.asarray(states, dtype=float).reshape(-1, 5)
-  return latest_response_state(data, states[:, 0], states[:, 1:])
+  data = latest_response_state(data, states[:, 0], states[:, 1:])
+  if torque:
+    torque = np.asarray(sorted(torque, key=lambda row: row[0]), dtype=float)
+    data = latest_received_torque(data, torque[:, 0], torque[:, 1:])
+  else:
+    data['engine_torque_rx'] = np.full(len(data['t']), np.nan)
+    data['car_gas_rx'] = np.full(len(data['t']), np.nan)
+    data['torque_rx_fresh'] = np.zeros(len(data['t']), dtype=bool)
+  return data
 
 
 def delayed_response(signal, dt, delay, tau):
@@ -422,10 +457,12 @@ def inspect_coast(train_routes, train_data, evaluation_routes, evaluation_data):
             int(opportunity.sum()), round(float(np.mean(d['actual'][opportunity] > d['request'][opportunity])), 3))
 
 
-def exploratory_brake_release(data, error_margin=.2):
+def exploratory_brake_release(data, error_margin=.2, torque_drop=None):
   """Frozen-input release schedule; a renewed strong request immediately restores brake."""
   if error_margin <= 0.:
     raise ValueError('Release error margin must be positive')
+  if torque_drop is not None and torque_drop <= 0.:
+    raise ValueError('Torque-drop screen needs a positive magnitude')
   t, request, brake = data['t'], data['request'], data['brake_request']
   past = np.maximum(np.searchsorted(t, t - .2, side='right') - 1, 0)
   valid = (data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed'] &
@@ -434,6 +471,11 @@ def exploratory_brake_release(data, error_margin=.2):
   valid = continuous_mask(valid, data['gear'], t, .2)
   trigger = (brake & valid & (-.3 < request) & (request < 0.) &
              (data['aego'] < request - error_margin) & (request - request[past] > .05))
+  if torque_drop is not None:
+    torque = data['engine_torque_rx']
+    trigger &= (data['torque_rx_fresh'] & data['torque_rx_fresh'][past] &
+                (data['car_gas_rx'] == 0.) & np.isfinite(torque) & np.isfinite(torque[past]) &
+                (torque - torque[past] < -torque_drop))
   release = np.zeros(len(t), dtype=bool)
   events = []
   for start in np.flatnonzero(brake & ~np.r_[False, brake[:-1]]):
@@ -455,7 +497,8 @@ def exploratory_brake_release(data, error_margin=.2):
   return release, events
 
 
-def inspect_brake_release(train_routes, train_data, evaluation_routes, evaluation_data, error_margin=.2):
+def inspect_brake_release(train_routes, train_data, evaluation_routes, evaluation_data,
+                          error_margin=.2, torque_drop=None):
   """Model-differential screen only: future carControl and vehicle feedback remain frozen."""
   routes = train_routes + evaluation_routes
   data = train_data + evaluation_data
@@ -463,7 +506,7 @@ def inspect_brake_release(train_routes, train_data, evaluation_routes, evaluatio
   for i, (route, d, p) in enumerate(zip(routes, data, prepared, strict=True)):
     training = prepared[:i] + prepared[i + 1:len(train_data)] if i < len(train_data) else prepared[:len(train_data)]
     dynamics, coef = fit_joint_model(training)
-    release, events = exploratory_brake_release(d, error_margin)
+    release, events = exploratory_brake_release(d, error_margin, torque_drop)
     sampled = np.arange(0, len(d['t']), 2)
     candidate = {**p, 'brake': np.where(release[sampled], 0., p['brake']),
                  'domain': np.where(release[sampled], 0, p['domain'])}
@@ -499,6 +542,7 @@ def main():
   mode.add_argument('--coast-authority', action='store_true', help='Screen held-out natural-coast response, not brake counterfactuals')
   mode.add_argument('--brake-release-screen', action='store_true', help='Screen a rising-request overdecel release, not closed-loop road behavior')
   parser.add_argument('--release-error-margin', type=float, default=.2, help='Exploratory overdeceleration margin for the release screen')
+  parser.add_argument('--release-torque-drop', type=float, help='Require this much 0.2-s received engine-torque decrease for the release screen')
   parser.add_argument('--evaluation-routes', nargs='+', default=[], help='Held-out routes, never used for fitting')
   parser.add_argument('--evaluation-opendbc', help='Exact nested revision of held-out routes; audit source compatibility separately')
   args = parser.parse_args()
@@ -520,7 +564,7 @@ def main():
   if comparison_mode:
     if args.brake_release_screen:
       inspect_brake_release(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes],
-                            args.release_error_margin)
+                            args.release_error_margin, args.release_torque_drop)
       return
     screen = (inspect_residuals if args.residual_forecast else inspect_coast if args.coast_authority else
               inspect_brake_entries if args.brake_entries else inspect_joint)

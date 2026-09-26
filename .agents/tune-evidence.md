@@ -6901,3 +6901,31 @@ runtime candidate. Keep the existing raw-request release and safety boundary. A 
 dynamic release must estimate *remaining* Honda braking response, including uncertainty and
 short-term response trend, rather than act on the sign of current error alone. Do not
 exclude the broader coordinated gas/coast/brake design; this check only rejects this rule.
+
+### Received engine-torque trend distinguishes the release-screen failures
+
+The release diagnostic now decodes only actual received bus-1 `GAS_PEDAL_2` (0x130)
+updates and holds their `ENGINE_TORQUE_ESTIMATE` and `CAR_GAS` to the latest-published
+control timestamp, rejecting values older than 0.06 s. No future CAN interpolation enters
+this test. All checked carControl samples on routes 28/29/2b had a fresh update, and
+`CAR_GAS=0` at the candidate brake-release edges. In the route-2b four descent cycles,
+the estimate falls by about 42/39/38/45 DBC-labelled Nm over the preceding 0.2 s. The
+route-28 t≈476.27 and route-29 t≈477.34 model-beneficial release opportunities fall by
+about 42 and 62. By contrast, the model-worsened route-28 t≈473.28 and route-29
+t≈474.39/612.95 opportunities are approximately flat (-133→-133, -126→-127,
+and -134→-133). This does not establish torque-to-wheel-force calibration: the signal
+is an ECU estimate, its full-range validity remains unresolved, and the same torque trend
+may have different effects by gear or grade.
+
+As a sensitivity *screen*, requiring a fresh at-least-25-Nm decrease in 0.2 s alongside
+the original causal rising-request/overdeceleration condition leaves one route-28 and two
+route-29 leave-one-route-out opportunities, plus the four held-out route-2b descent
+opportunities. All seven move the observational model's projected tracking RMS in the
+improving direction; the 40-Nm cutoff selects the same event set, with one route-2b
+trigger delayed by about 0.02 s. The discarded events include the three prominent
+model-worsened cases above. This shows the torque trend is an informative *intermediate
+state observation* that the earlier sign-only rule lacked. It does not prove an early
+brake release will improve a real drive: the selected model's route-2b baseline error
+remains 0.13–0.30 m/s² on these windows, greater than its projected gains, and a
+released domain would change future planner requests. Keep this as an unpromoted
+candidate pending command-shape/safety tests and a controlled road-response check.
