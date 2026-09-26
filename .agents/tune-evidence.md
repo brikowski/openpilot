@@ -7144,3 +7144,35 @@ coast, brake entry, and brake release under the *current* raw request. The
 deployed bounded early-release trial is still awaiting closed-loop road
 evidence; no upstream planner, Alpha Long setting, or vehicle behavior changed
 in this audit.
+
+### Current gas-feedback sign screen on prior-source response (2026-09-25)
+
+The device still has no new unvalidated route from the deployed `e82025624994`
+trial. Replayed the *current* nested Honda controller on the frozen, exact-source
+`f697fa4c6588` routes 28/29/2b, pairing each controller call with card's
+sampled control/state and checking the emitted active-gas command. An
+exploratory 10-Hz screen required active PID, no driver pedals, speed >=8 m/s,
+positive transmitted gas, valid state 0.6 s later, and request change below
+0.10 m/s² over that horizon. It compared the sign of the controller's bounded
+gas-feedback correction with the **recorded** 0.6-s response error. The
+scratch reproducer is `/private/tmp/ody_feedback_sign_screen.py`; the vehicle
+response remains the prior controller's and is not a candidate-road outcome.
+
+The positive-correction cohorts have 1,101/900/1,176 sampled rows, with median
+future `aEgo-request` -0.068/-0.062/-0.071 m/s². Only 67/44/48 rows combine
+positive correction with >+0.10 m/s² future overacceleration. Negative
+correction cohorts have 722/999/975 rows, with median future error
++0.094/+0.061/+0.092 m/s²; 48/29/60 combine negative correction with
+<-0.10 m/s² future underacceleration. These are correlated rows, not
+independent correction effects. Only 6/1/4 of the positive-wrong rows also
+show >+0.10 m/s² *current* overacceleration; none follows a >0.10 m/s²
+request fall over the preceding 0.5 s within this **future-stable** mask.
+That last null result does not exclude sharp crest transients, which the
+future-stable filter can remove.
+
+**Decision: KEEP the present bounded response feedback as an unpromoted gas
+trial and do not add an immediate overacceleration clamp or faster unwind
+from this screen.** Most selected correction signs oppose the later recorded
+error; the few wrong-sign rows do not identify a repeatable request-fall
+mechanism or the causal effect of changing opaque gas counts. No Honda runtime,
+DBC, safety, upstream controller, or device setting changed.
