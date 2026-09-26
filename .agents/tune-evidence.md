@@ -6819,3 +6819,32 @@ the reported event, not the benefit or timing of a hypothetical earlier brake re
 Next design work must compare a complete coast-to-brake response and release trajectory,
 including prior domain state and grade, against the raw `carControl` target; do not deploy
 the coast estimate alone as a threshold.
+
+### Size of the short-coast contribution in the route-2b descent
+
+A separate signed error-area audit uses latest-published full-rate `carState` (`aEgo`, not
+future-interpolated state), raw `carControl.actuators.accel`, and held physical CAN domains.
+It integrates `aEgo - request` over each observed interval; positive area is additional
+vehicle speed relative to integrating the requested acceleration over the *same* interval,
+not a counterfactual response to changing the domain. All four reported entries and their
+first brake second are active PID with fresh state, no driver pedals, unchanged gear 6, and
+cruise plan source rather than a selected lead.
+
+| Brake edge (route s) | Preceding coast (s) | Coast signed error area (m/s) | First brake-second signed error area (m/s) |
+| --- | ---: | ---: | ---: |
+| 277.448 | 0.202 | +0.170 | +0.182 |
+| 280.136 | 0.239 | +0.157 | +0.172 |
+| 282.590 | 0.242 | +0.158 | +0.168 |
+| 285.340 | 0.341 | +0.181 | +0.008 |
+
+The four coast intervals therefore each contribute roughly +0.16..+0.18 m/s of signed
+tracking-speed error (about 0.36..0.40 mph) before brake entry. The first brake second also
+has positive integrated error in three of four cycles, while the preceding gas-active parts
+of the prior second have positive error. On this whole 6.30-minute route, clean moving PID
+exposure is about 339.4 s gas, 14.7 s brake, and 19.2 s inactive coast, with absolute
+request-response error areas about 42.4/3.0/3.5 m/s respectively. These domain totals are
+descriptive, not causal: exposure and requested maneuvers differ. Coast is a real contributor
+to the descent mismatch, but eliminating its dwell alone cannot establish correction of the
+adjacent gas and delayed brake response. This narrows the next candidate to a *joint*
+domain-and-response trajectory; it does not justify replacing the fixed brake entry with the
+coast predictor in isolation.
