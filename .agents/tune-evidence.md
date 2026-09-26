@@ -7115,3 +7115,32 @@ Honda-owned hypothesis is a state-dependent downhill coast deficit, distinct
 from the deployed mild-brake *release* trial. Any entry candidate must prove
 fresh-entry response and transition behavior against the exact command and
 domain history; replay alone cannot establish physical benefit.
+
+### Fresh brake-entry check on the same source (2026-09-25)
+
+To test whether the favorable *already-active* downhill brake samples above
+could support an earlier coast-to-brake entry, re-read the full-rate routes
+28/29/2b and paired each physical bus-1 `ACC_CONTROL` frame with card's
+same-cycle sampled `carControl` and `carState`. Requiring an active, moving
+(>=10 m/s), contiguous coast-to-brake transition found 8/7/6 entries. Their
+sampled raw-request medians were -0.303/-0.309/-0.308 m/s²; **none** began
+above -0.30 m/s². Thus the -0.20..-0.10 m/s² brake observations in the terrain
+screen are retained braking after an earlier entry, not direct evidence of
+what a fresh mild-negative brake entry would do.
+
+The existing response-profile metric selected 8/6/6 sustained coast-to-brake
+entries from those routes. Route-level median `aEgo-carControl` errors at
+0.5 s after entry were +0.048/+0.248/+0.380 m/s², then
+-0.104/-0.040/-0.190 at 0.8 s. Its filtered-response grid and sustained
+episode mask differ from the exact-cycle edge count; the two measurements
+answer different questions. The delayed bite followed by overdeceleration
+means pulling entry earlier could reduce the initial deficit yet worsen the
+later overshoot and jerk. This is a concrete transition risk, not a prediction
+of a candidate's physical outcome.
+
+**Decision: do not promote a new earlier-entry or global coast-removal arm from
+these data.** The present Honda-owned target remains the response through
+coast, brake entry, and brake release under the *current* raw request. The
+deployed bounded early-release trial is still awaiting closed-loop road
+evidence; no upstream planner, Alpha Long setting, or vehicle behavior changed
+in this audit.
