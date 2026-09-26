@@ -7221,6 +7221,37 @@ validate fresh brake entry and release. The settled natural-coast predictor
 alone is not a safe earlier-brake trigger. No car behavior or device setting
 changed in this screen.
 
+### Short coast gaps at the negative-gas bridge (2026-09-26)
+
+The same exact-nested `f697fa4c6588` routes 28/29/2b contain two each of
+six clean road-speed gas→coast→gas intervals shorter than 0.1 s, lasting
+`0.041..0.062 s` on held bus-1 `ACC_CONTROL`. These are small parts of the
+total `11.84/21.66/19.08 s` of clean moving coast; most coast dwell is in
+episodes longer than 0.3 s. Each short gap returns to the `-60` negative-live
+gas bridge, not positive gas or a friction-brake request. Exact-cycle pairing
+of `carControl`, `carState`, and sent CAN confirms that small raw-request
+crossings around the bridge exit at `-0.101 m/s²` cause the domain flips.
+For example, route 2b at `t=458.040/458.099/458.139 s` sends
+`GAS_COMMAND=-60/-30000/-60` while same-cycle raw requests are
+`-0.0978/-0.1011/-0.1009 m/s²`; all three encoded `ACCEL_COMMAND` values
+round to `-0.10 m/s²` at the Honda DBC's `0.01 m/s²` resolution. This is a
+real Honda domain discontinuity beneath an unchanged numeric wire request,
+not a planner-to-CAN numeric mismatch.
+
+The route-2b `aEgo` around that example remains approximately
+`+0.014..+0.052 m/s²`; it does not identify an adverse physical response to
+the 40-ms gap. Route 28's gap near `197.878 s` overlaps the independently
+identified oscillating speed estimate, so its large `aEgo` movement cannot
+be assigned to this command edge. More importantly, the `-0.101` bridge
+release was introduced after earlier bridge-originated gas stayed live to
+about `-0.20 m/s²` for over a second and measurably under-decelerated (see
+the 2026-09-18 bounded-recovery correction above). Extending `-60` through
+the entire mild-negative range merely to remove short gaps would reopen
+that known failure mode. **Decision: KEEP the current bridge bound; do not
+retune it from frame-level domain toggles alone.** The joint dynamic
+gas/coast/brake target remains sustained request-versus-response error and
+safe transitions, not zero domain edges as an end in itself.
+
 ### Fresh brake-entry check on the same source (2026-09-25)
 
 To test whether the favorable *already-active* downhill brake samples above
@@ -7373,3 +7404,18 @@ high-authority shortfall remains a Honda/EPS-response question after faithful
 controller-to-wire transmission, not proof that more torque or a different
 upstream lateral command would improve the turn. No lateral runtime or
 device setting changed in this screen.
+
+### Pending new e820 route transfer (2026-09-26)
+
+The device briefly listed 17 retained routes: 15 already validated and two
+not yet validated, `0000002c--27e76b8c54` (one segment) and
+`0000002d--dd80adf833` (two segments). The resumable private pull retained
+only a complete local segment 0 of route 2d before SSH/Wi-Fi timed out; route
+2c has no local complete segment. The partial 2d segment records clean root
+`85c6bbe198e7` / nested `e82025624994`, the same small-model blob as the
+prior road cohort, and Alpha Long enabled, but **zero `longActive` samples
+among 5,825 `carControl` messages**. It cannot grade the deployed brake-release
+trial; segment 1 may contain engagement. Neither incomplete route was added
+to the authoritative validation ledger. Resume the two full-rate transfers
+when the device is reachable, then validate exact provenance and exposure
+before attributing road response.
