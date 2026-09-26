@@ -7644,6 +7644,49 @@ distinguish current load/actuator state and transition direction without
 replacing one fixed delay with another solely from an offline model fit.
 No Honda runtime, safety, DBC, upstream, or device setting changed.
 
+### Cap-aware gas feedback: exact-window frozen-input attribution (2026-09-26)
+
+Replayed current nested `e82025624994` on exact prior-source
+`f697fa4c6588` routes 29 and 2b to ask whether its cap-aware feedback moves
+gas in the direction of the observed positive-request response errors. A
+same-input no-cap-weight/no-early-brake-release twin reproduces the recorded
+`GAS_COMMAND` on **every 50-Hz frame** in route 29 seconds 565–571 (298 frames)
+and route 2b seconds 326–335 (448 frames), certifying this local command
+comparison against replay timing error. The current-controller arm changes
+only frozen commands; its physical `aEgo` input remains the old drive's.
+
+At route 29 seconds 568–569, request is about `+1.00/+0.97 m/s²`, achieved
+`aEgo` about `+1.13/+1.07`, and the current arm sends median `15/15.5`
+fewer gas counts than the exact recorded/no-cap twin. At route 2b seconds
+330 and 333, request is about `+1.05/+0.97`, achieved `+0.98/+0.97`, and
+the current arm sends median `13.5/5` more counts. By route 2b second 334,
+the request is about `+0.95`, achieved about `+0.90`, but the median gas
+change is **zero**. The change opposes the recorded overshoot at 568–569
+and the undershoot at 330; extra gas at 333, when achieved acceleration is
+already close to request, has no established benefit. The later under-response
+is unresolved. This is not a road result for `e82025624994`.
+
+The route-29 second 568 and route-2b second 332 have roughly matched
+speed (`17.6/17.7 m/s`), request (`+1.00/+1.00 m/s²`), fifth target gear,
+received DBC `TRANS_SHIFT_ACTIVITY=85`, engine RPM (`2169/2180`), and old
+gas command (`887/893`). Yet achieved `aEgo` differs (`+1.14/+0.99`).
+Received engine-torque estimates are `895/882`; `CAR_GAS` is `92/89`.
+GPS-velocity grade is near level in both broader windows, unlike the
+positive body-pitch signal. These are separate drives with one-second
+medians; `TRANS_SHIFT_ACTIVITY` has only a tentative DBC interpretation,
+and this comparison does not identify wind, load, converter state, or an
+actuator gain. A fixed gas-map correction chosen from either window would
+move the other in the wrong direction.
+
+**Decision: KEEP the current cap-aware feedback as an unpromoted road trial;
+do not replace it with another fixed gain or declare the remaining
+under-response solved.** The next current-source drive must test whether
+the directional command changes improve measured response and whether the
+steady request below the cap still undershoots. The newer local route 2d
+remains incomplete and its complete segment has no longitudinal engagement;
+device SSH and `comma.local` resolution were unavailable during this check.
+No runtime, safety, DBC, Alpha Long, or device setting changed.
+
 ### Independent GPS-velocity grade screen for Honda pitch translation (2026-09-26)
 
 The older standing-pitch note above was based on the controller signal alone.
