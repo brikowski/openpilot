@@ -6707,8 +6707,9 @@ The transmission shifts 5→6 near 276.08 s, before the repeated gear-6 cycles. 
 plan/request is about +0.49 while aEgo is +1.09 m/s²; at 277.5 s the request is about -0.34,
 grade-translated wire about -0.44, and aEgo remains +0.46. Subsequent upstream catch/brake
 requests react within the same closed loop; this is not evidence that a lead model produced the
-cycle, nor that braking alone initiated it. Short-coast gas residue and delayed/brisk Honda
-brake response both need representation when evaluating a coordinated correction.
+cycle, nor that braking alone initiated it. The preceding gas-domain command history, grade,
+and delayed/brisk Honda brake response need separate attribution in a coordinated correction;
+prior gas-active frames do not prove lingering propulsion at brake entry.
 
 Decision: KEEP the current nested source unchanged pending an identifiable, bounded correction.
 REJECT a fixed brake-strength increase or one copied response delay: either could worsen the
@@ -6718,3 +6719,69 @@ current raw request, measured response, and uncertainty. It must release immedia
 upstream intent, retain the existing safety rails, and be assessed by component-level offline
 ablation plus exact-source road response. This decision uses existing evidence; it is not a
 fixed request for more drives.
+
+### Brake-entry acceleration is not proven lingering gas
+
+Follow-up bus-1 `GAS_PEDAL_2` decoding on the six route-2b brake entries finds fresh 0x130
+updates 0.006–0.008 s old at each edge and `CAR_GAS=0` in every one. This observed zero pedal
+signal does not prove engine torque or drivetrain effects are zero. Independent local slopes of
+raw reported `vEgoRaw`, fitted over the first 0.2 s after the four short-coast edges, remain
++0.40/+0.35/+0.30/+0.16 m/s²; their preceding 0.2-s slopes are
++0.50/+0.45/+0.36/+0.23 m/s². Thus the positive acceleration at entry is not solely the
+filtered `aEgo` lagging an already-negative raw speed slope. Filtered pitch at those edges is
+-0.037/-0.041/-0.039/-0.023 rad, whose downhill gravity component is approximately
++0.36/+0.40/+0.38/+0.22 m/s². Its magnitude is comparable to the early observed acceleration;
+this is a physics plausibility check, not an independently calibrated force decomposition.
+
+An exploratory clean-coast model fitted only on baseline routes 25/26/27, requiring at least
+0.3 s in the inactive gas/brake domain, uses `speed²/1000`, `9.81 sin(pitch)`, and an offset.
+Equal-route fitted coefficients are -0.477/-0.877/+0.090. Training counts are 32/6/192
+sampled rows, so route 26's coast support is thin. Held-out coast errors on routes 28/29/2b
+have mean +0.002/+0.014/-0.055 and RMS 0.082/0.077/0.106 m/s². This supports modeling
+downhill coast load but is **not** an identified online coast predictor or authority to change
+the brake domain. The same-source joint model fitted on routes 28/29 shifts the brake coefficient
+from the older-source training fit's 1.03 to 0.87 and selects a different brake delay, further
+arguing against directly inverting either fit into `ACCEL_COMMAND`.
+
+Revised attribution: the four short-coast entries have recent gas-command history, but neither
+fresh `CAR_GAS` nor the raw-speed slopes isolate residual gas as the cause of their initial
+positive acceleration. Downhill gravity and vehicle drag can account for much of it; Honda
+brake timing and domain selection still determine when the requested deceleration appears.
+Do not add a correction keyed specifically to presumed lingering gas. A dynamic coast/brake
+decision would need held-out command-shape, transition-count, and response checks before a
+road trial. No vehicle behavior is changed by this correction to the evidence.
+
+### A domain edge and a derivative lead are not standalone fixes
+
+As an opportunity screen only, the exploratory 0.3-s-clean-coast model above predicts coast
+acceleration at least 0.2 m/s² above the raw negative request in 2.1/1.3/7.1 seconds on
+baseline routes 25/26/27 and 3.1/5.3/9.7 seconds on held-out routes 28/29/2b. At those
+recorded coast frames, contemporaneous aEgo exceeds request in 98–100% of samples across
+the six routes. On route 2b this condition begins about 0.20/0.24/0.24/0.34 s before the
+four short-coast brake edges. The model uses only current speed/pitch/request and a fixed
+uncertainty margin for this *screen*; it is not a calibrated live threshold. Samples are
+serially correlated, and the counterfactual result of entering the brake domain early is
+unknown.
+
+To expose that risk, a no-lead, same-source, one-to-one nearest-neighbor screen compares the
+candidate coast frames (at least 0.1 s in coast) with recorded already-settled brake frames
+(at least 0.6 s in brake). It conditions on exact gear/planner source plus speed, request,
+pitch, and RPM, with nominal tolerances 1.5 m/s, 0.06 m/s², 0.01 rad, and 300 RPM. At
+half/nominal/1.5× tolerances it finds 20/42/58 pairs. Mean contemporaneous aEgo-minus-request
+is +0.327/+0.272/+0.234 m/s² in coast versus -0.203/-0.154/-0.137 in brake. Different
+command histories, terrain details, and response ages remain, so this does not estimate the
+causal effect of an earlier domain edge. It does contradict treating the brake domain as an
+unqualified cure: merely selecting it earlier could trade under- for over-deceleration.
+
+A separate model-only frozen-request screen tested a bounded derivative lead on active brake
+`ACCEL_COMMAND`: add a causal 0.2-s-filtered raw-request derivative times 0.1–0.3 s, clipped
+to ±0.1 or ±0.2 m/s² and to nonpositive brake command. The joint model fitted on 25/26/27
+predicts first-second brake tracking RMS on held-out 28/29/2b of .211/.262/.299 m/s² without
+the lead. At 0.1 s lead and ±0.1 cap it predicts .213/.269/.297, and at 0.3 s lead with the
+same cap .220/.279/.295. A same-source model fitted on routes 28/29 predicts .332 on route
+2b without lead and .335 with 0.3 s lead. These are **model-predicted** counterfactuals on
+frozen upstream requests, not measured road improvement, but the direction is not robust.
+Decision: RETIRE a standalone derivative lead and do not add an earlier brake domain edge by
+itself. Continue a coordinated dynamic coast/brake authority and release design that models
+downhill load and remaining brake state, verifies numeric command and domain changes together,
+and stays within Honda's safety and upstream-intent boundaries.
