@@ -422,6 +422,72 @@ def inspect_coast(train_routes, train_data, evaluation_routes, evaluation_data):
             int(opportunity.sum()), round(float(np.mean(d['actual'][opportunity] > d['request'][opportunity])), 3))
 
 
+def exploratory_brake_release(data, error_margin=.2):
+  """Frozen-input release schedule; a renewed strong request immediately restores brake."""
+  if error_margin <= 0.:
+    raise ValueError('Release error margin must be positive')
+  t, request, brake = data['t'], data['request'], data['brake_request']
+  past = np.maximum(np.searchsorted(t, t - .2, side='right') - 1, 0)
+  valid = (data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed'] &
+           data['response_state_fresh'] & (data['vego'] >= 8.) &
+           np.isfinite(request) & np.isfinite(data['aego']))
+  valid = continuous_mask(valid, data['gear'], t, .2)
+  trigger = (brake & valid & (-.3 < request) & (request < 0.) &
+             (data['aego'] < request - error_margin) & (request - request[past] > .05))
+  release = np.zeros(len(t), dtype=bool)
+  events = []
+  for start in np.flatnonzero(brake & ~np.r_[False, brake[:-1]]):
+    end = start
+    while end < len(t) and brake[end]:
+      end += 1
+    released = False
+    first = None
+    for i in range(start, end):
+      if request[i] < -.3 or not valid[i]:
+        released = False
+      elif trigger[i]:
+        released = True
+        if first is None:
+          first = i
+      release[i] = released
+    if first is not None:
+      events.append((first, end))
+  return release, events
+
+
+def inspect_brake_release(train_routes, train_data, evaluation_routes, evaluation_data, error_margin=.2):
+  """Model-differential screen only: future carControl and vehicle feedback remain frozen."""
+  routes = train_routes + evaluation_routes
+  data = train_data + evaluation_data
+  prepared = [prepare_joint(d) for d in data]
+  for i, (route, d, p) in enumerate(zip(routes, data, prepared, strict=True)):
+    training = prepared[:i] + prepared[i + 1:len(train_data)] if i < len(train_data) else prepared[:len(train_data)]
+    dynamics, coef = fit_joint_model(training)
+    release, events = exploratory_brake_release(d, error_margin)
+    sampled = np.arange(0, len(d['t']), 2)
+    candidate = {**p, 'brake': np.where(release[sampled], 0., p['brake']),
+                 'domain': np.where(release[sampled], 0, p['domain'])}
+    dense = np.ones(len(p['t']), dtype=bool)
+    baseline = joint_matrix({**p, 'mask': dense}, *dynamics) @ coef
+    differential = joint_matrix({**candidate, 'mask': dense}, *dynamics) @ coef - baseline
+    error = p['actual'] - d['request'][sampled]
+    print(route, 'leave-one-route-out' if i < len(train_data) else 'held-out',
+          'model gas/brake dynamics', dynamics, 'brake coefficient', round(float(coef[1]), 3),
+          'release episodes', len(events))
+    for first, end in events:
+      end_time = d['t'][end] if end < len(d['t']) else d['t'][-1]
+      window = p['mask'] & (p['t'] >= d['t'][first]) & (p['t'] <= end_time + 1.)
+      if not window.any():
+        continue
+      model_rms = float(np.sqrt(np.mean((baseline[window] - p['actual'][window]) ** 2)))
+      recorded_rms = float(np.sqrt(np.mean(error[window] ** 2)))
+      projected_rms = float(np.sqrt(np.mean((error[window] + differential[window]) ** 2)))
+      print('  time', round(float(d['t'][first]), 2), 'source', int(d['plan_source'][first]),
+            'advance s', round(float(end_time - d['t'][first]), 2), 'rows', int(window.sum()),
+            'baseline model RMS', round(model_rms, 3),
+            'recorded/projected tracking RMS', round(recorded_rms, 3), round(projected_rms, 3))
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('routes', nargs='+')
@@ -431,12 +497,14 @@ def main():
   mode.add_argument('--joint', action='store_true', help='Screen two actuator states including domain transitions')
   mode.add_argument('--residual-forecast', action='store_true', help='Forecast model residual with latest-published carState')
   mode.add_argument('--coast-authority', action='store_true', help='Screen held-out natural-coast response, not brake counterfactuals')
+  mode.add_argument('--brake-release-screen', action='store_true', help='Screen a rising-request overdecel release, not closed-loop road behavior')
+  parser.add_argument('--release-error-margin', type=float, default=.2, help='Exploratory overdeceleration margin for the release screen')
   parser.add_argument('--evaluation-routes', nargs='+', default=[], help='Held-out routes, never used for fitting')
   parser.add_argument('--evaluation-opendbc', help='Exact nested revision of held-out routes; audit source compatibility separately')
   args = parser.parse_args()
   if len(set(args.routes)) < 2 or len(set(args.routes)) != len(args.routes):
     parser.error('Provide at least two distinct routes to separate training from held-out evaluation')
-  comparison_mode = args.brake_entries or args.joint or args.residual_forecast or args.coast_authority
+  comparison_mode = args.brake_entries or args.joint or args.residual_forecast or args.coast_authority or args.brake_release_screen
   if args.evaluation_routes and (not comparison_mode or not args.evaluation_opendbc):
     parser.error('Evaluation routes require a comparison mode and --evaluation-opendbc; audit source compatibility separately')
   if len(set(args.routes + args.evaluation_routes)) != len(args.routes + args.evaluation_routes):
@@ -447,9 +515,13 @@ def main():
       if (route not in ledger or ledger[route].get('opendbc_commit_full') != revision or
           ledger[route].get('qlog_fallback') or route.startswith('00000005--')):
         parser.error(f'{route}: missing/mismatched nested provenance, qlog fallback, or excluded route')
-  loader = load_forecast_data if args.residual_forecast or args.coast_authority else load
+  loader = load_forecast_data if args.residual_forecast or args.coast_authority or args.brake_release_screen else load
   data = [loader(route) for route in args.routes]
   if comparison_mode:
+    if args.brake_release_screen:
+      inspect_brake_release(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes],
+                            args.release_error_margin)
+      return
     screen = (inspect_residuals if args.residual_forecast else inspect_coast if args.coast_authority else
               inspect_brake_entries if args.brake_entries else inspect_joint)
     screen(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes])

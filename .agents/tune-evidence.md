@@ -6848,3 +6848,56 @@ to the descent mismatch, but eliminating its dwell alone cannot establish correc
 adjacent gas and delayed brake response. This narrows the next candidate to a *joint*
 domain-and-response trajectory; it does not justify replacing the fixed brake entry with the
 coast predictor in isolation.
+
+### Rising-request brake-release counterfactual (diagnostic only)
+
+The same-source routes 28/29/2b show no clean brake-to-inactive-coast release in the inspected
+moving PID episodes: the observed releases go directly to gas when the raw request becomes
+nonnegative. Thus an earlier brake-to-coast release has no directly observed road outcome.
+The active Odyssey receive DBC exposes binary `VSA_STATUS.COMPUTER_BRAKING`, but no confirmed
+analog applied-brake pressure. Its `BRAKE_HOLD.COMPUTER_BRAKE` candidate (0xE8) has no received
+frames on route 2b; it cannot be assumed to provide actuator feedback.
+
+`.agents/inspect_response_model.py --brake-release-screen` now makes a causal-input,
+frozen-request sensitivity check. While recorded brake is active at >=8 m/s, it proposes
+release to inactive coast when the raw request is mildly negative (> -0.30 m/s²), has risen
+by >0.05 m/s² in 0.2 s, and measured `aEgo` is at least the selected margin below the
+request. A new raw request below -0.30 or invalid/driver state restores braking. The screen
+keeps all later `carControl`, speed, grade, gas, and carState inputs frozen, changes only the
+model's brake-domain input, and evaluates recorded response plus the model-predicted
+brake-off differential. For training routes it fits on the *other* routes; evaluation routes
+never enter fitting. A deliberate held-out leak makes its regression fail. This is not
+closed-loop vehicle response or a live inverse brake controller. Existing entry profiles
+measure the opposite domain edge; this screen adds release sensitivity without changing
+the authoritative route validator's entry or exposure checks. Its mask catches the four
+reported route-2b late-overdeceleration events and also exposes non-beneficial events on
+other routes.
+
+With a 0.20 m/s² overdeceleration margin, the same-source 28/29 fit chooses gas
+delay/filter 0.1/0.25 s and brake delay/filter 0.5/0 s, with fitted brake coefficient
+0.868. On held-out route 2b, release would precede the recorded release by
+0.72/0.72/0.70/0.56 s across the four 278–286 s descent cycles. Their respective
+recorded-to-projected tracking RMS over the selected post-trigger windows is
+0.472→0.438, 0.400→0.371, 0.338→0.310, and 0.265→0.235 m/s². Yet the same model's
+baseline prediction error on those windows is 0.302/0.232/0.189/0.131 m/s²—larger than
+the projected gains. A fifth route-2b event worsens 0.252→0.263. In route-held-out
+screens, route 28's t≈473.28 cruise event worsens 0.378→0.394 and route 29's t≈474.39
+and 612.95 cruise events worsen 0.421→0.440 and 0.239→0.246. The first route-28 failure
+is visible in recorded response: at the proposed release `aEgo=-0.55` versus request
+`-0.29`, but 0.4 s later `aEgo≈-0.01` versus request `-0.16` while brake is still active.
+The instantaneous overdeceleration sign does not predict the remaining brake trajectory.
+
+Re-fitting on older domain-compatible routes 25/26/27 changes the brake dynamics to
+0.3/0.1 s and fitted brake coefficient to about 1.03; it predicts the same four route-2b
+descent improvements but still worsens route 28 t≈473.28 and route 29 t≈474.39/612.95.
+Tightening the trigger margin to 0.30 removes some events and preserves four route-2b
+opportunities, but still worsens route 28 t≈473.29 and route 29 t≈613.01. At 0.40 it
+still worsens route 28 t≈473.32 and one route-2b opportunity. This is not a calibration
+of an optimal threshold; serially correlated windows, model error, and frozen upstream
+requests limit the inference.
+
+Decision: RETIRE a simple measured-error/rising-request early brake release as a standalone
+runtime candidate. Keep the existing raw-request release and safety boundary. A viable
+dynamic release must estimate *remaining* Honda braking response, including uncertainty and
+short-term response trend, rather than act on the sign of current error alone. Do not
+exclude the broader coordinated gas/coast/brake design; this check only rejects this rule.

@@ -254,6 +254,48 @@ def test_coast_screen_never_fits_heldout_outcomes(monkeypatch, capsys):
   assert 'held held-out settled RMSE/bias' in capsys.readouterr().out
 
 
+def test_exploratory_brake_release_requires_rising_request_and_restores_strong_brake():
+  t = np.arange(0., 3.5, .01)
+  request = np.full(len(t), -.4)
+  first = (t >= 1.) & (t < 2.)
+  second = (t >= 2.3) & (t < 3.)
+  request[first] = -.28 + .26 * (t[first] - 1.)
+  request[second] = -.28 + .26 * (t[second] - 2.3)
+  d = {'t': t, 'request': request, 'brake_request': (t >= .5) & (t < 3.),
+       'aego': np.full(len(t), -.8), 'active': np.ones(len(t), dtype=bool),
+       'pid': np.ones(len(t), dtype=bool), 'gas_pressed': np.zeros(len(t), dtype=bool),
+       'brake_pressed': np.zeros(len(t), dtype=bool), 'response_state_fresh': np.ones(len(t), dtype=bool),
+       'vego': np.full(len(t), 20.), 'gear': np.full(len(t), 6.)}
+  release, events = response_model.exploratory_brake_release(d)
+  assert len(events) == 1
+  assert not release[90] and release[140]
+  assert not release[210] and release[270]
+  assert not release[310]
+  d['request'][:] = -.2
+  assert not response_model.exploratory_brake_release(d)[0].any()
+  d['aego'][:] = request
+  assert not response_model.exploratory_brake_release(d)[0].any()
+  with pytest.raises(ValueError, match='positive'):
+    response_model.exploratory_brake_release(d, 0.)
+
+
+def test_release_screen_fits_only_other_training_routes(monkeypatch):
+  raw = [{'t': np.arange(4) * .02, 'request': np.zeros(4)} for _ in range(3)]
+  prepared = [{'t': d['t'][::2], 'brake': np.zeros(2), 'domain': np.zeros(2, dtype=int),
+               'actual': np.zeros(2), 'mask': np.ones(2, dtype=bool)} for d in raw]
+  seen = []
+  monkeypatch.setattr(response_model, 'prepare_joint', lambda d: prepared[next(i for i, item in enumerate(raw) if item is d)])
+  monkeypatch.setattr(response_model, 'exploratory_brake_release', lambda d, margin: (np.zeros(4, dtype=bool), []))
+  monkeypatch.setattr(response_model, 'joint_matrix', lambda p, *args: np.zeros((len(p['t']), 5)))
+  def fit(groups):
+    assert all(group is not prepared[2] for group in groups)
+    seen.append(len(groups))
+    return ((0., 0.), (0., 0.)), np.zeros(5)
+  monkeypatch.setattr(response_model, 'fit_joint_model', fit)
+  response_model.inspect_brake_release(['a', 'b'], raw[:2], ['held'], raw[2:])
+  assert seen == [1, 1, 2]
+
+
 def test_fit_balances_routes_not_row_counts():
   coef, loss = fit_balanced([np.ones((2, 1)), np.ones((20, 1))], [np.zeros(2), np.full(20, 2.)])
   np.testing.assert_allclose(coef, [1.])
