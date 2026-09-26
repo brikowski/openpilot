@@ -185,9 +185,10 @@ refs, and clean state separately from device health and road behavior. Keep the 
 ## Current focus
 
 At the latest successful 2026-09-25 verification, the device ran root
-`4adda40295` / nested `16f0ec75f` on the single `ody-op` line. The latest
-engaged full-rate route still records the prior deployed pair root `771287d09f` /
-nested `f697fa4c6`; it is not a road test of the new cap-aware gas candidate. Before that,
+`cbea16c2a5` / nested `e820256249` on the single `ody-op` line. The immediate
+deployed rollback is root `4adda40295` / nested `16f0ec75f`. The latest
+engaged full-rate route still records the earlier pair root `771287d09f` /
+nested `f697fa4c6`; it is not a road test of either newer candidate. Before that,
 the deployed pair was root `4ef98509ea` / nested `1ff3bb131`; before that,
 root `652e169280` / nested `47196b9a4` was deployed. The previous
 road baseline before that was behavioral root `0bd9816712b1` / nested `6915be202bb7`;
@@ -238,9 +239,17 @@ raw-request domain decisions, and brake translation. Frozen-input replay
 shows command exposure and smoothness, not physical improvement. Judge
 response, bridge exits, crest/shift surge, and overshoot from exact-source
 post-deployment full-rate logs without a fixed route-count gate.
-The current nested `16f0ec75f` adds bounded cap-aware gas feedback with a
-smooth fade at vanishing grade load; no post-deployment engaged road response
-has been measured. Prior-source route `0000002b--6472adcaf4` adds six clean
+Nested `16f0ec75f` added bounded cap-aware gas feedback with a smooth fade at
+vanishing grade load; no post-deployment engaged road response has been measured.
+The current nested `e820256249` retains that gas behavior and adds a fresh-CAN,
+torque-qualified early release of an already-active mild road-speed brake when
+the raw request is rising and achieved deceleration is excessive. Strong braking,
+low-speed stop authority, and raw `ACCEL_COMMAND` remain intact. Frozen-input
+replay shows seven early releases on source-matched routes 28/29/2b and no
+non-ACC CAN changes, but its modelled benefit is smaller than model error; road
+response and bridge-exit smoothness are unmeasured. Retire promptly for delayed
+required braking, increased oscillation or surge, or worse tracking. Prior-source
+route `0000002b--6472adcaf4` adds six clean
 coast-to-brake entries with early under-braking and late over-braking despite
 source-corrected wire fidelity, and 9.29 seconds at the 2560 steering cap with
 median lateral under-response about 0.13 m/s2. Treat those as separate Honda

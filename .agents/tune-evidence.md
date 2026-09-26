@@ -6978,3 +6978,23 @@ brake re-entries, gas bridge exits, achieved jerk, and interventions on the exac
 post-deployment source. Retire for delayed required braking, increased oscillation or
 surge, an override/fault, or worsened command tracking. Alpha Long remains user-enabled;
 device/offroad/software health and road behavior are separate results.
+
+The nested trial is `e820256249942e78cd3a34759e21b92146084da0`; parent
+`cdd41de86723f7fb5e7cc509df34e4367cf484f9` first paired it with the replay
+tooling/evidence, and docs/tooling parent `cbea16c2a5c0642b39ad96e5dc55e6617010a159`
+is the deployed root with the same gitlink. Both `ody-op` remote refs were checked
+against the exact local SHAs. The first guarded deployment attempts stopped before
+the device switch because the local script's redundant GitHub push could not resolve
+GitHub; direct remote checks still confirmed both commits were published. The guarded
+script now skips a push when that exact remote ref is already present and verifies both
+refs before switching. This is deployment tooling only, not a vehicle behavior change.
+
+After a fresh offroad/clean device check, the guarded switch synchronized the pair,
+completed `uv sync` and build, and rebooted. Post-reboot verification reported branch
+`ody-op`, exact parent/gitlink/nested SHAs, clean parent and nested trees, comma-owned
+`.venv`, `AlphaLongitudinalEnabled=1`, updater target `ody-op` and state `idle`,
+`UpdateAvailable=0`, empty `LastUpdateException`, active comma/manager/Panda services,
+and no failed services. The immediate rollback pair is root `4adda40295898dfdb7d2eb136af4a014302b10a9`
+with nested `16f0ec75fa50bac3ef52a49f85256eb48d48cb5b`; the latest engaged
+full-rate route still predates both. Installation health is verified; this trial has
+no post-deployment closed-loop road result and remains unpromoted.
