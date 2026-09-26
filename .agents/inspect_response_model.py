@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
+from compare_low_speed_gas import trim_weight
 from extract import ODYSSEY_PT_DBC, load, _segments
 from tuning_metrics import brake_entry_tracking_profile, causal_lpf
 
@@ -577,6 +578,70 @@ def inspect_brake_release(train_routes, train_data, evaluation_routes, evaluatio
             'recorded/projected tracking RMS', round(recorded_rms, 3), round(projected_rms, 3))
 
 
+def trim_forecast_rows(data):
+  """Compare causal current errors with later error inside a continuous gas/trim interval.
+
+  Future observations only select and label evaluation rows, never form a predictor.
+  This tests signal usefulness, not the response to changing an opaque gas count.
+  """
+  t, request = data['t'], data['request']
+  past = np.searchsorted(t, t - .5, side='right') - 1
+  future = np.searchsorted(t, t + .6, side='left')
+  valid_ix = (past >= 0) & (future < len(t))
+  past = np.clip(past, 0, len(t) - 1)
+  future = np.clip(future, 0, len(t) - 1)
+  clean = (data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed'] &
+           data['response_state_fresh'] & (data['gas_command'] > 0) & ~data['brake_request'] &
+           np.isfinite(data['aego']) & np.isfinite(request) & np.isfinite(data['gear']))
+  bad = np.r_[0, np.cumsum(~clean)]
+  gap = np.r_[0, np.cumsum((np.diff(t) <= 0.) | (np.diff(t) > .03))]
+  gear_edge = np.r_[0, np.cumsum(np.diff(data['gear']) != 0.)]
+  weight = trim_weight(data['vego'], request)
+  mask = (valid_ix & clean & (bad[future + 1] == bad[past]) &
+          (gap[past] == gap[future]) & (gear_edge[past] == gear_edge[future]) &
+          (data['vego'] >= 8.) & (data['vego'] < 24.) &
+          (request > .4) & (request < 2.) & (weight > .05) &
+          (np.abs(data['pitch']) < .03) &
+          (t - t[past] >= .48) & (t - t[past] < .53) &
+          (t[future] - t >= .6) & (t[future] - t < .63) &
+          (np.abs(request - request[past]) <= .10) &
+          (np.abs(request[future] - request) <= .10))
+  ix = np.flatnonzero(mask & (np.arange(len(t)) % 10 == 0))
+  # Keep the evaluation cohort free of intervening planner pulses; this
+  # future interval check never enters either causal predictor.
+  ix = ix[[np.ptp(request[past[i]:future[i] + 1]) <= .10 for i in ix]]
+  return {'t': t[ix], 'actual_future': data['aego'][future[ix]] - request[ix],
+          'current': data['aego'][ix] - request[ix],
+          'delay_aligned': data['aego'][ix] - request[past[ix]]}
+
+
+def inspect_trim_forecast(routes, data):
+  """A no-fit screen: retain route-level and sign-stratified errors."""
+  for route, raw in zip(routes, data, strict=True):
+    rows = trim_forecast_rows(raw)
+    actual = rows['actual_future']
+    positive, negative = actual > .1, actual < -.1
+    print(route, 'rows', len(actual), 'future over/under >0.1', int(positive.sum()), int(negative.sum()))
+    if not len(actual):
+      continue
+    for name, estimate in (('zero', np.zeros(len(actual))), ('current', rows['current']),
+                           ('delay-aligned', rows['delay_aligned'])):
+      significant = positive | negative
+      sign_correct = int(np.sum(np.sign(estimate[significant]) == np.sign(actual[significant])))
+      print(name, 'RMSE/MAE', round(float(np.sqrt(np.mean((estimate - actual) ** 2))), 4),
+            round(float(np.mean(np.abs(estimate - actual))), 4),
+            'significant sign', f'{sign_correct}/{int(significant.sum())}')
+    for name, selected in (('future-over', positive), ('future-under', negative)):
+      if selected.any():
+        selected_t = rows['t'][selected]
+        episodes = 1 + int(np.sum(np.diff(selected_t) > .15))
+        sign_correct = int(np.sum(np.sign(rows['current'][selected]) == np.sign(actual[selected])))
+        print(name, 'sampled spans', episodes, 'current sign', f'{sign_correct}/{int(selected.sum())}',
+              'median current/delay-aligned/future',
+              *(round(float(np.median(x[selected])), 4) for x in
+                (rows['current'], rows['delay_aligned'], actual)))
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('routes', nargs='+')
@@ -588,6 +653,7 @@ def main():
   mode.add_argument('--coast-authority', action='store_true', help='Screen held-out natural-coast response, not brake counterfactuals')
   mode.add_argument('--coast-transition', action='store_true', help='Compare held-out natural coast with carried and reset actuator states by coast age')
   mode.add_argument('--brake-release-screen', action='store_true', help='Screen a rising-request overdecel release, not closed-loop road behavior')
+  mode.add_argument('--gas-trim-forecast', action='store_true', help='Score current response error against later trim-band error')
   parser.add_argument('--release-error-margin', type=float, default=.2, help='Exploratory overdeceleration margin for the release screen')
   parser.add_argument('--release-torque-drop', type=float, help='Require this much 0.2-s received engine-torque decrease for the release screen')
   parser.add_argument('--evaluation-routes', nargs='+', default=[], help='Held-out routes, never used for fitting')
@@ -596,7 +662,7 @@ def main():
   if len(set(args.routes)) < 2 or len(set(args.routes)) != len(args.routes):
     parser.error('Provide at least two distinct routes to separate training from held-out evaluation')
   comparison_mode = (args.brake_entries or args.joint or args.residual_forecast or args.coast_authority or
-                     args.coast_transition or args.brake_release_screen)
+                     args.coast_transition or args.brake_release_screen or args.gas_trim_forecast)
   if args.coast_transition and not args.evaluation_routes:
     parser.error('--coast-transition requires held-out --evaluation-routes')
   if args.evaluation_routes and (not comparison_mode or not args.evaluation_opendbc):
@@ -609,9 +675,13 @@ def main():
       if (route not in ledger or ledger[route].get('opendbc_commit_full') != revision or
           ledger[route].get('qlog_fallback') or route.startswith('00000005--')):
         parser.error(f'{route}: missing/mismatched nested provenance, qlog fallback, or excluded route')
-  loader = load_forecast_data if args.residual_forecast or args.coast_authority or args.coast_transition or args.brake_release_screen else load
+  loader = (load_forecast_data if args.residual_forecast or args.coast_authority or args.coast_transition or
+            args.brake_release_screen or args.gas_trim_forecast else load)
   data = [loader(route) for route in args.routes]
   if comparison_mode:
+    if args.gas_trim_forecast:
+      inspect_trim_forecast(args.routes + args.evaluation_routes, data + [loader(r) for r in args.evaluation_routes])
+      return
     if args.brake_release_screen:
       inspect_brake_release(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes],
                             args.release_error_margin, args.release_torque_drop)

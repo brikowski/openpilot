@@ -259,6 +259,48 @@ def test_delay_filter_is_causal_and_preserves_negative_brake_input():
   np.testing.assert_allclose(delayed_response(signal, .1, .1, .1), smooth)
 
 
+def trim_forecast_data():
+  t = np.arange(0., 4., .01)
+  return {'t': t, 'request': np.ones(len(t)), 'aego': np.ones(len(t)),
+          'active': np.ones(len(t), dtype=bool), 'pid': np.ones(len(t), dtype=bool),
+          'gas_pressed': np.zeros(len(t), dtype=bool),
+          'brake_pressed': np.zeros(len(t), dtype=bool),
+          'response_state_fresh': np.ones(len(t), dtype=bool),
+          'gas_command': np.full(len(t), 1000.),
+          'brake_request': np.zeros(len(t), dtype=bool),
+          'vego': np.full(len(t), 15.), 'pitch': np.zeros(len(t)),
+          'gear': np.full(len(t), 5.)}
+
+
+def test_trim_forecast_uses_future_only_as_label_not_predictor():
+  data = trim_forecast_data()
+  baseline = response_model.trim_forecast_rows(data)
+  before = np.flatnonzero(np.isclose(baseline['t'], 1.))[0]
+  future = np.searchsorted(data['t'], 1.6, side='left')
+  data['aego'][future] = 1.4
+  changed = response_model.trim_forecast_rows(data)
+  after = np.flatnonzero(np.isclose(changed['t'], 1.))[0]
+  assert changed['actual_future'][after] == pytest.approx(.4)
+  assert changed['current'][after] == baseline['current'][before]
+  assert changed['delay_aligned'][after] == baseline['delay_aligned'][before]
+
+
+def test_trim_forecast_rejects_intervening_domain_and_gear_changes():
+  data = trim_forecast_data()
+  assert np.any(np.isclose(response_model.trim_forecast_rows(data)['t'], 1.))
+  data['gas_command'][120] = -30000.
+  assert not np.any(np.isclose(response_model.trim_forecast_rows(data)['t'], 1.))
+  data['gas_command'][120] = 1000.
+  data['gear'][120] = 4.
+  assert not np.any(np.isclose(response_model.trim_forecast_rows(data)['t'], 1.))
+  data['gear'][120] = 5.
+  data['response_state_fresh'][120] = False
+  assert not np.any(np.isclose(response_model.trim_forecast_rows(data)['t'], 1.))
+  data['response_state_fresh'][120] = True
+  data['request'][120] = 1.2
+  assert not np.any(np.isclose(response_model.trim_forecast_rows(data)['t'], 1.))
+
+
 def test_continuity_rejects_pedals_gear_changes_and_log_gaps():
   t = np.arange(0., 1., .02)
   valid = np.ones(len(t), dtype=bool)

@@ -7436,3 +7436,46 @@ trial; segment 1 may contain engagement. Neither incomplete route was added
 to the authoritative validation ledger. Resume the two full-rate transfers
 when the device is reachable, then validate exact provenance and exposure
 before attributing road response.
+
+### Causal trim-band error forecast on retained full-rate routes (2026-09-26)
+
+To test whether the observed response itself can dynamically replace the
+fixed 200-count positive-gas trim, added the reproducible diagnostic
+`.agents/inspect_response_model.py --gas-trim-forecast`. Run it with routes
+`00000028--0a9feaa46c` and `00000029--8532e5621f`, exact nested
+`f697fa4c6588839976b00218f584916632747dcb`, and held-out
+`--evaluation-routes 0000002b--6472adcaf4 --evaluation-opendbc`
+with that same full nested SHA. This is a *no-fit* comparison of zero error,
+current `aEgo - carControl`, and current `aEgo` minus the request published
+about 0.5 s earlier. The label is recorded `aEgo(t+0.6 s) - carControl(t)`;
+future response and command qualify and label intervals but are never
+predictor inputs. Speed, acceleration, and pedals come from latest-published
+carState; gas/brake CAN remains zero-order-held without an independent
+same-cycle freshness certification.
+
+Require engaged PID, no pedal intervention, a continuous positive-gas/no-
+brake domain with fresh state, no gear change or timestamp gap, speed
+8–24 m/s, positive request +0.4..+2.0 m/s² in the trim band, `|pitch|<0.03`,
+and request span at most 0.10 m/s² from 0.5 s before to 0.6 s after the
+sample. The 10-Hz rows overlap and are not independent trials. Route 28/29/2b
+provide 56/18/160 selected rows; future errors above +0.1 m/s² occur in
+35/9/70 rows, and below -0.1 in 6/0/20. Zero/current/delay-aligned RMSE
+is 0.2005/0.1564/0.1571, 0.1069/0.0886/0.0804, and
+0.1816/0.1734/0.1721 m/s² respectively. The current-error sign agrees with
+29/35, 9/9, and 60/70 future *overshoot* rows, but only 2/6 and 3/20 future
+*undershoot* rows on routes 28 and 2b. For route 2b under-response, median
+current error is **+0.0457** while median future error is **-0.1606 m/s²**;
+the 0.5-s-delay-aligned predictor is also positive (+0.0312). Several of
+these rows lie on the no-lead, fourth/fifth-gear uphill acceleration near
+route seconds 326–335; no lead-following or upstream request pulse is needed
+for that reversal.
+
+**Decision: KEEP the current trim and bounded gas feedback unpromoted; RETIRE
+a simple current-error-sign trim switch as a proposed dynamic replacement.**
+The measured current error improves average future prediction over zero, but
+would frequently choose the wrong sign before the route-2b undershoots. This
+does not establish that the fixed trim is optimal or identify a safe gas-count
+inverse map. A next candidate must account for the response trajectory and
+powertrain state, validate command transitions in frozen replay, and then
+verify physical improvement on exact-source road data. No Honda runtime,
+safety, DBC, or Alpha Long setting changed in this diagnostic.
