@@ -7225,5 +7225,46 @@ conditions are deliberate response-direction guards, not a CAN parser or
 freshness defect. Relaxing either guard would admit additional states, while
 the earlier sign-only held-out screen already contained model-worsened
 release events; neither that model nor a frozen replay proves road benefit.
-This audit
-does not promote the trial, alter Alpha Long, or justify a new Honda command.
+This audit does not promote the trial, alter Alpha Long, or justify a new Honda command.
+
+### Newer 2560 lateral exposure versus retired 3840 map (2026-09-25)
+
+Reopened the historical 3840 result with the newer exact-provenance stock-2560
+route `0000002b--6472adcaf4` (`f697fa4c6588`), rather than treating its
+retirement as permanent. The comparison arm is 3840 route
+`00000020--6b6bd8baed` (`d50a3a4843ed`). Both ran Alpha Long with small-model
+blob `f030157ccd2bacbdc6d7b98358903cbacc0e0b34`; root lateral-control
+files were unchanged between their parent revisions. Both recorded CarParams
+report latAccelFactor 0.9, friction 0.2, and 0.15-s actuator delay;
+the historical nonlinear torque map is the relevant commanded-authority
+difference. Both routes transmit their controller steering command directly
+on bus 1 with near-exact `carOutput` pairing. This verifies outgoing command,
+not EPS acceptance or a causal road A/B.
+
+The existing high-authority matcher requires 20–24 m/s, absolute desired
+lateral acceleration 0.5–2.0 m/s², pitch +0.015..+0.055 rad, desired slope
+below 0.5 m/s³, no driver override/fault, and saturated output. It now matches
+43 of 46 sampled 3840 points to 16 distinct route-2b 2560 points: lateral
+tracking MAE 0.215 versus 0.124 m/s², with sign-corrected under-response
+medians +0.220 versus +0.061. A one-to-one greedy match using the same
+feature tolerances yields 25 pairs and MAE 0.192 versus 0.159; at 75% and
+50% tolerances it yields 10 and five pairs, again with lower 2560 MAE
+(0.180/0.119 and 0.232/0.095). Samples within each turn remain correlated,
+and different roads/vehicle state can explain some of the difference.
+
+As a timing sensitivity, requiring lateral control to remain active and
+unoverridden at the future response sample, then comparing desired at the
+command instant with actual lateral acceleration at +0.15/+0.30/+0.45 s,
+still gives 3840/2560 matched MAE 0.199/0.120, 0.195/0.113, and
+0.195/0.114 m/s². This avoids making the result depend on same-instant
+response despite actuator delay. The 3840 arm is one turn cluster; the matched
+2560 points come from two route-2b turn clusters (four and 12 distinct
+nearest baseline points), not 43 independent A/B events.
+
+**Lateral decision: KEEP the stock 2560 authority; do not restore the
+nonlinear 3840 map.** The newer source-compatible overlap supplies no
+command-following benefit for extra transmitted torque. The measured
+high-authority shortfall remains a Honda/EPS-response question after faithful
+controller-to-wire transmission, not proof that more torque or a different
+upstream lateral command would improve the turn. No lateral runtime or
+device setting changed in this screen.
