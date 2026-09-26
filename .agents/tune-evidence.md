@@ -7530,3 +7530,49 @@ shape/safety checks and exact-source closed-loop road validation. The current
 `e82025624994` runtime remains unpromoted and has no newly verified engaged
 drive; the device route listing timed out over SSH during this audit. No
 upstream controller, Honda runtime, DBC, safety, or Alpha Long setting changed.
+
+### Gas-feedback delay sensitivity is not the fitted actuator delay (2026-09-26)
+
+The deployed `OdysseyGasResponse` compares `aEgo` with a 25-frame (0.5-s)
+prior raw request and filters the residual over 0.3 s. Earlier offline
+actuator-state fits selected about 0.1 s gas delay plus 0.25 s filtering, but
+those prediction parameters are not interchangeable with the controller's
+feedback queue. A frozen-input twin replay in
+`/private/tmp/ody_feedback_delay_twin.py` held current nested
+`e82025624994`, its full gas map, cap-aware gain, brake release, all domain
+bits, and recorded carControl/carState fixed. Only the candidate feedback
+queue changed from 25 frames to 5 (0.1 s) or 15 (0.3 s). On exact nested
+`f697fa4c6588` recorded routes 28/29/2b, the twin verified same-cycle
+non-gas ACC_CONTROL payloads and all other CAN sends identical. The baseline
+is a *current-controller replay on prior-source inputs*, not the recorded
+`f697fa4c6588` gas command; the vehicle response is unchanged and cannot
+prove a road effect.
+
+The 5-frame arm changes 12,403/12,729/13,466 paired gas frames on routes
+28/29/2b, up to 100 opaque gas counts; the 15-frame arm changes
+11,210/10,736/11,218. Thus neither is a small crest-only adjustment.
+Restrict the observational direction screen to the prior diagnostic's
+continuous positive-gas, no-pedal, same-gear, stable-request trim cohort.
+It pairs 56/18/160 selected rows with twin CAN within 0.025 s. Count a gas
+change as directionally helpful only when it opposes the **recorded** future
+`aEgo(t+0.6)-carControl(t)` sign:
+
+| Queue | Route 28 future over / under | Route 29 future over | Route 2b future over / under |
+| --- | --- | --- | --- |
+| 5 frames | over 23 helpful, 9 harmful, 3 unchanged / under 0 helpful, 6 harmful | over 9 helpful, 0 harmful | over 55 helpful, 12 harmful, 3 unchanged / under 1 helpful, 18 harmful, 1 unchanged |
+| 15 frames | over 24 helpful, 8 harmful, 3 unchanged / under 0 helpful, 6 harmful | over 8 helpful, 0 harmful, 1 unchanged | over 49 helpful, 14 harmful, 7 unchanged / under 1 helpful, 18 harmful, 1 unchanged |
+
+Rows overlap within episodes. Directional agreement under frozen response is
+not the causal effect of extra gas counts, and this screen does not grade all
+gas-domain or transition behavior. It nevertheless rejects the simplistic
+interpretation that a shorter request queue is uniformly more accurate:
+both tested shorter queues remove gas in almost every exposed future
+under-response row while also removing gas in many future overshoots.
+Same-domain gas-step p99 changes little, but the 5-frame arm adds one
+>100-count step on routes 28 and 2b; neither replay is closed-loop smoothness
+evidence. **Decision: KEEP the existing 25-frame delay as an unpromoted
+baseline; RETIRE simple 5- or 15-frame shortening as a standalone tune.**
+The static 0.5 s is not proved optimal. A future dynamic observer must
+distinguish current load/actuator state and transition direction without
+replacing one fixed delay with another solely from an offline model fit.
+No Honda runtime, safety, DBC, upstream, or device setting changed.
