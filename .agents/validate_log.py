@@ -1333,6 +1333,22 @@ def _thermal(msgs):
   return r
 
 
+def _acc_control_cycle_inputs(msgs):
+  """Pair each physical Honda ACC transmit with card's sampled control/state snapshot."""
+  latest_control = sampled_control = sampled_state = None
+  for message in msgs:
+    kind = message.which()
+    if kind == "carControl":
+      latest_control = message.carControl
+    elif kind == "carState":
+      sampled_state = message.carState
+      sampled_control = latest_control
+    elif kind == "sendcan" and sampled_control is not None and sampled_state is not None:
+      for frame in message.sendcan:
+        if frame.address == 0x1DF and frame.src == 1:
+          yield message.logMonoTime, sampled_control, sampled_state, frame
+
+
 def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brakepressed,
                aego, gasfactor, windfactor, dt, stop_state, opendbc_commit,
                cruise_plan, allow_throttle, has_lead):
@@ -1653,15 +1669,32 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
       dt=dt,
     ))
   if model_valid and source_commit in BRAKE_GRADE_TRANSLATION_COMMITS:
-    releases = mild_negative_brake_release_events(
-      grid, requested, aego, vego_all, pitch, active, pid, gaspressed,
-      brakepressed, BR, GAS, gas_inactive=GAS_INACTIVE, entry_threshold=entry_threshold)
-    post_errors = [row["post_error_0p6"] for row in releases if row["post_error_0p6"] is not None]
-    out["mild_negative_release_events"] = len(releases)
-    out["mild_negative_release_rebrake_1s"] = sum(row["rebrake_s"] is not None for row in releases)
-    out["mild_negative_release_gas_reentry_1s"] = sum(row["gas_reentry_s"] is not None for row in releases)
-    out["mild_negative_release_post_error_0p6_mean"] = float(np.mean(post_errors)) if post_errors else None
-    out["mild_negative_release_details"] = releases
+    cycle_parser = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
+    cycles = []
+    for timestamp, control, state, frame in _acc_control_cycle_inputs(msgs):
+      cycle_parser.update([(timestamp, [(frame.address, frame.dat, frame.src)])])
+      signals = cycle_parser.vl["ACC_CONTROL"]
+      cycles.append((timestamp / 1e9, float(control.actuators.accel), float(state.aEgo),
+                     float(state.vEgo), float(control.orientationNED[1]) if len(control.orientationNED) == 3 else np.nan,
+                     bool(control.longActive), str(control.actuators.longControlState) == "pid",
+                     bool(state.gasPressed), bool(state.brakePressed), bool(signals["BRAKE_REQUEST"]),
+                     float(signals["GAS_COMMAND"])))
+    if len(cycles) >= 2:
+      cycle = np.asarray(cycles, dtype=float)
+      _, cycle_entry, cycle_model_valid, _ = _domain_model(
+        opendbc_commit, cycle[:, 1], cycle[:, 3], cycle[:, 4], np.ones(len(cycle)),
+        float(np.median(np.diff(cycle[:, 0]))))
+      if cycle_model_valid:
+        releases = mild_negative_brake_release_events(
+          cycle[:, 0], cycle[:, 1], cycle[:, 2], cycle[:, 3], cycle[:, 4],
+          cycle[:, 5], cycle[:, 6], cycle[:, 7], cycle[:, 8], cycle[:, 9], cycle[:, 10],
+          gas_inactive=GAS_INACTIVE, entry_threshold=cycle_entry)
+        post_errors = [row["post_error_0p6"] for row in releases if row["post_error_0p6"] is not None]
+        out["mild_negative_release_events"] = len(releases)
+        out["mild_negative_release_rebrake_1s"] = sum(row["rebrake_s"] is not None for row in releases)
+        out["mild_negative_release_gas_reentry_1s"] = sum(row["gas_reentry_s"] is not None for row in releases)
+        out["mild_negative_release_post_error_0p6_mean"] = float(np.mean(post_errors)) if post_errors else None
+        out["mild_negative_release_details"] = releases
 
   # Measure the driver-felt symptom directly: physical BRAKE_REQUEST bursts. The known tapping
   # route 2f produced 18 real edges in 10 s, failed BRAKE_RELEASE_HOLD produced 10, while the

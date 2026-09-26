@@ -7060,3 +7060,17 @@ but 4.14 s across five retained-brake episodes with mean
 `aEgo-request=-0.27 m/s²`. That is the expected baseline exposure, not evidence of the deployed
 candidate's physical benefit. This is root diagnostic tooling only; no Honda
 runtime behavior or device deployment changes.
+
+The event detector now pairs each physical bus-1 `ACC_CONTROL` transmission with the
+`carControl` and `carState` snapshot that card actually sampled. On prior-source route
+`0000002b--6472adcaf4`, a newer `carControl` publication arrived between that state
+snapshot and the transmit on 369 of 37,362 physical ACC cycles; three of those
+crossed the request sign. A 100 Hz latest-value grid can therefore mislabel a
+domain edge. The same-cycle pairing test deliberately places a newer positive
+control between a negative sampled control and the transmit and requires the
+negative control to be attributed. Irregular physical-CAN gaps censor follow-up.
+The corrected recorded baseline still has zero qualifying early releases. Frozen-input
+candidate replay reports four internal triggers and four corresponding physical
+brake-to-coast releases; the no-release ablation reports zero. This verifies the
+command-domain effect only. The release trial still lacks a post-deployment
+closed-loop drive and remains unpromoted.

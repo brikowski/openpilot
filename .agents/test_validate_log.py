@@ -14,6 +14,7 @@ from validate_log import (
   ODYSSEY,
   LOW_SPEED_BRAKE_PID_COMMITS,
   THREE_DOMAIN_COMMITS,
+  _acc_control_cycle_inputs,
   _base_route,
   _brake_passthrough_expected,
   _domain_model,
@@ -1157,6 +1158,24 @@ def test_mild_negative_release_records_physical_edge_and_observed_followup_only(
   assert not mild_negative_brake_release_events(
     grid, requested, actual, np.full(20, 18.), np.full(20, -.04), good, good,
     idle, idle, brake, gas, gas_inactive=-30000., entry_threshold=np.full(20, -.1))
+
+
+def test_acc_control_cycle_pairing_uses_control_sampled_before_state_publication():
+  class Message(SimpleNamespace):
+    def which(self):
+      return self.kind
+
+  c0 = SimpleNamespace(actuators=SimpleNamespace(accel=-.2))
+  c1 = SimpleNamespace(actuators=SimpleNamespace(accel=.2))
+  state = SimpleNamespace(aEgo=-.4)
+  frame = SimpleNamespace(address=0x1DF, src=1)
+  messages = [Message(kind="carControl", carControl=c0),
+              Message(kind="carState", carState=state),
+              Message(kind="carControl", carControl=c1),
+              Message(kind="sendcan", sendcan=[frame], logMonoTime=1_000_000_000)]
+  cycles = list(_acc_control_cycle_inputs(messages))
+  assert len(cycles) == 1
+  assert cycles[0] == (1_000_000_000, c0, state, frame)
 
 
 def _descent_hold_trace(n=300, request=0.1, pitch_val=-0.02, hold_frames=80):

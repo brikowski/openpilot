@@ -1433,10 +1433,11 @@ def mild_negative_brake_release_events(grid, requested, actual_accel, speed, pit
     np.asarray(values, dtype=float) for values in (requested, actual_accel, speed, pitch, gas_command))
   entry_threshold = np.asarray(entry_threshold, dtype=float)
   brake_request = np.asarray(brake_request, dtype=bool)
+  cadence = np.r_[True, (np.diff(grid) > 0.) & (np.diff(grid) <= 2.5 * dt)]
   clean = (np.asarray(active, dtype=bool) & np.asarray(pid, dtype=bool) &
            ~np.asarray(gas_pressed, dtype=bool) & ~np.asarray(brake_pressed, dtype=bool) &
            (speed >= min_speed) & np.isfinite(requested) & np.isfinite(actual_accel) &
-           np.isfinite(speed) & np.isfinite(pitch))
+           np.isfinite(speed) & np.isfinite(pitch) & cadence)
   post_frames = int(round(.6 / dt))
   transition_frames = int(round(1. / dt))
   rows = []

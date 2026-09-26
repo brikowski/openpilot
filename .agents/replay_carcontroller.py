@@ -32,11 +32,12 @@ import numpy as np
 from openpilot.tools.lib.logreader import LogReader
 from opendbc.car import Bus, gen_empty_fingerprint
 from opendbc.car.values import PLATFORMS
-from opendbc.car.honda.carcontroller import ODYSSEY_RESPONSE_DELAY_FRAMES, CarController
+from opendbc.car.honda.carcontroller import (ODYSSEY_LOW_SPEED_DOMAIN_VEGO, ODYSSEY_RESPONSE_DELAY_FRAMES,
+                                             ODYSSEY_ROAD_BRAKE_ENTRY, CarController)
 from opendbc.car.honda.interface import CarInterface
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tuning_metrics import causal_lpf, windowed_jerk
+from tuning_metrics import causal_lpf, mild_negative_brake_release_events, windowed_jerk
 from validate_log import GAS_INACTIVE, JERK_SMOOTH_TAU, JERK_WIN_S, _local_segment_names
 
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"
@@ -222,6 +223,7 @@ def main(argv=None):
   twin = {'schedule_mismatch': 0, 'acc_changed': 0, 'other_changed': 0,
           'brake_domain_different_cycles': 0, 'output_accel_different_cycles': 0}
   t, requested, wire, active, sendcans, gas_feedback, pitch, aego, feedback_age = [], [], [], [], [], [], [], [], []
+  speed, pid, gas_pressed, brake_pressed = [], [], [], []
   rec_t, rec_wire, rec_gas, replay_gas = [], [], [], []
   for m in msgs:
     w = m.which()
@@ -267,6 +269,10 @@ def main(argv=None):
     gas_feedback.append(float(cc.odyssey_gas_response.correction))
     pitch.append(float(control.orientationNED[1]) if len(control.orientationNED) == 3 else np.nan)
     aego.append(float(cs_shim.out.aEgo))
+    speed.append(float(state.vEgo))
+    pid.append(str(control.actuators.longControlState) == "pid")
+    gas_pressed.append(bool(state.gasPressed))
+    brake_pressed.append(bool(state.brakePressed))
     feedback_age.append(len(cc.odyssey_gas_response.requests))
 
   t = np.array(t)
@@ -276,6 +282,10 @@ def main(argv=None):
   gas_feedback = np.array(gas_feedback, dtype=float)
   pitch = np.array(pitch, dtype=float)
   aego = np.array(aego, dtype=float)
+  speed = np.array(speed, dtype=float)
+  pid = np.array(pid, dtype=bool)
+  gas_pressed = np.array(gas_pressed, dtype=bool)
+  brake_pressed = np.array(brake_pressed, dtype=bool)
   feedback_age = np.array(feedback_age, dtype=int)
   if len(t) < 50:
     print(f"TOO FEW FRAMES ({len(t)}) - aborting")
@@ -323,6 +333,7 @@ def main(argv=None):
   brake_domain_frames = gas_domain_frames = coast_domain_frames = 0
   negative_live_gas_frames = negative_live_gas_events = 0
   total_edges = []
+  physical_cycles = []
   try:
     from opendbc.can.parser import CANParser
     cp = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
@@ -334,6 +345,9 @@ def main(argv=None):
         br = int(cp.vl["ACC_CONTROL"]["BRAKE_REQUEST"])
         ac = float(cp.vl["ACC_CONTROL"]["ACCEL_COMMAND"])
         gas = float(cp.vl["ACC_CONTROL"]["GAS_COMMAND"])
+        if any(addr == 0x1DF and src == 1 for addr, _, src in sends):
+          physical_cycles.append((mono / 1e9, requested[i], aego[i], speed[i], pitch[i], act[i], pid[i],
+                                  gas_pressed[i], brake_pressed[i], br, gas))
         if act[i]:
           domain = "brake" if br else ("gas" if gas > GAS_INACTIVE else "coast")
           negative_live = domain == "gas" and gas < 0
@@ -358,6 +372,15 @@ def main(argv=None):
   except Exception as e:
     print(f"  (sendcan decode failed: {e})")
 
+  physical_releases = []
+  if len(physical_cycles) >= 2:
+    cycle = np.asarray(physical_cycles, dtype=float)
+    entry = np.where(cycle[:, 3] < ODYSSEY_LOW_SPEED_DOMAIN_VEGO, 0., ODYSSEY_ROAD_BRAKE_ENTRY)
+    physical_releases = mild_negative_brake_release_events(
+      cycle[:, 0], cycle[:, 1], cycle[:, 2], cycle[:, 3], cycle[:, 4],
+      cycle[:, 5], cycle[:, 6], cycle[:, 7], cycle[:, 8], cycle[:, 9], cycle[:, 10],
+      gas_inactive=GAS_INACTIVE, entry_threshold=entry)
+
   res = {
     "seg_range": seg_range,
     "replay_clock": "recorded_sendcan_with_pre_state_control_snapshot",
@@ -366,6 +389,7 @@ def main(argv=None):
     "early_release_edges": [{"route_time_s": round(edge[0] - t[0], 3), "request": edge[1],
                              "aego": edge[2], "engine_torque_estimate": edge[3], "target_gear": edge[4]}
                             for edge in release_edges],
+    "early_release_physical_events_open_loop_only": physical_releases,
     "same_input_no_release_twin": twin if baseline is not None else None,
     "frames": int(len(t)), "engaged_frames": int(act.sum()),
     "replayed": {**stats(wire, act), "domain_flips_open_loop_only": flips,
