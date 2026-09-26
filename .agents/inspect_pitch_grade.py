@@ -70,11 +70,19 @@ def leave_one_route_out(groups, held, width):
   return coef, x[:, :width] @ coef - y
 
 
-def gas_lookup_delta(request, pitch, offset):
-  """Hypothetical feedforward-only count change through the actual Honda lookup."""
+def odyssey_gas_lookup():
+  """Initialize Odyssey's class-level lookup as card does before controller construction."""
+  from opendbc.car import gen_empty_fingerprint
+  from opendbc.car.honda.interface import CarInterface
+  from opendbc.car.honda.values import CAR, CarControllerParams
+  CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)
+  return tuple(CarControllerParams.BOSCH_GAS_LOOKUP_BP), tuple(CarControllerParams.BOSCH_GAS_LOOKUP_V)
+
+
+def gas_lookup_delta(request, pitch, offset, lookup=None):
+  """Hypothetical feedforward-only count change through Odyssey's initialized lookup."""
   from opendbc.car.honda.carcontroller import odyssey_uphill_gas_accel
-  from opendbc.car.honda.values import CarControllerParams
-  bp, values = CarControllerParams.BOSCH_GAS_LOOKUP_BP, CarControllerParams.BOSCH_GAS_LOOKUP_V
+  bp, values = odyssey_gas_lookup() if lookup is None else lookup
   original = odyssey_uphill_gas_accel(request, pitch)
   adjusted = odyssey_uphill_gas_accel(request, pitch - offset)
   return float(np.interp(adjusted, bp, values) - np.interp(original, bp, values))
@@ -103,7 +111,8 @@ def positive_gas_sensitivity(data, gps, offset):
            (np.abs(data['request'][future] - data['request']) < .1) &
            np.isfinite(data['aego'][future]))
   ix = np.flatnonzero(valid & (np.arange(len(t)) % 10 == 0))
-  changes = np.array([gas_lookup_delta(float(data['request'][i]), float(filtered[i]), offset) for i in ix])
+  lookup = odyssey_gas_lookup()
+  changes = np.array([gas_lookup_delta(float(data['request'][i]), float(filtered[i]), offset, lookup) for i in ix])
   errors = data['aego'][future[ix]] - data['request'][ix]
   spans = int(1 + np.sum(np.diff(t[ix]) > .15)) if len(ix) else 0
   return changes, errors, spans
@@ -172,6 +181,8 @@ def main():
     parser.error('Feedforward offset must be between zero and 0.1 radians')
   if not 0. < args.coast_gps_max_age <= 2.:
     parser.error('Coast GPS maximum age must be within (0, 2] seconds')
+  if args.feedforward_offset is not None:
+    print('initialized Odyssey Bosch gas lookup BP/V', odyssey_gas_lookup())
   ledger_path = Path(__file__).with_name('log-validation-ledger.jsonl')
   ledger = {row['route']: row for row in map(json.loads, ledger_path.read_text().splitlines())}
   groups = []

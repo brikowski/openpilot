@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from inspect_pitch_grade import aligned_pitch_grade, gas_lookup_delta, gps_coast_response, gps_velocity_grade, leave_one_route_out
+from opendbc.car.honda.values import CarControllerParams
 
 
 def test_gps_ned_grade_sign_tracks_climb_and_descent():
@@ -36,8 +37,10 @@ def test_pitch_offset_holdout_cannot_fit_the_held_route():
   np.testing.assert_allclose(error, -.98)
 
 
-def test_feedforward_sensitivity_uses_1600_count_honda_lookup():
-  assert gas_lookup_delta(.3, .03, .022) == pytest.approx(-94.2, abs=.5)
+def test_feedforward_sensitivity_initializes_2000_count_odyssey_lookup(monkeypatch):
+  monkeypatch.setattr(CarControllerParams, 'BOSCH_GAS_LOOKUP_V', [0, 1600])
+  assert gas_lookup_delta(.3, .03, .022) == pytest.approx(-117.7, abs=.5)
+  assert CarControllerParams.BOSCH_GAS_LOOKUP_V == [0, 2000]
 
 
 def test_gps_coast_response_requires_recent_gps_and_keeps_coast_separate_from_brake():

@@ -7622,12 +7622,17 @@ support a speed-dependent runtime term either.
 
 A feedforward-only sensitivity screen of source-compatible, near-GPS-level,
 stable positive-gas rows estimated that subtracting `0.022 rad` from the
-filtered pitch would lower gas-map output by a median 94 counts on 247
-correlated route-28 rows and 38 counts on 40 route-29 rows. The calculation
-uses the actual `BOSCH_GAS_LOOKUP_BP/V` (`[-0.2, 2.0]` to `[0, 1600]`), not an
-assumed 2,000-count span; the first scratch pass had overstated counts by 25%.
-The installed `e82025624994` positive-request grade feedforward and lookup
-were checked against recorded `f697fa4c6588` before this cross-source
+filtered pitch would lower gas-map output by a median 118 counts on 247
+correlated route-28 rows and 47 counts on 40 route-29 rows. **Correction to
+the published 94/38-count estimate:** `values.py` defaults to `[0, 1600]`,
+but Honda's interface initializes the Odyssey class-level
+`BOSCH_GAS_LOOKUP_V` to `[0, 2000]` before constructing `CarController`.
+The prior diagnostic imported the default without that initialization and
+understated the hypothetical change by 20% of its true Odyssey value. The
+diagnostic now initializes the Odyssey platform as controller replay does;
+its mutation-tested regression deliberately starts from the wrong 1600 map.
+The installed `e82025624994` positive-request grade feedforward and Odyssey
+lookup were checked against recorded `f697fa4c6588` before this cross-source
 calculation; other revisions require that source check again. Those rows
 contain both future over- and under-response (route 28: 133/34; route 29: 5/18,
 with the remainder near target). This is **not** a replay of the complete
