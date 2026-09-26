@@ -7687,6 +7687,45 @@ remains incomplete and its complete segment has no longitudinal engagement;
 device SSH and `comma.local` resolution were unavailable during this check.
 No runtime, safety, DBC, Alpha Long, or device setting changed.
 
+### Independent Honda acceleration signal is not yet a live gas observer (2026-09-26)
+
+The received bus-1 `KINEMATICS.LONG_ACCEL` (0x94) is available at about
+100 Hz on the Odyssey; `VEHICLE_DYNAMICS.LONG_ACCEL` (0x1ea) was absent in
+the inspected windows. Its raw DBC value is about `0.46..0.50` when
+`carState.aEgo` is about `0.99..1.14 m/s²` in the route-29/2b matched
+positive-gas windows. Do not infer a DBC factor-of-two error from that
+snapshot: the signal's physical origin, gravity sensitivity, and lag are
+not established. A local raw-CAN screen on exact `f697fa4c6588` routes
+28/29/2b sampled at 10 Hz after active, no-pedal, 8–30 m/s filtering, using
+only the latest earlier `carState.aEgo` and controller pitch. It retained
+3,085/1,623/3,603 observations. Leave-one-route-out linear reconstruction
+of current `aEgo` from CAN alone has RMSE `0.217/0.248/0.214 m/s²`;
+including pitch lowers it to `0.144/0.115/0.139`. These are observational
+fits to an existing estimate, not a calibrated sensor or actuator model.
+
+To test whether the CAN signal could help dynamic gas feedback, train on
+two routes and predict each held-out route's `aEgo(t+0.6 s)` from current
+`aEgo`, CAN acceleration, and pitch, without future predictor inputs. On
+general engaged samples, current-`aEgo` persistence has RMSE
+`0.211/0.199/0.199`; the combined fit gives `0.194/0.196/0.182`.
+But on the *existing stable positive-gas trim cohort* (56/18/160 rows),
+the same fit **worsens** future tracking-error RMSE from
+`0.156/0.089/0.173` for current error to `0.181/0.133/0.175`.
+In route 29 it predicts the sign of only 2/9 future overshoots versus
+9/9 from current error; in route 2b it improves future undershoot signs
+from 3/20 to 12/20 while reducing overshoot signs from 60/70 to 49/70.
+The rows overlap within episodes. Re-fitting solely on the two other
+routes' trim cohorts does not resolve the transfer: route-2b held-out RMSE
+becomes `0.193` with pitch (versus `0.173` for current error), and it
+recognizes only 6/20 undershoot and 36/70 overshoot signs.
+
+**Decision: KEEP the CAN signal as an independent offline measurement lead;
+do not change its DBC scale or feed this fit into live gas/brake selection.**
+The modest general-sample forecast gain does not justify worse decisions in
+the exact positive-gas condition being tuned. Current `e82025624994`
+behavior and Alpha Long remain unchanged; it still lacks a complete local
+engaged post-deployment route. No device deployment is needed.
+
 ### Independent GPS-velocity grade screen for Honda pitch translation (2026-09-26)
 
 The older standing-pitch note above was based on the controller signal alone.
