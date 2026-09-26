@@ -7425,6 +7425,70 @@ controller-to-wire transmission, not proof that more torque or a different
 upstream lateral command would improve the turn. No lateral runtime or
 device setting changed in this screen.
 
+### Independent-GPS-grade check of the 3840 lateral comparison (2026-09-26)
+
+The preceding matcher conditions on `carControl.orientationNED[1]`, now known
+to have a standing positive component relative to GPS velocity-derived
+grade. Re-screened the same exact-provenance 3840 route 20 against stock-2560
+route 2b, both with the same small-model blob and Alpha Long, using full-rate
+`gpsLocation.vNED` as an independent observational grade label. Require GPS
+fix, vertical accuracy at most 5 m, car/GPS speed difference below 2 m/s,
+and GPS age below 1.5 s. The high-authority mask otherwise keeps the earlier
+20–24 m/s speed, 0.5–2.0 m/s² desired lateral acceleration, turn-slope,
+no-override/fault, and 10-Hz sample requirements. Match within 1.5 m/s
+speed, 0.20 m/s² signed desired acceleration, 0.25 m/s³ desired slope, and
+0.01 rad GPS grade. GPS grade is not surveyed road geometry.
+
+When the 3840 arm actually transmits at least 3839 torque counts and the
+stock arm reaches 2559, 41 of 42 3840 points match to 12 distinct stock
+points. Nearest-neighbor lateral tracking MAE is `0.232/0.099 m/s²`
+(3840/2560); a greedy one-to-one assignment has 20 pairs and MAE
+`0.223/0.140`. Median matched GPS grades are approximately `+0.030/+0.026`
+rad, so both arms are genuinely uphill by this independent proxy. Tightening
+GPS age to 0.5 s leaves 21 matched 3840 points, nearest-neighbor MAE
+`0.236/0.132`, and 11 one-to-one pairs at `0.189/0.153`. Relaxing grade
+tolerance to 0.015 or 0.020 rad retains the same MAE direction. Including
+all historical 3840-arm output at least 2559, rather than only its 3839+
+cap, also retains the stock arm's lower MAE under both age limits.
+
+These points are correlated within turns, baseline points are reused in the
+nearest-neighbor score, and the roads/vehicle states differ. GPS conditioning
+strengthens the non-benefit screen; it is not causal proof of EPS clipping.
+**Decision: KEEP the stock 2560 Odyssey steering map and continue separating
+outgoing command fidelity from physical lateral response.** There is still no
+attributable tracking gain supporting restoration of 3840. No lateral
+runtime or device setting changed.
+
+### Exact-cycle Honda steering-slew attribution (2026-09-26)
+
+The Odyssey uses Honda's common `STEER_DELTA_UP/DOWN=3` normalized torque/s
+port limiter before packing steering CAN. This can temporarily separate the
+upstream `carControl.actuators.torque` from `carOutput.actuatorsOutput.torque`
+on rapid changes; interpolating `carOutput` onto the request grid obscures
+the exact cycle. A raw-log screen on full-rate routes 28/29/2b paired each
+`carControl` with the next `carOutput` within 25 ms (typical gap about 5 ms),
+required lateral active for over 0.5 s, speed at least 10 m/s, no steering
+override/fault, and absolute desired lateral acceleration at least
+0.5 m/s². These routes ran the same nested `f697fa4c6588` source.
+
+| Route | Clean 100-Hz samples | Torque-gap p95/p99 | Gap >=0.2 episodes lasting >=50 ms | Future signed under-response median, gap >=0.1 / gap <0.05 |
+| --- | ---: | ---: | ---: | ---: |
+| 28 | 1,320 | 0.154/0.379 | 4 | +0.077/+0.075 m/s² |
+| 29 | 272 | 0.094/0.139 | 0 | -0.098/-0.048 m/s² |
+| 2b | 4,751 | 0.121/0.252 | 5 | -0.002/-0.012 m/s² |
+
+Future response is `controlsState.actualLateralAccel(t+0.15 s)` versus
+current desired lateral acceleration, sign-corrected to the turn. These are
+unmatched observational subsets with correlated frames, not a causal
+counterfactual for removing or raising the rate limit. They establish a
+short Honda-port command divergence on some transient turns, but do not show
+a consistent tracking deficit attributable to it; the previously inspected
+sustained high-authority shortfall occurs with controller-to-wire torque at
+the cap. Honda Panda safety's steering check here forbids nonzero actuation
+when controls are disallowed but does not establish an acceptable EPS slew
+rate. **Decision: KEEP the current steering rate limit; do not raise it from
+this screen.** No vehicle runtime or device setting changed.
+
 ### Pending new e820 route transfer (2026-09-26)
 
 The device briefly listed 17 retained routes: 15 already validated and two
