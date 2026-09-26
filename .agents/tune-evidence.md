@@ -7479,3 +7479,54 @@ inverse map. A next candidate must account for the response trajectory and
 powertrain state, validate command transitions in frozen replay, and then
 verify physical improvement on exact-source road data. No Honda runtime,
 safety, DBC, or Alpha Long setting changed in this diagnostic.
+
+### Held-command actuator-state forecast before a dynamic trim (2026-09-26)
+
+The latest-published current-error forecast above misses most later uphill
+under-response, so `inspect_response_model.py --held-command-forecast` now
+tests a different *causal* candidate: fit the existing gas/brake first-order
+response-state model on two full-rate training routes, then project 0.6 s
+forward while holding the **current** wire gas/brake command and speed/grade
+context. Every held-out route is excluded from delay/filter and coefficient
+selection. The projection uses filtered actuator state only through the
+current controller timestamp, not future gas, pitch, speed, or aEgo. Future
+recorded commands qualify the stable trim-band evaluation cohort and future
+aEgo supplies its label; the forecast is **not** a road counterfactual for
+changing `GAS_COMMAND`. Rotate each of exact nested `f697fa4c6588` routes
+28/29/2b as `--evaluation-routes` and pass the other two as training inputs;
+both `--opendbc` and `--evaluation-opendbc` must be full
+`f697fa4c6588839976b00218f584916632747dcb`. The selected gas delay/filter
+is 0.1/0.25 s on all three rotations; brake response is included in the
+training model but every scored trim row remains in continuous positive gas.
+
+| Held-out route | Trim rows | Current-error RMSE | Held-command RMSE | Held + 0.2-s residual RMSE | Significant over sign, current/held | Significant under sign, current/held |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 28 | 56 | 0.1564 | 0.1385 | 0.1059 | 29/35, 34/35 | 2/6, 4/6 |
+| 29 | 18 | 0.0886 | 0.1736 | 0.1024 | 9/9, 0/9 | none |
+| 2b | 160 | 0.1734 | 0.1305 | 0.1304 | 60/70, 65/70 | 3/20, 12/20 |
+
+RMSE is in m/s², and the 10-Hz rows are overlapping, not independent
+replications. The held model detects part of route-2b's impending under-
+response that the current-error sign misses, but its route-29 error goes in
+the *opposite* direction. Its 0.2-s causal residual observer repairs some
+route-29 error yet also erases much of the route-2b undershoot warning.
+An older-source fit on exact nested `47196b9a4a72` routes 25/26/27 also
+recognized only 2/20 route-2b undershoot signs; a static gas-response map
+is sensitive to training exposure/source. During the route-29 overshoot
+cluster near t≈568 s, fifth gear, speed about 17–18 m/s, request near
++1.0 m/s², pitch near +0.029 rad, and gas near 870–890 counts resemble
+route-2b uphill under-response intervals. Received `CAR_GAS` and engine-
+torque estimates are close as well. Route 29 has a lead and route 2b does
+not, but there is no evidence that lead presence itself changes Honda
+actuation under these stable commands. The missing response state remains
+unidentified; the model coefficients are predictive fits, **not** inverse
+gas-count gains.
+
+**Decision: KEEP this forecast as an offline diagnostic; do not introduce a
+model-driven trim or brake/gas authority change from it.** A viable dynamic
+translation needs a causal state/uncertainty estimate that resolves the
+route-29 failure without losing the route-2b warning, followed by command-
+shape/safety checks and exact-source closed-loop road validation. The current
+`e82025624994` runtime remains unpromoted and has no newly verified engaged
+drive; the device route listing timed out over SSH during this audit. No
+upstream controller, Honda runtime, DBC, safety, or Alpha Long setting changed.

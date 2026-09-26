@@ -301,6 +301,38 @@ def test_trim_forecast_rejects_intervening_domain_and_gear_changes():
   assert not np.any(np.isclose(response_model.trim_forecast_rows(data)['t'], 1.))
 
 
+def test_held_state_forecast_uses_only_current_and_past_input():
+  signal = np.array([0., 0., 1., 1., 1.])
+  forecast = response_model.held_future_state(signal, .1, .1, .2, .4)
+  assert forecast[2] == pytest.approx(1. - (2. / 3.) ** 4)
+  signal[-1] = 100.
+  np.testing.assert_allclose(response_model.held_future_state(signal, .1, .1, .2, .4)[:4], forecast[:4])
+  with pytest.raises(ValueError):
+    response_model.held_future_state(signal, .1, .5, .2, .4)
+
+
+def test_held_command_forecast_never_fits_evaluation_route(monkeypatch, capsys):
+  train_a, train_b, evaluation = object(), object(), object()
+  timeline = np.arange(0., 2., .02)
+  prepared = {'t': timeline, 'gas': np.zeros(len(timeline)), 'brake': np.zeros(len(timeline)),
+              'context': np.zeros((len(timeline), 3)), 'actual': np.zeros(len(timeline)), 'dt': .02}
+  calls = []
+  monkeypatch.setattr(response_model, 'prepare_joint', lambda raw: prepared)
+  def fit(groups):
+    assert len(groups) == 2 and groups == [prepared, prepared]
+    calls.append('fit')
+    return ((.1, .2), (.3, .1)), np.zeros(5)
+  monkeypatch.setattr(response_model, 'fit_joint_model', fit)
+  monkeypatch.setattr(response_model, 'trim_forecast_rows', lambda raw: {
+    't': np.array([1.]), 'request': np.array([1.]), 'actual_future': np.array([.2]),
+    'current': np.array([.1])})
+  monkeypatch.setattr(response_model, 'joint_matrix', lambda raw, *args: np.zeros((len(raw['t']), 5)))
+  monkeypatch.setattr(response_model, 'observe_residual', lambda raw, *args: (np.zeros(len(raw['t'])), None, None))
+  response_model.inspect_held_command_forecast(['a', 'b'], [train_a, train_b], ['held'], [evaluation])
+  assert calls == ['fit']
+  assert 'held-out trim rows 1' in capsys.readouterr().out
+
+
 def test_continuity_rejects_pedals_gear_changes_and_log_gaps():
   t = np.arange(0., 1., .02)
   valid = np.ones(len(t), dtype=bool)

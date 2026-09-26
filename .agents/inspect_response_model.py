@@ -610,7 +610,7 @@ def trim_forecast_rows(data):
   # Keep the evaluation cohort free of intervening planner pulses; this
   # future interval check never enters either causal predictor.
   ix = ix[[np.ptp(request[past[i]:future[i] + 1]) <= .10 for i in ix]]
-  return {'t': t[ix], 'actual_future': data['aego'][future[ix]] - request[ix],
+  return {'t': t[ix], 'request': request[ix], 'actual_future': data['aego'][future[ix]] - request[ix],
           'current': data['aego'][ix] - request[ix],
           'delay_aligned': data['aego'][ix] - request[past[ix]]}
 
@@ -642,6 +642,53 @@ def inspect_trim_forecast(routes, data):
                 (rows['current'], rows['delay_aligned'], actual)))
 
 
+def held_future_state(signal, dt, delay, tau, horizon=.6):
+  """Advance a causal filtered actuator state while holding its current input."""
+  if not 0. <= delay <= horizon or tau < 0.:
+    raise ValueError('Held forecast requires nonnegative delay/filter and horizon after delay')
+  signal = np.asarray(signal, dtype=float)
+  if tau == 0.:
+    return signal.copy()
+  filtered = causal_lpf(signal, dt, tau)
+  steps = int(round((horizon - delay) / dt))
+  persistence = (tau / (tau + dt)) ** steps
+  return signal + (filtered - signal) * persistence
+
+
+def inspect_held_command_forecast(train_routes, train_data, evaluation_routes, evaluation_data):
+  """Fit on training routes only, then forecast under a held current wire command.
+
+  This is a predictor screen, not a calibrated inverse actuator or closed-loop
+  counterfactual. Future response and command qualify/label rows only.
+  """
+  prepared_train = [prepare_joint(d) for d in train_data]
+  dynamics, coef = fit_joint_model(prepared_train)
+  print('training routes', train_routes, 'gas/brake delay/tau', dynamics,
+        'gas/brake/speed2/grade/bias coefficients', np.round(coef, 4))
+  for route, raw in zip(evaluation_routes, evaluation_data, strict=True):
+    rows, prepared = trim_forecast_rows(raw), prepare_joint(raw)
+    ix = np.searchsorted(prepared['t'], rows['t'], side='right') - 1
+    if len(ix) and (np.any(ix < 0) or np.any(rows['t'] - prepared['t'][ix] >= .02)):
+      raise ValueError(f'{route}: trim rows do not align to preceding causal controller states')
+    gas = held_future_state(prepared['gas'], prepared['dt'], *dynamics[0])
+    brake = held_future_state(prepared['brake'], prepared['dt'], *dynamics[1])
+    held = (coef[0] * gas + coef[1] * brake + prepared['context'] @ coef[2:])[ix] - rows['request']
+    current_model = joint_matrix({**prepared, 'mask': np.ones(len(prepared['t']), dtype=bool)}, *dynamics) @ coef
+    prepared['residual'] = prepared['actual'] - current_model
+    target = rows['actual_future']
+    over, under = target > .1, target < -.1
+    print(route, 'held-out trim rows', len(target), 'future over/under', int(over.sum()), int(under.sum()))
+    for name, estimate in (('zero', np.zeros(len(target))), ('current', rows['current']),
+                           ('held-command', held),
+                           ('held+residual-.2', held + observe_residual(prepared, .2, True)[0][ix]),
+                           ('held+residual-.5', held + observe_residual(prepared, .5, True)[0][ix])):
+      if not len(target):
+        continue
+      print(name, 'RMSE', round(float(np.sqrt(np.mean((estimate - target) ** 2))), 4),
+            'over/under sign', f'{int(np.sum(estimate[over] > 0))}/{int(over.sum())}',
+            f'{int(np.sum(estimate[under] < 0))}/{int(under.sum())}')
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('routes', nargs='+')
@@ -654,6 +701,7 @@ def main():
   mode.add_argument('--coast-transition', action='store_true', help='Compare held-out natural coast with carried and reset actuator states by coast age')
   mode.add_argument('--brake-release-screen', action='store_true', help='Screen a rising-request overdecel release, not closed-loop road behavior')
   mode.add_argument('--gas-trim-forecast', action='store_true', help='Score current response error against later trim-band error')
+  mode.add_argument('--held-command-forecast', action='store_true', help='Fit training-only actuator states and score held-wire trim response')
   parser.add_argument('--release-error-margin', type=float, default=.2, help='Exploratory overdeceleration margin for the release screen')
   parser.add_argument('--release-torque-drop', type=float, help='Require this much 0.2-s received engine-torque decrease for the release screen')
   parser.add_argument('--evaluation-routes', nargs='+', default=[], help='Held-out routes, never used for fitting')
@@ -662,9 +710,10 @@ def main():
   if len(set(args.routes)) < 2 or len(set(args.routes)) != len(args.routes):
     parser.error('Provide at least two distinct routes to separate training from held-out evaluation')
   comparison_mode = (args.brake_entries or args.joint or args.residual_forecast or args.coast_authority or
-                     args.coast_transition or args.brake_release_screen or args.gas_trim_forecast)
-  if args.coast_transition and not args.evaluation_routes:
-    parser.error('--coast-transition requires held-out --evaluation-routes')
+                     args.coast_transition or args.brake_release_screen or args.gas_trim_forecast or
+                     args.held_command_forecast)
+  if (args.coast_transition or args.held_command_forecast) and not args.evaluation_routes:
+    parser.error('This forecast requires held-out --evaluation-routes')
   if args.evaluation_routes and (not comparison_mode or not args.evaluation_opendbc):
     parser.error('Evaluation routes require a comparison mode and --evaluation-opendbc; audit source compatibility separately')
   if len(set(args.routes + args.evaluation_routes)) != len(args.routes + args.evaluation_routes):
@@ -676,9 +725,12 @@ def main():
           ledger[route].get('qlog_fallback') or route.startswith('00000005--')):
         parser.error(f'{route}: missing/mismatched nested provenance, qlog fallback, or excluded route')
   loader = (load_forecast_data if args.residual_forecast or args.coast_authority or args.coast_transition or
-            args.brake_release_screen or args.gas_trim_forecast else load)
+            args.brake_release_screen or args.gas_trim_forecast or args.held_command_forecast else load)
   data = [loader(route) for route in args.routes]
   if comparison_mode:
+    if args.held_command_forecast:
+      inspect_held_command_forecast(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes])
+      return
     if args.gas_trim_forecast:
       inspect_trim_forecast(args.routes + args.evaluation_routes, data + [loader(r) for r in args.evaluation_routes])
       return
