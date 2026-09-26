@@ -7116,6 +7116,39 @@ from the deployed mild-brake *release* trial. Any entry candidate must prove
 fresh-entry response and transition behavior against the exact command and
 domain history; replay alone cannot establish physical benefit.
 
+### How much of current coast differs from stock Bosch (2026-09-26)
+
+Stock `hondacan.create_acc_commands` chooses gas above the `-0.20 m/s²` Bosch
+lookup breakpoint, brake below it, and neither at equality. The Odyssey-only
+selector introduced in nested `da430e959` makes a wider, state-dependent coast
+possible; it is not a stock Honda mode added to the CAN protocol. To measure
+its actual use, sample the full-rate extract at 50 Hz on exact nested
+`f697fa4c6588` routes `00000028--0a9feaa46c`, `00000029--8532e5621f`, and
+`0000002b--6472adcaf4`. Require engaged PID, no driver pedals, speed at least
+5 m/s, and raw `carControl.actuators.accel` in `[-0.30, -0.101)` m/s². Identify
+commanded coast from held bus-1 sent `ACC_CONTROL` (`GAS_COMMAND=-30000` and
+`BRAKE_REQUEST=0`), then classify each observed coast sample by what stock's
+raw-request split would have selected. Counts are descriptive, not a stock
+vehicle-response replay:
+
+| Route | Current coast | Stock would select brake | Stock would select gas |
+| --- | ---: | ---: | ---: |
+| 28 | 11.6 s | 5.3 s | 6.2 s |
+| 29 | 21.4 s | 9.1 s | 12.3 s |
+| 2b | 18.9 s | 10.2 s | 8.8 s |
+
+Rounding explains tenth-second differences; no sampled coast request equaled
+exactly `-0.20`. The selector is therefore not dead code: about 52 s of observed coast in this
+condition differs from what stock's domain split would choose. Same-instant
+`aEgo - carControl` medians while coasting were positive on all three routes
+(`+0.163/+0.119/+0.147 m/s²`), but these frame samples are serially correlated
+and include transitions. They do not establish that stock gas or brake would
+have improved those intervals; they also do not invalidate the matched
+terrain/entry evidence above. Later nested changes leave the normal entry
+selector intact but add an unroad-tested, torque-qualified early brake release.
+**Decision: KEEP the current coast selector pending a coherent dynamic
+gas/coast/brake response design; do not revert it merely for non-stock status.**
+
 ### Fresh brake-entry check on the same source (2026-09-25)
 
 To test whether the favorable *already-active* downhill brake samples above
