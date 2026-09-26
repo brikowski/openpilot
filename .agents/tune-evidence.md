@@ -7756,3 +7756,51 @@ its fresh brake-entry and release effects survive closed-loop validation.
 The deployed `e82025624994` trial remains ungraded on-road because the
 device's configured SSH address timed out again. No runtime behavior,
 upstream command, safety rule, or Alpha Long setting changed.
+
+### Causal carried-state coast forecast is not yet a brake selector (2026-09-26)
+
+To move beyond the fixed-band and instantaneous-error screens, an exploratory
+frozen-input twin at `/private/tmp/ody_coast_predictive_twin.py` used the
+existing joint gas/brake/coast model. It trained only on source-compatible
+nested `47196b9a4a72` routes 25/27 and held out nested `f697fa4c6588`
+routes 28/29/2b. The selected causal dynamics were gas delay/filter
+`0.1/0.25 s` and brake `0.3/0.1 s`. At each current controller sample, it
+projected its *current* filtered actuator states 0.5 s forward under the
+explicit assumption of zero future gas and brake, then held current speed
+and pitch context. The projection was checked against zero-padded causal
+filtering. No future `aEgo`, command, GPS grade, or gear entered the predictor;
+future continuous coast, request stability, gear, and no-pedal state selected
+the **evaluation** rows. This predicts acceleration under continued coast,
+not what an added brake request would do.
+
+For 42/87/46 qualifying 10-Hz mild-negative, 15–30 m/s coast rows by held-out
+route, 0.5-s future `aEgo-carControl` mean absolute error was
+`0.071/0.084/0.073 m/s²` when simply carrying current measured error and
+`0.054/0.067/0.108` for the joint-state forecast. The model improved 28/29
+but regressed on 2b. Calling a predicted error above `+0.10 m/s²` an
+offline *selection*, not a command, selected 41/56/42 rows; only 29/52/19
+actually exceeded `+0.10` at the future point. Route 2b therefore supplied
+23 selected near-target-or-under rows. A causal 0.1-s filtered correction
+using current measured model residual made the MAE
+`0.067/0.075/0.067`, but its same selection still took 34/59/39 rows with
+8/7/22 near-target-or-under. At `+0.15`, route 2b still had 11 such rows
+among 23 selections while missing seven of its 19 true `>+0.10` rows.
+The rows are serially correlated, and a lower MAE is not proof of a safe
+binary brake-entry decision.
+
+A frozen-input command-shape twin additionally released hypothetical early
+brake as soon as the upstream request rose by `0.05 m/s²`, the forecasted
+error ceased being positive, or the mild-negative domain became ineligible;
+it required a renewed stronger request or recovered response to re-arm.
+Even with that re-arm rule, a `+0.10` forecast margin generated 5/6/13
+candidate brake runs on routes 28/29/2b, of which 3/3/8 lasted under 0.5 s.
+Those short pulses approach or undercut the observed brake response delay
+and could worsen jerk or brake-light activity. Frozen recorded inputs do not
+predict their closed-loop physical effect.
+
+**Decision: do not turn this joint-state forecast or residual correction
+directly into a Honda coast-to-brake rule.** It is a useful observer lead,
+but a production candidate must remove route-2b false selections, predict
+fresh brake-entry and release effects, and then prove command and response
+benefit on exact-source road evidence. No runtime, safety, DBC, upstream, or
+Alpha Long setting changed; no device deployment is needed for this screen.
