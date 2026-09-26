@@ -23,7 +23,8 @@ active safety rails.
 - The Honda Bosch ECU closes its own acceleration/brake loop. Do not stack a generic OpenPilot PID
   around `ACCEL_COMMAND` or use CAN shaping to hide an upstream planner/controller mismatch.
 - On the current `ody-op` Odyssey port, `odyssey_command_domains` chooses mutually exclusive
-  gas/brake domains from the raw controller request. Its
+  gas/brake domains from the raw controller request, apart from a bounded, response-qualified
+  early release of an already-active road-speed brake domain. Its
   active behavior is low-speed non-positive → brake below 5 m/s, road-speed brake entry at -0.30
   m/s², and active-gas continuity above Honda's upstream -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
@@ -31,7 +32,9 @@ active safety rails.
   request-ramped, bounded pitch load. At road speed in PID control, the brake-domain
   `ACCEL_COMMAND` adds a bounded Odyssey-calibrated grade term so Honda's grade-relative brake
   request follows the controller's net-acceleration target. Level road, low speed, stopping,
-  missing-pose behavior, and domain selection remain raw.
+  and missing-pose behavior retain the raw-request rules. The early-release trial requires
+  fresh received engine-torque and current overdeceleration evidence; it never overrides
+  stronger raw braking or low-speed stop authority. Replay does not prove road benefit.
 - The deployed unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
   near-zero lookup term. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` and applies a bounded, slewed correction to

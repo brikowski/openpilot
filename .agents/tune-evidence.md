@@ -6929,3 +6929,52 @@ brake release will improve a real drive: the selected model's route-2b baseline 
 remains 0.13–0.30 m/s² on these windows, greater than its projected gains, and a
 released domain would change future planner requests. Keep this as an unpromoted
 candidate pending command-shape/safety tests and a controlled road-response check.
+
+### Torque-qualified mild-brake release: bounded road trial (2026-09-25)
+
+The candidate retains the existing coast selector, raw `ACCEL_COMMAND`, and `-0.30 m/s²`
+brake entry. Only while an Odyssey road-speed PID brake is already active, with no driver
+pedal, stable target gear, `CAR_GAS=0`, and a fresh received 0x130 update, it may release
+the brake domain on a rising, still-negative raw request when `aEgo` is at least
+`0.20 m/s²` more negative and the received engine-torque estimate has dropped at least
+40 DBC-labelled Nm in 0.2 s. A request below `-0.30` immediately selects brake again;
+below 5 m/s every non-positive request retains brake authority. The 40-unit gate is a
+conservative event discriminator from the preceding sensitivity screen, not a measured
+actuator gain or proof that this threshold is optimal. Missing/stale/invalid input,
+target-gear change, pedal activity, and disengagement reset the observer. The candidate
+does not alter the Honda safety limits or presume the torque estimate is wheel torque.
+
+A two-controller frozen-input replay with identical control, carState, and latest-published
+received CAN input compared the candidate against its no-release ablation. In the
+source-matched routes 28/29/2b (`f697fa4c6588`), it releases early 1/2/4 times and
+changes 33/44/132 ACC_CONTROL payloads, with zero scheduling or non-ACC payload
+differences. It shortens brake-domain exposure by 66/88/264 controller cycles;
+domain-flip totals remain 16/14/14. Earlier release moves gas re-entry earlier too:
+negative-live-gas events rise 6→7, 10→12, and 14→18 respectively, so bridge-exit
+surge and brake re-entry are explicit road rejection risks. Domain changes are the reason
+candidate-versus-recorded same-cycle gas deltas can reach the inactive-gas sentinel;
+that is not a numerical gas-map error. The route-2b four trigger requests are
+`-0.277/-0.298/-0.273/-0.254 m/s²`, all while `aEgo` is more negative. The route-28/29
+selected opportunities and route-2b four remain projected improvements in the
+observational model, but the model error exceeds the projected benefit: neither replay
+nor model proves closed-loop improvement.
+
+On older domain-compatible routes 25/26/27 (`47196b9a4a72`), the same candidate proposes
+2/1/4 early releases and changes 56/17/85 ACC_CONTROL payloads, again with zero
+schedule or non-ACC differences. Their distinct gas-response implementation means these
+are exposure and safety screens, not an outcome pool with routes 28/29/2b. The route-27
+last release occurs with a positive ECU torque estimate, another reason to inspect
+response and transition behavior rather than treating a falling estimate as brake
+pressure. Honda parser and release-unit tests pass; deliberately deleting the falling-
+torque gate makes the flat-torque regression fail. The 24 Odyssey command-rail tests
+and 60 subtests, 7 model/interface tests, 248 Honda safety tests, focused replay tests,
+Ruff, and whitespace checks pass. An initial preflash failure exposed a missing gearbox
+attribute in a synthetic manual-transmission CarParams configuration; reading the
+Odyssey's explicit `GEARBOX_AUTO` message fixed it, and preflash passed on rerun.
+
+**Decision: CHANGE only as an unpromoted supervised road trial.** Retain the no-release
+parent as immediate rollback. Grade matched negative-request tracking, release timing,
+brake re-entries, gas bridge exits, achieved jerk, and interventions on the exact
+post-deployment source. Retire for delayed required braking, increased oscillation or
+surge, an override/fault, or worsened command tracking. Alpha Long remains user-enabled;
+device/offroad/software health and road behavior are separate results.

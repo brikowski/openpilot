@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 from types import SimpleNamespace
 
-from replay_carcontroller import gas_command_samples, gas_wire_comparison, make_replay_controller, replay_inputs, same_domain_gas_steps
+from replay_carcontroller import (gas_command_samples, gas_wire_comparison, make_replay_controller, received_at,
+                                  replay_inputs, same_domain_gas_steps, twin_can_difference)
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.honda.interface import CarInterface
 from opendbc.car.honda.values import CAR, CarControllerParams
@@ -37,6 +38,25 @@ def test_replay_uses_card_snapshot_and_send_clock():
               event("carState", "s3"), event("sendcan", "tx3")]
   assert [(tx.tag, control, state) for tx, control, state in replay_inputs(messages)] == [
     ("tx1", "c0", "s1"), ("tx2", "c1", "s2"), ("tx3", "c1", "s3")]
+
+
+def test_received_powertrain_snapshot_never_uses_future_can_and_preserves_nanoseconds():
+  base = 1_790_380_243_664_559_620
+  updates = (np.asarray([base, base + 20_000_000], dtype=np.int64),
+             np.asarray([[-130., 0.], [-180., 0.]]))
+  assert received_at(base - 1, updates) is None
+  assert received_at(base, updates) == (base, -130., 0.)
+  assert received_at(base + 19_999_999, updates) == (base, -130., 0.)
+  assert received_at(base + 20_000_000, updates) == (base + 20_000_000, -180., 0.)
+
+
+def test_twin_difference_separates_acc_payload_from_schedule_and_other_can():
+  reference = [(0x1DF, b'old', 1), (0xE4, b'steer', 1)]
+  assert twin_can_difference(reference, [(0x1DF, b'new', 1), (0xE4, b'steer', 1)]) == {
+    'schedule_mismatch': 0, 'acc_changed': 1, 'other_changed': 0}
+  assert twin_can_difference(reference, [(0x1DF, b'old', 1), (0xE4, b'changed', 1)]) == {
+    'schedule_mismatch': 0, 'acc_changed': 0, 'other_changed': 1}
+  assert twin_can_difference(reference, [(0x1DF, b'old', 1)])['schedule_mismatch'] == 1
 
 
 def test_gas_steps_use_transmitted_frames_not_held_controller_ticks():

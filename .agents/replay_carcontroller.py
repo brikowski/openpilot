@@ -10,6 +10,10 @@ Because both inputs are recorded, they are byte-identical across opendbc branche
 in the resulting wire command (ACCEL_COMMAND) is purely our carcontroller. That makes the replay
 useful for command-fidelity regressions at zero driving risk.
 
+For the Odyssey brake-release screen, replay also holds actual received bus-1 powertrain CAN
+at the latest carState publication. --compare-no-release runs a same-input controller twin
+with only the release helper ablated and checks every scheduled outgoing CAN payload.
+
 LIMIT: open-loop. The car's response (aEgo) is the one the OLD controller produced, so this shows
 what the new controller would COMMAND, not how the car would then behave. Command shape and
 magnitude are valid. BRAKE_REQUEST transition counts are not closed-loop predictions: changing
@@ -128,12 +132,64 @@ class _CSShim:
     self.acc_hud = _ZeroDict()
     self.lkas_hud = _ZeroDict()
     self.stock_brake = _ZeroDict()
+    self.odyssey_engine_torque_estimate = np.nan
+    self.odyssey_car_gas = np.nan
+    self.odyssey_engine_torque_ts_nanos = 0
+    self.odyssey_target_gear = 0
+
+
+def odyssey_received_state(paths):
+  """Only actual received powertrain updates may feed the candidate controller replay."""
+  from opendbc.can.parser import CANParser
+  parser = CANParser(ODYSSEY_PT_DBC, [('GAS_PEDAL_2', 0), ('GEARBOX_AUTO', 0)], 1)
+  torque, gear = [], []
+  for m in LogReader(paths):
+    if m.which() != 'can':
+      continue
+    frames = [(c.address, c.dat, c.src) for c in m.can if c.src == 1 and c.address in (0x130, 0x1a3)]
+    if not frames:
+      continue
+    parser.update([(m.logMonoTime, frames)])
+    if any(addr == 0x130 for addr, _, _ in frames):
+      signals = parser.vl['GAS_PEDAL_2']
+      torque.append((m.logMonoTime, signals['ENGINE_TORQUE_ESTIMATE'], signals['CAR_GAS']))
+    if any(addr == 0x1a3 for addr, _, _ in frames):
+      gear.append((m.logMonoTime, parser.vl['GEARBOX_AUTO']['TRANS_TARGET_GEAR']))
+  def pack(rows, width):
+    return (np.asarray([row[0] for row in rows], dtype=np.int64),
+            np.asarray([row[1:] for row in rows], dtype=float).reshape(-1, width))
+  return pack(torque, 2), pack(gear, 1)
+
+
+def received_at(time_nanos, updates):
+  """Hold only updates at or before the carState publication that card consumed."""
+  times, values = updates
+  index = int(np.searchsorted(times, time_nanos, side='right') - 1)
+  return (int(times[index]), *values[index]) if index >= 0 else None
+
+
+def twin_can_difference(reference, candidate):
+  """Compare exact same-cycle frames before interpreting a Honda-domain counterfactual."""
+  if len(reference) != len(candidate):
+    return {'schedule_mismatch': 1, 'acc_changed': 0, 'other_changed': 0}
+  schedule_mismatch = acc_changed = other_changed = 0
+  for (ref_addr, ref_data, ref_bus), (cand_addr, cand_data, cand_bus) in zip(reference, candidate, strict=True):
+    if (ref_addr, ref_bus) != (cand_addr, cand_bus):
+      schedule_mismatch += 1
+    elif ref_data != cand_data:
+      if cand_addr == 0x1df and cand_bus == 1:
+        acc_changed += 1
+      else:
+        other_changed += 1
+  return {'schedule_mismatch': schedule_mismatch, 'acc_changed': acc_changed, 'other_changed': other_changed}
 
 
 def main(argv=None):
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("segments", help="local route ID or LogReader segment range")
   parser.add_argument("output", help="JSON output path")
+  parser.add_argument("--disable-brake-release", action="store_true", help="Ablate only the Odyssey early-release helper")
+  parser.add_argument("--compare-no-release", action="store_true", help="Twin replay against a no-release controller on identical inputs")
   args = parser.parse_args(argv)
   seg_range, out_path = args.segments, args.output
   # Accept a bare local route id as well as anything LogReader understands. Passing a
@@ -153,8 +209,18 @@ def main(argv=None):
 
   CP = next(m.carParams for m in msgs if m.which() == "carParams")
   cc = make_replay_controller(CP)
+  if args.disable_brake_release:
+    cc.odyssey_brake_release.update = lambda *unused: False
+  baseline = make_replay_controller(CP) if args.compare_no_release else None
+  if baseline is not None:
+    baseline.odyssey_brake_release.update = lambda *unused: False
+  torque_updates, gear_updates = odyssey_received_state(src) if CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR" else (None, None)
+  state_times = np.asarray([m.logMonoTime for m in msgs if m.which() == 'carState'], dtype=np.int64)
 
   cs_shim = _CSShim()
+  release_edges = []
+  twin = {'schedule_mismatch': 0, 'acc_changed': 0, 'other_changed': 0,
+          'brake_domain_different_cycles': 0, 'output_accel_different_cycles': 0}
   t, requested, wire, active, sendcans, gas_feedback, pitch, aego, feedback_age = [], [], [], [], [], [], [], [], []
   rec_t, rec_wire, rec_gas, replay_gas = [], [], [], []
   for m in msgs:
@@ -167,10 +233,31 @@ def main(argv=None):
       rec_gas.extend(gas_command_samples(m.logMonoTime, [(f.address, f.dat, f.src) for f in m.sendcan]))
   for m, control, state in replay_inputs(msgs):
     cs_shim.out = state
+    if torque_updates is not None:
+      state_time = state_times[np.searchsorted(state_times, m.logMonoTime, side='right') - 1]
+      received_torque = received_at(state_time, torque_updates)
+      received_gear = received_at(state_time, gear_updates)
+      cs_shim.odyssey_engine_torque_estimate = received_torque[1] if received_torque is not None else np.nan
+      cs_shim.odyssey_car_gas = received_torque[2] if received_torque is not None else np.nan
+      cs_shim.odyssey_engine_torque_ts_nanos = int(received_torque[0]) if received_torque is not None else 0
+      cs_shim.odyssey_target_gear = received_gear[1] if received_gear is not None else 0
     # Seed only the initial longitudinal phase; do not hide missing cycles by reseeding later.
     if not t and CP.openpilotLongitudinalControl and CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR":
       cc.frame = 0 if any(f.address == 0x1DF and f.src == 1 for f in m.sendcan) else 1
+      if baseline is not None:
+        baseline.frame = cc.frame
+    previous_brake = cc.odyssey_brake_selected
     actuators, can_sends = cc.update(control, cs_shim, m.logMonoTime)
+    if baseline is not None:
+      base_actuators, base_sends = baseline.update(control, cs_shim, m.logMonoTime)
+      diff = twin_can_difference(base_sends, can_sends)
+      for key, count in diff.items():
+        twin[key] += count
+      twin['brake_domain_different_cycles'] += baseline.odyssey_brake_selected != cc.odyssey_brake_selected
+      twin['output_accel_different_cycles'] += abs(base_actuators.accel - actuators.accel) > 1e-6
+    if previous_brake and not cc.odyssey_brake_selected and control.longActive and control.actuators.accel < 0.:
+      release_edges.append((m.logMonoTime / 1e9, float(control.actuators.accel), float(state.aEgo),
+                            float(cs_shim.odyssey_engine_torque_estimate), float(cs_shim.odyssey_target_gear)))
     t.append(m.logMonoTime / 1e9)
     requested.append(float(control.actuators.accel))
     wire.append(float(actuators.accel))
@@ -275,6 +362,11 @@ def main(argv=None):
     "seg_range": seg_range,
     "replay_clock": "recorded_sendcan_with_pre_state_control_snapshot",
     "gas_lookup_values": list(cc.params.BOSCH_GAS_LOOKUP_V),
+    "brake_release_ablation": args.disable_brake_release,
+    "early_release_edges": [{"route_time_s": round(edge[0] - t[0], 3), "request": edge[1],
+                             "aego": edge[2], "engine_torque_estimate": edge[3], "target_gear": edge[4]}
+                            for edge in release_edges],
+    "same_input_no_release_twin": twin if baseline is not None else None,
     "frames": int(len(t)), "engaged_frames": int(act.sum()),
     "replayed": {**stats(wire, act), "domain_flips_open_loop_only": flips,
                  "domain_forceful_open_loop_only": forceful,
