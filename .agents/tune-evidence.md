@@ -7192,3 +7192,38 @@ nonpositive feedback by these sampled gas-domain request falls; this screen
 does not isolate which part of its correction logic caused that outcome.
 Abrupt drop-to-coast and physical response after a changed gas command remain
 separate questions; the latter cannot be inferred from this replay.
+
+### Brake-release input and gate audit (2026-09-25)
+
+Rechecked the deployed `e82025624994` trial's received-input path against
+the exact Odyssey DBC and the three prior-source full-rate routes 28/29/2b.
+`GAS_PEDAL_2` (0x130) carries a signed 16-bit, 1-unit/count
+`ENGINE_TORQUE_ESTIMATE` and an 8-bit `CAR_GAS`; the names and `Nm` label do
+not independently calibrate wheel torque. The real received 0x130 median
+spacing was 9.9 ms on all three routes, with p99 about 19.5–19.6 ms; only
+route 28 had two gaps above the release helper's 60-ms freshness bound.
+In clean active brake-domain extracts, fresh held `CAR_GAS` was zero in
+4,495/2,426/1,460 grid frames (and all 1,583/697/406 mild-negative retained-
+brake frames). The exact receive timestamp and zero-gas gates are therefore
+not silently preventing this trial from acting during the exposed intervals.
+
+An instrumented, **no-release twin** kept the recorded carState and upstream
+request frozen while allowing the current helper to report its guard outcome.
+It had 539/178/137 eligible mild-negative, >0.20 m/s² over-decelerating
+controller cycles. Fresh torque and `CAR_GAS=0` held on all those cycles;
+the 0.2-s observer history was present on 518/178/137. Request-rise >0.05
+m/s² occurred on 59/52/125 cycles; a >40-count torque fall occurred on
+5/15/17, and those latter cycles also passed the rise test. These repeated
+cycles collapse to the already-known 1/2/4 first release opportunities in a
+normal candidate replay; they are **not** additional independent events.
+Route 2b's no-release twin kept 137 qualifying over-deceleration cycles
+where the normal candidate rapidly left brake after its four triggers.
+The scratch gate reproduction is `/private/tmp/ody_release_gate_audit.py`.
+
+**Decision: KEEP the existing bounded release trial unchanged.** The limiting
+conditions are deliberate response-direction guards, not a CAN parser or
+freshness defect. Relaxing either guard would admit additional states, while
+the earlier sign-only held-out screen already contained model-worsened
+release events; neither that model nor a frozen replay proves road benefit.
+This audit
+does not promote the trial, alter Alpha Long, or justify a new Honda command.
