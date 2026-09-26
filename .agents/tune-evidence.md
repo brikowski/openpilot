@@ -6670,3 +6670,51 @@ Panda-metadata `uv.lock` diff. It now reuses its own interpreter; VS Code analys
 `uv run --frozen`, and the tracked lockfile is restored. A mutation-verified regression fails
 with the old validation command and passes with the new command. The two ledger rows and this
 receipt are diagnostic/evidence changes only and do not require a device deployment.
+
+## 2026-09-25 — held-out brake history screen on route 2b
+
+The device has no further unvalidated retained routes. Evaluated `0000002b--6472adcaf4`
+as an additional whole-route holdout with the already-selected brake-entry model trained on
+routes 25/26/27. All six eligible entries remain on the prior f697 source. The training fit
+chooses delay/filter 0.30/0.10 s; route 2b's one-second descriptive prediction RMS is 0.1324
+versus 0.4191 m/s² for contemporaneous raw-request tracking, with late actual-minus-model
+-0.113 m/s². Refit on same-source routes 28/29 chooses 0.35/0.05 s and yields 0.1247 m/s²
+on untouched route 2b. These are predictions of recorded response, not improvements produced
+by changing a brake command. Restricting training and evaluation to entries with longer
+uninterrupted prior coast changes fitted timing and event membership, so neither delay pair
+is a universal Honda constant.
+
+The existing joint gas/brake model, trained on 25/26/27 with carried actuator states, scores
+route 2b at 0.1466 m/s² brake-domain prediction RMS and +0.0381 m/s² bias. Its brake biases
+on held-out routes 28/29 are -0.0290/-0.1109, respectively. A reset-on-domain-change
+residual observer improves route 2b's 0.3-second brake-residual forecast RMS from 0.1407
+to 0.1153 m/s², but the varying joint-model bias does not identify a stable inverse actuator
+gain for a live correction. Preserve separate gas/brake physical-state histories across domains;
+resetting unexplained residual on a domain edge remains the simpler observer candidate.
+
+The route-2b t≈277.45, 280.14, 282.59, and 285.34 s brake entries follow only 0.20–0.34 s
+of uninterrupted coast. All four had gas-active frames in the preceding second and positive
+initial aEgo (+0.24..+0.51 m/s²). Their **unfiltered** median aEgo-minus-raw-request is
++0.718 at 0.2 s, -0.044 at 0.5 s, and -0.383 m/s² at 1.0 s. The two entries after 2.09 and
+4.50 s of coast have corresponding medians +0.250, +0.075, and -0.087 m/s². The latter
+comparison is small and differently conditioned; it demonstrates history dependence on this
+route, not an isolated causal effect of coast duration. The earlier 0.2-s-filtered profile in
+the preceding receipt legitimately has a different half-second sign.
+
+Across t≈276–286 s, the control interval is continuously active PID without driver pedals or
+a lead; median pitch is about -0.039 rad. The plan-to-carControl request RMS is 0.0064 m/s².
+The transmission shifts 5→6 near 276.08 s, before the repeated gear-6 cycles. At 276.5 s,
+plan/request is about +0.49 while aEgo is +1.09 m/s²; at 277.5 s the request is about -0.34,
+grade-translated wire about -0.44, and aEgo remains +0.46. Subsequent upstream catch/brake
+requests react within the same closed loop; this is not evidence that a lead model produced the
+cycle, nor that braking alone initiated it. Short-coast gas residue and delayed/brisk Honda
+brake response both need representation when evaluating a coordinated correction.
+
+Decision: KEEP the current nested source unchanged pending an identifiable, bounded correction.
+REJECT a fixed brake-strength increase or one copied response delay: either could worsen the
+late overshoot or the long-coast entries. The next controller design target is a causal,
+domain-aware estimate of remaining gas and brake response, with correction direction gated by
+current raw request, measured response, and uncertainty. It must release immediately with
+upstream intent, retain the existing safety rails, and be assessed by component-level offline
+ablation plus exact-source road response. This decision uses existing evidence; it is not a
+fixed request for more drives.
