@@ -1235,25 +1235,28 @@ crossing rates underpredict ~2.7x and the sim freezes the feedback path.
 
 **Attribution note.** The 16:02/16:08 dips on `0000000d` that first looked like this defect are **upstream** - request was negative throughout and the wire tracked it to RMS 0.020, `plan_source = lead0`. On `00000006` the driver-reported event is upstream in full: **0.00 s brake domain, 0.00 s withheld gas**, wire-request RMS 0.0055, and the felt "holding the brake" is a **6.3 s lag** between the lead re-accelerating (t=374.0) and the MPC's request turning positive (t=380.3) while the gap opened 23 m -> 36 m. Do not attribute lead-following lag to the domain logic; check `brake_request` first.
 
-## Standing pitch bias (measured 2026-08-08, settles the old "+0.03 rad" open item)
+## Historical standing pitch screen (measured 2026-08-08; revisited 2026-09-26)
 
-`carControl.orientationNED[1]` carries a constant positive offset. Median driving pitch
+The older screen found a positive driving-pitch offset. Median driving pitch
 (`vEgo > 5`) across every route with usable data: +0.019 to +0.033 rad over 7 routes spanning
 2026-07-29 -> 2026-08-08 (`00000031` +0.0255, `00000037` +0.0329, `00000003` +0.0236, `00000004`
-+0.0240, `00000006` +0.0232, `0000000d` +0.0219, `0000000e` +0.0193). It is **speed-invariant**
++0.0240, `00000006` +0.0232, `0000000d` +0.0219, `0000000e` +0.0193). It was **nearly speed-invariant in that sample**
 (`0000000d` steady-state medians +0.021/+0.019/+0.022 at 5-10 / 15-22 / >25 m/s) and
-**accel-invariant** (+0.023 at aEgo > +0.5 vs +0.021 at aEgo < -0.5, where body squat/dive would
-split these far wider) - so it is a mount/calibration offset, not aero or load transfer. The lone
+**nearly accel-invariant in that sample** (+0.023 at aEgo > +0.5 vs +0.021 at aEgo < -0.5). It
+suggested a standing component but did not identify mount/calibration as its unique cause. The lone
 pre-tune log (`00000018`, 2026-06-05) has no usable speed data, so "always" is bounded at 2026-07-29.
-Magnitude: sin(0.02)*g ~= **+0.21 m/s² of phantom hill_brake** (the old note's ~+0.34 was an
-overestimate from the +0.03 guess).
+If interpreted as road grade, the `0.02 rad` component corresponds to
+`sin(0.02)*g ~= 0.20 m/s²` of apparent grade acceleration; the earlier
+`~0.34 m/s²` estimate from a `+0.03 rad` guess was too high.
 
-**Do not "fix" it.** Every empirical number in this file - band entry/exit behavior, descent masks,
-learner trims - was measured against the biased signal, and the domain decision and the validator
-read the same signal, so arms compare like-for-like. Zeroing the offset would shift effective band
-position by ~0.2 m/s² and invalidate the road evidence. Consequences to remember instead:
+**Historical decision for those arms: leave the signal unchanged.** Their empirical band
+entry/exit behavior, descent masks, and learner trims were measured against this signal. Zeroing
+the offset then would have changed effective band position by ~0.2 m/s² and made those arm
+comparisons non-equivalent. This is not a permanent prohibition on a new source-compatible,
+response-validated correction. Consequences to remember for the historical masks:
 `DOWNHILL_PITCH = -0.012` measured is ~-0.032 true (~-1.8% grade), i.e. our "descent" metrics
-under-count shallow true descents, identically in both arms; and true grade ~= pitch - 0.02.
+under-count shallow descents, identically in both arms; pitch minus ~0.02 was only a rough grade
+proxy, not a measured road-grade calibration. See the newer independent GNSS screen below.
 
 ## ALT_RADAR steering enablement (measured 2026-08-08 - no change warranted, do not re-investigate)
 
@@ -7576,3 +7579,66 @@ The static 0.5 s is not proved optimal. A future dynamic observer must
 distinguish current load/actuator state and transition direction without
 replacing one fixed delay with another solely from an offline model fit.
 No Honda runtime, safety, DBC, upstream, or device setting changed.
+
+### Independent GPS-velocity grade screen for Honda pitch translation (2026-09-26)
+
+The older standing-pitch note above was based on the controller signal alone.
+The reproducible `.agents/inspect_pitch_grade.py` diagnostic instead pairs
+full-rate `gpsLocation.vNED` with the latest **earlier** `carControl` pitch and
+fresh published `carState`. Positive GPS grade is `atan2(-vDown, horizontal
+speed)`. It requires GNSS fix, speed at least 8 m/s, vertical accuracy at most
+5 m, controller age below 30 ms, car/GPS speed agreement within 2 m/s,
+engagement, and no driver pedal. GNSS velocity grade is an independent
+observational proxy, not surveyed road grade; body pitch and GNSS dynamics
+may differ from road slope. Private rlogs stay local. Reproduce with:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python .agents/inspect_pitch_grade.py \
+  00000028--0a9feaa46c 00000029--8532e5621f 0000002b--6472adcaf4 \
+  --opendbc f697fa4c6588839976b00218f584916632747dcb \
+  --feedforward-offset .022
+```
+
+These three exact-source engaged routes yield 345/377/368 qualified GPS
+observations. Route medians for `carControl` pitch minus GPS grade are
+`+0.0232/+0.0242/+0.0201 rad`; GPS grade medians are near level
+`+0.0014/-0.0014/+0.0024 rad`. Thus the old standing-positive component is
+independently corroborated, but its physical cause remains unassigned.
+At route 29 `t=565..571 s`, where a prior pitch-only screen suggested an
+uphill gas-overshoot interval, the six GPS observations instead give median
+pitch `+0.0312` versus velocity grade `-0.0034 rad` (offset `+0.034`).
+Do not label that interval uphill solely from `orientationNED[1]`.
+
+Training-only, equal-route-weight leave-one-route-out fits of pitch minus
+GPS grade were tested for a constant, then measured `aEgo`, then speed
+squared. Held-out RMSE in route order 28/29/2b is
+`0.0068/0.0076/0.0085 rad` for a constant,
+`0.0065/0.0076/0.0084` with acceleration, and
+`0.0065/0.0077/0.0090` with acceleration plus speed squared. The small
+acceleration improvement does not identify a live suspension/body-pitch
+correction, and the speed term worsens two held-out routes. The historical
+claim of exact acceleration invariance was too strong, but these data do not
+support a speed-dependent runtime term either.
+
+A feedforward-only sensitivity screen of source-compatible, near-GPS-level,
+stable positive-gas rows estimated that subtracting `0.022 rad` from the
+filtered pitch would lower gas-map output by a median 94 counts on 247
+correlated route-28 rows and 38 counts on 40 route-29 rows. The calculation
+uses the actual `BOSCH_GAS_LOOKUP_BP/V` (`[-0.2, 2.0]` to `[0, 1600]`), not an
+assumed 2,000-count span; the first scratch pass had overstated counts by 25%.
+The installed `e82025624994` positive-request grade feedforward and lookup
+were checked against recorded `f697fa4c6588` before this cross-source
+calculation; other revisions require that source check again. Those rows
+contain both future over- and under-response (route 28: 133/34; route 29: 5/18,
+with the remainder near target). This is **not** a replay of the complete
+feedback controller or a closed-loop road counterfactual. At high positive
+requests, the current gas-map cap can make the feedforward change zero, so
+the route-29 high-demand overshoot cannot simply be assigned to phantom
+grade gas. A blanket offset might help one condition and worsen another.
+
+**Decision: KEEP the current Honda translation and the coast selector; CHANGE
+the attribution method.** Condition future gas/coast/brake response analysis
+on independent GPS velocity grade where available, and distinguish body
+pitch, grade, actuator state, and upstream request before proposing a dynamic
+correction. Do not add a global `-0.022 rad` runtime subtraction from this
+screen. No vehicle behavior, Alpha Long setting, or device deployment changed.
