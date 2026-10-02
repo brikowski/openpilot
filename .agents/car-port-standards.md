@@ -22,13 +22,17 @@ active safety rails.
 - `GAS_COMMAND` is opaque/unitless. Do not infer acceleration or torque linearity from its raw value.
 - The Honda Bosch ECU closes its own acceleration/brake loop. Do not stack a generic OpenPilot PID
   around `ACCEL_COMMAND` or use CAN shaping to hide an upstream planner/controller mismatch.
-- On the current `ody-op` Odyssey port, `odyssey_command_domains` chooses mutually exclusive
-  gas/brake domains from the raw controller request, apart from a bounded, response-qualified
+- On the current `ody-op` Odyssey port, the controller chooses mutually exclusive gas/brake
+  domains from the raw request, with response-qualified gas entry from settled coast and
   early release of an already-active road-speed brake domain. Its
   active behavior is low-speed non-positive → brake below 5 m/s, road-speed brake entry at -0.30
   m/s², and active-gas continuity above Honda's upstream -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
-  Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
+  coast-entry trial uses settled, eligible coast at 8–35 m/s. The existing same-gear forecast
+  and measured acceleration must both fall below the mild negative request by the response margin.
+  Entry requires positive mapped gas and bypasses bridge pre-activation while preserving raw
+  gas-domain `ACCEL_COMMAND`, stronger braking, low-speed authority, and unreliable-state fallbacks.
+  The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
   request-ramped, bounded pitch load. Its grade-proportional gas term rises
   from the brake boundary, remains request-sensitive through zero, and blends
   into the positive-request grade term. A fresh negative gas bridge retains
