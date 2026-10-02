@@ -161,6 +161,8 @@ Use that first divergence to choose the work:
 
 ## Commit and promotion gate
 
+Commit subsequent changes separately. Squash or amend existing history only when the user explicitly asks.
+
 Commit at a stable evidence boundary, not merely because tests pass or a worktree is dirty. Before
 committing, classify every diff as production behavior, diagnostic tooling, evidence/docs, or
 unrelated user work; never mix unrelated work.
