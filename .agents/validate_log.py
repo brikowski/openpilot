@@ -194,13 +194,13 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRA
 POST_E820_ODYSSEY_BRAKE_COMMITS = {
   "5cef5ca2ac7f", "c2d2577f46ca", "ee5895cc1d29", "4f37eb0f161b", "3ebee2f791c1",
   "9c176e58a6b0", "f17e8bed6460", "4423bf5498e7", "f5420370b975", "eb1058cd8e55", "49d96ade8881",
-  "eb8173b3f661", "ee0847e57ec9", "5af078ef521b",
+  "eb8173b3f661", "ee0847e57ec9", "5af078ef521b", "1890a7f9cc42",
 }
 # Starting at 3ebee2f791c1, invalid pitch leaves ACCEL_COMMAND raw and resets
 # the controller's pitch filter; subsequent finite samples resume from zero.
 INVALID_PITCH_RESET_COMMITS = {
   "3ebee2f791c1", "9c176e58a6b0", "f17e8bed6460", "4423bf5498e7",
-  "f5420370b975", "eb1058cd8e55", "49d96ade8881", "eb8173b3f661", "ee0847e57ec9", "5af078ef521b",
+  "f5420370b975", "eb1058cd8e55", "49d96ade8881", "eb8173b3f661", "ee0847e57ec9", "5af078ef521b", "1890a7f9cc42",
 }
 THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "3169fd4cc3fa": -0.30,  # deployed baseline; preserve the threshold it actually drove with

@@ -499,6 +499,7 @@ def test_current_odyssey_revisions_keep_source_matched_brake_diagnostics():
     "eb8173b3f661173f7d47906ed1eb2c72e70b7cea",
     "ee0847e57ec98b62ccd3c8331330738d015b6e7b",
     "5af078ef521b411c7811bd2a62318c0d5fcb4334",
+    "1890a7f9cc42ca73735fba3eb4c6f9f61f73e747",
   )
   request = np.full(100, -0.5)
   speed = np.full(100, 20.0)
@@ -523,7 +524,8 @@ def test_current_odyssey_brake_model_resets_after_invalid_pitch():
   active = np.ones(100, dtype=bool)
   for revision in ("3ebee2f791c1ab0aebf40e0c9eecf8d76fda7ff4", "eb1058cd8e554fb1799f02a150d17e47f6c872cd",
                    "49d96ade8881e50c51ea5c2afad34521aecfc2cc", "eb8173b3f661173f7d47906ed1eb2c72e70b7cea",
-                   "ee0847e57ec98b62ccd3c8331330738d015b6e7b", "5af078ef521b411c7811bd2a62318c0d5fcb4334"):
+                   "ee0847e57ec98b62ccd3c8331330738d015b6e7b", "5af078ef521b411c7811bd2a62318c0d5fcb4334",
+                   "1890a7f9cc42ca73735fba3eb4c6f9f61f73e747"):
     expected, eligible, modeled = _expected_brake_command(revision, request, speed, pitch, active, active, 0.01)
     assert modeled
     assert not eligible[30]
