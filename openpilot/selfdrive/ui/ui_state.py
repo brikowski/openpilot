@@ -10,6 +10,9 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import drop_realtime
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.lib.prime_state import PrimeState
+from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy, alpha_long_cruise_active
+from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
+from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.hardware import HARDWARE, PC
 from openpilot.common.hardware.usb import cable_connected, get_usb_state, is_chestnut_usb_id
@@ -17,6 +20,7 @@ from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
 PARAM_UPDATE_TIME = 1 / 5.0
+OFFROAD_ALERT_POLL_INTERVAL = 1.0
 
 
 class UIStatus(Enum):
@@ -102,6 +106,7 @@ class UIState:
     self.panda_type: log.PandaState.PandaType = log.PandaState.PandaType.unknown
     self.personality: log.LongitudinalPersonality = log.LongitudinalPersonality.standard
     self.has_longitudinal_control: bool = False
+    self.alpha_long_enabled: bool = self.params.get_bool("AlphaLongitudinalEnabled")
     self.is_body: bool | None = False
     self.CP: car.CarParams | None = None
     self.light_sensor: float = -1.0
@@ -234,11 +239,12 @@ class UIState:
   def update_params(self) -> None:
     # For slower operations
     # Update longitudinal control state
+    self.alpha_long_enabled = self.params.get_bool("AlphaLongitudinalEnabled")
     CP_bytes = self.params.get("CarParamsPersistent")
     if CP_bytes is not None:
       self.CP = messaging.log_from_bytes(CP_bytes, car.CarParams)
       if self.CP.alphaLongitudinalAvailable:
-        self.has_longitudinal_control = self.params.get_bool("AlphaLongitudinalEnabled")
+        self.has_longitudinal_control = self.alpha_long_enabled
       else:
         self.has_longitudinal_control = self.CP.openpilotLongitudinalControl
 
@@ -270,11 +276,11 @@ class UIState:
 
 class Device:
   def __init__(self):
-    self._ignition = False
-    self._interaction_time: float = -1
+    self._wake_policy = DisplayWakePolicy()
+    self._offroad_alerts: set[str] | None = None
+    self._offroad_alert_poll_time = 0.0
     self._override_interactive_timeout: int | None = None
     self._interactive_timeout_callbacks: list[Callable] = []
-    self._prev_timed_out = False
     self._awake: bool = True
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
@@ -298,21 +304,16 @@ class Device:
     if self._override_interactive_timeout is not None:
       return self._override_interactive_timeout
 
-    ignition_timeout = 10 if gui_app.big_ui() else 5
-    return ignition_timeout if ui_state.ignition else 30
+    return DISPLAY_TIMEOUT
 
   def _reset_interactive_timeout(self) -> None:
-    self._interaction_time = time.monotonic() + self.interactive_timeout
+    self._wake_policy.reset(time.monotonic(), self.interactive_timeout)
 
   def add_interactive_timeout_callback(self, callback: Callable):
     self._interactive_timeout_callbacks.append(callback)
 
   def update(self):
     self._start_brightness_thread()  # start thread after manager forks ui
-
-    # do initial reset
-    if self._interaction_time <= 0:
-      self._reset_interactive_timeout()
 
     self._update_brightness()
     self._update_wakefulness()
@@ -358,20 +359,42 @@ class Device:
       self._last_brightness = brightness
 
   def _update_wakefulness(self):
-    # Handle interactive timeout
-    ignition_just_turned_off = not ui_state.ignition and self._ignition
-    self._ignition = ui_state.ignition
+    alert = None
+    urgent_alert = False
+    state_missing = False
+    enabled = None
+    keep_on_cruise = False
+    if ui_state.started:
+      sm = ui_state.sm
+      # A missing selfdriveState can mean the alert renderer is showing a system failure.
+      state_missing = not sm.alive['selfdriveState']
+      if sm.recv_frame['selfdriveState'] >= ui_state.started_frame and sm.alive['selfdriveState']:
+        ss = sm['selfdriveState']
+        alert = (ss.alertSize.raw, ss.alertStatus.raw, ss.alertText1, ss.alertText2) if ss.alertSize.raw else None
+        urgent_alert = bool(alert and ss.alertStatus in (log.SelfdriveState.AlertStatus.userPrompt,
+                                                          log.SelfdriveState.AlertStatus.critical))
+        enabled = ss.enabled
+      car_state_fresh = sm.alive['carState'] and sm.valid['carState'] and sm.recv_frame['carState'] >= ui_state.started_frame
+      keep_on_cruise = alpha_long_cruise_active(
+        ui_state.alpha_long_enabled, ui_state.CP, bool(enabled), car_state_fresh,
+        sm['carState'].vCruise if car_state_fresh else V_CRUISE_UNSET, V_CRUISE_UNSET)
+    else:
+      now = time.monotonic()
+      if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:
+        self._offroad_alerts = {key for key in OFFROAD_ALERTS if ui_state.params.get(key)}
+        if ui_state.params.get_bool('UpdateAvailable'):
+          self._offroad_alerts.add('UpdateAvailable')
+        self._offroad_alert_poll_time = now
 
-    if ignition_just_turned_off or any(ev.left_down for ev in gui_app.mouse_events):
-      self._reset_interactive_timeout()
-
-    interaction_timeout = time.monotonic() > self._interaction_time
-    if interaction_timeout and not self._prev_timed_out:
+    awake, timeout_edge = self._wake_policy.update(
+      time.monotonic(), self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
+      enabled=enabled, alert=alert, urgent_alert=urgent_alert, state_missing=state_missing,
+      touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
+      keep_on_cruise=keep_on_cruise, pc=PC)
+    if timeout_edge:
       for callback in self._interactive_timeout_callbacks:
         callback()
-    self._prev_timed_out = interaction_timeout
-
-    self._set_awake(ui_state.ignition or not interaction_timeout or PC)
+    self._set_awake(awake)
 
   def _set_awake(self, on: bool):
     if on != self._awake:
