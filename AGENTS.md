@@ -46,8 +46,8 @@ and nested opendbc SHAs paired; use `git revert` to change or retire a candidate
 road-known-good pair reachable.
 
 Old experiment branches and their mechanisms are historical evidence, not active targets or
-accepted knowledge. Their private measurements remain in `.agents/tune-evidence.md`; they do not prohibit a
-new source-compatible hypothesis owned by current logs.
+accepted knowledge. Their private measurements remain in Proton Drive's `evidence/tune-evidence.md`;
+they do not prohibit a new source-compatible hypothesis owned by current logs.
 
 Alpha Long has a separate safety boundary on this Bosch Odyssey: enabling
 `openpilotLongitudinalControl` disables the Bosch radar ECU through the Honda UDS
@@ -139,8 +139,8 @@ Use that first divergence to choose the work:
   Do not commit route IDs, event times, or route-specific conclusions to GitHub.
 - Pull private full-rate rlogs with `.agents/pull_logs.py`; qlogs are too decimated for the
   transition metrics. Use `.agents/extract.py` for repeat exploratory analysis.
-- Run every drive through `.agents/validate_log.py`, which writes one row per route to
-  `.agents/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
+- Run every drive through `.agents/validate_log.py`, which writes one row per route to Proton Drive's
+  `evidence/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
 - Use `.agents/inspect_response.py` to rank achieved-jerk peaks against the causal wire-command
   history, physical command-domain edges, gear changes, terrain, lead state, and powertrain context.

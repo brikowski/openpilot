@@ -1,8 +1,8 @@
 # Honda car-port and safety guidance
 
 This is the repository-owned guidance for edits under `opendbc_repo/opendbc/car/` and the Honda
-panda-safety layer. Keep route IDs, measurements, and experiment history in
-[`tune-evidence.md`](tune-evidence.md); this file describes the current invariants only.
+panda-safety layer. Keep route IDs, measurements, and experiment history in Proton Drive's
+`evidence/tune-evidence.md`; this file describes the current invariants only.
 
 ## Keep the upstream boundaries
 
