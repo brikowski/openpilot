@@ -19,6 +19,12 @@ what the new controller would COMMAND, not how the car would then behave. Comman
 magnitude are valid. BRAKE_REQUEST transition counts are not closed-loop predictions: changing
 the command would change aEgo and the planner's next request on-road, but both are frozen here.
 
+Controller invocation occurs between carState and sendcan construction, but its exact time is
+not logged. --controller-time-bound selects either endpoint for freshness checks; a delayed
+sendcan publication can otherwise erase valid observer history. Compare both bounds when wire
+agreement depends on timing. Neither endpoint is a measured invocation time, and outgoing frames
+remain paired at their recorded sendcan timestamps.
+
 
 Usage: replay_carcontroller.py <segment-range> <out.json>
 """
@@ -189,6 +195,8 @@ def main(argv=None):
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("segments", help="local route ID or LogReader segment range")
   parser.add_argument("output", help="JSON output path")
+  parser.add_argument("--controller-time-bound", choices=("carState", "sendcan"), default="sendcan",
+                      help="Earlier/later bound on unlogged controller invocation time (default: sendcan)")
   parser.add_argument("--disable-brake-release", action="store_true", help="Ablate only the Odyssey early-release helper")
   parser.add_argument("--compare-no-release", action="store_true", help="Twin replay against a no-release controller on identical inputs")
   args = parser.parse_args(argv)
@@ -223,7 +231,7 @@ def main(argv=None):
   twin = {'schedule_mismatch': 0, 'acc_changed': 0, 'other_changed': 0,
           'brake_domain_different_cycles': 0, 'output_accel_different_cycles': 0}
   t, requested, wire, active, sendcans, gas_feedback, pitch, aego, feedback_age = [], [], [], [], [], [], [], [], []
-  speed, pid, gas_pressed, brake_pressed = [], [], [], []
+  speed, pid, gas_pressed, brake_pressed, controller_time_gaps = [], [], [], [], []
   rec_t, rec_wire, rec_gas, replay_gas = [], [], [], []
   for m in msgs:
     w = m.which()
@@ -235,8 +243,10 @@ def main(argv=None):
       rec_gas.extend(gas_command_samples(m.logMonoTime, [(f.address, f.dat, f.src) for f in m.sendcan]))
   for m, control, state in replay_inputs(msgs):
     cs_shim.out = state
+    state_time = int(state_times[np.searchsorted(state_times, m.logMonoTime, side='right') - 1])
+    controller_time = state_time if args.controller_time_bound == "carState" else m.logMonoTime
+    controller_time_gaps.append(m.logMonoTime - state_time)
     if torque_updates is not None:
-      state_time = state_times[np.searchsorted(state_times, m.logMonoTime, side='right') - 1]
       received_torque = received_at(state_time, torque_updates)
       received_gear = received_at(state_time, gear_updates)
       cs_shim.odyssey_engine_torque_estimate = received_torque[1] if received_torque is not None else np.nan
@@ -249,9 +259,9 @@ def main(argv=None):
       if baseline is not None:
         baseline.frame = cc.frame
     previous_brake = cc.odyssey_brake_selected
-    actuators, can_sends = cc.update(control, cs_shim, m.logMonoTime)
+    actuators, can_sends = cc.update(control, cs_shim, controller_time)
     if baseline is not None:
-      base_actuators, base_sends = baseline.update(control, cs_shim, m.logMonoTime)
+      base_actuators, base_sends = baseline.update(control, cs_shim, controller_time)
       diff = twin_can_difference(base_sends, can_sends)
       for key, count in diff.items():
         twin[key] += count
@@ -384,6 +394,8 @@ def main(argv=None):
   res = {
     "seg_range": seg_range,
     "replay_clock": "recorded_sendcan_with_pre_state_control_snapshot",
+    "controller_time_bound": args.controller_time_bound,
+    "controller_time_gap_max_ms": max(controller_time_gaps) / 1e6,
     "gas_lookup_values": list(cc.params.BOSCH_GAS_LOOKUP_V),
     "brake_release_ablation": args.disable_brake_release,
     "early_release_edges": [{"route_time_s": round(edge[0] - t[0], 3), "request": edge[1],

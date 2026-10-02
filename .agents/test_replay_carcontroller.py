@@ -1,10 +1,12 @@
+import json
 import numpy as np
 import pytest
 from types import SimpleNamespace
 
+import replay_carcontroller as replay
 from replay_carcontroller import (gas_command_samples, gas_wire_comparison, make_replay_controller, received_at,
                                   replay_inputs, same_domain_gas_steps, twin_can_difference)
-from opendbc.car import gen_empty_fingerprint
+from opendbc.car import gen_empty_fingerprint, structs
 from opendbc.car.honda.interface import CarInterface
 from opendbc.car.honda.values import CAR, CarControllerParams
 
@@ -48,6 +50,56 @@ def test_received_powertrain_snapshot_never_uses_future_can_and_preserves_nanose
   assert received_at(base, updates) == (base, -130., 0.)
   assert received_at(base + 19_999_999, updates) == (base, -130., 0.)
   assert received_at(base + 20_000_000, updates) == (base + 20_000_000, -180., 0.)
+
+
+@pytest.mark.parametrize('bound', ['carState', 'sendcan'])
+def test_replay_applies_timing_bound_to_both_controllers_and_reports_it(monkeypatch, tmp_path, bound):
+  params = CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)
+  control = structs.CarControl.new_message()
+  control.longActive = True
+  control.actuators.accel = 0.1
+  control.actuators.longControlState = structs.CarControl.Actuators.LongControlState.pid
+  control = control.as_reader()
+  state = structs.CarState.new_message()
+  state.vEgo = 10.
+
+  def event(kind, time, value):
+    return SimpleNamespace(which=lambda: kind, logMonoTime=time, **{kind: value})
+
+  start = 1_000_000_000
+  messages = [event('carParams', start, params), event('carControl', start + 1, control)]
+  state_times, send_times = [], []
+  for tick in range(60):
+    state_time = start + 10_000_000 * (tick + 1)
+    # A publication delay can cross freshness thresholds without changing the sampled inputs.
+    send_time = state_time + (70_000_000 if tick == 59 else 1_000_000)
+    state_times.append(state_time)
+    send_times.append(send_time)
+    frames = [SimpleNamespace(address=0xE4, src=1, dat=bytes(5))]
+    if tick % 2 == 0:
+      frames.append(SimpleNamespace(address=0x1DF, src=1, dat=bytes(8)))
+    messages.extend([event('carOutput', state_time - 1, SimpleNamespace(actuatorsOutput=SimpleNamespace(accel=.1))),
+                     event('carState', state_time, state), event('sendcan', send_time, frames)])
+
+  monkeypatch.setattr(replay, 'LogReader', lambda _: messages)
+  calls = []
+  real_update = replay.CarController.update
+
+  def capture_time(self, control, state, now):
+    calls.append(now)
+    return real_update(self, control, state, now)
+
+  monkeypatch.setattr(replay.CarController, 'update', capture_time)
+  output = tmp_path / 'timing.json'
+  replay.main(['synthetic/rlog.zst', str(output), '--controller-time-bound', bound, '--compare-no-release'])
+  result = json.loads(output.read_text())
+  expected_times = state_times if bound == 'carState' else send_times
+  assert calls == [time for time in expected_times for _ in range(2)]
+  assert result['controller_time_bound'] == bound
+  assert result['controller_time_gap_max_ms'] == 70.
+  assert result['same_cycle_gas_wire_comparison']['paired'] == 30
+  assert result['same_cycle_gas_wire_comparison']['recorded_unpaired'] == 0
+  assert result['same_cycle_gas_wire_comparison']['replayed_unpaired'] == 0
 
 
 def test_twin_difference_separates_acc_payload_from_schedule_and_other_can():
