@@ -38,7 +38,8 @@ def _decode_acc_control(dat):
   return accel, gas, brake_request
 
 
-def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid, gas_pressed=False, target_gear=None):
+def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid, gas_pressed=False, target_gear=None,
+         brake_pressed=False):
   """Drive the active longitudinal path and check every frame against the real safety hook."""
   CP = _car_params()
   CI = interfaces[PLATFORM](CP.copy())
@@ -58,7 +59,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
   for i, accel in enumerate(accels):
     CI.CS.out = structs.CarState(
       vEgo=vego, vEgoRaw=vego, aEgo=float(aego_values[i]), standstill=vego < 0.1,
-      gasPressed=bool(gas_pressed_values[i]), brakePressed=False,
+      gasPressed=bool(gas_pressed_values[i]), brakePressed=brake_pressed,
       cruiseState=structs.CarState.CruiseState(enabled=True, available=True, speed=25.0),
     )
     cc = structs.CarControl(
@@ -91,6 +92,29 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_creep_braking_passes_safety_and_follows_request_release(self):
+    requests = [-1.0, -0.8, -0.3, -0.1, 0.0, 0.1, -0.1, -0.3]
+    rejects, seen = _run(True, np.repeat(requests, 2), pitch=None, vego=0.6)
+    assert not rejects
+    assert [accel for accel, _, _ in seen] == [-100, -80, -55, -18, 0, 10, -18, -55]
+    assert all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[:5] + seen[6:])
+    assert seen[5][1] > 0 and seen[5][2] == 0
+
+  def test_creep_braking_leaves_stopping_driver_override_and_road_speed_raw(self):
+    for kwargs in ({'long_control_state': LongCtrlState.stopping}, {'gas_pressed': True}, {'brake_pressed': True}):
+      with self.subTest(kwargs=kwargs):
+        rejects, seen = _run(True, [-0.3] * 20, pitch=0.0, vego=0.6, **kwargs)
+        assert not rejects
+        assert all(accel == -30 for accel, _, _ in seen)
+    for speed in (2.0, 4.0, 8.0):
+      rejects, seen = _run(True, [-0.3] * 20, pitch=0.0, vego=speed)
+      assert not rejects
+      assert all(accel == -30 for accel, _, _ in seen)
+    rejects, seen = _run([True] * 20 + [False] * 20, [-0.3] * 40, pitch=0.0, vego=0.6)
+    assert not rejects
+    assert all(accel == -55 for accel, _, _ in seen[:10])
+    assert all((accel, gas, brake) == (0, GAS_INACTIVE, 0) for accel, gas, brake in seen[10:])
+
   def test_settled_coast_shortfall_brakes_pass_safety_and_release_on_positive_request(self):
     rejects, seen = _run(True, [-0.15] * 120 + [0.1] * 20, pitch=-0.03, vego=20.0,
                          aegos=0.3, target_gear=7)
@@ -337,15 +361,15 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert gas != GAS_INACTIVE, "positive low-speed start request did not select gas"
           assert brake_request == 0, "positive low-speed start request left brake active"
 
-  def test_low_speed_brake_command_matches_request(self):
-    """Honda's low-speed brake domain must not reshape the controller request."""
+  def test_creep_brake_calibration_does_not_accumulate_response_error(self):
+    """A held request remains fixed even when the measured acceleration changes."""
     accels = np.array([-0.21] * 30 + [-0.17] * 50)
     aegos = np.array([-0.21] * 10 + [0.5] * 70)
     rejects, seen = _run(True, accels, pitch=0.0, vego=1.0, aegos=aegos)
     assert not rejects
     commands = np.array([accel for accel, _, _ in seen])
-    np.testing.assert_array_equal(commands[:15], np.full(15, -21))
-    np.testing.assert_array_equal(commands[15:], np.full(25, -17))
+    np.testing.assert_array_equal(commands[:15], np.full(15, -38))
+    np.testing.assert_array_equal(commands[15:], np.full(25, -31))
 
   def test_low_speed_positive_reengagement_has_no_stale_brake(self):
     """An inactive interval must not leave stale braking on positive re-engagement."""

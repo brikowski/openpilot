@@ -43,8 +43,12 @@ active safety rails.
   gas domain may still release into coast earlier on shallow climbs. At road
   speed in PID control, the brake-domain
   `ACCEL_COMMAND` adds a bounded Odyssey-calibrated grade term so Honda's grade-relative brake
-  request follows the controller's net-acceleration target. Level road, low speed, stopping,
-  and missing-pose behavior retain the raw-request rules. The early-release trial requires
+  request follows the controller's net-acceleration target. The creep-speed PID brake trial adds
+  at most 0.25 m/s² of request-sensitive deceleration below 2 m/s, tapering to zero at zero request
+  and at -0.80 m/s². It requires active control with neither pedal pressed; stopping-state
+  commands remain raw. This feedforward calibration does not accumulate acceleration error or
+  retain a released request. Road response remains unmeasured. At road speed, level-road,
+  stopping and missing-pose behavior retain the raw-request rules. The early-release trial requires
   fresh received engine-torque and current overdeceleration evidence; it never overrides
   stronger raw braking or low-speed stop authority. Replay does not prove road benefit.
 - The deployed unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb

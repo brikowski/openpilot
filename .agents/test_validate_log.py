@@ -532,6 +532,25 @@ def test_coast_brake_entry_revision_keeps_fallback_and_grade_diagnostics():
   assert eligible[31] and expected[31] > request[31]
 
 
+def test_creep_brake_revision_models_calibration_and_guarded_raw_fallbacks():
+  revision = "ce98fbddd07b0e36d7cf7d7d08c21198b8a0d41b"
+  request = np.array([-.8, -.3, -.3, -.3, -.3, -.3, -.3, 0., .1])
+  speed = np.array([.6, .6, 1.5, 2., .6, .6, .6, .6, .6])
+  pid = np.array([True, True, True, True, False, True, True, True, True])
+  gas_pressed = np.arange(9) == 5
+  brake_pressed = np.arange(9) == 6
+  expected, eligible, modeled = _expected_brake_command(
+    revision, request, speed, np.full(9, np.nan), pid, np.ones(9, dtype=bool), .01,
+    gas_pressed=gas_pressed, brake_pressed=brake_pressed)
+  assert modeled
+  np.testing.assert_allclose(expected, [-.8, -.55, -.425, -.3, -.3, -.3, -.3, 0., .1])
+  np.testing.assert_array_equal(eligible, [False, True, True, False, False, False, False, False, False])
+  old, _, _ = _expected_brake_command("7b4f974f9a63", request, speed, np.zeros(9), pid, np.ones(9), .01)
+  np.testing.assert_array_equal(old, request)
+  _, _, valid, note = _domain_model(revision, request, speed, np.zeros(9), np.ones(9), .01)
+  assert valid and "coast braking" in note
+
+
 def test_current_odyssey_brake_model_resets_after_invalid_pitch():
   request = np.full(100, -0.5)
   speed = np.full(100, 20.0)

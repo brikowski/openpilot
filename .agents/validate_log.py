@@ -190,7 +190,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRA
 # These descendants retain the -0.30 fallback entry, grade-translated ACCEL_COMMAND,
 # and response-qualified active-brake release. Some also qualify earlier entry from coast.
 # Keep source-matched brake diagnostics enabled for each SHA.
-COAST_RESPONSE_BRAKE_ENTRY_COMMITS = {"7b4f974f9a63"}
+CREEP_BRAKE_TRANSLATION_COMMITS = {"ce98fbddd07b"}
+COAST_RESPONSE_BRAKE_ENTRY_COMMITS = {"7b4f974f9a63"} | CREEP_BRAKE_TRANSLATION_COMMITS
 POST_E820_ODYSSEY_BRAKE_COMMITS = {
   "5cef5ca2ac7f", "c2d2577f46ca", "ee5895cc1d29", "4f37eb0f161b", "3ebee2f791c1",
   "9c176e58a6b0", "f17e8bed6460", "4423bf5498e7", "f5420370b975", "eb1058cd8e55", "49d96ade8881",
@@ -654,7 +655,8 @@ def _brake_passthrough_expected(opendbc_commit):
           and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS | BRAKE_GRADE_TRANSLATION_COMMITS)
 
 
-def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_request, dt):
+def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_request, dt, *,
+                            gas_pressed=False, brake_pressed=False):
   """Reconstruct source-matched ACCEL_COMMAND without conflating translation with wire error."""
   requested = np.asarray(requested, dtype=float)
   expected = requested.copy()
@@ -679,6 +681,13 @@ def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_
   translated = np.minimum(requested + np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY * ODYSSEY_BRAKE_GRADE_GAIN,
                           0.0)
   expected[eligible] = np.clip(translated[eligible], HondaParams.BOSCH_ACCEL_MIN, HondaParams.BOSCH_ACCEL_MAX)
+  if commit in CREEP_BRAKE_TRANSLATION_COMMITS:
+    creep = (np.asarray(speed) >= 0.0) & (np.asarray(speed) < 2.0) & np.asarray(pid, dtype=bool) & \
+            np.asarray(brake_request, dtype=bool) & ~np.asarray(gas_pressed, dtype=bool) & \
+            ~np.asarray(brake_pressed, dtype=bool) & (requested > -0.8) & (requested < 0.0)
+    correction = np.interp(requested, [-0.8, -0.3, 0.0], [0.0, -0.25, 0.0])
+    expected[creep] += correction[creep] * np.interp(np.asarray(speed)[creep], [1.0, 2.0], [1.0, 0.0])
+    eligible |= creep
   return expected, eligible, True
 
 
@@ -1653,7 +1662,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[follow_bd] ** 2)))
     out["follow_brake_mean"] = float(np.nanmean(err[follow_bd]))
     expected_brake, translated, has_translation = _expected_brake_command(
-      source_commit, requested, vego_all, pitch, pid, BR, dt,
+      source_commit, requested, vego_all, pitch, pid, BR, dt, gas_pressed=gaspressed, brake_pressed=brakepressed,
     )
     if has_translation:
       expected_error = AC - expected_brake
