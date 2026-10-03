@@ -516,6 +516,22 @@ def test_current_odyssey_revisions_keep_source_matched_brake_diagnostics():
     assert not _brake_passthrough_expected(revision)
 
 
+def test_coast_brake_entry_revision_keeps_fallback_and_grade_diagnostics():
+  revision = "7b4f974f9a63ed309baa27819803365346463f36"
+  request = np.full(100, -0.5)
+  speed = np.full(100, 20.0)
+  pitch = np.full(100, 0.05)
+  active = np.ones(100, dtype=bool)
+  switch, threshold, valid, note = _domain_model(revision, request, speed, pitch, np.ones(100), 0.01)
+  assert valid and note == "raw fallback entry with response-qualified coast braking and active-brake release"
+  np.testing.assert_array_equal(switch, request)
+  np.testing.assert_allclose(threshold, -0.30)
+  pitch[30] = np.nan
+  expected, eligible, modeled = _expected_brake_command(revision, request, speed, pitch, active, active, 0.01)
+  assert modeled and not eligible[30] and expected[30] == request[30]
+  assert eligible[31] and expected[31] > request[31]
+
+
 def test_current_odyssey_brake_model_resets_after_invalid_pitch():
   request = np.full(100, -0.5)
   speed = np.full(100, 20.0)

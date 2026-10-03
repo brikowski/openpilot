@@ -187,21 +187,21 @@ ODYSSEY_BRAKE_GRADE_GAIN = 0.3  # MUST track honda/carcontroller.py.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
 THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRAKE_ENTRY.
-# These descendants of e82025624994 retain its -0.30 brake entry, grade-translated
-# ACCEL_COMMAND, and response-qualified active-brake release. Their Honda diffs change gas,
-# steering, invalid-pose fallback, or test helpers.
+# These descendants retain the -0.30 fallback entry, grade-translated ACCEL_COMMAND,
+# and response-qualified active-brake release. Some also qualify earlier entry from coast.
 # Keep source-matched brake diagnostics enabled for each SHA.
+COAST_RESPONSE_BRAKE_ENTRY_COMMITS = {"7b4f974f9a63"}
 POST_E820_ODYSSEY_BRAKE_COMMITS = {
   "5cef5ca2ac7f", "c2d2577f46ca", "ee5895cc1d29", "4f37eb0f161b", "3ebee2f791c1",
   "9c176e58a6b0", "f17e8bed6460", "4423bf5498e7", "f5420370b975", "eb1058cd8e55", "49d96ade8881",
   "eb8173b3f661", "ee0847e57ec9", "5af078ef521b", "1890a7f9cc42",
-}
+} | COAST_RESPONSE_BRAKE_ENTRY_COMMITS
 # Starting at 3ebee2f791c1, invalid pitch leaves ACCEL_COMMAND raw and resets
 # the controller's pitch filter; subsequent finite samples resume from zero.
 INVALID_PITCH_RESET_COMMITS = {
   "3ebee2f791c1", "9c176e58a6b0", "f17e8bed6460", "4423bf5498e7",
   "f5420370b975", "eb1058cd8e55", "49d96ade8881", "eb8173b3f661", "ee0847e57ec9", "5af078ef521b", "1890a7f9cc42",
-}
+} | COAST_RESPONSE_BRAKE_ENTRY_COMMITS
 THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT = {
   "3169fd4cc3fa": -0.30,  # deployed baseline; preserve the threshold it actually drove with
   "f453a51e0081": -0.30,  # low-speed brake-tracking arm; road-speed domain is unchanged
@@ -620,12 +620,14 @@ def domain_achieved_following_metrics(requested, achieved, speed, domain, dt):
 
 
 def _domain_model(opendbc_commit, requested, speed, pitch, windfactor, dt):
-  """Return the source-matched brake-entry input and threshold."""
+  """Return the source-matched fallback entry input and threshold, without learned-state replay."""
   commit = (opendbc_commit or "")[:12]
   if commit in THREE_DOMAIN_COMMITS:
     road_entry = THREE_DOMAIN_ROAD_BRAKE_ENTRY_BY_COMMIT.get(commit, THREE_DOMAIN_ROAD_BRAKE_ENTRY)
     entry_threshold = np.where(speed < LOW_SPEED_DOMAIN_VEGO, 0.0, road_entry)
-    note = ("raw entry with response-qualified active-brake release" if commit in RESPONSE_QUALIFIED_BRAKE_RELEASE_COMMITS
+    note = ("raw fallback entry with response-qualified coast braking and active-brake release"
+            if commit in COAST_RESPONSE_BRAKE_ENTRY_COMMITS else
+            "raw entry with response-qualified active-brake release" if commit in RESPONSE_QUALIFIED_BRAKE_RELEASE_COMMITS
             else "raw three-domain coast split")
     return requested, entry_threshold, True, note
   if commit in RAW_DOMAIN_COMMITS:

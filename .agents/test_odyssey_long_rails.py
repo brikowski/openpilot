@@ -38,7 +38,7 @@ def _decode_acc_control(dat):
   return accel, gas, brake_request
 
 
-def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid, gas_pressed=False):
+def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid, gas_pressed=False, target_gear=None):
   """Drive the active longitudinal path and check every frame against the real safety hook."""
   CP = _car_params()
   CI = interfaces[PLATFORM](CP.copy())
@@ -66,7 +66,14 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
       actuators=structs.CarControl.Actuators(accel=float(accel), longControlState=long_control_state),
       orientationNED=[] if pitch is None else [0.0, float(pitch), 0.0],
     )
-    _, sendcan = CI.apply(cc.as_reader(), int(i * DT_CTRL * 1e9))
+    now = int(i * DT_CTRL * 1e9)
+    if target_gear is not None:
+      now += 1_000_000_000
+      CI.CS.odyssey_engine_torque_estimate = -100.0
+      CI.CS.odyssey_car_gas = 0.0
+      CI.CS.odyssey_engine_torque_ts_nanos = now - 5_000_000
+      CI.CS.odyssey_target_gear = target_gear
+    _, sendcan = CI.apply(cc.as_reader(), now)
     for addr, dat, bus in sendcan:
       if not safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, bus % 4, dat)):
         rejects.append((i, hex(addr), accel, pitch))
@@ -84,6 +91,14 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_settled_coast_shortfall_brakes_pass_safety_and_release_on_positive_request(self):
+    rejects, seen = _run(True, [-0.15] * 120 + [0.1] * 20, pitch=-0.03, vego=20.0,
+                         aegos=0.3, target_gear=7)
+    assert not rejects
+    assert all(brake == 0 for _, _, brake in seen[:25])
+    assert all(-25 <= accel < -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[50:60])
+    assert all(accel == 10 and gas > 0 and brake == 0 for accel, gas, brake in seen[60:])
+
   def test_odyssey_uses_upstream_gas_ceiling(self):
     """Keep upstream's Odyssey request-to-gas endpoint."""
     params = CarControllerParams(_car_params())

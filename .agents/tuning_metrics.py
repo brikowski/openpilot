@@ -1468,7 +1468,7 @@ def mild_negative_brake_release_events(grid, requested, actual_accel, speed, pit
 
 def brake_release_hold_metrics(switch_accel, entry_threshold, requested, actual_accel,
                                brake_request, active, *, dt):
-  """Measure braking retained after the production domain input clears its entry threshold."""
+  """Measure braking above the source's fallback threshold, including response-qualified entry."""
   hold = active & brake_request & (switch_accel >= entry_threshold)
   edges = np.diff(hold.astype(np.int8), prepend=0, append=0)
   starts = np.flatnonzero(edges == 1)
