@@ -10,6 +10,9 @@ BRANCH=ody-op
 DEVICE_REMOTE=https://github.com/brikowski/openpilot.git
 DEVICE_UV_CACHE=/data/uv-cache
 DEVICE_UV_PYTHON=/data/uv-python
+OFFROAD_CHECK=".venv/bin/python - <<'ODY_OFFROAD_CHECK'
+$(cat "$ROOT_DIR/tools/check_offroad.py")
+ODY_OFFROAD_CHECK"
 
 usage() {
   cat <<'EOF'
@@ -104,7 +107,7 @@ test \"\$origin\" = '$DEVICE_REMOTE'
 test -z \"\$parent_status\"
 test -z \"\$opendbc_status\"
 test -z \"\$venv_bad_owner\"
-test ! -e /data/params/d/IsOnroad
+$OFFROAD_CHECK
 test \"\$(cat /data/params/d/UpdaterTargetBranch 2>/dev/null || true)\" = '$BRANCH'
 test \"\$(cat /data/params/d/UpdaterState 2>/dev/null || true)\" = idle
 test \"\$(cat /data/params/d/UpdateAvailable 2>/dev/null || true)\" = 0
@@ -134,7 +137,7 @@ deploy_device() {
   local command="
 set -euo pipefail
 cd /data/openpilot
-test ! -e /data/params/d/IsOnroad
+$OFFROAD_CHECK
 if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin '$DEVICE_REMOTE'; else git remote add origin '$DEVICE_REMOTE'; fi
 tools/op.sh switch origin '$BRANCH'
 UV_CACHE_DIR='$DEVICE_UV_CACHE' UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' \
@@ -150,6 +153,7 @@ test \"\$(git ls-tree HEAD opendbc_repo | awk '{print \$3}')\" = '$OPENDBC_SHA'
 test \"\$(git -C opendbc_repo rev-parse HEAD)\" = '$OPENDBC_SHA'
 test -z \"\$(git status --porcelain)\"
 test -z \"\$(git -C opendbc_repo status --porcelain)\"
+$OFFROAD_CHECK
 printf '%s\n' '$marker'
 (sudo reboot &) && exit 0
 "
