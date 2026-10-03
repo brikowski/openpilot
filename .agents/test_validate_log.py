@@ -556,12 +556,13 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
   speed = np.array([.3] * 9 + [2., -1.])
   pid = np.array([True, False, False, True] + [False] * 7)
   brake = np.array([True] * 10 + [False])
-  expected, eligible, modeled = _expected_brake_command(
-    "fb194cf07ef1fb2e57da128eef9b3f6b2a83c718", request, speed, np.full(11, np.nan), pid, brake, .01,
-    gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
-  assert modeled
-  np.testing.assert_allclose(expected, [-.275, -.3116666667, -.3483333333, -.275, 0., .1, -.3, -.3, -.8, -.3, -.3])
-  np.testing.assert_array_equal(eligible, [True, True, True, True] + [False] * 7)
+  for revision in ("fb194cf07ef1fb2e57da128eef9b3f6b2a83c718", "fc557b4ee5d29b95e49da20c49b50d1cb5ca46d5"):
+    expected, eligible, modeled = _expected_brake_command(
+      revision, request, speed, np.full(11, np.nan), pid, brake, .01,
+      gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
+    assert modeled
+    np.testing.assert_allclose(expected, [-.275, -.3116666667, -.3483333333, -.275, 0., .1, -.3, -.3, -.8, -.3, -.3])
+    np.testing.assert_array_equal(eligible, [True, True, True, True] + [False] * 7)
   old, _, _ = _expected_brake_command("ce98fbddd07b", request, speed, np.full(11, np.nan), pid, brake, .01)
   np.testing.assert_allclose(old[:4], [-.275, -.17, -.19, -.275])
 
