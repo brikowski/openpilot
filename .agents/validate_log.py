@@ -190,7 +190,8 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRA
 # These descendants retain the -0.30 fallback entry, grade-translated ACCEL_COMMAND,
 # and response-qualified active-brake release. Some also qualify earlier entry from coast.
 # Keep source-matched brake diagnostics enabled for each SHA.
-CREEP_BRAKE_TRANSLATION_COMMITS = {"ce98fbddd07b"}
+CREEP_BRAKE_CONTINUITY_COMMITS = {"fb194cf07ef1"}
+CREEP_BRAKE_TRANSLATION_COMMITS = {"ce98fbddd07b"} | CREEP_BRAKE_CONTINUITY_COMMITS
 COAST_RESPONSE_BRAKE_ENTRY_COMMITS = {"7b4f974f9a63"} | CREEP_BRAKE_TRANSLATION_COMMITS
 POST_E820_ODYSSEY_BRAKE_COMMITS = {
   "5cef5ca2ac7f", "c2d2577f46ca", "ee5895cc1d29", "4f37eb0f161b", "3ebee2f791c1",
@@ -682,7 +683,8 @@ def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_
                           0.0)
   expected[eligible] = np.clip(translated[eligible], HondaParams.BOSCH_ACCEL_MIN, HondaParams.BOSCH_ACCEL_MAX)
   if commit in CREEP_BRAKE_TRANSLATION_COMMITS:
-    creep = (np.asarray(speed) >= 0.0) & (np.asarray(speed) < 2.0) & np.asarray(pid, dtype=bool) & \
+    state_eligible = True if commit in CREEP_BRAKE_CONTINUITY_COMMITS else np.asarray(pid, dtype=bool)
+    creep = (np.asarray(speed) >= 0.0) & (np.asarray(speed) < 2.0) & state_eligible & \
             np.asarray(brake_request, dtype=bool) & ~np.asarray(gas_pressed, dtype=bool) & \
             ~np.asarray(brake_pressed, dtype=bool) & (requested > -0.8) & (requested < 0.0)
     correction = np.interp(requested, [-0.8, -0.3, 0.0], [0.0, -0.25, 0.0])

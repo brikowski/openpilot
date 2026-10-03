@@ -55,6 +55,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
   active_values = np.broadcast_to(np.asarray(long_active, dtype=bool), len(accels))
   aego_values = np.zeros(len(accels)) if aegos is None else np.broadcast_to(np.asarray(aegos, dtype=float), len(accels))
   gas_pressed_values = np.broadcast_to(np.asarray(gas_pressed, dtype=bool), len(accels))
+  long_states = np.broadcast_to(np.asarray(long_control_state), len(accels))
   rejects, seen = [], []
   for i, accel in enumerate(accels):
     CI.CS.out = structs.CarState(
@@ -64,7 +65,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
     )
     cc = structs.CarControl(
       enabled=True, latActive=False, longActive=bool(active_values[i]),
-      actuators=structs.CarControl.Actuators(accel=float(accel), longControlState=long_control_state),
+      actuators=structs.CarControl.Actuators(accel=float(accel), longControlState=int(long_states[i])),
       orientationNED=[] if pitch is None else [0.0, float(pitch), 0.0],
     )
     now = int(i * DT_CTRL * 1e9)
@@ -92,6 +93,16 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_braking_does_not_weaken_when_a_stronger_request_enters_stopping(self):
+    requests = np.repeat([-.15, -.17, -.19, -.21, -.15, 0., .1], 2)
+    states = np.repeat([LongCtrlState.pid, LongCtrlState.stopping, LongCtrlState.stopping,
+                        LongCtrlState.stopping, LongCtrlState.pid, LongCtrlState.stopping, LongCtrlState.stopping], 2)
+    rejects, seen = _run(True, requests, pitch=None, vego=.3, long_control_state=states)
+    assert not rejects
+    assert [accel for accel, _, _ in seen] == [-28, -31, -35, -38, -28, 0, 10]
+    assert all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[:6])
+    assert seen[6][1] > 0 and seen[6][2] == 0
+
   def test_creep_braking_passes_safety_and_follows_request_release(self):
     requests = [-1.0, -0.8, -0.3, -0.1, 0.0, 0.1, -0.1, -0.3]
     rejects, seen = _run(True, np.repeat(requests, 2), pitch=None, vego=0.6)
@@ -100,8 +111,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[:5] + seen[6:])
     assert seen[5][1] > 0 and seen[5][2] == 0
 
-  def test_creep_braking_leaves_stopping_driver_override_and_road_speed_raw(self):
-    for kwargs in ({'long_control_state': LongCtrlState.stopping}, {'gas_pressed': True}, {'brake_pressed': True}):
+  def test_creep_braking_leaves_driver_override_and_road_speed_raw(self):
+    for kwargs in ({'gas_pressed': True}, {'brake_pressed': True}):
       with self.subTest(kwargs=kwargs):
         rejects, seen = _run(True, [-0.3] * 20, pitch=0.0, vego=0.6, **kwargs)
         assert not rejects

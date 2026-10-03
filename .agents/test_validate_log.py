@@ -551,6 +551,21 @@ def test_creep_brake_revision_models_calibration_and_guarded_raw_fallbacks():
   assert valid and "coast braking" in note
 
 
+def test_creep_brake_continuity_revision_preserves_calibration_across_states():
+  request = np.array([-.15, -.17, -.19, -.15, 0., .1, -.3, -.3, -.8, -.3, -.3])
+  speed = np.array([.3] * 9 + [2., -1.])
+  pid = np.array([True, False, False, True] + [False] * 7)
+  brake = np.array([True] * 10 + [False])
+  expected, eligible, modeled = _expected_brake_command(
+    "fb194cf07ef1fb2e57da128eef9b3f6b2a83c718", request, speed, np.full(11, np.nan), pid, brake, .01,
+    gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
+  assert modeled
+  np.testing.assert_allclose(expected, [-.275, -.3116666667, -.3483333333, -.275, 0., .1, -.3, -.3, -.8, -.3, -.3])
+  np.testing.assert_array_equal(eligible, [True, True, True, True] + [False] * 7)
+  old, _, _ = _expected_brake_command("ce98fbddd07b", request, speed, np.full(11, np.nan), pid, brake, .01)
+  np.testing.assert_allclose(old[:4], [-.275, -.17, -.19, -.275])
+
+
 def test_current_odyssey_brake_model_resets_after_invalid_pitch():
   request = np.full(100, -0.5)
   speed = np.full(100, 20.0)
