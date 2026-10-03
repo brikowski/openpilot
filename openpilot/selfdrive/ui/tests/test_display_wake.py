@@ -1,13 +1,11 @@
-from types import SimpleNamespace
-
-from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy, alpha_long_cruise_active
+from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy
 
 
 def step(policy, now, *, ignition=True, started=True, enabled=False, alert=None, urgent=False,
-         missing=False, touch=False, offroad_alerts=None, keep_on_cruise=False):
+         missing=False, touch=False, offroad_alerts=None):
   return policy.update(now, DISPLAY_TIMEOUT, ignition=ignition, started=started, enabled=enabled, alert=alert,
                        urgent_alert=urgent, state_missing=missing, touch=touch,
-                       offroad_alerts=offroad_alerts, keep_on_cruise=keep_on_cruise, pc=False)
+                       offroad_alerts=offroad_alerts, pc=False)
 
 
 def test_onroad_timeout_touch_and_alert_wake():
@@ -54,32 +52,3 @@ def test_new_offroad_notifications_wake_but_existing_ones_do_not_hold_display_on
   assert not step(policy, 15.1, ignition=False, started=False, enabled=None, offroad_alerts={'old'})[0]
   assert step(policy, 16, ignition=False, started=False, enabled=None, offroad_alerts={'old', 'new'})[0]
   assert not step(policy, 31.1, ignition=False, started=False, enabled=None, offroad_alerts={'old', 'new'})[0]
-
-
-def test_alpha_long_cruise_keeps_display_on_until_disengagement():
-  policy = DisplayWakePolicy()
-  step(policy, 0, enabled=True)
-  assert not step(policy, 31, enabled=True)[0]
-  assert step(policy, 32, enabled=True, keep_on_cruise=True)[0]
-  assert step(policy, 60, enabled=True, keep_on_cruise=True)[0]
-  assert step(policy, 61, enabled=False)[0]
-  assert not step(policy, 92, enabled=False)[0]
-
-
-def test_alpha_long_cruise_requires_mode_engagement_and_set_speed():
-  cp = SimpleNamespace(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=True)
-
-  def active(**kwargs):
-    return alpha_long_cruise_active(
-      kwargs.get('alpha', True), kwargs.get('cp', cp), kwargs.get('engaged', True),
-      kwargs.get('fresh', True), kwargs.get('speed', 80), 255)
-
-  assert active()
-  assert not active(alpha=False)
-  assert not active(cp=None)
-  assert not active(cp=SimpleNamespace(alphaLongitudinalAvailable=False, openpilotLongitudinalControl=True))
-  assert not active(cp=SimpleNamespace(alphaLongitudinalAvailable=True, openpilotLongitudinalControl=False))
-  assert not active(engaged=False)
-  assert not active(fresh=False)
-  assert not active(speed=0)
-  assert not active(speed=255)

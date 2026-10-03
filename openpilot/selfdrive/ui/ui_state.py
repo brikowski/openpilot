@@ -10,8 +10,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import drop_realtime
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.lib.prime_state import PrimeState
-from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy, alpha_long_cruise_active
-from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
+from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy
 from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.hardware import HARDWARE, PC
@@ -363,7 +362,6 @@ class Device:
     urgent_alert = False
     state_missing = False
     enabled = None
-    keep_on_cruise = False
     if ui_state.started:
       sm = ui_state.sm
       # A missing selfdriveState can mean the alert renderer is showing a system failure.
@@ -374,10 +372,6 @@ class Device:
         urgent_alert = bool(alert and ss.alertStatus in (log.SelfdriveState.AlertStatus.userPrompt,
                                                           log.SelfdriveState.AlertStatus.critical))
         enabled = ss.enabled
-      car_state_fresh = sm.alive['carState'] and sm.valid['carState'] and sm.recv_frame['carState'] >= ui_state.started_frame
-      keep_on_cruise = alpha_long_cruise_active(
-        ui_state.alpha_long_enabled, ui_state.CP, bool(enabled), car_state_fresh,
-        sm['carState'].vCruise if car_state_fresh else V_CRUISE_UNSET, V_CRUISE_UNSET)
     else:
       now = time.monotonic()
       if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:
@@ -390,7 +384,7 @@ class Device:
       time.monotonic(), self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
       enabled=enabled, alert=alert, urgent_alert=urgent_alert, state_missing=state_missing,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
-      keep_on_cruise=keep_on_cruise, pc=PC)
+      pc=PC)
     if timeout_edge:
       for callback in self._interactive_timeout_callbacks:
         callback()
