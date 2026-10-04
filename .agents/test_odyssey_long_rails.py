@@ -129,13 +129,13 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all(accel == -55 for accel, _, _ in seen[:10])
     assert all((accel, gas, brake) == (0, GAS_INACTIVE, 0) for accel, gas, brake in seen[10:])
 
-  def test_settled_coast_shortfall_brakes_pass_safety_and_release_on_positive_request(self):
+  def test_settled_coast_shortfall_brakes_release_without_gas_above_passive_response(self):
     rejects, seen = _run(True, [-0.15] * 120 + [0.1] * 20, pitch=-0.03, vego=20.0,
                          aegos=0.3, target_gear=7)
     assert not rejects
     assert all(brake == 0 for _, _, brake in seen[:25])
     assert all(-25 <= accel < -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[50:60])
-    assert all(accel == 10 and gas > 0 and brake == 0 for accel, gas, brake in seen[60:])
+    assert all(accel == 10 and gas == GAS_INACTIVE and brake == 0 for accel, gas, brake in seen[60:])
 
   def test_changed_passive_response_enters_brakes_after_coast_estimate_updates(self):
     requests = [-0.15] * 240 + [0.1] * 20

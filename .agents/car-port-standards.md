@@ -67,12 +67,12 @@ active safety rails.
   establishes command shape, not that the resulting vehicle acceleration is improved.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
   settled, pedal-free coast in the same target gear, using the existing recent five-sample median
-  throughout eligible coast. It releases an already-active gas domain
-  only when the request is mildly negative and falling, both measured and passive acceleration
-  exceed that request, the downhill pitch signs agree, and the state is fresh. Without a learned
-  coast estimate, it may instead release when bounded gas feedback has exhausted the zero gas
-  command under those same request, downhill, and measured-response conditions. It does not
-  activate friction braking, alter `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
+  throughout eligible coast. It selects or retains coast when measured and learned passive
+  acceleration exceed the request, including positive requests, with agreeing downhill pitch
+  signs and fresh valid received state. Gas resumes when measured or predicted coast no longer
+  exceeds the request. Without a learned estimate, release still requires falling mild negative
+  demand and exhausted bounded gas feedback. No new learner or gas-map gain is added. This
+  selection does not activate friction braking, alter `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
 - The Odyssey high-speed steering trial preserves the ordinary physical 2560-count map by
   rescaling the torque normalization and slew together. Extra counts are limited to persistent,
