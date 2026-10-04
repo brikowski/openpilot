@@ -75,6 +75,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
       CI.CS.odyssey_car_gas = 0.0
       CI.CS.odyssey_engine_torque_ts_nanos = now - 5_000_000
       CI.CS.odyssey_target_gear = target_gear
+      CI.CS.odyssey_target_gear_ts_nanos = now - 5_000_000
       CI.CS.odyssey_computer_braking = computer_braking
       CI.CS.odyssey_computer_braking_ts_nanos = now - 5_000_000
     _, sendcan = CI.apply(cc.as_reader(), now)
@@ -164,8 +165,8 @@ class TestOdysseyLongRails(unittest.TestCase):
 
   def test_gas_response_corrects_measured_shortfall_without_changing_request_or_rails(self):
     requests = [0.2] * 20 + [0.0] * 160
-    _, matched = _run(True, requests, pitch=0.0, vego=18.0, aegos=0.0)
-    rejects, shortfall = _run(True, requests, pitch=0.0, vego=18.0, aegos=-0.3)
+    _, matched = _run(True, requests, pitch=0.0, vego=18.0, aegos=0.0, target_gear=7)
+    rejects, shortfall = _run(True, requests, pitch=0.0, vego=18.0, aegos=-0.3, target_gear=7)
     assert not rejects
     assert all(accel == 0 and brake == 0 for accel, _, brake in shortfall[10:])
     matched_gas = np.array([gas for _, gas, _ in matched])
@@ -176,9 +177,9 @@ class TestOdysseyLongRails(unittest.TestCase):
 
   def test_gas_response_waits_for_negative_bridge_exit(self):
     _, matched = _run(True, [-0.10] * 200 + [0.0] * 160,
-                      pitch=0.06, vego=18.0, aegos=0.0)
+                      pitch=0.06, vego=18.0, aegos=0.0, target_gear=7)
     rejects, seen = _run(True, [-0.10] * 200 + [0.0] * 160,
-                         pitch=0.06, vego=18.0, aegos=-0.3)
+                         pitch=0.06, vego=18.0, aegos=-0.3, target_gear=7)
     assert not rejects
     gas = np.array([command for _, command, _ in seen])
     matched_gas = np.array([command for _, command, _ in matched])
@@ -353,8 +354,8 @@ class TestOdysseyLongRails(unittest.TestCase):
   def test_gas_response_is_bounded_and_bidirectional(self):
     """Response correction may reduce gas early without reshaping ACCEL_COMMAND."""
     accels = np.full(400, 0.50)
-    _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20)
-    _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20)
+    _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20, target_gear=7)
+    _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20, target_gear=7)
     under_gas = np.array([gas for _, gas, _ in under_response])
     over_gas = np.array([gas for _, gas, _ in over_response])
     assert (under_gas[:25] == under_gas[0]).all()

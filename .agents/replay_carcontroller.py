@@ -144,6 +144,7 @@ class _CSShim:
     self.odyssey_car_gas = np.nan
     self.odyssey_engine_torque_ts_nanos = 0
     self.odyssey_target_gear = 0
+    self.odyssey_target_gear_ts_nanos = 0
     self.odyssey_computer_braking = False
     self.odyssey_computer_braking_ts_nanos = 0
 
@@ -260,6 +261,7 @@ def main(argv=None):
       cs_shim.odyssey_car_gas = received_torque[2] if received_torque is not None else np.nan
       cs_shim.odyssey_engine_torque_ts_nanos = int(received_torque[0]) if received_torque is not None else 0
       cs_shim.odyssey_target_gear = received_gear[1] if received_gear is not None else 0
+      cs_shim.odyssey_target_gear_ts_nanos = int(received_gear[0]) if received_gear is not None else 0
       cs_shim.odyssey_computer_braking = bool(received_brake[1]) if received_brake is not None else False
       cs_shim.odyssey_computer_braking_ts_nanos = int(received_brake[0]) if received_brake is not None else 0
     # Seed only the initial longitudinal phase; do not hide missing cycles by reseeding later.
