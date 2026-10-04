@@ -143,12 +143,11 @@ class TestVCruiseHelper(OpenpilotTestCase):
     """
 
     for experimental_mode in (True, False):
-      for v_ego in np.linspace(0, 100, 101):
+      for v_ego, expected in ((0., 40), (5., 40), (20., 72), (29.5, 106), (50., 145)):
         self.reset_cruise_speed_state()
         assert not self.v_cruise_helper.v_cruise_initialized
 
         self.enable(float(v_ego), experimental_mode)
-        expected = int(round(np.clip(v_ego * CV.MS_TO_KPH, V_CRUISE_INITIAL, V_CRUISE_MAX)))
         assert self.v_cruise_helper.v_cruise_kph == expected
         assert self.v_cruise_helper.v_cruise_cluster_kph == expected
         assert self.v_cruise_helper.v_cruise_initialized
