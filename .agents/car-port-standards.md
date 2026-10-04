@@ -66,7 +66,8 @@ active safety rails.
   and brake translation remain unchanged; feedback can affect the exhausted-gas coast fallback. Replay
   establishes command shape, not that the resulting vehicle acceleration is improved.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
-  settled, pedal-free coast in the same target gear. It releases an already-active gas domain
+  settled, pedal-free coast in the same target gear, using the existing recent five-sample median
+  throughout eligible coast. It releases an already-active gas domain
   only when the request is mildly negative and falling, both measured and passive acceleration
   exceed that request, the downhill pitch signs agree, and the state is fresh. Without a learned
   coast estimate, it may instead release when bounded gas feedback has exhausted the zero gas

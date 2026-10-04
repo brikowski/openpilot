@@ -137,6 +137,15 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all(-25 <= accel < -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[50:60])
     assert all(accel == 10 and gas > 0 and brake == 0 for accel, gas, brake in seen[60:])
 
+  def test_changed_passive_response_enters_brakes_after_coast_estimate_updates(self):
+    requests = [-0.15] * 240 + [0.1] * 20
+    aegos = [-0.15] * 120 + [0.3] * 140
+    rejects, seen = _run(True, requests, pitch=0.0, vego=20.0, aegos=aegos, target_gear=7)
+    assert not rejects
+    assert all(brake == 0 for _, _, brake in seen[:60])
+    assert all(accel == -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[90:120])
+    assert all(accel == 10 and gas > 0 and brake == 0 for accel, gas, brake in seen[120:])
+
   def test_excess_deceleration_brake_release_passes_safety_without_changing_accel(self):
     requests = np.repeat([-.4] + [-.28 + i * .008 for i in range(12)], 2)
     rejects, seen = _run(True, requests, pitch=None, vego=20., aegos=requests - .3,

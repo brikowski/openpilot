@@ -558,7 +558,7 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
   brake = np.array([True] * 10 + [False])
   for revision in ("fb194cf07ef1fb2e57da128eef9b3f6b2a83c718", "fc557b4ee5d29b95e49da20c49b50d1cb5ca46d5",
                    "48f151363793b11683e82c16ca3430fe77d9c836", "ba7b308209e8bc5936cfca8f2b5c8a2e5e4caf42",
-                   "cfe404adec77ad972a5201fe1cd9dda6067060a3"):
+                   "cfe404adec77ad972a5201fe1cd9dda6067060a3", "1b613c490a97ed7e2b2e01193084dbc55fe96541"):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(11, np.nan), pid, brake, .01,
       gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
@@ -570,7 +570,8 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
 
 
 @pytest.mark.parametrize("revision", ["ba7b308209e8bc5936cfca8f2b5c8a2e5e4caf42",
-                                     "cfe404adec77ad972a5201fe1cd9dda6067060a3"])
+                                     "cfe404adec77ad972a5201fe1cd9dda6067060a3",
+                                     "1b613c490a97ed7e2b2e01193084dbc55fe96541"])
 def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_only(revision):
   request = np.full(100, -.5)
   speed = np.full(100, 20.)
