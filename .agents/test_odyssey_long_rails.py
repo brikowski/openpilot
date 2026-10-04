@@ -39,7 +39,7 @@ def _decode_acc_control(dat):
 
 
 def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid, gas_pressed=False, target_gear=None,
-         brake_pressed=False):
+         brake_pressed=False, computer_braking=False):
   """Drive the active longitudinal path and check every frame against the real safety hook."""
   CP = _car_params()
   CI = interfaces[PLATFORM](CP.copy())
@@ -60,7 +60,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
   for i, accel in enumerate(accels):
     CI.CS.out = structs.CarState(
       vEgo=vego, vEgoRaw=vego, aEgo=float(aego_values[i]), standstill=vego < 0.1,
-      gasPressed=bool(gas_pressed_values[i]), brakePressed=brake_pressed,
+      gasPressed=bool(gas_pressed_values[i]), brakePressed=brake_pressed, canValid=True,
       cruiseState=structs.CarState.CruiseState(enabled=True, available=True, speed=25.0),
     )
     cc = structs.CarControl(
@@ -75,6 +75,8 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
       CI.CS.odyssey_car_gas = 0.0
       CI.CS.odyssey_engine_torque_ts_nanos = now - 5_000_000
       CI.CS.odyssey_target_gear = target_gear
+      CI.CS.odyssey_computer_braking = computer_braking
+      CI.CS.odyssey_computer_braking_ts_nanos = now - 5_000_000
     _, sendcan = CI.apply(cc.as_reader(), now)
     for addr, dat, bus in sendcan:
       if not safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, bus % 4, dat)):
@@ -133,6 +135,16 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all(brake == 0 for _, _, brake in seen[:25])
     assert all(-25 <= accel < -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[50:60])
     assert all(accel == 10 and gas > 0 and brake == 0 for accel, gas, brake in seen[60:])
+
+  def test_excess_deceleration_brake_release_passes_safety_without_changing_accel(self):
+    requests = np.repeat([-.4] + [-.28 + i * .008 for i in range(12)], 2)
+    rejects, seen = _run(True, requests, pitch=None, vego=20., aegos=requests - .3,
+                         target_gear=6, computer_braking=True)
+    assert not rejects
+    assert all(brake == 1 for _, _, brake in seen[:11])
+    assert all(brake == 0 for _, _, brake in seen[11:])
+    assert all(gas == GAS_INACTIVE for _, gas, _ in seen)
+    np.testing.assert_allclose([accel / 100. for accel, _, _ in seen], requests[::2], atol=.01)
 
   def test_odyssey_uses_upstream_gas_ceiling(self):
     """Keep upstream's Odyssey request-to-gas endpoint."""

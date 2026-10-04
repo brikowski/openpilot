@@ -556,7 +556,8 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
   speed = np.array([.3] * 9 + [2., -1.])
   pid = np.array([True, False, False, True] + [False] * 7)
   brake = np.array([True] * 10 + [False])
-  for revision in ("fb194cf07ef1fb2e57da128eef9b3f6b2a83c718", "fc557b4ee5d29b95e49da20c49b50d1cb5ca46d5"):
+  for revision in ("fb194cf07ef1fb2e57da128eef9b3f6b2a83c718", "fc557b4ee5d29b95e49da20c49b50d1cb5ca46d5",
+                   "48f151363793b11683e82c16ca3430fe77d9c836", "ba7b308209e8bc5936cfca8f2b5c8a2e5e4caf42"):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(11, np.nan), pid, brake, .01,
       gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
@@ -565,6 +566,22 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
     np.testing.assert_array_equal(eligible, [True, True, True, True] + [False] * 7)
   old, _, _ = _expected_brake_command("ce98fbddd07b", request, speed, np.full(11, np.nan), pid, brake, .01)
   np.testing.assert_allclose(old[:4], [-.275, -.17, -.19, -.275])
+
+
+def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_only():
+  revision = "ba7b308209e8bc5936cfca8f2b5c8a2e5e4caf42"
+  request = np.full(100, -.5)
+  speed = np.full(100, 20.)
+  pitch = np.full(100, -.03)
+  active = np.ones(100, dtype=bool)
+  switch, threshold, valid, note = _domain_model(revision, request, speed, pitch, np.ones(100), .01)
+  assert valid and "response-qualified" in note
+  np.testing.assert_array_equal(switch, request)
+  np.testing.assert_allclose(threshold, -.30)
+  expected, eligible, modeled = _expected_brake_command(revision, request, speed, pitch, active, active, .01)
+  assert modeled and eligible.all()
+  assert expected[-1] < request[-1]
+  assert not _brake_passthrough_expected(revision)
 
 
 def test_current_odyssey_brake_model_resets_after_invalid_pitch():

@@ -52,6 +52,30 @@ def test_received_powertrain_snapshot_never_uses_future_can_and_preserves_nanose
   assert received_at(base + 20_000_000, updates) == (base + 20_000_000, -180., 0.)
 
 
+def test_received_braking_uses_powertrain_bus_and_independent_timestamp(monkeypatch):
+  from opendbc.can import CANPacker
+  packer = CANPacker(replay.ODYSSEY_PT_DBC)
+  base = 1_790_380_243_664_559_620
+
+  def event(time, frames, kind='can'):
+    return SimpleNamespace(which=lambda: kind, logMonoTime=time,
+                           can=[SimpleNamespace(address=a, dat=d, src=b) for a, d, b in frames])
+
+  brake = packer.make_can_msg('VSA_STATUS', 1, {'COMPUTER_BRAKING': 1})
+  coast = packer.make_can_msg('VSA_STATUS', 1, {'COMPUTER_BRAKING': 0})
+  messages = [event(base, [brake]), event(base + 10_000_000, [coast], 'sendcan'),
+              event(base + 20_000_000, [(coast[0], coast[1], 0)]),
+              event(base + 30_000_000, [packer.make_can_msg('GAS_PEDAL_2', 1, {'ENGINE_TORQUE_ESTIMATE': -120})]),
+              event(base + 40_000_000, [coast])]
+  monkeypatch.setattr(replay, 'LogReader', lambda _: messages)
+  torque, gear, braking = replay.odyssey_received_state(['synthetic'])
+  assert received_at(base - 1, braking) is None
+  assert received_at(base + 39_999_999, braking) == (base, 1.)
+  assert received_at(base + 40_000_000, braking) == (base + 40_000_000, 0.)
+  assert received_at(base + 39_999_999, torque) == (base + 30_000_000, -120., 0.)
+  assert received_at(base + 40_000_000, gear) is None
+
+
 @pytest.mark.parametrize('bound', ['carState', 'sendcan'])
 def test_replay_applies_timing_bound_to_both_controllers_and_reports_it(monkeypatch, tmp_path, bound):
   params = CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)

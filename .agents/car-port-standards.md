@@ -49,7 +49,7 @@ active safety rails.
   across control-state transitions. This feedforward calibration does not accumulate acceleration error or
   retain a released request. Physical benefit remains unmeasured. At road speed, level-road,
   stopping and missing-pose behavior retain the raw-request rules. The early-release trial requires
-  fresh received engine-torque and current overdeceleration evidence; it never overrides
+  fresh received computer-braking state, an easing request, and current overdeceleration evidence; it never overrides
   stronger raw braking or low-speed stop authority. Replay does not prove road benefit.
 - The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
   near-zero lookup term. During startup, measured excess acceleration may reduce gas if the

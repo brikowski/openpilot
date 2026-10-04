@@ -129,9 +129,10 @@ class _ZeroDict(dict):
 
 
 class _CSShim:
-  """The controller reads CS.out.* plus a handful of CarState fields. Everything besides .out
-  (is_metric, v_cruise_factor, acc_hud, lkas_hud, stock_brake) feeds only the HUD/UI CAN messages,
-  never ACCEL_COMMAND or GAS_COMMAND, so stubbing them cannot affect the metrics measured here."""
+  """Recorded carState plus separately reconstructed Odyssey received CAN feedback.
+
+  HUD fields are stubs; actuator feedback below must use actual received updates.
+  """
   def __init__(self):
     self.out = None
     self.is_metric = False
@@ -143,17 +144,19 @@ class _CSShim:
     self.odyssey_car_gas = np.nan
     self.odyssey_engine_torque_ts_nanos = 0
     self.odyssey_target_gear = 0
+    self.odyssey_computer_braking = False
+    self.odyssey_computer_braking_ts_nanos = 0
 
 
 def odyssey_received_state(paths):
-  """Only actual received powertrain updates may feed the candidate controller replay."""
+  """Replay independently timestamped, received powertrain and brake feedback."""
   from opendbc.can.parser import CANParser
-  parser = CANParser(ODYSSEY_PT_DBC, [('GAS_PEDAL_2', 0), ('GEARBOX_AUTO', 0)], 1)
-  torque, gear = [], []
+  parser = CANParser(ODYSSEY_PT_DBC, [('GAS_PEDAL_2', 0), ('GEARBOX_AUTO', 0), ('VSA_STATUS', 0)], 1)
+  torque, gear, braking = [], [], []
   for m in LogReader(paths):
     if m.which() != 'can':
       continue
-    frames = [(c.address, c.dat, c.src) for c in m.can if c.src == 1 and c.address in (0x130, 0x1a3)]
+    frames = [(c.address, c.dat, c.src) for c in m.can if c.src == 1 and c.address in (0x130, 0x1a3, 0x1a4)]
     if not frames:
       continue
     parser.update([(m.logMonoTime, frames)])
@@ -162,10 +165,12 @@ def odyssey_received_state(paths):
       torque.append((m.logMonoTime, signals['ENGINE_TORQUE_ESTIMATE'], signals['CAR_GAS']))
     if any(addr == 0x1a3 for addr, _, _ in frames):
       gear.append((m.logMonoTime, parser.vl['GEARBOX_AUTO']['TRANS_TARGET_GEAR']))
+    if any(addr == 0x1a4 for addr, _, _ in frames):
+      braking.append((m.logMonoTime, parser.vl['VSA_STATUS']['COMPUTER_BRAKING']))
   def pack(rows, width):
     return (np.asarray([row[0] for row in rows], dtype=np.int64),
             np.asarray([row[1:] for row in rows], dtype=float).reshape(-1, width))
-  return pack(torque, 2), pack(gear, 1)
+  return pack(torque, 2), pack(gear, 1), pack(braking, 1)
 
 
 def received_at(time_nanos, updates):
@@ -223,7 +228,8 @@ def main(argv=None):
   baseline = make_replay_controller(CP) if args.compare_no_release else None
   if baseline is not None:
     baseline.odyssey_brake_release.update = lambda *unused: False
-  torque_updates, gear_updates = odyssey_received_state(src) if CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR" else (None, None)
+  torque_updates, gear_updates, brake_updates = (odyssey_received_state(src) if CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR"
+                                                else (None, None, None))
   state_times = np.asarray([m.logMonoTime for m in msgs if m.which() == 'carState'], dtype=np.int64)
 
   cs_shim = _CSShim()
@@ -249,10 +255,13 @@ def main(argv=None):
     if torque_updates is not None:
       received_torque = received_at(state_time, torque_updates)
       received_gear = received_at(state_time, gear_updates)
+      received_brake = received_at(state_time, brake_updates)
       cs_shim.odyssey_engine_torque_estimate = received_torque[1] if received_torque is not None else np.nan
       cs_shim.odyssey_car_gas = received_torque[2] if received_torque is not None else np.nan
       cs_shim.odyssey_engine_torque_ts_nanos = int(received_torque[0]) if received_torque is not None else 0
       cs_shim.odyssey_target_gear = received_gear[1] if received_gear is not None else 0
+      cs_shim.odyssey_computer_braking = bool(received_brake[1]) if received_brake is not None else False
+      cs_shim.odyssey_computer_braking_ts_nanos = int(received_brake[0]) if received_brake is not None else 0
     # Seed only the initial longitudinal phase; do not hide missing cycles by reseeding later.
     if not t and CP.openpilotLongitudinalControl and CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR":
       cc.frame = 0 if any(f.address == 0x1DF and f.src == 1 for f in m.sendcan) else 1
@@ -269,7 +278,9 @@ def main(argv=None):
       twin['output_accel_different_cycles'] += abs(base_actuators.accel - actuators.accel) > 1e-6
     if previous_brake and not cc.odyssey_brake_selected and control.longActive and control.actuators.accel < 0.:
       release_edges.append((m.logMonoTime / 1e9, float(control.actuators.accel), float(state.aEgo),
-                            float(cs_shim.odyssey_engine_torque_estimate), float(cs_shim.odyssey_target_gear)))
+                            float(cs_shim.odyssey_engine_torque_estimate), float(cs_shim.odyssey_target_gear),
+                            cs_shim.odyssey_computer_braking,
+                            (controller_time - cs_shim.odyssey_computer_braking_ts_nanos) / 1e6))
     t.append(m.logMonoTime / 1e9)
     requested.append(float(control.actuators.accel))
     wire.append(float(actuators.accel))
@@ -399,7 +410,8 @@ def main(argv=None):
     "gas_lookup_values": list(cc.params.BOSCH_GAS_LOOKUP_V),
     "brake_release_ablation": args.disable_brake_release,
     "early_release_edges": [{"route_time_s": round(edge[0] - t[0], 3), "request": edge[1],
-                             "aego": edge[2], "engine_torque_estimate": edge[3], "target_gear": edge[4]}
+                             "aego": edge[2], "engine_torque_estimate": edge[3], "target_gear": edge[4],
+                             "received_computer_braking": edge[5], "brake_feedback_age_ms": edge[6]}
                             for edge in release_edges],
     "early_release_physical_events_open_loop_only": physical_releases,
     "same_input_no_release_twin": twin if baseline is not None else None,
