@@ -51,8 +51,10 @@ active safety rails.
   stopping and missing-pose behavior retain the raw-request rules. The early-release trial requires
   fresh received engine-torque and current overdeceleration evidence; it never overrides
   stronger raw braking or low-speed stop authority. Replay does not prove road benefit.
-- The deployed unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
-  near-zero lookup term. After 0.5 s of continuous active gas, it compares the earlier
+- The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
+  near-zero lookup term. During startup, measured excess acceleration may reduce gas if the
+  request has not risen above the entry request; positive feedback still waits for the delayed
+  observer. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` and applies a bounded, slewed correction to
   `GAS_COMMAND` only. A request decrease relative to the delayed request vetoes a positive
   correction target (and an increase vetoes a negative target), but existing correction unwinds

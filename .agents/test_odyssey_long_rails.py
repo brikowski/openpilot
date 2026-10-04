@@ -339,13 +339,17 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert gas == {expected}
 
   def test_gas_response_is_bounded_and_bidirectional(self):
-    """A settled response mismatch may adjust gas without reshaping ACCEL_COMMAND."""
+    """Response correction may reduce gas early without reshaping ACCEL_COMMAND."""
     accels = np.full(400, 0.50)
     _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20)
     _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20)
     under_gas = np.array([gas for _, gas, _ in under_response])
     over_gas = np.array([gas for _, gas, _ in over_response])
-    np.testing.assert_array_equal(under_gas[:25], over_gas[:25])
+    assert (under_gas[:25] == under_gas[0]).all()
+    assert over_gas[0] == under_gas[0]
+    assert over_gas[1] < over_gas[0]
+    assert ((0 <= under_gas[0] - over_gas[:25]) & (under_gas[0] - over_gas[:25] <= 100)).all()
+    assert (abs(np.diff(over_gas[:25])) <= 10).all()
     assert 0 < under_gas[-1] - over_gas[-1] <= 200
     assert all(accel == 50 and brake == 0 for accel, _, brake in under_response + over_response)
 
