@@ -10,7 +10,11 @@ BRANCH=ody-op
 DEVICE_REMOTE=https://github.com/brikowski/openpilot.git
 DEVICE_UV_CACHE=/data/uv-cache
 DEVICE_UV_PYTHON=/data/uv-python
-OFFROAD_CHECK=".venv/bin/python - <<'ODY_OFFROAD_CHECK'
+OFFROAD_CHECK="ody_check_python=.venv/bin/python
+if ! test -x \"\$ody_check_python\"; then
+  ody_check_python=/usr/local/venv/bin/python3
+fi
+\"\$ody_check_python\" - <<'ODY_OFFROAD_CHECK'
 $(cat "$ROOT_DIR/tools/check_offroad.py")
 ODY_OFFROAD_CHECK"
 
