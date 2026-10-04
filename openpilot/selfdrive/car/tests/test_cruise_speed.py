@@ -7,13 +7,14 @@ from openpilot.cereal import log
 from openpilot.selfdrive.car.cruise import VCruiseHelper, V_CRUISE_MIN, V_CRUISE_MAX, V_CRUISE_INITIAL, IMPERIAL_INCREMENT
 from opendbc.car.structs import car
 from openpilot.common.constants import CV
-from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 
 
 def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
+  from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
+
   man = Maneuver(
     '',
     duration=t_end,
@@ -147,5 +148,7 @@ class TestVCruiseHelper(OpenpilotTestCase):
         assert not self.v_cruise_helper.v_cruise_initialized
 
         self.enable(float(v_ego), experimental_mode)
-        assert V_CRUISE_INITIAL <= self.v_cruise_helper.v_cruise_kph <= V_CRUISE_MAX
+        expected = int(round(np.clip(v_ego * CV.MS_TO_KPH, V_CRUISE_INITIAL, V_CRUISE_MAX)))
+        assert self.v_cruise_helper.v_cruise_kph == expected
+        assert self.v_cruise_helper.v_cruise_cluster_kph == expected
         assert self.v_cruise_helper.v_cruise_initialized
