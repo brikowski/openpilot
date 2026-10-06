@@ -1711,6 +1711,8 @@ def _status_row(route, opendbc_commit, flagged=True):
     "route": route,
     "platform": ODYSSEY,
     "opendbc_commit": opendbc_commit,
+    "opendbc_commit_full": opendbc_commit,
+    "git_commit_full": "parent",
     "provenance_exact": opendbc_commit is not None,
     "engaged_min": 10.0,
     "verdicts": [{
@@ -1730,6 +1732,36 @@ def test_symptom_review_does_not_mix_opendbc_configurations():
   reviews = _symptom_review_rows(rows, "00000002--kkkkkkkkkk")
   assert len(reviews) == 1
   assert "1/1 exact-source route" in reviews[0]
+
+
+def test_symptom_review_does_not_mix_openpilot_revisions():
+  old = _status_row("00000001--jjjjjjjjjj", "current")
+  current = _status_row("00000002--kkkkkkkkkk", "current")
+  old["git_commit_full"] = "a" * 12 + "1" * 28
+  current["git_commit_full"] = "a" * 12 + "2" * 28
+  old["git_commit"] = current["git_commit"] = "a" * 12
+
+  reviews = _symptom_review_rows([old, current], current["route"])
+  assert "1/1 exact-source route" in reviews[0]
+
+
+def test_symptom_review_does_not_mix_abbreviated_nested_revisions():
+  old = _status_row("00000001--jjjjjjjjjj", "a" * 12)
+  current = _status_row("00000002--kkkkkkkkkk", "a" * 12)
+  old["opendbc_commit_full"] = "a" * 12 + "1" * 28
+  current["opendbc_commit_full"] = "a" * 12 + "2" * 28
+
+  reviews = _symptom_review_rows([old, current], current["route"])
+  assert "1/1 exact-source route" in reviews[0]
+
+
+def test_symptom_review_requires_both_full_revisions():
+  for missing in ["git_commit_full", "opendbc_commit_full"]:
+    old = _status_row("00000001--jjjjjjjjjj", "current")
+    current = _status_row("00000002--kkkkkkkkkk", "current")
+    del current[missing]
+    assert "1/1 unresolved-source route" in _symptom_review_rows([old, current], current["route"])[0]
+    assert "1/1 exact-source route" in _symptom_review_rows([old, current], old["route"])[0]
 
 
 def test_symptom_review_reports_recurrence_without_a_route_count_gate():

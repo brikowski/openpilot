@@ -799,19 +799,7 @@ def _opendbc_pointer_full(parent_commit, dirty):
 
 
 def _opendbc_pointer(parent_commit, dirty):
-  """The opendbc commit that parent_commit pins - i.e. the code that actually contains the tune.
-
-  initData only carries the PARENT commit, but every tuned constant lives in the submodule, so
-  grouping ledger rows by `git_commit` alone does not tell you what was on the wire. That is not
-  hypothetical: the 2026-07-30 DOMAIN_HYST_EXIT=0.50 analysis pooled routes 32/33 as "baseline"
-  when their pointers were BRAKE_RELEASE_HOLD and 0.20 - both already known worse than no
-  hysteresis - and reached the wrong conclusion. Resolve it once here instead of by hand per row.
-
-  Returns None when the parent commit is not in the local object store (never fetched, or the
-  branch was rewritten). A dirty parent means the pointer is what was COMMITTED, not necessarily
-  what was flashed, so it is not recorded - the guarded deployment workflow refuses dirty trees
-  for this reason, but old rows predate that guard.
-  """
+  """Display the resolved nested revision; dirty or unavailable source returns None."""
   pointer = _opendbc_pointer_full(parent_commit, dirty)
   return pointer[:12] if pointer else None
 
@@ -2300,11 +2288,13 @@ def _symptom_review_rows(rows, route):
   if current is None or current.get("platform") != ODYSSEY:
     return []
 
-  # Unknown nested provenance permits only this route; a parent SHA does not identify Honda code.
-  opendbc_commit = current.get("opendbc_commit")
-  if opendbc_commit and current.get("provenance_exact"):
+  # Exact-source recurrence requires both revisions; broader pooling needs a behavior diff.
+  parent_commit = current.get("git_commit_full")
+  opendbc_commit = current.get("opendbc_commit_full")
+  if parent_commit and opendbc_commit and current.get("provenance_exact"):
     ody = [r for r in rows if r.get("platform") == ODYSSEY
-           and r.get("provenance_exact") and r.get("opendbc_commit") == opendbc_commit]
+           and r.get("provenance_exact") and r.get("git_commit_full") == parent_commit
+           and r.get("opendbc_commit_full") == opendbc_commit]
     source_label = "exact-source"
   else:
     ody = [current]
