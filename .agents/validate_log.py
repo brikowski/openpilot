@@ -1208,17 +1208,8 @@ def analyze(msgs, platform, alpha_longitudinal=None):
     r["rail_lo_frac"] = float((active & (wire <= HondaParams.BOSCH_ACCEL_MIN + RAIL_EPS)).sum() / active.sum())
 
   # === watchlist symptoms (Odyssey telemetry semantics) ===
-  # 1. Port-added braking. This should remain zero outside the explicitly source-mapped
-  # low-speed brake-tracking arm.
-  #    CAREFUL - this must measure OUR controller, not the car's actuator. Naively comparing
-  #    aEgo to the planner command flags "Honda's friction-brake actuator biting past our
-  #    ACCEL_COMMAND setpoint", which is documented as NOT ours and NOT fixable (we have no
-  #    brake-pressure authority; a bidirectional loop would fight Honda's own PID = opendbc
-  #    #2347 oscillation). Measured on route 00000001: that naive form flagged 7.1% of braking
-  #    frames, but 4.6% were aEgo below the *wire* (pure actuator bite) and the mean
-  #    (aEgo - planner) was +0.003, i.e. no systematic overshoot at all.
-  #    The actionable symptom is the port still sending more brake than requested while the car
-  #    is already decelerating past target.
+  # Compare controller input with the wire request to identify added brake authority.
+  # Achieved excess deceleration alone does not identify the actuator or its active domain.
   cmd_smooth = _causal_lpf(cc_accel, dt, JERK_SMOOTH_TAU)
   low_speed_pid_window = (low_speed_pid_expected & pid & (vego > 1e-3) & (vego < 3.0) &
                           (cc_accel < 0.0))
@@ -1229,8 +1220,8 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   overshoot = braking & adding & already_past
   r["overshoot_frac"] = float(overshoot.sum() / braking.sum()) if braking.sum() > 20 else 0.0
   r["addon_mean"] = float(brake_addon[braking].mean()) if braking.sum() > 20 else 0.0
-  # Informational only, never flags: how hard Honda's actuator bites past OUR wire command.
-  # Kept separate so a future session cannot re-conflate it with the controller symptom.
+  # Legacy ledger key: achieved deceleration beyond the wire, without received-braking qualification.
+  # This response readout does not establish friction-brake actuation or first-divergence ownership.
   r["honda_bite_frac"] = float(((aego - wire) < -0.3)[braking].mean()) if braking.sum() > 20 else 0.0
 
   # (2. pitch-transition lag REMOVED 2026-07-29. It measured aEgo vs aTarget through grade
@@ -1934,7 +1925,7 @@ def verdicts(r):
   # the known supplemental controller rather than an assertion that it is absent.
   add("port-added braking", r["overshoot_frac"] <= OVERSHOOT_FRAC_FLAG,
       f"{r['overshoot_frac']*100:.1f}% braking frames still adding past target "
-      f"(addon mean {r.get('addon_mean', 0):+.3f}; Honda actuator bite {r.get('honda_bite_frac', 0)*100:.1f}% - NOT ours)",
+      f"(addon mean {r.get('addon_mean', 0):+.3f}; achieved deceleration beyond wire {r.get('honda_bite_frac', 0)*100:.1f}%; actuator unverified)",
       status="car port added brake authority" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
   add("creep at stop", r["creep_frames"] < CREEP_MIN_FRAMES,
       f"{r['creep_frames']} frames sustained",
