@@ -172,7 +172,7 @@ mutation makes the relevant check fail, focused tests and `git diff --check` pas
 runtime behavior changes. Evidence or ledger updates may be a separate commit when they are useful
 for reproducibility, but they must not be mixed with unrelated changes.
 
-A production commit or promotion additionally requires exact route, parent, and nested `opendbc`
+Promotion of production behavior additionally requires exact route, parent, and nested `opendbc`
 provenance; first-divergence ownership; a coherent, attributable design; source-compatible full-rate comparison with
 adequate exposure; an attributable improvement or required safety fix without unacceptable
 regression; and an explicit keep/change/retire decision. Resolve DBC signal meaning from the exact
@@ -185,8 +185,9 @@ interactions, and use component-level tests or offline ablations when needed for
 separate road deployments are not mandatory for each component. Retain overlapping corrections
 only with a stated role and supporting evidence, not merely because they were already deployed.
 
-A candidate is committed directly to `ody-op` to preserve reproducibility, but the commit is not a
-promotion. After the source, mutation, focused-test, preflash, and provenance gates pass, deployment
+Commit each software-validated candidate and its tests directly to `ody-op` for supervised car
+testing before road benefit is established; a commit is not a promotion. After the source,
+mutation, focused-test, preflash, and provenance gates pass, deployment
 is the default next step for a supervised road test when the user authorizes it; do not defer it
 merely because the candidate is unpromoted. Verify the root SHA, nested `opendbc` gitlink SHA, remote
 refs, and clean state separately from device health and road behavior. Keep the `ody-op` and nested

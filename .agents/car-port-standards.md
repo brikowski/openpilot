@@ -28,12 +28,15 @@ active safety rails.
   active behavior is low-speed non-positive → brake below 5 m/s, fallback road-speed brake entry at -0.30
   m/s², and active-gas continuity above Honda's upstream -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
-  coast-entry trial uses settled, eligible coast at 8–35 m/s. The existing same-gear forecast
-  and measured acceleration must both fall below the mild negative request by the response margin.
-  Entry requires positive mapped gas and bypasses bridge pre-activation while preserving raw
-  gas-domain `ACCEL_COMMAND`, stronger braking, low-speed authority, and unreliable-state fallbacks.
-  Settled coast also selects brakes when both measured and forecast acceleration exceed the
-  negative request by the response margin. It uses the existing brake translation and release rules.
+  passive-response candidate uses the existing same-gear forecast at 8–35 m/s. Both forecast
+  and measured acceleration must fall below a negative request by the response margin before
+  settled coast or a held, physically inactive brake domain can enter gas. Fresh valid CAN,
+  received gear and braking state qualify this additional authority. It bypasses pre-activation
+  and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
+  `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration still requires
+  assistance and measured response does not exceed the request by the margin. Settled coast
+  selects mutually exclusive braking when measured and forecast acceleration exceed the request.
+  Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
   The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
   request-ramped, bounded pitch load. Its grade-proportional gas term rises
   from the brake boundary, remains request-sensitive through zero, and blends
