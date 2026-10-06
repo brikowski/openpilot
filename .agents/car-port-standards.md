@@ -31,7 +31,9 @@ active safety rails.
   passive-response candidate uses the existing same-gear forecast at 8–35 m/s. Both forecast
   and measured acceleration must fall below a negative request by the response margin before
   settled coast or a held, physically inactive brake domain can enter gas. Fresh valid CAN,
-  received gear and braking state qualify this additional authority. It bypasses pre-activation
+  received gear and braking state qualify this additional authority. A new brake selection must
+  settle over the existing response-delay interval before inactive feedback can qualify that override.
+  It bypasses pre-activation
   and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
   `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration still requires
   assistance and measured response does not exceed the request by the margin. Settled coast
