@@ -106,6 +106,11 @@ Use that trace as the ownership decision, not merely as a list of signals:
 - Correct command and domain but wrong response: investigate Honda ECU/actuator behavior and preserve
   the OpenPilot command shape.
 
+OpenPilot runtime fixes are in scope under `AGENTS.md` when the first divergence belongs there;
+implement them there instead of adding Honda compensation. In the port, prefer reliable live or
+learned vehicle state over fixed tuning when it directly represents the controlled behavior. Keep
+constraints and fallbacks where needed, and do not add a learner solely to remove a constant.
+
 A large `aEgo` or lateral-response residual alone does not identify a port bug. Align response timing,
 separate domains and authority states, and condition on the relevant speed, request, grade, gear,
 lead, and driver-input exposure before changing Honda code.

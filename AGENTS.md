@@ -5,9 +5,15 @@ and invariants; private route history and derivations belong in the Proton Drive
 
 ## Project objective
 
-Make the Odyssey follow upstream OpenPilot's lateral and longitudinal commands as accurately and
+Make the Odyssey follow `carControl`'s lateral and longitudinal commands as accurately and
 smoothly as its Honda actuators allow. Preserve `ody-op` as the known-good rollback baseline and keep
 production changes minimal relative to current `commaai/openpilot` and `commaai/opendbc`.
+
+Prefer behavior that responds dynamically to the commanded state. Use reliable live or learned
+vehicle state when it directly represents the behavior being controlled; use fixed values only
+when a suitable signal is unavailable, unreliable, or needed as a constraint or fallback. Use the
+simplest implementation that works, without duplicate logic or new learning solely to remove a
+constant. Remove unnecessary tuning, documentation, abstractions, and code.
 
 For every comparable private full-rate route, resolve the exact parent and nested `opendbc` revisions,
 reconstruct the command path with zero-order-held CAN, and identify the first repeatable breakdown:
@@ -30,12 +36,13 @@ full-rate logs may reopen any mechanism when they supply a repeatable first-dive
 re-audit the cited exposure instead of treating an absence of proof as proof of failure. Preserve
 the verified safety, provenance, and ownership boundaries below.
 
-For this Honda command-following objective, treat the pinned upstream OpenPilot planner, model, and
-controllers as the command source. Vehicle-runtime changes are limited to the nested `opendbc`
-Honda port, DBC, and safety translation; root OpenPilot changes may add diagnostics, tests, or
-evidence but must not alter vehicle behavior. If the first divergence is upstream of `carControl`,
-document and diagnose it rather than masking it in the Honda port. An upstream runtime fix requires
-a separate explicitly authorized planner/model objective.
+Runtime changes in both OpenPilot and nested `opendbc` are in scope for this objective. Use pinned
+upstream behavior as the comparison baseline. Fix command generation, controller state, timing, or
+publication in OpenPilot when the first repeatable divergence belongs there; fix CAN translation,
+domains, safety translation, and actuator response in the Honda layer when it belongs there. Do not
+mask an upstream error in the car port or change the planner/model's intended motion to compensate
+for Honda actuator limitations. Keep vehicle-specific changes as narrow as practical and put each
+behavior in the simplest appropriate layer.
 
 ## What this branch is
 
@@ -103,8 +110,10 @@ Use that first divergence to choose the work:
 
 1. **Replay checks command shape, not closed-loop timing.** It freezes the recorded inputs; only a
    drive measures when the controller changes domains.
-2. **Pool on resolved `opendbc_commit`, not branch or parent commit.** Pool different hashes only
-   after a source diff proves them behavior-identical. Private evidence records any excluded routes.
+2. **Pool on resolved behavior revisions, not branch names.** Resolve both parent and nested
+   `opendbc` commits. Matching `opendbc` hashes do not establish comparable OpenPilot behavior.
+   Pool different hashes only after a source diff proves the measured command path and response
+   mechanism behavior-identical. Private evidence records any excluded routes.
 3. **Mutation-verify a check when you write it.** A check you have never seen fail is not evidence.
    If it cannot be made to fail, that is the finding.
 4. Before adding a check, measure overlap with existing checks and verify its mask against a known
@@ -193,7 +202,7 @@ merely because the candidate is unpromoted. Verify the root SHA, nested `opendbc
 refs, and clean state separately from device health and road behavior. Keep the `ody-op` and nested
 `opendbc` rollback SHAs reachable throughout.
 
-Device availability is not an implementation gate. Continue in-scope analysis, Honda changes,
+Device availability is not an implementation gate. Continue in-scope analysis, OpenPilot and Honda changes,
 tests, commits, and publication on `ody-op` when the evidence and software gates pass, even if the
 device is offline or onroad. A published commit or queued updater download is not an installation:
 defer the guarded switch and exact device readback until the device is reachable and offroad, then
