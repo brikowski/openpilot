@@ -23,8 +23,8 @@ active safety rails.
 - The Honda Bosch ECU closes its own acceleration/brake loop. Do not stack a generic OpenPilot PID
   around `ACCEL_COMMAND` or use CAN shaping to hide an upstream planner/controller mismatch.
 - On the current `ody-op` Odyssey port, the controller chooses mutually exclusive gas/brake
-  domains from the raw request, with response-qualified gas/brake entry from settled coast and
-  early release of an already-active road-speed brake domain. Its
+  domains from the raw request, with response-qualified gas entry from settled coast, brake entry
+  from observed coast with a prior forecast, and early release of an already-active road-speed brake domain. Its
   active behavior is low-speed non-positive → brake below 5 m/s, fallback road-speed brake entry at -0.30
   m/s², and active-gas continuity above Honda's upstream -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
@@ -36,8 +36,10 @@ active safety rails.
   It bypasses pre-activation
   and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
   `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration still requires
-  assistance and measured response does not exceed the request by the margin. Settled coast
-  selects mutually exclusive braking when measured and forecast acceleration exceed the request.
+  assistance and measured response does not exceed the request by the margin. A prior coast forecast
+  and measured acceleration above a negative request select mutually exclusive braking when fresh
+  valid CAN confirms inactive gas and braking. Brake selection need not wait for the coast learner
+  to settle; learning and gas entry retain their response interval.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
   The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
   request-ramped, bounded pitch load. Its grade-proportional gas term rises
