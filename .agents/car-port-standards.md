@@ -65,7 +65,9 @@ active safety rails.
   request has not risen above the entry request; positive feedback still waits for the delayed
   observer. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` within the same received target gear and applies a bounded,
-  slewed correction to `GAS_COMMAND` only. Target-gear changes clear the delayed observer; missing,
+  slewed correction to `GAS_COMMAND` only. Received target-gear or transmission-activity changes
+  clear the delayed observer while the existing correction retains its slew limit. The activity
+  byte is compared as reported state, without assuming a gear ratio or a shift-complete encoding. Missing,
   stale or invalid gear state disables feedback while preserving the feedforward map. A request
   decrease relative to the delayed request vetoes a positive
   correction target (and an increase vetoes a negative target), but existing correction unwinds
