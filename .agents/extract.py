@@ -24,7 +24,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set or resampling semantics change, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 8
+SCHEMA = 9
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 ACC_CONTROL_ADDR = 0x1DF
@@ -225,8 +225,12 @@ def _build(route):
   out["lat_active"] = np.asarray(cc["lat_active"], dtype=float) > 0.5
   out["lat_request_torque"] = np.asarray(cc["lat_torque"], dtype=float)
   out["pitch"] = np.asarray(cc["pitch"], dtype=float)
-  for k in ("vego", "aego", "vcruise", "steer_angle", "steer_rate", "steering_torque"):
+  for k in ("vego", "aego", "steer_angle", "steer_rate", "steering_torque"):
     out[k] = lin(cs, k)
+  # Cruise setpoints are discrete published commands, including driver button changes.
+  out["vcruise"] = zoh(cs, "vcruise")
+  if cs["t"]:
+    out["vcruise"][grid < cs["t"][0] - t0] = np.nan
   for k in ("gas_pressed", "brake_pressed", "steering_pressed", "steer_fault_temp", "steer_fault_perm"):
     out[k] = lin(cs, k) > 0.5
   out["wire"] = lin(co, "accel")

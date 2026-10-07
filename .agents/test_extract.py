@@ -105,3 +105,21 @@ def test_received_can_cache_holds_samples_and_reports_age_without_future_values(
   assert out['shift_activity_age'][-1] > .9
   assert np.isnan(out['eps_motor_torque']).all()
   assert np.isnan(out['eps_motor_torque_age']).all()
+
+
+def test_cruise_setpoint_changes_do_not_invent_overspeed_before_publication(monkeypatch):
+  from opendbc.car.structs import car
+
+  messages = [SimpleNamespace(logMonoTime=1_000_000_000 + i * 10_000_000,
+                             which=lambda: 'carControl', carControl=car.CarControl.new_message())
+              for i in range(100)]
+  for timestamp, setpoint in ((1_010_000_000, 80.), (1_050_000_000, 60.)):
+    messages.append(SimpleNamespace(logMonoTime=timestamp, which=lambda: 'carState',
+                                   carState=car.CarState.new_message(vCruise=setpoint, vEgo=20.)))
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  assert np.isnan(out['vcruise'][0])
+  np.testing.assert_array_equal(out['vcruise'][1:6], [80., 80., 80., 80., 60.])
+  assert np.all(out['vego'][1:5] < out['vcruise'][1:5] / 3.6)
+  assert out['vego'][5] > out['vcruise'][5] / 3.6
