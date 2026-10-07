@@ -85,9 +85,9 @@ active safety rails.
   demand and exhausted bounded gas feedback. No new learner or gas-map gain is added. This
   selection does not activate friction braking, alter `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
-- The Odyssey high-speed steering trial preserves the ordinary physical 2560-count map by
+- The Odyssey steering trial preserves the ordinary physical 2560-count map by
   rescaling the torque normalization and slew together. Extra counts are limited to persistent,
-  same-direction 20–33 m/s curvature under-response while lateral control is active and
+  same-direction 15–33 m/s curvature under-response while lateral control is active and
   unoverridden. Persistence follows the upstream torque request; issued torque retains its physical
   slew limit. `carOutput` reports the bounded controller command. The gate is not evidence
   that the EPS accepts extra torque or that road tracking improves.
