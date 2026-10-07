@@ -144,6 +144,7 @@ class _CSShim:
     self.odyssey_car_gas = np.nan
     self.odyssey_engine_torque_ts_nanos = 0
     self.odyssey_target_gear = 0
+    self.odyssey_shift_activity = 0
     self.odyssey_target_gear_ts_nanos = 0
     self.odyssey_computer_braking = False
     self.odyssey_computer_braking_ts_nanos = 0
@@ -161,17 +162,16 @@ def odyssey_received_state(paths):
     if not frames:
       continue
     parser.update([(m.logMonoTime, frames)])
-    if any(addr == 0x130 for addr, _, _ in frames):
-      signals = parser.vl['GAS_PEDAL_2']
-      torque.append((m.logMonoTime, signals['ENGINE_TORQUE_ESTIMATE'], signals['CAR_GAS']))
-    if any(addr == 0x1a3 for addr, _, _ in frames):
-      gear.append((m.logMonoTime, parser.vl['GEARBOX_AUTO']['TRANS_TARGET_GEAR']))
-    if any(addr == 0x1a4 for addr, _, _ in frames):
-      braking.append((m.logMonoTime, parser.vl['VSA_STATUS']['COMPUTER_BRAKING']))
+    for rows, name, fields in ((torque, 'GAS_PEDAL_2', ('ENGINE_TORQUE_ESTIMATE', 'CAR_GAS')),
+                               (gear, 'GEARBOX_AUTO', ('TRANS_TARGET_GEAR', 'TRANS_SHIFT_ACTIVITY')),
+                               (braking, 'VSA_STATUS', ('COMPUTER_BRAKING',))):
+      stamp = parser.ts_nanos[name][fields[0]]
+      if stamp > 0 and (not rows or stamp > rows[-1][0]):
+        rows.append((stamp, *(parser.vl[name][field] for field in fields)))
   def pack(rows, width):
     return (np.asarray([row[0] for row in rows], dtype=np.int64),
             np.asarray([row[1:] for row in rows], dtype=float).reshape(-1, width))
-  return pack(torque, 2), pack(gear, 1), pack(braking, 1)
+  return pack(torque, 2), pack(gear, 2), pack(braking, 1)
 
 
 def received_at(time_nanos, updates):
@@ -261,6 +261,7 @@ def main(argv=None):
       cs_shim.odyssey_car_gas = received_torque[2] if received_torque is not None else np.nan
       cs_shim.odyssey_engine_torque_ts_nanos = int(received_torque[0]) if received_torque is not None else 0
       cs_shim.odyssey_target_gear = received_gear[1] if received_gear is not None else 0
+      cs_shim.odyssey_shift_activity = received_gear[2] if received_gear is not None else 0
       cs_shim.odyssey_target_gear_ts_nanos = int(received_gear[0]) if received_gear is not None else 0
       cs_shim.odyssey_computer_braking = bool(received_brake[1]) if received_brake is not None else False
       cs_shim.odyssey_computer_braking_ts_nanos = int(received_brake[0]) if received_brake is not None else 0

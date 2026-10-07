@@ -66,7 +66,9 @@ def test_received_braking_uses_powertrain_bus_and_independent_timestamp(monkeypa
   messages = [event(base, [brake]), event(base + 10_000_000, [coast], 'sendcan'),
               event(base + 20_000_000, [(coast[0], coast[1], 0)]),
               event(base + 30_000_000, [packer.make_can_msg('GAS_PEDAL_2', 1, {'ENGINE_TORQUE_ESTIMATE': -120})]),
-              event(base + 40_000_000, [coast])]
+              event(base + 40_000_000, [coast]),
+              event(base + 50_000_000, [packer.make_can_msg('GEARBOX_AUTO', 1,
+                                                         {'TRANS_TARGET_GEAR': 7, 'TRANS_SHIFT_ACTIVITY': 119, 'COUNTER': 1})])]
   monkeypatch.setattr(replay, 'LogReader', lambda _: messages)
   torque, gear, braking = replay.odyssey_received_state(['synthetic'])
   assert received_at(base - 1, braking) is None
@@ -74,6 +76,7 @@ def test_received_braking_uses_powertrain_bus_and_independent_timestamp(monkeypa
   assert received_at(base + 40_000_000, braking) == (base + 40_000_000, 0.)
   assert received_at(base + 39_999_999, torque) == (base + 30_000_000, -120., 0.)
   assert received_at(base + 40_000_000, gear) is None
+  assert received_at(base + 50_000_000, gear) == (base + 50_000_000, 7., 119.)
 
 
 @pytest.mark.parametrize('bound', ['carState', 'sendcan'])

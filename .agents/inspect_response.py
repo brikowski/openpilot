@@ -7,10 +7,25 @@ from statistics import median
 import numpy as np
 
 from extract import PLAN_SOURCE, load
-from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
+from tuning_metrics import brake_entry_tracking_profile, physical_edges, response_jerk_events
 
 
 GAS_INACTIVE = -30000
+
+
+def received_context(data, time, history_s=1.5):
+  """Attach fresh received CAN context without changing the response-event selection."""
+  grid = data["t"]
+  index = int(np.searchsorted(grid, time, side="right") - 1)
+  context = {}
+  for key in ("shift_activity", "engine_torque_request", "can_long_accel", "wheel_speed_spread"):
+    values, age = data[key], data[key + "_age"]
+    valid = np.isfinite(values) & (age >= 0.) & (age < .06)
+    context[key] = float(values[index]) if index >= 0 and valid[index] else None
+    if key == "shift_activity":
+      history = valid & (grid >= time - history_s) & (grid <= time)
+      context["shift_edges_in_history"] = int(len(physical_edges(values, history)))
+  return context
 
 
 def brake_entry_summary(rows, max_edge_age=0.75):
@@ -93,6 +108,8 @@ def inspect(route, *, threshold, limit, summary_only):
     gas_inactive=GAS_INACTIVE,
     threshold=threshold, limit=None,
   )
+  for row in rows:
+    row.update(received_context(data, row["time"]))
 
   print(f"\n=== {data['route']} ===")
   profile = brake_entry_tracking_profile(
@@ -158,6 +175,10 @@ def inspect(route, *, threshold, limit, summary_only):
       f"gear-edges/1.5s={row['gear_edges_in_history']} torque={row['engine_torque']:+.0f} ",
       f"rpm={row['rpm']:.0f}",
     )))
+    print("  received CAN: " + ", ".join(f"{key}={value if value is not None else 'unavailable'}" for key, value in
+                                          ((key, row[key]) for key in ("shift_activity", "shift_edges_in_history",
+                                                                     "engine_torque_request", "can_long_accel",
+                                                                     "wheel_speed_spread"))))
   return rows
 
 

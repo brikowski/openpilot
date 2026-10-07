@@ -6,8 +6,10 @@
     mph = d["vego"] * 2.23694
 
 The cache is for exploration only; validate_log reads source logs independently. Continuous
-signals are interpolated onto carControl time while discrete CAN and state signals use zero-order
-hold. Upstream planner/model signals are included to locate the first attribution divergence.
+state signals are interpolated onto carControl time; received CAN uses independently timestamped
+verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
+spread is m/s, and CAN acceleration is diagnostic rather than a replacement for aEgo.
+Upstream planner/model signals are included to locate the first attribution divergence.
 """
 import argparse
 import os
@@ -22,7 +24,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set or resampling semantics change, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 7
+SCHEMA = 8
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 ACC_CONTROL_ADDR = 0x1DF
@@ -32,6 +34,21 @@ ACC_CONTROL_ADDR = 0x1DF
 PLAN_SOURCE = {0: "cruise", 1: "lead0", 2: "lead1", 3: "lead2", 4: "e2e"}
 PERSONALITY = {0: "aggressive", 1: "standard", 2: "relaxed"}
 LEAD_FIELDS = ("present", "drel", "vrel", "vlead", "prob", "radar")
+RECEIVED_SIGNALS = {
+  "computer_braking": ("VSA_STATUS", "COMPUTER_BRAKING"),
+  "user_brake": ("VSA_STATUS", "USER_BRAKE"),
+  "engine_torque": ("GAS_PEDAL_2", "ENGINE_TORQUE_ESTIMATE"),
+  "engine_torque_request": ("GAS_PEDAL_2", "ENGINE_TORQUE_REQUEST"),
+  "rpm": ("POWERTRAIN_DATA", "ENGINE_RPM"),
+  "gear": ("GEARBOX_AUTO", "TRANS_TARGET_GEAR"),
+  "shift_activity": ("GEARBOX_AUTO", "TRANS_SHIFT_ACTIVITY"),
+  "eps_motor_torque": ("STEER_MOTOR_TORQUE", "MOTOR_TORQUE"),
+  "eps_output_disabled": ("STEER_MOTOR_TORQUE", "OUTPUT_DISABLED"),
+  "eps_config_valid": ("STEER_MOTOR_TORQUE", "CONFIG_VALID"),
+  "eps_control_active": ("STEER_STATUS", "STEER_CONTROL_ACTIVE"),
+  "can_long_accel": ("KINEMATICS", "LONG_ACCEL"),
+  **{f"wheel_{s.lower()}": ("WHEEL_SPEEDS", f"WHEEL_SPEED_{s}") for s in ("FL", "FR", "RL", "RR")},
+}
 
 
 def select_lead_field(plan_source, lead_one, lead_two):
@@ -69,8 +86,7 @@ def _segments(route):
 def _decode(paths):
   from opendbc.can.parser import CANParser
   sent = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
-  recv = CANParser(ODYSSEY_PT_DBC, [("VSA_STATUS", 0), ("GAS_PEDAL_2", 0),
-                                    ("POWERTRAIN_DATA", 0), ("GEARBOX_AUTO", 0)], 1)
+  recv = CANParser(ODYSSEY_PT_DBC, [(name, 0) for name in sorted({v[0] for v in RECEIVED_SIGNALS.values()})], 1)
   cc = {k: [] for k in ("t", "accel", "active", "pitch", "pid", "lat_active", "lat_torque")}
   cs = {k: [] for k in ("t", "vego", "aego", "gas_pressed", "brake_pressed", "vcruise",
                         "steer_angle", "steer_rate", "steering_torque", "steering_pressed",
@@ -79,7 +95,7 @@ def _decode(paths):
   ctl = {k: [] for k in ("t", "lat_active", "saturated", "actual_lat_accel", "desired_lat_accel")}
   lp = {k: [] for k in ("t", "atarget", "source", "allow_throttle", "has_lead", "should_stop")}
   sc = {k: [] for k in ("t", "gas", "accel", "brake_request")}
-  rx = {k: [] for k in ("t", "computer_braking", "user_brake", "engine_torque", "rpm", "gear")}
+  rx = {k: {"t": [], "value": []} for k in RECEIVED_SIGNALS}
   rs = {k: [] for k in ("t", *(f"one_{field}" for field in LEAD_FIELDS),
                         *(f"two_{field}" for field in LEAD_FIELDS))}
   md = {k: [] for k in ("t", "e2e_accel", "e2e_should_stop", "des_curvature", "gas_press_prob")}
@@ -174,13 +190,11 @@ def _decode(paths):
         sc["brake_request"].append(float(v["BRAKE_REQUEST"]))
     elif w == "can":
       recv.update([(m.logMonoTime, [(c.address, c.dat, c.src) for c in m.can])])
-      if recv.can_valid:
-        rx["t"].append(t)
-        rx["computer_braking"].append(float(recv.vl["VSA_STATUS"]["COMPUTER_BRAKING"]))
-        rx["user_brake"].append(float(recv.vl["VSA_STATUS"]["USER_BRAKE"]))
-        rx["engine_torque"].append(float(recv.vl["GAS_PEDAL_2"]["ENGINE_TORQUE_ESTIMATE"]))
-        rx["rpm"].append(float(recv.vl["POWERTRAIN_DATA"]["ENGINE_RPM"]))
-        rx["gear"].append(float(recv.vl["GEARBOX_AUTO"]["TRANS_TARGET_GEAR"]))
+      for key, (name, signal) in RECEIVED_SIGNALS.items():
+        stamp = recv.ts_nanos[name][signal] / 1e9
+        if stamp > 0 and (not rx[key]["t"] or stamp > rx[key]["t"][-1]):
+          rx[key]["t"].append(stamp)
+          rx[key]["value"].append(float(recv.vl[name][signal]))
   return cc, cs, co, ctl, lp, sc, rx, rs, md, ss
 
 
@@ -233,10 +247,17 @@ def _build(route):
   out["gas_command"] = zoh(sc, "gas")
   out["accel_command"] = zoh(sc, "accel")
   out["brake_request"] = zoh(sc, "brake_request") > 0.5
-  for k in ("computer_braking", "user_brake", "gear"):
-    out[k] = zoh(rx, k)
-  for k in ("engine_torque", "rpm"):
-    out[k] = lin(rx, k)
+  for key, samples in rx.items():
+    out[key] = zoh(samples, "value")
+    timestamps = np.asarray(samples["t"]) - t0
+    out[key + "_age"] = grid - hold_last(grid, timestamps, timestamps)
+    if len(timestamps):
+      before_first = grid < timestamps[0]
+      out[key][before_first] = np.nan
+      out[key + "_age"][before_first] = np.nan
+  wheels = np.asarray([out[f"wheel_{s}"] for s in ("fl", "fr", "rl", "rr")])
+  out["wheel_speed_spread"] = (np.max(wheels, axis=0) - np.min(wheels, axis=0)) / 3.6
+  out["wheel_speed_spread_age"] = np.max([out[f"wheel_{s}_age"] for s in ("fl", "fr", "rl", "rr")], axis=0)
 
   # UPSTREAM. Same hold-vs-interpolate rule as the CAN block, for the same reason: every one of
   # these is a DECISION a service published at its own rate, and a service downstream of it acts on

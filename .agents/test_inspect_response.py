@@ -1,8 +1,28 @@
 import numpy as np
 import pytest
 
-from inspect_response import brake_entry_summary, print_brake_entry_summary
+from inspect_response import brake_entry_summary, print_brake_entry_summary, received_context
 from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
+
+
+def test_received_context_detects_activity_without_a_target_gear_edge_and_excludes_stale_updates():
+  t = np.arange(0., 2., .01)
+  data = {'t': t, 'gear': np.full_like(t, 7.)}
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread'):
+    data[key] = np.where(t < 1., 110., 119.) if key == 'shift_activity' else np.full_like(t, .1)
+    data[key + '_age'] = np.full_like(t, .01)
+  result = received_context(data, 1.1)
+  assert result['shift_edges_in_history'] == 1
+  assert result['shift_activity'] == 119.
+  assert not np.any(np.diff(data['gear']))
+  assert result['can_long_accel'] == .1
+  data['shift_activity_age'][100] = .06
+  assert received_context(data, 1.1)['shift_edges_in_history'] == 0
+  data['can_long_accel_age'][:] = .06
+  data['engine_torque_request'][:] = np.nan
+  result = received_context(data, 1.1)
+  assert result['can_long_accel'] is None
+  assert result['engine_torque_request'] is None
 
 
 def test_brake_profile_separates_raw_request_from_grade_translated_wire():
