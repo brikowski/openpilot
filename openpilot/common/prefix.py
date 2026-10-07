@@ -20,6 +20,8 @@ class OpenpilotPrefix:
 
   def __enter__(self):
     self.original_prefix = os.environ.get('OPENPILOT_PREFIX', None)
+    # A host's analysis archive must not become a test's temporary log directory.
+    self.original_log_root = os.environ.pop("LOG_ROOT", None) if PC else None
     os.environ['OPENPILOT_PREFIX'] = self.prefix
 
     if self.create_dirs_on_enter:
@@ -31,14 +33,19 @@ class OpenpilotPrefix:
     return self
 
   def __exit__(self, exc_type, exc_obj, exc_tb):
-    if self.clean_dirs_on_exit:
-      self.clean_dirs()
     try:
-      del os.environ['OPENPILOT_PREFIX']
-      if self.original_prefix is not None:
+      if self.clean_dirs_on_exit:
+        self.clean_dirs()
+    finally:
+      if self.original_prefix is None:
+        os.environ.pop('OPENPILOT_PREFIX', None)
+      else:
         os.environ['OPENPILOT_PREFIX'] = self.original_prefix
-    except KeyError:
-      pass
+      if PC:
+        if self.original_log_root is None:
+          os.environ.pop("LOG_ROOT", None)
+        else:
+          os.environ["LOG_ROOT"] = self.original_log_root
     return False
 
   def create_dirs(self):
@@ -54,8 +61,6 @@ class OpenpilotPrefix:
       shutil.rmtree(os.path.realpath(symlink_path), ignore_errors=True)
       os.remove(symlink_path)
     shutil.rmtree(self.msgq_path, ignore_errors=True)
-    if PC:
-      shutil.rmtree(Paths.log_root(), ignore_errors=True)
     if not os.environ.get("COMMA_CACHE", False):
       shutil.rmtree(Paths.download_cache_root(), ignore_errors=True)
     shutil.rmtree(Paths.comma_home(), ignore_errors=True)
