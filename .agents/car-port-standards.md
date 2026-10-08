@@ -58,8 +58,8 @@ active safety rails.
   stopping and missing-pose behavior retain the raw-request rules. The early-release trial requires
   fresh received computer-braking state, an easing request, and current overdeceleration evidence; it never overrides
   stronger raw braking or low-speed stop authority. When a same-gear passive-response estimate is
-  available with fresh received gear, early release also requires that predicted coast acceleration
-  not exceed the still-negative request by the existing response margin. Unavailable estimates
+  available with fresh received gear, early release also requires coast to supply the
+  still-negative command. Unavailable estimates
   retain the feedback-based fallback; zero and positive road-speed requests release braking immediately.
   Replay does not prove road benefit.
 - The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
