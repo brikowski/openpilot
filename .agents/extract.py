@@ -9,7 +9,7 @@ The cache is for exploration only; validate_log reads source logs independently.
 state signals are interpolated onto carControl time; received CAN uses independently timestamped
 verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
 spread is m/s, and CAN acceleration is diagnostic rather than a replacement for aEgo.
-Upstream planner/model signals are included to locate the first attribution divergence.
+Published planner/model commands are held to locate the first attribution divergence.
 """
 import argparse
 import os
@@ -24,7 +24,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set or resampling semantics change, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 9
+SCHEMA = 10
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 ACC_CONTROL_ADDR = 0x1DF
@@ -59,10 +59,13 @@ def select_lead_field(plan_source, lead_one, lead_two):
   return np.where(source == 1, one, np.where(source == 2, two, np.nan))
 
 
-def plan_to_control(grid, plan_t, a_target):
-  """Hold each published planner decision until the next plan message is received by controlsd."""
-  return hold_last(np.asarray(grid, dtype=float), np.asarray(plan_t, dtype=float),
-                   np.asarray(a_target, dtype=float))
+def plan_to_control(grid, plan_t, values):
+  """Hold published decisions without using a message before its recorded timestamp."""
+  grid, plan_t = np.asarray(grid, dtype=float), np.asarray(plan_t, dtype=float)
+  held = hold_last(grid, plan_t, np.asarray(values, dtype=float))
+  if len(plan_t):
+    held[grid < plan_t[0]] = np.nan
+  return held
 
 
 def _enum(held):
@@ -93,7 +96,7 @@ def _decode(paths):
                         "steer_fault_temp", "steer_fault_perm")}
   co = {k: [] for k in ("t", "accel", "gas_output", "brake_output", "torque", "torque_output_can")}
   ctl = {k: [] for k in ("t", "lat_active", "saturated", "actual_lat_accel", "desired_lat_accel")}
-  lp = {k: [] for k in ("t", "atarget", "source", "allow_throttle", "has_lead", "should_stop")}
+  lp = {k: [] for k in ("t", "atarget", "accel_boost", "source", "allow_throttle", "has_lead", "should_stop")}
   sc = {k: [] for k in ("t", "gas", "accel", "brake_request")}
   rx = {k: {"t": [], "value": []} for k in RECEIVED_SIGNALS}
   rs = {k: [] for k in ("t", *(f"one_{field}" for field in LEAD_FIELDS),
@@ -149,6 +152,7 @@ def _decode(paths):
       p = m.longitudinalPlan
       lp["t"].append(t)
       lp["atarget"].append(p.aTarget)
+      lp["accel_boost"].append(p.accelBoost)
       # Which candidate in longitudinal_planner won this frame. `cruise` while decelerating with no
       # lead means the a_cruise branch was clamped - see allow_throttle below.
       lp["source"].append(float(p.longitudinalPlanSource.raw))
@@ -247,6 +251,8 @@ def _build(route):
   # exact plan -> longcontrol divergence at a state-machine transition.
   out["atarget"] = plan_to_control(grid, np.asarray(lp["t"]) - t0, lp["atarget"]) \
     if len(lp["t"]) else out["request"].copy()
+  # Total learned boost state, not the speed/model-weighted increment applied to acceleration.
+  out["accel_boost"] = plan_to_control(grid, np.asarray(lp["t"]) - t0, lp["accel_boost"])
   # Discrete CAN: zero-order hold only.
   out["gas_command"] = zoh(sc, "gas")
   out["accel_command"] = zoh(sc, "accel")
@@ -290,10 +296,10 @@ def _build(route):
   out["e2e_should_stop"] = zoh(md, "e2e_should_stop") > 0.5
   for k in ("experimental", "enabled"):
     out[k] = zoh(ss, k) > 0.5
-  # Continuous upstream quantities. gas_press_prob is interpolated for readability - allow_throttle
-  # above is the authoritative record of what the planner actually decided from it.
-  for k in ("e2e_accel", "des_curvature", "gas_press_prob"):
-    out[k] = lin(md, k)
+  for k in ("e2e_accel", "des_curvature"):
+    out[k] = plan_to_control(grid, np.asarray(md["t"]) - t0, md[k])
+  # Interpolated for readability; allow_throttle records the planner's actual decision.
+  out["gas_press_prob"] = lin(md, "gas_press_prob")
   return out
 
 

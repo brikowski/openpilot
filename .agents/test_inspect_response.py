@@ -80,7 +80,7 @@ def test_brake_entry_tracking_profile_captures_early_lag_and_late_overresponse()
   assert not brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
 
 
-def test_response_jerk_event_preserves_first_divergence_and_domain_context(monkeypatch):
+def test_response_jerk_event_preserves_first_divergence_and_domain_context(monkeypatch, capsys):
   t = np.arange(0.0, 8.0, 0.01)
   requested = np.zeros_like(t)
   command_ramp = (t >= 2.0) & (t < 2.5)
@@ -127,13 +127,22 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
           'brake_request': brake, 'computer_braking': computer_braking, 'computer_braking_age': np.full_like(t, .01),
           'gas_command': gas, 'vego': np.full_like(t, 20.), 'pitch': np.zeros_like(t),
           'has_lead': np.zeros_like(t, dtype=bool), 'plan_source': np.zeros_like(t, dtype=int),
+          'accel_boost': np.where(t <= event['time'], .05, .15),
           'gear': np.full_like(t, 6.), 'engine_torque': np.full_like(t, -100.), 'rpm': np.full_like(t, 1800.)}
   for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
     data[key] = np.zeros_like(t)
     data[key + '_age'] = np.full_like(t, .01)
   monkeypatch.setattr('inspect_response.load', lambda _: data)
-  fresh = inspect('synthetic', threshold=.5, limit=1, summary_only=True)
+  fresh = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
   assert fresh[0]['computer_braking_at_peak'] is True
+  assert fresh[0].get('accel_boost') == .05
+  assert fresh[0]['request'] == event['request'] and fresh[0]['wire'] == event['wire']
+  assert 'source=cruise boost-state=0.0500' in capsys.readouterr().out
+  data['accel_boost'][:] = np.nan
+  missing = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
+  assert [row['time'] for row in missing] == [row['time'] for row in fresh]
+  assert missing[0]['accel_boost'] is None
+  assert 'boost-state=unavailable' in capsys.readouterr().out
   for age in (.06, -.01, np.nan):
     data['computer_braking_age'][:] = age
     stale = inspect('synthetic', threshold=.5, limit=1, summary_only=True)

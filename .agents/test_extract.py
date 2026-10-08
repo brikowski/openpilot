@@ -7,11 +7,45 @@ from extract import plan_to_control, select_lead_field
 
 
 def test_plan_to_control_holds_published_target_until_next_plan():
-  grid = np.array([0.01, 0.02, 0.03, 0.04])
+  grid = np.array([-0.01, 0.01, 0.02, 0.03, 0.04])
   plan_t = np.array([0.00, 0.03])
   a_target = np.array([-0.40, 0.80])
 
-  np.testing.assert_array_equal(plan_to_control(grid, plan_t, a_target), [-0.40, -0.40, 0.80, 0.80])
+  np.testing.assert_array_equal(plan_to_control(grid, plan_t, a_target), [np.nan, -0.40, -0.40, 0.80, 0.80])
+  assert np.isnan(plan_to_control(grid, [], [])).all()
+
+
+def test_model_commands_and_learned_boost_follow_publication_without_blending(monkeypatch):
+  from openpilot.cereal import log
+
+  messages = []
+  for i in range(100):
+    m = log.Event.new_message(logMonoTime=1_000_000_000 + i * 10_000_000)
+    m.init('carControl')
+    messages.append(m)
+  for timestamp, accel, curvature in ((1_010_000_000, -.4, .001), (1_060_000_000, .8, .003)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    action = m.init('modelV2').action
+    action.desiredAcceleration, action.desiredCurvature = accel, curvature
+    messages.append(m)
+  for timestamp, boost in ((1_020_000_000, .00125), (1_070_000_000, .0025), (1_120_000_000, None)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    plan = m.init('longitudinalPlan')
+    plan.aTarget = -.2
+    if boost is not None:
+      plan.accelBoost = boost
+    messages.append(m)
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  assert np.isnan(out['e2e_accel'][0]) and np.isnan(out['des_curvature'][0])
+  np.testing.assert_allclose(out['e2e_accel'][1:8], [-.4] * 5 + [.8] * 2)
+  np.testing.assert_allclose(out['des_curvature'][1:8], [.001] * 5 + [.003] * 2)
+  assert np.isnan(out['accel_boost'][:2]).all() and np.isnan(out['atarget'][:2]).all()
+  np.testing.assert_allclose(out['accel_boost'][2:12], [.00125] * 5 + [.0025] * 5)
+  assert np.all(out['accel_boost'][12:] == 0.)  # Older messages default this schema field to zero.
+  np.testing.assert_allclose(out['atarget'][2:], -.2)
+  assert not np.any(out['request'])
 
 
 def test_select_lead_field_follows_published_mpc_source():

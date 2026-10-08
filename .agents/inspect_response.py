@@ -113,6 +113,9 @@ def inspect(route, *, threshold, limit, summary_only):
   )
   for row in rows:
     row.update(received_context(data, row["time"]))
+    index = int(np.searchsorted(data["t"], row["time"], side="right") - 1)
+    boost = data["accel_boost"][index] if index >= 0 else np.nan
+    row["accel_boost"] = float(boost) if np.isfinite(boost) else None
 
   print(f"\n=== {data['route']} ===")
   profile = brake_entry_tracking_profile(
@@ -165,6 +168,7 @@ def inspect(route, *, threshold, limit, summary_only):
     state_to_peak = ("n/a" if row["computer_brake_to_peak_s"] is None
                      else f"{row['computer_brake_to_peak_s']:.3f}s")
     source = PLAN_SOURCE.get(row["plan_source"], f"unknown({row['plan_source']})")
+    boost = "unavailable" if row["accel_boost"] is None else f"{row['accel_boost']:.4f}"
     print("".join((
       f"t={row['time']:8.2f}s response={row['response_jerk']:+.2f} m/s^3 ",
       f"prior-wire={row['command_jerk_peak']:+.2f} ({row['amplification']:.1f}x) ",
@@ -174,7 +178,7 @@ def inspect(route, *, threshold, limit, summary_only):
       f"  plan->request RMS={row['plan_request_rms']:.4f}, request->wire RMS={row['request_wire_rms']:.4f}; ",
       f"request/wire/aEgo={row['request']:+.2f}/{row['wire']:+.2f}/{row['actual_accel']:+.2f} m/s^2; ",
       f"v={row['speed'] * 2.23694:.1f} mph pitch={row['pitch']:+.4f} ",
-      f"source={source} lead={int(row['has_lead'])}; gear={row['gear']:.0f} ",
+      f"source={source} boost-state={boost} lead={int(row['has_lead'])}; gear={row['gear']:.0f} ",
       f"gear-edges/1.5s={row['gear_edges_in_history']} torque={row['engine_torque']:+.0f} ",
       f"rpm={row['rpm']:.0f}",
     )))
