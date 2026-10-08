@@ -138,29 +138,30 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all((accel, gas, brake) == (0, GAS_INACTIVE, 0) for accel, gas, brake in seen[10:])
 
   def test_settled_coast_shortfall_brakes_release_without_gas_above_passive_response(self):
-    rejects, seen = _run(True, [-0.15] * 120 + [0.1] * 20, pitch=-0.03, vego=20.0,
+    rejects, seen = _run(True, [-0.15] * 120 + [0.0] * 20 + [0.05] * 20 + [0.1] * 20 + [0.4] * 20, pitch=-0.03, vego=20.0,
                          aegos=0.3, target_gear=7)
     assert not rejects
     assert all(brake == 0 for _, _, brake in seen[:25])
     assert all(-25 <= accel < -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[50:60])
-    assert all(accel == 10 and gas == GAS_INACTIVE and brake == 0 for accel, gas, brake in seen[60:])
+    assert all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[60:90])
+    assert [accel for accel, _, _ in seen[60:90]] == [0] * 10 + [5] * 10 + [10] * 10
+    assert all(accel == 40 and brake == 0 for accel, _, brake in seen[90:])
 
   def test_changed_passive_response_enters_brakes_after_coast_estimate_updates(self):
-    requests = [-0.15] * 240 + [0.1] * 20
+    requests = [-0.15] * 240 + [0.4] * 20
     aegos = [-0.15] * 120 + [0.3] * 140
     rejects, seen = _run(True, requests, pitch=0.0, vego=20.0, aegos=aegos, target_gear=7)
     assert not rejects
     assert all(brake == 0 for _, _, brake in seen[:60])
     assert all(accel == -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[90:120])
-    assert all(accel == 10 and gas > 0 and brake == 0 for accel, gas, brake in seen[120:])
+    assert all(accel == 40 and gas > 0 and brake == 0 for accel, gas, brake in seen[120:])
 
-  def test_excess_deceleration_brake_release_passes_safety_without_changing_accel(self):
+  def test_unknown_coast_keeps_easing_braking_without_changing_accel(self):
     requests = np.repeat([-.4] + [-.28 + i * .008 for i in range(12)], 2)
     rejects, seen = _run(True, requests, pitch=None, vego=20., aegos=requests - .3,
                          target_gear=6, computer_braking=True)
     assert not rejects
-    assert all(brake == 1 for _, _, brake in seen[:11])
-    assert all(brake == 0 for _, _, brake in seen[11:])
+    assert all(brake == 1 for _, _, brake in seen)
     assert all(gas == GAS_INACTIVE for _, gas, _ in seen)
     np.testing.assert_allclose([accel / 100. for accel, _, _ in seen], requests[::2], atol=.01)
 
@@ -169,7 +170,7 @@ class TestOdysseyLongRails(unittest.TestCase):
     requests = np.r_[np.zeros(120), braking_requests, [0., 0., .1, .1]]
     aegos = np.r_[np.full(120, -.03), braking_requests - .3, np.zeros(4)]
     braking = np.r_[np.zeros(120, dtype=bool), np.ones(len(braking_requests) + 4, dtype=bool)]
-    rejects, seen = _run(True, requests, pitch=-.03, vego=20., aegos=aegos,
+    rejects, seen = _run(True, requests, pitch=0.0, vego=20., aegos=aegos,
                          target_gear=7, computer_braking=braking)
     assert not rejects
     assert all(brake == 0 for _, _, brake in seen[:60])

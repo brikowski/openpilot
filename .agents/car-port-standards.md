@@ -55,12 +55,15 @@ active safety rails.
   and at -0.80 m/s². It requires active control with neither pedal pressed and remains continuous
   across control-state transitions. This feedforward calibration does not accumulate acceleration error or
   retain a released request. Physical benefit remains unmeasured. At road speed, level-road,
-  stopping and missing-pose behavior retain the raw-request rules. The early-release trial requires
-  fresh received computer-braking state, an easing request, and current overdeceleration evidence; it never overrides
-  stronger raw braking or low-speed stop authority. When a same-gear passive-response estimate is
-  available with fresh received gear, early release also requires coast to supply the
-  still-negative command. Unavailable estimates
-  retain the feedback-based fallback; zero and positive road-speed requests release braking immediately.
+  stopping and missing-pose behavior retain the raw-request rules. Early brake release requires
+  fresh received braking state, an easing negative request, current overdeceleration, and a
+  same-gear coast forecast that can supply the request. Without a qualified forecast, an active
+  brake follows the easing negative command. At 8–35 m/s in PID control with qualified CAN and
+  pose, an active brake remains available through zero and positive net-acceleration requests
+  below the learned coast acceleration. It releases when the request reaches that forecast.
+  Gas and brake remain mutually exclusive; nonnegative brake targets retain raw `ACCEL_COMMAND`.
+  Missing or unreliable state retains the raw-sign fallback for nonnegative requests. This does
+  not create positive-request brake entry or extend low-speed stopping authority.
   Replay does not prove road benefit.
 - The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
   near-zero lookup term. During startup, measured excess acceleration may reduce gas;
