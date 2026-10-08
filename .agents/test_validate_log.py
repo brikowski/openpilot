@@ -566,7 +566,9 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                    "90fb5c2faa12ac711e4169479af730993203ed9e",
                    "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
                    "6a5578d12c1548724fd4e7e97c5eea155f632e78", "6410ed017553311b7dd5905a5ef90cce6c9c0dcc",
-                   "b45dbbe7c06143d54ac54d8617c8903e157953c8", "67068dfcbc88195620a471cffc156795f2c39a4c"):
+                   "b45dbbe7c06143d54ac54d8617c8903e157953c8", "67068dfcbc88195620a471cffc156795f2c39a4c",
+                   "93ee3157bf10a541a34b8da14d57cff978c6b120", "6d81db7b5fffe3deff98f7bce6a4b054754c2c26",
+                   "6ed95de658e9fade484c442fd72495ea3b52a9e3"):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(11, np.nan), pid, brake, .01,
       gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
@@ -590,7 +592,9 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                                      "90fb5c2faa12ac711e4169479af730993203ed9e",
                                      "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
                                      "6a5578d12c1548724fd4e7e97c5eea155f632e78", "6410ed017553311b7dd5905a5ef90cce6c9c0dcc",
-                                     "b45dbbe7c06143d54ac54d8617c8903e157953c8", "67068dfcbc88195620a471cffc156795f2c39a4c"])
+                                     "b45dbbe7c06143d54ac54d8617c8903e157953c8", "67068dfcbc88195620a471cffc156795f2c39a4c",
+                                     "93ee3157bf10a541a34b8da14d57cff978c6b120", "6d81db7b5fffe3deff98f7bce6a4b054754c2c26",
+                                     "6ed95de658e9fade484c442fd72495ea3b52a9e3"])
 def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_only(revision):
   request = np.full(100, -.5)
   speed = np.full(100, 20.)
@@ -607,7 +611,9 @@ def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_onl
 
 
 @pytest.mark.parametrize("revision", ["6a5578d12c1548724fd4e7e97c5eea155f632e78", "6410ed017553311b7dd5905a5ef90cce6c9c0dcc",
-                                     "b45dbbe7c06143d54ac54d8617c8903e157953c8", "67068dfcbc88195620a471cffc156795f2c39a4c"])
+                                     "b45dbbe7c06143d54ac54d8617c8903e157953c8", "67068dfcbc88195620a471cffc156795f2c39a4c",
+                                     "93ee3157bf10a541a34b8da14d57cff978c6b120", "6d81db7b5fffe3deff98f7bce6a4b054754c2c26",
+                                     "6ed95de658e9fade484c442fd72495ea3b52a9e3"])
 def test_light_brake_translation_matches_exact_revision_and_preserves_prior_baseline(revision):
   request = np.r_[np.full(100, -.05), [-.5, 0., .01]]
   speed = np.full(len(request), 20.)

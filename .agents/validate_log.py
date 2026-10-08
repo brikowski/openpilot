@@ -190,7 +190,10 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRA
 # These descendants retain the -0.30 fallback entry, grade-translated ACCEL_COMMAND,
 # and response-qualified active-brake release. Some also qualify earlier entry from coast.
 # Keep source-matched brake diagnostics enabled for each SHA.
-REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {"6a5578d12c15", "6410ed017553", "b45dbbe7c061", "67068dfcbc88"}
+REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {
+  "6a5578d12c15", "6410ed017553", "b45dbbe7c061", "67068dfcbc88",
+  "93ee3157bf10", "6d81db7b5fff", "6ed95de658e9",
+}
 CREEP_BRAKE_CONTINUITY_COMMITS = {
   "fb194cf07ef1", "fc557b4ee5d2", "48f151363793", "ba7b308209e8",
   "cfe404adec77", "1b613c490a97", "9749eff86d25", "4854cdfb4a40", "e441ed11e5bc", "6dee887e0a7e",
