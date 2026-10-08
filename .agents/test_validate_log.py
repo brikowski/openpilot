@@ -564,7 +564,7 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                    "0cdd66c97535685c445fdedef2ed9ed55c8749c2", "dfff4b1170d18a2cbbb7539d51ada359eb5ffad6",
                    "c59c156ae694ba44b95f47a271b956d273f2be28",
                    "90fb5c2faa12ac711e4169479af730993203ed9e",
-                   "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce"):
+                   "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4"):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(11, np.nan), pid, brake, .01,
       gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
@@ -586,7 +586,7 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                                      "dfff4b1170d18a2cbbb7539d51ada359eb5ffad6",
                                      "c59c156ae694ba44b95f47a271b956d273f2be28",
                                      "90fb5c2faa12ac711e4169479af730993203ed9e",
-                                     "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce"])
+                                     "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4"])
 def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_only(revision):
   request = np.full(100, -.5)
   speed = np.full(100, 20.)
