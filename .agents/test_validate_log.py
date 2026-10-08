@@ -565,7 +565,7 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                    "c59c156ae694ba44b95f47a271b956d273f2be28",
                    "90fb5c2faa12ac711e4169479af730993203ed9e",
                    "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
-                   "6a5578d12c1548724fd4e7e97c5eea155f632e78"):
+                   "6a5578d12c1548724fd4e7e97c5eea155f632e78", "6410ed017553311b7dd5905a5ef90cce6c9c0dcc"):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(11, np.nan), pid, brake, .01,
       gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
@@ -588,7 +588,7 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                                      "c59c156ae694ba44b95f47a271b956d273f2be28",
                                      "90fb5c2faa12ac711e4169479af730993203ed9e",
                                      "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
-                                     "6a5578d12c1548724fd4e7e97c5eea155f632e78"])
+                                     "6a5578d12c1548724fd4e7e97c5eea155f632e78", "6410ed017553311b7dd5905a5ef90cce6c9c0dcc"])
 def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_only(revision):
   request = np.full(100, -.5)
   speed = np.full(100, 20.)
@@ -604,12 +604,13 @@ def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_onl
   assert not _brake_passthrough_expected(revision)
 
 
-def test_light_brake_translation_matches_exact_revision_and_preserves_prior_baseline():
+@pytest.mark.parametrize("revision", ["6a5578d12c1548724fd4e7e97c5eea155f632e78", "6410ed017553311b7dd5905a5ef90cce6c9c0dcc"])
+def test_light_brake_translation_matches_exact_revision_and_preserves_prior_baseline(revision):
   request = np.r_[np.full(100, -.05), [-.5, 0., .01]]
   speed = np.full(len(request), 20.)
   pitch = np.full(len(request), -.05)
   active = np.ones(len(request), dtype=bool)
-  current, eligible, modeled = _expected_brake_command("6a5578d12c1548724fd4e7e97c5eea155f632e78",
+  current, eligible, modeled = _expected_brake_command(revision,
                                                       request, speed, pitch, active, active, .01)
   previous, _, _ = _expected_brake_command("bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
                                            request, speed, pitch, active, active, .01)

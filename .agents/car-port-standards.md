@@ -86,8 +86,9 @@ active safety rails.
   measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
   signs and fresh valid received state. Gas resumes when measured or predicted coast no longer
   exceeds the request. Without a learned estimate, release still requires falling mild negative
-  demand and exhausted bounded gas feedback. No new learner or gas-map gain is added. This
-  selection does not activate friction braking, alter `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
+  demand and exhausted bounded gas feedback; request trend uses elapsed control time. No new
+  learner or gas-map gain is added. This selection does not activate friction braking, alter
+  `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
 - The Odyssey steering trial preserves the ordinary physical 2560-count map by
   rescaling the torque normalization and slew together. Extra counts are limited to persistent,
