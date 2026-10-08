@@ -202,6 +202,9 @@ merely because the candidate is unpromoted. Verify the root SHA, nested `opendbc
 refs, and clean state separately from device health and road behavior. Keep the `ody-op` and nested
 `opendbc` rollback SHAs reachable throughout.
 
+No new logs is not an implementation blocker. It may block performance assessment of a specific
+implemented change that needs new road evidence; continue independent analysis and candidate work.
+
 Device availability is not an implementation gate. Continue in-scope analysis, OpenPilot and Honda changes,
 tests, commits, and publication on `ody-op` when the evidence and software gates pass, even if the
 device is offline or onroad. A published commit or queued updater download is not an installation:
