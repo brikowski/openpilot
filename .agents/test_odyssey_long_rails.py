@@ -187,7 +187,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all(accel == 0 and brake == 0 for accel, _, brake in shortfall[10:])
     matched_gas = np.array([gas for _, gas, _ in matched])
     shortfall_gas = np.array([gas for _, gas, _ in shortfall])
-    np.testing.assert_array_equal(shortfall_gas[10:36], matched_gas[10:36])
+    np.testing.assert_array_equal(shortfall_gas[:26], matched_gas[:26])
+    assert shortfall_gas[26] > matched_gas[26]
     assert 0 < shortfall_gas[-1] - matched_gas[-1] <= 100
     assert shortfall_gas.max() <= GAS_MAX
 

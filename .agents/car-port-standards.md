@@ -63,19 +63,16 @@ active safety rails.
   retain the feedback-based fallback; zero and positive road-speed requests release braking immediately.
   Replay does not prove road benefit.
 - The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
-  near-zero lookup term. During startup, measured excess acceleration may reduce gas if the
-  request has not risen above the entry request; positive feedback still waits for the delayed
-  observer. After 0.5 s of continuous active gas, it compares the earlier
+  near-zero lookup term. During startup, measured excess acceleration may reduce gas;
+  positive feedback still waits for the delayed observer. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` within the same received target gear and applies a bounded,
   slewed correction to `GAS_COMMAND` only. Received target-gear or transmission-activity changes
   clear the delayed observer while the existing correction retains its slew limit. The activity
   byte is compared as reported state, without assuming a gear ratio or a shift-complete encoding. Missing,
   stale or invalid gear state disables feedback while preserving the feedforward map. A request
-  decrease relative to the delayed request vetoes a positive
-  correction target (and an increase vetoes a negative target), but existing correction unwinds
-  under its slew limit; this is not an immediate sign veto on the transmitted correction.
-  Request direction alone does not establish whether residual correction opposes the current
-  acceleration-tracking error. Domain rules, raw gas-domain `ACCEL_COMMAND`, the negative bridge,
+  change does not by itself veto feedback: the filtered delayed error is limited to the sign and
+  magnitude of the latest acceleration error. Existing correction still unwinds under its slew limit.
+  Domain rules, raw gas-domain `ACCEL_COMMAND`, the negative bridge,
   and brake translation remain unchanged; feedback can affect the exhausted-gas coast fallback. Replay
   establishes command shape, not that the resulting vehicle acceleration is improved.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
