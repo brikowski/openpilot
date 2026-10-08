@@ -71,7 +71,6 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
     now = int(i * DT_CTRL * 1e9)
     if target_gear is not None:
       now += 1_000_000_000
-      CI.CS.odyssey_engine_torque_estimate = -100.0
       CI.CS.odyssey_car_gas = 0.0
       CI.CS.odyssey_engine_torque_ts_nanos = now - 5_000_000
       CI.CS.odyssey_target_gear = target_gear
