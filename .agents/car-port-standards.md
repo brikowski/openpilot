@@ -80,8 +80,9 @@ active safety rails.
   establishes command shape, not that the resulting vehicle acceleration is improved.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
   settled, pedal-free coast in the same target gear, using the existing recent five-sample median
-  throughout eligible coast. It selects or retains coast when measured and learned passive
-  acceleration exceed the request, including positive requests, with agreeing downhill pitch
+  throughout eligible coast. The first five settled observations use consecutive ACC cycles;
+  established estimates retain their 100 ms update cadence. It selects or retains coast when
+  measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
   signs and fresh valid received state. Gas resumes when measured or predicted coast no longer
   exceeds the request. Without a learned estimate, release still requires falling mild negative
   demand and exhausted bounded gas feedback. No new learner or gas-map gain is added. This
