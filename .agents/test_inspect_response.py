@@ -1,21 +1,23 @@
 import numpy as np
 import pytest
 
-from inspect_response import brake_entry_summary, print_brake_entry_summary, received_context
+from inspect_response import brake_entry_summary, inspect, print_brake_entry_summary, received_context
 from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
 
 
 def test_received_context_detects_activity_without_a_target_gear_edge_and_excludes_stale_updates():
   t = np.arange(0., 2., .01)
   data = {'t': t, 'gear': np.full_like(t, 7.)}
-  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread'):
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
     data[key] = np.where(t < 1., 110., 119.) if key == 'shift_activity' else np.full_like(t, .1)
     data[key + '_age'] = np.full_like(t, .01)
+  data['user_brake'] = np.where(t <= 1.1, .0625, .25)
   result = received_context(data, 1.1)
   assert result['shift_edges_in_history'] == 1
   assert result['shift_activity'] == 119.
   assert not np.any(np.diff(data['gear']))
   assert result['can_long_accel'] == .1
+  assert result.get('user_brake') == .0625
   data['shift_activity_age'][100] = .06
   assert received_context(data, 1.1)['shift_edges_in_history'] == 0
   data['can_long_accel_age'][:] = .06
@@ -23,6 +25,13 @@ def test_received_context_detects_activity_without_a_target_gear_edge_and_exclud
   result = received_context(data, 1.1)
   assert result['can_long_accel'] is None
   assert result['engine_torque_request'] is None
+  for age in (.06, -.01, np.nan):
+    data['user_brake_age'][:] = age
+    assert received_context(data, 1.1)['user_brake'] is None
+  data['user_brake_age'][:] = .01
+  data['user_brake'][:] = np.nan
+  assert received_context(data, 1.1)['user_brake'] is None
+  assert received_context(data, -.01)['user_brake'] is None
 
 
 def test_brake_profile_separates_raw_request_from_grade_translated_wire():
@@ -71,7 +80,7 @@ def test_brake_entry_tracking_profile_captures_early_lag_and_late_overresponse()
   assert not brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
 
 
-def test_response_jerk_event_preserves_first_divergence_and_domain_context():
+def test_response_jerk_event_preserves_first_divergence_and_domain_context(monkeypatch):
   t = np.arange(0.0, 8.0, 0.01)
   requested = np.zeros_like(t)
   command_ramp = (t >= 2.0) & (t < 2.5)
@@ -111,6 +120,26 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context():
   assert event["request_wire_rms"] == 0.0
   assert event["gear_edges_in_history"] == 0
   assert event["gear"] == 6.0
+
+  data = {'route': 'synthetic', 't': t, 'request': requested, 'atarget': requested, 'accel_command': requested,
+          'aego': actual, 'active': np.ones_like(t, dtype=bool), 'pid': np.ones_like(t, dtype=bool),
+          'gas_pressed': np.zeros_like(t, dtype=bool), 'brake_pressed': np.zeros_like(t, dtype=bool),
+          'brake_request': brake, 'computer_braking': computer_braking, 'computer_braking_age': np.full_like(t, .01),
+          'gas_command': gas, 'vego': np.full_like(t, 20.), 'pitch': np.zeros_like(t),
+          'has_lead': np.zeros_like(t, dtype=bool), 'plan_source': np.zeros_like(t, dtype=int),
+          'gear': np.full_like(t, 6.), 'engine_torque': np.full_like(t, -100.), 'rpm': np.full_like(t, 1800.)}
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
+    data[key] = np.zeros_like(t)
+    data[key + '_age'] = np.full_like(t, .01)
+  monkeypatch.setattr('inspect_response.load', lambda _: data)
+  fresh = inspect('synthetic', threshold=.5, limit=1, summary_only=True)
+  assert fresh[0]['computer_braking_at_peak'] is True
+  for age in (.06, -.01, np.nan):
+    data['computer_braking_age'][:] = age
+    stale = inspect('synthetic', threshold=.5, limit=1, summary_only=True)
+    assert [row['time'] for row in stale] == [row['time'] for row in fresh]
+    assert stale[0]['computer_braking_at_peak'] is None
+    assert stale[0]['request_to_computer_brake_s'] is None
 
   summary = brake_entry_summary(rows, max_edge_age=1.0)
   assert summary == {

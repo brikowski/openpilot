@@ -18,7 +18,7 @@ def received_context(data, time, history_s=1.5):
   grid = data["t"]
   index = int(np.searchsorted(grid, time, side="right") - 1)
   context = {}
-  for key in ("shift_activity", "engine_torque_request", "can_long_accel", "wheel_speed_spread"):
+  for key in ("shift_activity", "engine_torque_request", "can_long_accel", "wheel_speed_spread", "user_brake"):
     values, age = data[key], data[key + "_age"]
     valid = np.isfinite(values) & (age >= 0.) & (age < .06)
     context[key] = float(values[index]) if index >= 0 and valid[index] else None
@@ -100,9 +100,12 @@ def print_brake_entry_summary(rows):
 def inspect(route, *, threshold, limit, summary_only):
   data = load(route)
   clean_active = data["active"] & ~data["gas_pressed"] & ~data["brake_pressed"]
+  braking_age = data["computer_braking_age"]
+  # Represent unavailable braking feedback in the event's received-state validity mask.
+  computer_braking = np.where((braking_age >= 0.) & (braking_age < .06), data["computer_braking"], np.nan)
   rows = response_jerk_events(
     data["t"], data["atarget"], data["request"], data["accel_command"], data["aego"],
-    clean_active, data["brake_request"], data["computer_braking"], data["gas_command"],
+    clean_active, data["brake_request"], computer_braking, data["gas_command"],
     data["vego"], data["pitch"],
     data["has_lead"], data["plan_source"], data["gear"], data["engine_torque"], data["rpm"],
     gas_inactive=GAS_INACTIVE,
@@ -178,7 +181,7 @@ def inspect(route, *, threshold, limit, summary_only):
     print("  received CAN: " + ", ".join(f"{key}={value if value is not None else 'unavailable'}" for key, value in
                                           ((key, row[key]) for key in ("shift_activity", "shift_edges_in_history",
                                                                      "engine_torque_request", "can_long_accel",
-                                                                     "wheel_speed_spread"))))
+                                                                     "wheel_speed_spread", "user_brake"))))
   return rows
 
 
