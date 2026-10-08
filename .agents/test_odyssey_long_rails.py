@@ -242,6 +242,16 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert np.all((-31 < translated) & (translated <= 0))
         assert all(brake_request for _, _, brake_request in seen[-10:])
 
+  def test_light_downhill_braking_preserves_request_magnitude_and_release(self):
+    requests = np.r_[np.full(100, -.5), np.repeat([-.10, -.05, -.001, 0., .1], 2)]
+    rejects, seen = _run(True, requests, pitch=-.05, vego=20., target_gear=7)
+    assert not rejects
+    assert [accel for accel, _, _ in seen[-5:]] == [-20, -10, 0, 0, 10]
+    assert [brake for _, _, brake in seen[-5:]] == [1, 1, 1, 0, 0]
+    assert all(gas == GAS_INACTIVE for _, gas, _ in seen[-5:-1])
+    assert seen[-1][1] > 0
+    assert seen[49][0] < -50
+
   def test_road_speed_coasts_through_raw_split_chatter(self):
     """Small negative requests must not alternate Honda's gas and friction-brake domains."""
     for vego in (5.0, 20.0, 31.0):

@@ -564,7 +564,8 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                    "0cdd66c97535685c445fdedef2ed9ed55c8749c2", "dfff4b1170d18a2cbbb7539d51ada359eb5ffad6",
                    "c59c156ae694ba44b95f47a271b956d273f2be28",
                    "90fb5c2faa12ac711e4169479af730993203ed9e",
-                   "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4"):
+                   "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
+                   "6a5578d12c1548724fd4e7e97c5eea155f632e78"):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(11, np.nan), pid, brake, .01,
       gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
@@ -586,7 +587,8 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                                      "dfff4b1170d18a2cbbb7539d51ada359eb5ffad6",
                                      "c59c156ae694ba44b95f47a271b956d273f2be28",
                                      "90fb5c2faa12ac711e4169479af730993203ed9e",
-                                     "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4"])
+                                     "9c7a2ca3ef9f1d6cebb090d9fa190882b52e39ce", "bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
+                                     "6a5578d12c1548724fd4e7e97c5eea155f632e78"])
 def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_only(revision):
   request = np.full(100, -.5)
   speed = np.full(100, 20.)
@@ -600,6 +602,22 @@ def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_onl
   assert modeled and eligible.all()
   assert expected[-1] < request[-1]
   assert not _brake_passthrough_expected(revision)
+
+
+def test_light_brake_translation_matches_exact_revision_and_preserves_prior_baseline():
+  request = np.r_[np.full(100, -.05), [-.5, 0., .01]]
+  speed = np.full(len(request), 20.)
+  pitch = np.full(len(request), -.05)
+  active = np.ones(len(request), dtype=bool)
+  current, eligible, modeled = _expected_brake_command("6a5578d12c1548724fd4e7e97c5eea155f632e78",
+                                                      request, speed, pitch, active, active, .01)
+  previous, _, _ = _expected_brake_command("bc93a6b141a3563f059a0ea9eeb8bed46958d4e4",
+                                           request, speed, pitch, active, active, .01)
+  assert modeled and eligible.all()
+  np.testing.assert_allclose(current[80:100], -.10)
+  assert np.all(previous[80:100] < current[80:100] - .05)
+  assert current[100] == previous[100] < -.60
+  np.testing.assert_array_equal(current[-2:], [0., .01])
 
 
 def test_current_odyssey_brake_model_resets_after_invalid_pitch():

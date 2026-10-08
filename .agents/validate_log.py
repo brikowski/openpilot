@@ -190,11 +190,12 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRA
 # These descendants retain the -0.30 fallback entry, grade-translated ACCEL_COMMAND,
 # and response-qualified active-brake release. Some also qualify earlier entry from coast.
 # Keep source-matched brake diagnostics enabled for each SHA.
+REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {"6a5578d12c15"}
 CREEP_BRAKE_CONTINUITY_COMMITS = {
   "fb194cf07ef1", "fc557b4ee5d2", "48f151363793", "ba7b308209e8",
   "cfe404adec77", "1b613c490a97", "9749eff86d25", "4854cdfb4a40", "e441ed11e5bc", "6dee887e0a7e",
   "0cdd66c97535", "dfff4b1170d1", "c59c156ae694", "90fb5c2faa12", "9c7a2ca3ef9f", "bc93a6b141a3",
-}
+} | REQUEST_BOUNDED_BRAKE_GRADE_COMMITS
 CREEP_BRAKE_TRANSLATION_COMMITS = {"ce98fbddd07b"} | CREEP_BRAKE_CONTINUITY_COMMITS
 COAST_RESPONSE_BRAKE_ENTRY_COMMITS = {"7b4f974f9a63"} | CREEP_BRAKE_TRANSLATION_COMMITS
 POST_E820_ODYSSEY_BRAKE_COMMITS = {
@@ -683,8 +684,12 @@ def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_
     pitch_valid = np.ones(len(pitch), dtype=bool)
   eligible = (np.asarray(speed, dtype=float) >= LOW_SPEED_DOMAIN_VEGO) & np.asarray(pid, dtype=bool) & \
              np.asarray(brake_request, dtype=bool) & pitch_valid
-  translated = np.minimum(requested + np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY * ODYSSEY_BRAKE_GRADE_GAIN,
-                          0.0)
+  grade_accel = np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY * ODYSSEY_BRAKE_GRADE_GAIN
+  if commit in REQUEST_BOUNDED_BRAKE_GRADE_COMMITS:
+    grade_accel = np.maximum(grade_accel, requested)
+  translated = np.minimum(requested + grade_accel, 0.0)
+  if commit in REQUEST_BOUNDED_BRAKE_GRADE_COMMITS:
+    translated = np.where(requested < 0.0, translated, requested)
   expected[eligible] = np.clip(translated[eligible], HondaParams.BOSCH_ACCEL_MIN, HondaParams.BOSCH_ACCEL_MAX)
   if commit in CREEP_BRAKE_TRANSLATION_COMMITS:
     state_eligible = True if commit in CREEP_BRAKE_CONTINUITY_COMMITS else np.asarray(pid, dtype=bool)

@@ -49,8 +49,8 @@ active safety rails.
   response feedback remains inactive during the bridge. An already-active
   gas domain may still release into coast earlier on shallow climbs. At road
   speed in PID control, the brake-domain
-  `ACCEL_COMMAND` adds a bounded Odyssey-calibrated grade term so Honda's grade-relative brake
-  request follows the controller's net-acceleration target. The creep-speed brake trial adds
+  `ACCEL_COMMAND` adds an Odyssey-calibrated grade term, limiting extra downhill deceleration
+  to the requested deceleration's magnitude as a gentle request approaches zero. The creep-speed brake trial adds
   at most 0.25 m/s² of request-sensitive deceleration below 2 m/s, tapering to zero at zero request
   and at -0.80 m/s². It requires active control with neither pedal pressed and remains continuous
   across control-state transitions. This feedforward calibration does not accumulate acceleration error or
