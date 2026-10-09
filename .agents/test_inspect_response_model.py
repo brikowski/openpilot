@@ -5,6 +5,84 @@ import inspect_response_model as response_model
 from inspect_response_model import brake_entry_events, continuous_mask, delayed_response, entry_response, fit_balanced, select_entry_dynamics
 
 
+def torque_data():
+  t = np.arange(0., 8., .01)
+  return {'t': t, 'aego': np.zeros(len(t)), 'pitch': np.zeros(len(t)), 'vego': np.full(len(t), 20.),
+          'gas_command': np.full(len(t), 400.), 'brake_request': np.zeros(len(t), dtype=bool),
+          'active': np.ones(len(t), dtype=bool), 'pid': np.ones(len(t), dtype=bool),
+          'gas_pressed': np.zeros(len(t), dtype=bool), 'brake_pressed': np.zeros(len(t), dtype=bool),
+          'response_state_fresh': np.ones(len(t), dtype=bool), 'response_can_valid': np.ones(len(t), dtype=bool),
+          'gear': np.full(len(t), 7.), 'shift_activity': np.full(len(t), 119.),
+          'engine_torque': np.full(len(t), 410.), 'engine_torque_request': np.full(len(t), 402.),
+          'rpm': np.full(len(t), 1500.), 'computer_braking': np.zeros(len(t)),
+          **{key + '_age': np.zeros(len(t)) for key in
+             ('engine_torque', 'engine_torque_request', 'rpm', 'gear', 'shift_activity', 'computer_braking')}}
+
+
+def test_torque_screen_keeps_raw_scale_and_uses_current_drivetrain_context():
+  data = torque_data()
+  data['rpm'][400:] = 2000.
+  p = response_model.prepare_torque_response(data)
+  mask = p['mask']
+  np.testing.assert_allclose(p['inputs']['torque_request'][mask], .402)
+  np.testing.assert_allclose(p['inputs']['torque_estimate'][mask], .410)
+  before = mask & (data['t'][::2] < 4.)
+  after = mask & (data['t'][::2] > 4.)
+  np.testing.assert_allclose(p['inputs']['gas_rpm'][before], .6)
+  np.testing.assert_allclose(p['inputs']['gas_rpm'][after], .8)
+  assert before.any() and after.any()
+
+
+@pytest.mark.parametrize('key', ['engine_torque', 'engine_torque_request', 'rpm', 'gear', 'shift_activity', 'computer_braking'])
+def test_torque_screen_rejects_stale_or_future_received_history(key):
+  data = torque_data()
+  assert response_model.prepare_torque_response(data)['mask'].any()
+  data[key + '_age'][300:320] = .06
+  data[key + '_age'][400:420] = -.01
+  p = response_model.prepare_torque_response(data)
+  selected_t = data['t'][::2][p['mask']]
+  assert not np.any((selected_t >= 3.) & (selected_t < 6.2))
+  assert np.any(selected_t > 6.3)
+
+
+def test_torque_screen_requires_continuous_valid_can_and_unchanged_activity():
+  data = torque_data()
+  data['response_can_valid'][300] = False
+  data['shift_activity'][400:] = 123.
+  p = response_model.prepare_torque_response(data)
+  selected_t = data['t'][::2][p['mask']]
+  assert not np.any((selected_t >= 3.) & (selected_t < 6.))
+  assert np.any(selected_t > 6.1)
+  data['computer_braking'][:] = True
+  assert not response_model.prepare_torque_response(data)['mask'].any()
+
+
+def test_latest_response_state_requires_received_can_validity_for_torque_screen():
+  data = {'t': np.array([0., .01, .02, .04]), 't0': 0.}
+  state_t = np.array([.01, .02])
+  values = np.array([[20., .1, 0., 0., 1.], [20., .2, 0., 0., 0.]])
+  held = response_model.latest_response_state(data, state_t, values)
+  np.testing.assert_array_equal(held['response_can_valid'], [False, True, False, False])
+  missing = response_model.latest_response_state(data, state_t, values[:, :4])
+  assert not missing['response_can_valid'].any()
+
+
+def test_torque_screen_never_fits_on_evaluation_response(monkeypatch):
+  training = torque_data()
+  evaluation = torque_data()
+  evaluation['aego'][:] = 10000.
+  seen = []
+  original = response_model.fit_balanced
+  def fit(matrices, targets):
+    assert len(targets) in (1, 2)
+    assert all(np.all(target == 0.) for target in targets)
+    seen.append(len(targets))
+    return original(matrices, targets)
+  monkeypatch.setattr(response_model, 'fit_balanced', fit)
+  response_model.inspect_torque_response(['first', 'second'], [training, training], ['evaluation'], [evaluation])
+  assert seen.count(1) == 72 and seen.count(2) == 36
+
+
 def entry_data():
   t = np.arange(0., 3., .01)
   return {'t': t, 'aego': np.full_like(t, -.2), 'request': np.full_like(t, -.4),

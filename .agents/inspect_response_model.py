@@ -4,7 +4,9 @@
 Observational prediction only: coefficients are not identified actuator gains and must not be
 inverted into a controller. Settled fits exclude transitions. The optional brake-entry screen
 reuses the existing event detector and fits only a unit-gain delay/filter, not a brake map.
-Uses cached ZOH CAN, not independently checked sent-frame freshness.
+Uses cached ZOH CAN, not independently checked sent-frame freshness. The torque screen compares
+reported raw torque fields and an RPM/speed proxy; neither establishes Nm, wheel force, or a
+controller calibration.
 """
 import argparse
 import json
@@ -34,6 +36,7 @@ def latest_response_state(data, state_t, values):
     held = values[safe_ix, column]
     out[key] = held > .5 if column >= 2 else np.where(ix >= 0, held, np.nan)
   out['response_state_fresh'] = (ix >= 0) & (age >= 0.) & (age < .04)
+  out['response_can_valid'] = (ix >= 0) & (values[safe_ix, 4] > .5) if values.shape[1] > 4 else np.zeros(len(grid), dtype=bool)
   return out
 
 
@@ -63,7 +66,7 @@ def load_forecast_data(route):
   for m in LogReader(paths):
     if m.which() == 'carState':
       states.append([m.logMonoTime / 1e9, m.carState.vEgo, m.carState.aEgo,
-                     m.carState.gasPressed, m.carState.brakePressed])
+                     m.carState.gasPressed, m.carState.brakePressed, m.carState.canValid])
     elif m.which() == 'can':
       frames = [(c.address, c.dat, c.src) for c in m.can if c.address == 0x130 and c.src == 1]
       if frames:
@@ -71,7 +74,7 @@ def load_forecast_data(route):
         signals = recv.vl['GAS_PEDAL_2']
         torque.append([m.logMonoTime / 1e9, signals['ENGINE_TORQUE_ESTIMATE'], signals['CAR_GAS']])
   states.sort(key=lambda row: row[0])
-  states = np.asarray(states, dtype=float).reshape(-1, 5)
+  states = np.asarray(states, dtype=float).reshape(-1, 6)
   data = latest_response_state(data, states[:, 0], states[:, 1:])
   if torque:
     torque = np.asarray(sorted(torque, key=lambda row: row[0]), dtype=float)
@@ -95,7 +98,7 @@ def delayed_response(signal, dt, delay, tau):
   return output
 
 
-def continuous_mask(valid, gear, t, history_s=2.0):
+def continuous_mask(valid, gear, t, history_s=2.0, activity=None):
   """Require uninterrupted eligibility and unchanged target gear over the lookback."""
   valid = np.asarray(valid, dtype=bool)
   t = np.asarray(t, dtype=float)
@@ -103,9 +106,10 @@ def continuous_mask(valid, gear, t, history_s=2.0):
   out = np.zeros(len(t), dtype=bool)
   start = 0
   for i in range(len(t)):
-    if not valid[i] or not np.isfinite(gear[i]):
+    if not valid[i] or not np.isfinite(gear[i]) or (activity is not None and not np.isfinite(activity[i])):
       start = i + 1
-    elif i and (not valid[i - 1] or gear[i] != gear[i - 1] or not 0 < t[i] - t[i - 1] < .04):
+    elif i and (not valid[i - 1] or gear[i] != gear[i - 1] or not 0 < t[i] - t[i - 1] < .04 or
+                (activity is not None and activity[i] != activity[i - 1])):
       start = i
     if start <= i:
       out[i] = t[i] - t[start] >= history_s
@@ -142,6 +146,52 @@ def prepare(data, domain):
   mask &= np.arange(len(t)) % 5 == 0
   context = np.column_stack((speed ** 2 / 1000, 9.81 * np.sin(pitch), np.ones(len(t))))
   return signal, context, actual, mask, float(np.median(np.diff(t)))
+
+
+def prepare_torque_response(data):
+  """Use a common fresh, settled gas cohort for equal-size observational models."""
+  signal, context, actual, mask, dt = prepare(data, 'gas')
+  valid = (data['active'] & data['pid'] & ~data['gas_pressed'] & ~data['brake_pressed'] &
+           data['response_state_fresh'] & data['response_can_valid'] &
+           (data['gas_command'] > 0.) & ~data['brake_request'] & (data['computer_braking'] == 0.) &
+           (data['vego'] >= 8.) & (data['rpm'] > 0.) & (data['gear'] >= 1.) & (data['gear'] <= 10.))
+  for key in ('engine_torque', 'engine_torque_request', 'rpm', 'gear', 'shift_activity', 'computer_braking'):
+    valid &= np.isfinite(data[key]) & (data[key + '_age'] >= 0.) & (data[key + '_age'] < .06)
+  mask &= continuous_mask(valid, data['gear'], data['t'], activity=data['shift_activity'])[::2]
+  ratio = np.divide(data['rpm'], data['vego'], out=np.zeros(len(valid)), where=data['vego'] >= 8.)[::2] * .02
+  inputs = {'gas': signal, 'torque_request': data['engine_torque_request'][::2] / 1000.,
+            'torque_estimate': data['engine_torque'][::2] / 1000.}
+  inputs.update({name + '_rpm': values * ratio for name, values in list(inputs.items())})
+  # Every model sees identical rows with available causal history at every candidate delay.
+  for values in inputs.values():
+    mask &= np.isfinite(delayed_response(values, dt, .8, 0.))
+  return {'inputs': inputs, 'context': context, 'actual': actual, 'mask': mask, 'dt': dt}
+
+
+def inspect_torque_response(train_routes, train_data, evaluation_routes, evaluation_data):
+  """Select delay and fit only training roads; compare raw counts without inverting the fit."""
+  prepared = [prepare_torque_response(d) for d in train_data + evaluation_data]
+  routes = train_routes + evaluation_routes
+  for route, p in zip(routes, prepared, strict=True):
+    print(route, 'fresh settled gas rows', int(p['mask'].sum()))
+  if any(p['mask'].sum() < 10 for p in prepared):
+    print('Insufficient common exposure; no torque model selected.')
+    return
+  for held, route in enumerate(routes):
+    train = [i for i in range(len(train_data)) if i != held]
+    for name in prepared[0]['inputs']:
+      fits = []
+      for delay in (0., .1, .2, .4, .6, .8):
+        matrices = [np.column_stack((delayed_response(p['inputs'][name], p['dt'], delay, 0.), p['context']))[p['mask']]
+                    for p in prepared]
+        coef, score = fit_balanced([matrices[i] for i in train],
+                                  [prepared[i]['actual'][prepared[i]['mask']] for i in train])
+        fits.append((score, delay, coef, matrices[held]))
+      _, delay, coef, matrix = min(fits, key=lambda fit: fit[0])
+      error = matrix @ coef - prepared[held]['actual'][prepared[held]['mask']]
+      print(route, name, 'delay', delay, 'coefficients', np.round(coef, 4),
+            'RMSE/MAE/bias', np.round([np.sqrt(np.mean(error ** 2)), np.mean(abs(error)), np.mean(error)], 4))
+  print('Reported torque scale and drivetrain coupling remain unvalidated; prediction does not identify an actuator inverse.')
 
 
 def inspect(routes, data, domain):
@@ -702,6 +752,7 @@ def main():
   mode.add_argument('--brake-release-screen', action='store_true', help='Screen a rising-request overdecel release, not closed-loop road behavior')
   mode.add_argument('--gas-trim-forecast', action='store_true', help='Score current response error against later trim-band error')
   mode.add_argument('--held-command-forecast', action='store_true', help='Fit training-only actuator states and score held-wire trim response')
+  mode.add_argument('--gas-torque', action='store_true', help='Compare reported torque and RPM/speed against gas-count response models')
   parser.add_argument('--release-error-margin', type=float, default=.2, help='Exploratory overdeceleration margin for the release screen')
   parser.add_argument('--release-torque-drop', type=float, help='Require this much 0.2-s received engine-torque decrease for the release screen')
   parser.add_argument('--evaluation-routes', nargs='+', default=[], help='Held-out routes, never used for fitting')
@@ -711,7 +762,7 @@ def main():
     parser.error('Provide at least two distinct routes to separate training from held-out evaluation')
   comparison_mode = (args.brake_entries or args.joint or args.residual_forecast or args.coast_authority or
                      args.coast_transition or args.brake_release_screen or args.gas_trim_forecast or
-                     args.held_command_forecast)
+                     args.held_command_forecast or args.gas_torque)
   if (args.coast_transition or args.held_command_forecast) and not args.evaluation_routes:
     parser.error('This forecast requires held-out --evaluation-routes')
   if args.evaluation_routes and (not comparison_mode or not args.evaluation_opendbc):
@@ -725,9 +776,12 @@ def main():
           ledger[route].get('qlog_fallback') or route.startswith('00000005--')):
         parser.error(f'{route}: missing/mismatched nested provenance, qlog fallback, or excluded route')
   loader = (load_forecast_data if args.residual_forecast or args.coast_authority or args.coast_transition or
-            args.brake_release_screen or args.gas_trim_forecast or args.held_command_forecast else load)
+            args.brake_release_screen or args.gas_trim_forecast or args.held_command_forecast or args.gas_torque else load)
   data = [loader(route) for route in args.routes]
   if comparison_mode:
+    if args.gas_torque:
+      inspect_torque_response(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes])
+      return
     if args.held_command_forecast:
       inspect_held_command_forecast(args.routes, data, args.evaluation_routes, [loader(r) for r in args.evaluation_routes])
       return

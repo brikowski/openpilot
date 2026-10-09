@@ -57,6 +57,9 @@ def make_replay_controller(recorded_params):
   initialize those constants; they must not replace recorded flags, limits, or tuning.
   This calls parameter construction only, never the interface's ECU-disabling init method.
   """
+  # Repeated controller reads can exhaust a logged CarParams reader's traversal limit.
+  if hasattr(recorded_params, 'as_builder'):
+    recorded_params = recorded_params.as_builder()
   CarInterface.get_params(recorded_params.carFingerprint, gen_empty_fingerprint(),
                           list(recorded_params.carFw), recorded_params.openpilotLongitudinalControl,
                           False, False)

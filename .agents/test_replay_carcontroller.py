@@ -25,6 +25,17 @@ def test_replay_initializes_odyssey_gas_map_without_replacing_recorded_params(mo
   assert recorded.to_dict() == snapshot
 
 
+def test_replay_copies_logged_params_without_exhausting_reader_budget():
+  params = CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)
+  raw = params.to_bytes()
+  with structs.CarParams.from_bytes(raw, traversal_limit_in_words=2048) as reader:
+    snapshot = reader.to_dict()
+    controller = make_replay_controller(reader)
+    assert controller.CP.to_dict() == snapshot
+    for _ in range(10000):
+      assert controller.CP.carFingerprint == CAR.HONDA_ODYSSEY_5G_MMR
+
+
 def test_replay_uses_card_snapshot_and_send_clock():
   def event(kind, value):
     if kind == "sendcan":
