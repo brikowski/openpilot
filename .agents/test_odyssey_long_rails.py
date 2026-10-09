@@ -39,7 +39,7 @@ def _decode_acc_control(dat):
 
 
 def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCtrlState.pid, gas_pressed=False, target_gear=None,
-         brake_pressed=False, computer_braking=False):
+         brake_pressed=False, computer_braking=False, user_brake=0.):
   """Drive the active longitudinal path and check every frame against the real safety hook."""
   CP = _car_params()
   CI = interfaces[PLATFORM](CP.copy())
@@ -56,6 +56,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
   aego_values = np.zeros(len(accels)) if aegos is None else np.broadcast_to(np.asarray(aegos, dtype=float), len(accels))
   gas_pressed_values = np.broadcast_to(np.asarray(gas_pressed, dtype=bool), len(accels))
   computer_braking_values = np.broadcast_to(np.asarray(computer_braking, dtype=bool), len(accels))
+  user_brake_values = np.broadcast_to(np.asarray(user_brake, dtype=float), len(accels))
   long_states = np.broadcast_to(np.asarray(long_control_state), len(accels))
   rejects, seen = [], []
   for i, accel in enumerate(accels):
@@ -76,7 +77,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
       CI.CS.odyssey_engine_torque_ts_nanos = now - 5_000_000
       CI.CS.odyssey_target_gear = target_gear
       CI.CS.odyssey_target_gear_ts_nanos = now - 5_000_000
-      CI.CS.odyssey_user_brake = 0.
+      CI.CS.odyssey_user_brake = float(user_brake_values[i])
       CI.CS.odyssey_computer_braking = bool(computer_braking_values[i])
       CI.CS.odyssey_computer_braking_ts_nanos = now - 5_000_000
     _, sendcan = CI.apply(cc.as_reader(), now)
@@ -97,6 +98,17 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_brake_to_gas_handoff_waits_for_idle_feedback_inside_safety_rails(self):
+    requests = [-.4] * 20 + [.05] * 40
+    braking = [True] * 28 + [False] * 32
+    pressure = [.125] * 36 + [.015625] * 24
+    rejects, seen = _run(True, requests, pitch=0., vego=20., aegos=-.3, target_gear=7,
+                         computer_braking=braking, user_brake=pressure)
+    assert not rejects
+    assert all(brake == 1 and gas == GAS_INACTIVE for _, gas, brake in seen[:10])
+    assert all((accel, gas, brake) == (5, GAS_INACTIVE, 0) for accel, gas, brake in seen[10:18])
+    assert all(accel == 5 and gas > 0 and brake == 0 for accel, gas, brake in seen[18:])
+
   def test_inactive_brake_overdeceleration_recovers_gas_inside_safety_rails(self):
     accels = np.full(220, -0.4)
     accels[-20:] = -1.0
