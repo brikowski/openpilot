@@ -151,6 +151,7 @@ class _CSShim:
     self.odyssey_target_gear_ts_nanos = 0
     self.odyssey_computer_braking = False
     self.odyssey_computer_braking_ts_nanos = 0
+    self.odyssey_user_brake = np.nan
 
 
 def odyssey_received_state(paths):
@@ -167,14 +168,14 @@ def odyssey_received_state(paths):
     parser.update([(m.logMonoTime, frames)])
     for rows, name, fields in ((torque, 'GAS_PEDAL_2', ('ENGINE_TORQUE_ESTIMATE', 'CAR_GAS')),
                                (gear, 'GEARBOX_AUTO', ('TRANS_TARGET_GEAR', 'TRANS_SHIFT_ACTIVITY')),
-                               (braking, 'VSA_STATUS', ('COMPUTER_BRAKING',))):
+                               (braking, 'VSA_STATUS', ('COMPUTER_BRAKING', 'USER_BRAKE'))):
       stamp = parser.ts_nanos[name][fields[0]]
       if stamp > 0 and (not rows or stamp > rows[-1][0]):
         rows.append((stamp, *(parser.vl[name][field] for field in fields)))
   def pack(rows, width):
     return (np.asarray([row[0] for row in rows], dtype=np.int64),
             np.asarray([row[1:] for row in rows], dtype=float).reshape(-1, width))
-  return pack(torque, 2), pack(gear, 2), pack(braking, 1)
+  return pack(torque, 2), pack(gear, 2), pack(braking, 2)
 
 
 def received_at(time_nanos, updates):
@@ -268,6 +269,7 @@ def main(argv=None):
       cs_shim.odyssey_target_gear_ts_nanos = int(received_gear[0]) if received_gear is not None else 0
       cs_shim.odyssey_computer_braking = bool(received_brake[1]) if received_brake is not None else False
       cs_shim.odyssey_computer_braking_ts_nanos = int(received_brake[0]) if received_brake is not None else 0
+      cs_shim.odyssey_user_brake = received_brake[2] if received_brake is not None else np.nan
     # Seed only the initial longitudinal phase; do not hide missing cycles by reseeding later.
     if not t and CP.openpilotLongitudinalControl and CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR":
       cc.frame = 0 if any(f.address == 0x1DF and f.src == 1 for f in m.sendcan) else 1

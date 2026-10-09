@@ -76,6 +76,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
       CI.CS.odyssey_engine_torque_ts_nanos = now - 5_000_000
       CI.CS.odyssey_target_gear = target_gear
       CI.CS.odyssey_target_gear_ts_nanos = now - 5_000_000
+      CI.CS.odyssey_user_brake = 0.
       CI.CS.odyssey_computer_braking = bool(computer_braking_values[i])
       CI.CS.odyssey_computer_braking_ts_nanos = now - 5_000_000
     _, sendcan = CI.apply(cc.as_reader(), now)
@@ -96,6 +97,16 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_inactive_brake_overdeceleration_recovers_gas_inside_safety_rails(self):
+    accels = np.full(220, -0.4)
+    accels[-20:] = -1.0
+    rejects, seen = _run(True, accels, .04, 21., aegos=-.8, target_gear=7)
+    self.assertEqual(rejects, [])
+    self.assertTrue(all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[:50]))
+    self.assertTrue(all(gas >= 0 and brake == 0 and accel == -40 for accel, gas, brake in seen[75:100]))
+    self.assertTrue(all(gas > 0 for _, gas, _ in seen[90:100]))
+    self.assertTrue(all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[100:]))
+
   def test_coast_fallback_respects_the_falling_request_rate(self):
     for slope in (0.19, 0.21):
       requests = np.r_[np.full(200, 0.1), 0.1 - slope * 0.01 * np.arange(120)]

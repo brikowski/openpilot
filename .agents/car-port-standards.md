@@ -79,9 +79,11 @@ active safety rails.
   and brake translation remain unchanged; feedback can affect the exhausted-gas coast fallback. Replay
   establishes command shape, not that the resulting vehicle acceleration is improved.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
-  settled, pedal-free coast in the same target gear with valid CAN and fresh received gear,
-  gas and braking state, using the existing recent five-sample median
-  throughout eligible coast. The first five settled observations use consecutive ACC cycles;
+  settled, pedal-free coast or a settled brake selection with inactive actuators in the same target
+  gear with valid CAN and fresh received gear, gas and braking state, using the existing recent five-sample median
+  throughout eligible coast. Held brake observations also require `USER_BRAKE` within one DBC
+  quantization step of zero; the shared VSA reception timestamp qualifies that signal.
+  The first five settled observations use consecutive ACC cycles;
   established estimates retain their 100 ms update cadence. It selects or retains coast when
   measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
   signs and fresh valid received state. Gas resumes when measured or predicted coast no longer

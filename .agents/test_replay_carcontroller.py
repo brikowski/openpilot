@@ -72,8 +72,8 @@ def test_received_braking_uses_powertrain_bus_and_independent_timestamp(monkeypa
     return SimpleNamespace(which=lambda: kind, logMonoTime=time,
                            can=[SimpleNamespace(address=a, dat=d, src=b) for a, d, b in frames])
 
-  brake = packer.make_can_msg('VSA_STATUS', 1, {'COMPUTER_BRAKING': 1})
-  coast = packer.make_can_msg('VSA_STATUS', 1, {'COMPUTER_BRAKING': 0})
+  brake = packer.make_can_msg('VSA_STATUS', 1, {'COMPUTER_BRAKING': 1, 'USER_BRAKE': .125})
+  coast = packer.make_can_msg('VSA_STATUS', 1, {'COMPUTER_BRAKING': 0, 'USER_BRAKE': .015625})
   messages = [event(base, [brake]), event(base + 10_000_000, [coast], 'sendcan'),
               event(base + 20_000_000, [(coast[0], coast[1], 0)]),
               event(base + 30_000_000, [packer.make_can_msg('GAS_PEDAL_2', 1, {'ENGINE_TORQUE_ESTIMATE': -120})]),
@@ -83,8 +83,8 @@ def test_received_braking_uses_powertrain_bus_and_independent_timestamp(monkeypa
   monkeypatch.setattr(replay, 'LogReader', lambda _: messages)
   torque, gear, braking = replay.odyssey_received_state(['synthetic'])
   assert received_at(base - 1, braking) is None
-  assert received_at(base + 39_999_999, braking) == (base, 1.)
-  assert received_at(base + 40_000_000, braking) == (base + 40_000_000, 0.)
+  assert received_at(base + 39_999_999, braking) == (base, 1., .125)
+  assert received_at(base + 40_000_000, braking) == (base + 40_000_000, 0., .015625)
   assert received_at(base + 39_999_999, torque) == (base + 30_000_000, -120., 0.)
   assert received_at(base + 40_000_000, gear) is None
   assert received_at(base + 50_000_000, gear) == (base + 50_000_000, 7., 119.)
