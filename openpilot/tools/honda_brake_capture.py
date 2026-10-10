@@ -18,12 +18,13 @@ import time
 from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, structs
 from opendbc.car.honda.values import CAR, DBC
-from opendbc.car.uds import UdsClient
+from opendbc.car.uds import CanClient, IsoTpMessage, get_rx_addr_for_tx_addr
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DBC_NAME = DBC[CAR.HONDA_ODYSSEY_5G_MMR][Bus.pt]
 SAFETY = structs.CarParams.SafetyModel
-GUARD_SIGNALS = {"ENGINE_DATA": "XMISSION_SPEED", "WHEEL_SPEEDS": "WHEEL_SPEED_FL", "GEARBOX_AUTO": "GEAR_SHIFTER"}
+GUARD_SIGNALS = {"ENGINE_DATA": "XMISSION_SPEED", "WHEEL_SPEEDS": "WHEEL_SPEED_FL", "GEARBOX_AUTO": "GEAR_SHIFTER",
+                 "SCM_FEEDBACK": "PARKING_BRAKE_ON", "POWERTRAIN_DATA": "BRAKE_PRESSED"}
 READS = {(0x18DA28F1, 0xF181), (0x18DA2BF1, 0xF181), (0x18DA28F1, 0x4005)}
 
 
@@ -39,6 +40,7 @@ class Capture:
     self.shifter = CANDefine(DBC_NAME).dv["GEARBOX_AUTO"]["GEAR_SHIFTER"]
     self.active = False
     self.read_deadline_ns = 0
+    self.obd = False
 
   def record(self, kind, **data):
     self.output.write(json.dumps({"type": kind, "mono_ns": time.monotonic_ns(), **data}) + "\n")
@@ -49,6 +51,7 @@ class Capture:
                 now - self.cp.ts_nanos[msg][signal] <= 250_000_000
                 for msg, signal in GUARD_SIGNALS.items())
     return (self.cp.can_valid and fresh and
+            self.cp.vl["SCM_FEEDBACK"]["PARKING_BRAKE_ON"] and
             self.shifter.get(self.cp.vl["GEARBOX_AUTO"]["GEAR_SHIFTER"]) == "P" and
             self.cp.vl["ENGINE_DATA"]["XMISSION_SPEED"] == 0 and
             all(self.cp.vl["WHEEL_SPEEDS"][f"WHEEL_SPEED_{wheel}"] == 0 for wheel in ("FL", "FR", "RL", "RR")))
@@ -63,16 +66,18 @@ class Capture:
     frames = self.panda.can_recv()
     received_ns = time.monotonic_ns()
     if self.read_deadline_ns and received_ns > self.read_deadline_ns:
-      raise TimeoutError("diagnostic read exceeded one second")
+      raise TimeoutError("diagnostic read exceeded native-state freshness")
     if frames:
       self.record("can", received_ns=received_ns,
+                  connection="obd" if self.obd else "native",
                   frames=[[address, bytes(data).hex(), bus] for address, data, bus in frames])
     if self.active and not self.parked():
       raise RuntimeError("stationary Park or fresh valid CAN lost")
-    if any(bus == 1 and address in self.cp.addresses and len(data) != self.cp.message_states[address].size
+    if not self.obd and any(bus == 1 and address in self.cp.addresses and len(data) != self.cp.message_states[address].size
            for address, data, bus in frames):
       raise RuntimeError("invalid state frame length")
-    self.cp.update([(received_ns, frames)])
+    if not self.obd:
+      self.cp.update([(received_ns, frames)])
     if self.active and not self.parked():
       raise RuntimeError("stationary Park or fresh valid CAN lost")
     return frames
@@ -80,7 +85,7 @@ class Capture:
   def can_send(self, address, data, bus, **kwargs):
     allowed = {bytes.fromhex("0322") + did.to_bytes(2, "big") + bytes(4)
                for addr, did in READS if addr == address}
-    allowed.add(bytes.fromhex("3000000000000000"))
+    allowed.add(bytes.fromhex("30000a0000000000"))
     if bus != 1 or address not in {addr for addr, _ in READS} or bytes(data) not in allowed:
       raise RuntimeError("only the documented read requests and ISO-TP flow control are permitted")
     require_exclusive_panda()
@@ -88,36 +93,68 @@ class Capture:
     self.record("tx", address=address, data_hex=bytes(data).hex(), bus=bus)
     self.panda.can_send(address, data, bus, **kwargs)
 
+  def qualify(self):
+    self.active = False
+    self.cp = CANParser(DBC_NAME, [(name, 0) for name in GUARD_SIGNALS], 1)
+    self.panda.can_clear(0xFFFF)
+    self.panda.can_rx_overflow_buffer = b''
+    deadline = time.monotonic() + 3
+    while not self.parked() and time.monotonic() < deadline:
+      self.can_recv()
+      if self.cp.can_valid:
+        self.check(SAFETY.noOutput)
+      time.sleep(0.005)
+    self.check(SAFETY.noOutput)
+    self.active = True
+
+  def restore(self):
+    self.panda.set_safety_mode(SAFETY.noOutput)
+    self.obd = False
+    health = self.panda.health()
+    self.record("restored", health=health)
+    if health["safety_mode"] != SAFETY.noOutput or health["controls_allowed"]:
+      raise RuntimeError("Panda noOutput restoration was not confirmed")
+
   def read(self, address, did):
+    require_exclusive_panda()
+    self.check(SAFETY.noOutput)
     started_ns = time.monotonic_ns()
-    self.read_deadline_ns = started_ns + 1_000_000_000
+    # OBD and native bus 1 share a hardware mux. Never refresh native state from OBD.
+    self.read_deadline_ns = min(self.cp.ts_nanos[msg][sig] for msg, sig in GUARD_SIGNALS.items()) + 250_000_000
     try:
-      data = UdsClient(self, address, bus=1, timeout=0.5, response_pending_timeout=1).read_data_by_identifier(did)
+      self.panda.set_safety_mode(SAFETY.elm327)
+      self.obd = True
+      client = CanClient(self.can_send, self.can_recv, address, get_rx_addr_for_tx_addr(address), 1)
+      # Match Honda firmware querying's existing 10 ms ISO-TP receive pacing.
+      transport = IsoTpMessage(client, timeout=0.2, separation_time=0.01)
+      transport.send(b'\x22' + did.to_bytes(2, 'big'))
+      response, _ = transport.recv()
+      while response == b'\x7f\x22\x78':
+        response, _ = transport.recv()
+      if response is None or not response.startswith(b'\x62' + did.to_bytes(2, 'big')):
+        raise RuntimeError('ECU did not return the requested diagnostic data')
+      data = response[3:]
+      self.record("uds", started_ns=started_ns, address=address, did=did, data_hex=data.hex())
+      self.output.flush()
+      if did == 0x4005 and len(data) != 56:
+        raise RuntimeError("pressure response differs from the public reference; raw bytes retained")
     finally:
       self.read_deadline_ns = 0
-    self.record("uds", started_ns=started_ns, address=address, did=did, data_hex=data.hex())
-    self.output.flush()
-    if did == 0x4005 and len(data) != 56:
-      raise RuntimeError("pressure response differs from the public reference; raw bytes retained")
+      self.restore()
+    # A completed read is usable only with newly received native state on both sides.
+    self.qualify()
+    self.record("qualified", started_ns=started_ns, address=address, did=did)
+    return data
 
 
 def capture(panda, output, seconds):
   c = Capture(panda, output)
   require_exclusive_panda()
   if panda.health()["safety_mode"] == SAFETY.silent:
-    panda.set_safety_mode(SAFETY.noOutput)  # Receive CAN after the stopped manager's heartbeat expires.
-  panda.can_clear(0xFFFF)  # Host reception time cannot date frames queued before this capture.
-  deadline = time.monotonic() + 3
-  while not c.parked() and time.monotonic() < deadline:
-    c.can_recv()
-    time.sleep(0.005)
-  require_exclusive_panda()
-  c.check(SAFETY.noOutput)
+    panda.set_safety_mode(SAFETY.noOutput)
+  c.qualify()
   c.record("health", health=panda.health())
   try:
-    panda.set_safety_mode(SAFETY.elm327)  # VSA and booster diagnostics use the OBD-multiplexed bus 1.
-    c.active = True
-    c.check(SAFETY.elm327)
     for address in (0x18DA28F1, 0x18DA2BF1):
       c.read(address, 0xF181)
     deadline = time.monotonic() + seconds
@@ -129,11 +166,17 @@ def capture(panda, output, seconds):
         next_read = time.monotonic() + 1
       time.sleep(0.005)
   finally:
-    panda.set_safety_mode(SAFETY.noOutput)
-    health = panda.health()
-    c.record("restored", health=health)
-    if health["safety_mode"] != SAFETY.noOutput or health["controls_allowed"]:
-      raise RuntimeError("Panda noOutput restoration was not confirmed")
+    c.restore()
+
+
+def record_metadata(output):
+  def git(*args):
+    return subprocess.check_output(["git", "-C", str(ROOT), *args], text=True).strip()
+  output.write(json.dumps({"type": "metadata", "wall_time_ns": time.time_ns(), "mono_ns": time.monotonic_ns(),
+                          "parent": git("rev-parse", "HEAD"), "gitlink": git("rev-parse", "HEAD:opendbc_repo"),
+                          "opendbc": git("-C", "opendbc_repo", "rev-parse", "HEAD"),
+                          "status": git("status", "--porcelain"),
+                          "opendbc_status": git("-C", "opendbc_repo", "status", "--porcelain"), "dbc": DBC_NAME}) + "\n")
 
 
 def main(argv=None):
@@ -148,14 +191,7 @@ def main(argv=None):
   require_exclusive_panda()
   from panda import Panda
   with args.output.open("x") as output, Panda() as panda:
-    def git(*args):
-      return subprocess.check_output(["git", "-C", str(ROOT), *args], text=True).strip()
-    metadata = {"type": "metadata", "wall_time_ns": time.time_ns(), "mono_ns": time.monotonic_ns(),
-                "parent": git("rev-parse", "HEAD"), "gitlink": git("rev-parse", "HEAD:opendbc_repo"),
-                "opendbc": git("-C", "opendbc_repo", "rev-parse", "HEAD"),
-                "status": git("status", "--porcelain"),
-                "opendbc_status": git("-C", "opendbc_repo", "status", "--porcelain"), "dbc": DBC_NAME}
-    output.write(json.dumps(metadata) + "\n")
+    record_metadata(output)
     try:
       capture(panda, output, args.seconds)
     except BaseException as e:
