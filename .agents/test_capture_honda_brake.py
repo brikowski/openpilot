@@ -214,6 +214,24 @@ def test_initial_unsafe_state_does_not_change_panda_mode(parked):
   assert not p.modes and not p.sent
 
 
+def test_silent_panda_can_receive_state_before_diagnostic_reads(parked):
+  p, _, _ = parked
+  p.state['safety_mode'] = m.SAFETY.silent
+  m.capture(p, io.StringIO(), 1)
+  assert p.modes == [(m.SAFETY.noOutput, 0), (m.SAFETY.elm327, 1), (m.SAFETY.noOutput, 0)]
+  assert p.sent
+
+
+def test_silent_panda_without_park_state_remains_in_nooutput(parked):
+  p, _, _ = parked
+  p.state['safety_mode'] = m.SAFETY.silent
+  p.values['GEARBOX_AUTO']['GEAR_SHIFTER'] = 4
+  with pytest.raises(RuntimeError, match='Park'):
+    m.capture(p, io.StringIO(), 1)
+  assert p.modes == [(m.SAFETY.noOutput, 0)]
+  assert not p.sent
+
+
 @pytest.mark.parametrize("status", [0, 1, 2])
 def test_exclusive_access_fails_closed(monkeypatch, status):
   monkeypatch.setattr(m.subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a, status))

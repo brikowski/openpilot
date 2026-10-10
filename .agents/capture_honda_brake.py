@@ -100,6 +100,9 @@ class Capture:
 
 def capture(panda, output, seconds):
   c = Capture(panda, output)
+  require_exclusive_panda()
+  if panda.health()["safety_mode"] == SAFETY.silent:
+    panda.set_safety_mode(SAFETY.noOutput)  # Receive CAN after the stopped manager's heartbeat expires.
   deadline = time.monotonic() + 3
   while not c.parked() and time.monotonic() < deadline:
     c.can_recv()
