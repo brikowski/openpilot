@@ -96,6 +96,9 @@ active safety rails.
   throughout eligible coast. Held brake observations also require `USER_BRAKE` within one DBC
   quantization step of zero; the shared VSA reception timestamp qualifies that signal.
   Nonnegative brake holding uses the prior coast estimate without learning its controlled response as coast.
+  At 8–35 m/s, qualified pedal-free manual coast can initialize the same learner before engagement.
+  Manual observations also require idle received gas/braking and pressure within one DBC step of zero;
+  physical-state qualification owns resets, while active control keeps its existing PID gates.
   The first five settled observations use consecutive ACC cycles;
   established estimates retain their 100 ms update cadence. It selects or retains coast when
   measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
