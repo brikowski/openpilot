@@ -167,7 +167,7 @@ def test_only_named_reads_and_flow_control_can_be_sent(parked, address, data, bu
   assert not p.sent
 
 
-@pytest.mark.parametrize("during", ['initial', 'tx'])
+@pytest.mark.parametrize("during", ['initial', 'read'])
 def test_daemon_restart_prevents_mode_change_or_transmission(parked, monkeypatch, during):
   p, c, _ = parked
   def busy():
@@ -177,8 +177,7 @@ def test_daemon_restart_prevents_mode_change_or_transmission(parked, monkeypatch
     if during == 'initial':
       m.capture(p, io.StringIO(), 1)
     else:
-      p.state['safety_mode'] = m.SAFETY.elm327
-      c.can_send(0x18DA28F1, bytes.fromhex('0322400500000000'), 1)
+      c.read(0x18DA28F1, 0x4005)
   assert not p.modes and not p.sent
 
 
@@ -206,6 +205,30 @@ def test_repeated_pending_responses_cannot_extend_the_read_indefinitely(parked, 
     c.read(0x18DA28F1, 0x4005)
   assert 250_000_000 < clock[0] - started_ns <= 400_000_000
   assert c.read_deadline_ns == 0
+
+
+@pytest.mark.parametrize('address,did', [(0x18DA28F1, 0xF181), (0x18DA2BF1, 0xF181), (0x18DA28F1, 0x4005)])
+@pytest.mark.parametrize('native_age_ms', [40, 100])
+def test_slow_owner_check_does_not_consume_native_read_window(parked, monkeypatch, address, did, native_age_ms):
+  p, c, clock = parked
+  c.active = True
+  clock[0] += native_age_ms * 1_000_000
+  def slow_owner_check():
+    clock[0] += 100_000_000  # Measured process lookup on the device.
+  receive = p.can_recv
+  def paced_receive():
+    clock[0] += 10_000_000
+    frames = receive()
+    if c.obd:
+      p.pending = frames[1:]
+      return frames[:1]
+    return frames
+  monkeypatch.setattr(m, 'require_exclusive_panda', slow_owner_check)
+  monkeypatch.setattr(p, 'can_recv', paced_receive)
+  assert c.read(address, did)
+  rows = [json.loads(line) for line in c.output.getvalue().splitlines()]
+  assert any(r['type'] == 'qualified' for r in rows)
+  assert p.modes[-1] == (m.SAFETY.noOutput, 0)
 
 
 def test_records_complete_diagnostic_response_and_raw_can_flags(parked):

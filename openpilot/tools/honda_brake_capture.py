@@ -88,7 +88,6 @@ class Capture:
     allowed.add(bytes.fromhex("30000a0000000000"))
     if bus != 1 or address not in {addr for addr, _ in READS} or bytes(data) not in allowed:
       raise RuntimeError("only the documented read requests and ISO-TP flow control are permitted")
-    require_exclusive_panda()
     self.check(SAFETY.elm327)
     self.record("tx", address=address, data_hex=bytes(data).hex(), bus=bus)
     self.panda.can_send(address, data, bus, **kwargs)
@@ -116,7 +115,9 @@ class Capture:
       raise RuntimeError("Panda noOutput restoration was not confirmed")
 
   def read(self, address, did):
+    # Process lookup is slow on the device; do it before refreshing native state.
     require_exclusive_panda()
+    self.can_recv()
     self.check(SAFETY.noOutput)
     started_ns = time.monotonic_ns()
     # OBD and native bus 1 share a hardware mux. Never refresh native state from OBD.
