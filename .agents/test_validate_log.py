@@ -570,7 +570,7 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                    "93ee3157bf10a541a34b8da14d57cff978c6b120", "6d81db7b5fffe3deff98f7bce6a4b054754c2c26",
                    "6ed95de658e9fade484c442fd72495ea3b52a9e3", "aab32c0957b736b0f68ef7e7d18f3c55b11f6060",
                    "339d23b9909b71cabaf0386f8f46d60d7a983961", "4bd512b7e92b1571513e57bca4e53ab0d2443029", "bb5915f8d66cfaa7a9a01f2d8c09517d4093f62b",
-                   "0474b3f6ca933120855a85035c6d9ca227bba39c"):
+                   "0474b3f6ca933120855a85035c6d9ca227bba39c", "5df4a11cd143aa7d0b83eaf4e7852eabad860595"):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(11, np.nan), pid, brake, .01,
       gas_pressed=np.arange(11) == 6, brake_pressed=np.arange(11) == 7)
@@ -598,7 +598,8 @@ def test_creep_brake_continuity_revision_preserves_calibration_across_states():
                                      "93ee3157bf10a541a34b8da14d57cff978c6b120", "6d81db7b5fffe3deff98f7bce6a4b054754c2c26",
                                      "6ed95de658e9fade484c442fd72495ea3b52a9e3", "aab32c0957b736b0f68ef7e7d18f3c55b11f6060",
                                      "339d23b9909b71cabaf0386f8f46d60d7a983961", "4bd512b7e92b1571513e57bca4e53ab0d2443029",
-                                     "bb5915f8d66cfaa7a9a01f2d8c09517d4093f62b", "0474b3f6ca933120855a85035c6d9ca227bba39c"])
+                                     "bb5915f8d66cfaa7a9a01f2d8c09517d4093f62b", "0474b3f6ca933120855a85035c6d9ca227bba39c",
+                                     "5df4a11cd143aa7d0b83eaf4e7852eabad860595"])
 def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_only(revision):
   request = np.full(100, -.5)
   speed = np.full(100, 20.)
@@ -619,7 +620,8 @@ def test_brake_feedback_revision_models_numeric_translation_and_raw_fallback_onl
                                      "93ee3157bf10a541a34b8da14d57cff978c6b120", "6d81db7b5fffe3deff98f7bce6a4b054754c2c26",
                                      "6ed95de658e9fade484c442fd72495ea3b52a9e3", "aab32c0957b736b0f68ef7e7d18f3c55b11f6060",
                                      "339d23b9909b71cabaf0386f8f46d60d7a983961", "4bd512b7e92b1571513e57bca4e53ab0d2443029",
-                                     "bb5915f8d66cfaa7a9a01f2d8c09517d4093f62b", "0474b3f6ca933120855a85035c6d9ca227bba39c"])
+                                     "bb5915f8d66cfaa7a9a01f2d8c09517d4093f62b", "0474b3f6ca933120855a85035c6d9ca227bba39c",
+                                     "5df4a11cd143aa7d0b83eaf4e7852eabad860595"])
 def test_light_brake_translation_matches_exact_revision_and_preserves_prior_baseline(revision):
   request = np.r_[np.full(100, -.05), [-.5, 0., .01]]
   speed = np.full(len(request), 20.)

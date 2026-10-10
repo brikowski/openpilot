@@ -132,12 +132,13 @@ class TestOdysseyLongRails(unittest.TestCase):
     self.assertTrue(all(gas > 0 for _, gas, _ in seen[90:100]))
     self.assertTrue(all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[100:]))
 
-  def test_coast_fallback_respects_the_falling_request_rate(self):
+  def test_downhill_coast_follows_gas_floor_with_either_request_rate(self):
     for slope in (0.19, 0.21):
-      requests = np.r_[np.full(200, 0.1), 0.1 - slope * 0.01 * np.arange(120)]
+      requests = np.r_[np.full(200, 0.1), 0.1 - slope * 0.01 * np.arange(100)]
       rejects, seen = _run(True, requests, vego=21.0, pitch=-0.04, aegos=0.5, target_gear=7)
       assert not rejects
-      assert any(gas == GAS_INACTIVE and brake == 0 for _, gas, brake in seen) == (slope > 0.20)
+      assert any(gas == GAS_INACTIVE and brake == 0 for _, gas, brake in seen)
+      assert all(abs(accel / 100 - requests[i * 2]) <= .01 for i, (accel, _, _) in enumerate(seen))
       assert all(brake == 0 for _, _, brake in seen)
 
   def test_braking_does_not_weaken_when_a_stronger_request_enters_stopping(self):

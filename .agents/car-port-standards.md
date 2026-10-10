@@ -48,7 +48,10 @@ active safety rails.
   from the brake boundary, remains request-sensitive through zero, and blends
   into the positive-request grade term. A fresh negative gas bridge retains
   `-60` at level/downhill grade and blends toward mapped gas on an uphill;
-  response feedback remains inactive during the bridge. An already-active
+  it does not enter when the compensated map is at its zero-gas floor.
+  Downhill gas compensation uses the existing grade term through zero net demand;
+  it does not fade with the request. Raw gas-domain `ACCEL_COMMAND` is preserved.
+  Response feedback remains inactive during the bridge. An already-active
   gas domain may still release into coast earlier on shallow climbs. At road
   speed in PID control, the brake-domain
   `ACCEL_COMMAND` adds an Odyssey-calibrated grade term, limiting extra downhill deceleration
