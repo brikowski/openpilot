@@ -8,7 +8,8 @@
 The cache is for exploration only; validate_log reads source logs independently. Continuous
 state signals are interpolated onto carControl time; received CAN uses independently timestamped
 verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
-spread is m/s, and CAN acceleration is diagnostic rather than a replacement for aEgo.
+spread is m/s. can_long_accel has unqualified scale and reference frame on this Odyssey;
+keep it diagnostic rather than substituting it for net aEgo.
 Published planner/model commands are held to locate the first attribution divergence.
 """
 import argparse

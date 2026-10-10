@@ -20,6 +20,8 @@ active safety rails.
 
 - `ACC_CONTROL.ACCEL_COMMAND` is the acceleration request in m/s².
 - `GAS_COMMAND` is opaque/unitless. Do not infer acceleration or torque linearity from its raw value.
+- Received `KINEMATICS.LONG_ACCEL` has unqualified scale and reference frame on this Odyssey.
+  Keep it diagnostic until qualified; it is not interchangeable with net `aEgo`.
 - The Honda Bosch ECU closes its own acceleration/brake loop. Do not stack a generic OpenPilot PID
   around `ACCEL_COMMAND` or use CAN shaping to hide an upstream planner/controller mismatch.
 - On the current `ody-op` Odyssey port, the controller chooses mutually exclusive gas/brake
