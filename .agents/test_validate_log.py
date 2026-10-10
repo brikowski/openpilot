@@ -14,6 +14,7 @@ from validate_log import (
   BRAKE_ONSET_RATE_LIMIT_COMMITS,
   ODYSSEY,
   LOW_SPEED_BRAKE_PID_COMMITS,
+  RAW_ROAD_BRAKE_COMMITS,
   THREE_DOMAIN_COMMITS,
   _acc_control_cycle_inputs,
   _base_route,
@@ -636,6 +637,24 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
   assert np.all(previous[80:100] < current[80:100] - .05)
   assert current[100] == previous[100] < -.60
   np.testing.assert_array_equal(current[-2:], [0., .01])
+
+
+@pytest.mark.parametrize("revision", sorted(RAW_ROAD_BRAKE_COMMITS))
+def test_raw_road_brake_revision_keeps_response_domains_and_creep_translation(revision):
+  request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3])
+  speed = np.array([20.] * 7 + [.5, 2.])
+  active = np.ones(len(request), dtype=bool)
+  for pitch in (-.05, 0., .05, np.nan):
+    expected, eligible, modeled = _expected_brake_command(
+      revision, request, speed, np.full(len(request), pitch), active, active, .01)
+    assert modeled and revision not in BRAKE_GRADE_TRANSLATION_COMMITS
+    np.testing.assert_allclose(expected, [-3.5, -.5, -.15, -.05, 0., .1, 2., -.55, -.3])
+    np.testing.assert_array_equal(eligible, [False] * 7 + [True, False])
+  switch, threshold, valid, note = _domain_model(revision, request, speed, np.zeros(len(request)), np.ones(len(request)), .01)
+  assert valid and "response-qualified" in note and "coast braking" in note
+  np.testing.assert_array_equal(switch, request)
+  np.testing.assert_array_equal(threshold, [-.30] * 7 + [0., 0.])
+  assert not _brake_passthrough_expected(revision)
 
 
 def test_current_odyssey_brake_model_resets_after_invalid_pitch():

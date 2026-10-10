@@ -179,7 +179,7 @@ class TestOdysseyLongRails(unittest.TestCase):
                          aegos=0.3, target_gear=7)
     assert not rejects
     assert all(brake == 0 for _, _, brake in seen[:25])
-    assert all(-25 <= accel < -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[50:60])
+    assert all(accel == -15 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[50:60])
     assert all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[60:90])
     assert [accel for accel, _, _ in seen[60:90]] == [0] * 10 + [5] * 10 + [10] * 10
     assert all(accel == 40 and brake == 0 for accel, _, brake in seen[90:])
@@ -271,46 +271,25 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert not rejects
     assert all(accel == 0 and gas == GAS_INACTIVE and brake == 0 for accel, gas, brake in fresh)
 
-  def test_brake_command_applies_only_road_speed_pid_grade_translation(self):
-    """Grade translation must preserve raw level, low-speed, stopping, and missing-pose commands."""
-    for name, vego, state, pitch in (
-      ("level", 20.0, LongCtrlState.pid, 0.0),
-      ("low_speed", 4.0, LongCtrlState.pid, 0.05),
-      ("stopping", 20.0, LongCtrlState.stopping, 0.05),
-      ("missing_pose", 20.0, LongCtrlState.pid, None),
-    ):
-      with self.subTest(name=name):
-        accels = np.array([0.5] * 20 + [-0.31] * 20 + [-0.6] * 20 + [-2.0] * 20)
-        # Positive aEgo would make a supplemental integrator add braking.
-        aegos = np.array([0.0] * 20 + [2.0] * 60)
-        rejects, seen = _run(True, accels, pitch=pitch, vego=vego, aegos=aegos, long_control_state=state)
-        assert not rejects
-        np.testing.assert_array_equal(
-          np.array([accel for accel, _, _ in seen]),
-          np.array([50] * 10 + [-31] * 10 + [-60] * 10 + [-200] * 10),
-        )
-
-    accels = np.array([0.5] * 20 + [-0.31] * 40)
-    for pitch, relation in ((-0.05, "more"), (0.05, "less")):
-      with self.subTest(pitch=pitch):
-        rejects, seen = _run(True, accels, pitch=pitch, vego=20.0)
-        assert not rejects
-        translated = np.array([accel for accel, _, _ in seen[-10:]])
-        if relation == "more":
-          assert np.all(translated < -31)
-        else:
-          assert np.all((-31 < translated) & (translated <= 0))
-        assert all(brake_request for _, _, brake_request in seen[-10:])
+  def test_brake_command_preserves_road_speed_request_across_grade_and_state(self):
+    for vego, state in ((20., LongCtrlState.pid), (4., LongCtrlState.pid), (20., LongCtrlState.stopping)):
+      for pitch in (None, np.nan, -.05, 0., .05):
+        with self.subTest(vego=vego, state=state, pitch=pitch):
+          requests = np.repeat([.5, -.31, -.6, -2.], 20)
+          rejects, seen = _run(True, requests, pitch=pitch, vego=vego, aegos=2., long_control_state=state)
+          assert not rejects
+          np.testing.assert_array_equal([accel for accel, _, _ in seen], np.repeat([50, -31, -60, -200], 10))
+          assert all(gas == GAS_INACTIVE and brake for _, gas, brake in seen[10:])
 
   def test_light_downhill_braking_preserves_request_magnitude_and_release(self):
     requests = np.r_[np.full(100, -.5), np.repeat([-.10, -.05, -.001, 0., .1], 2)]
     rejects, seen = _run(True, requests, pitch=-.05, vego=20., target_gear=7)
     assert not rejects
-    assert [accel for accel, _, _ in seen[-5:]] == [-20, -10, 0, 0, 10]
+    assert [accel for accel, _, _ in seen[-5:]] == [-10, -5, 0, 0, 10]
     assert [brake for _, _, brake in seen[-5:]] == [1, 1, 1, 0, 0]
     assert all(gas == GAS_INACTIVE for _, gas, _ in seen[-5:-1])
     assert seen[-1][1] > 0
-    assert seen[49][0] < -50
+    assert seen[49][0] == -50
 
   def test_road_speed_coasts_through_raw_split_chatter(self):
     """Small negative requests must not alternate Honda's gas and friction-brake domains."""

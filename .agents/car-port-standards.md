@@ -53,15 +53,15 @@ active safety rails.
   it does not fade with the request. Raw gas-domain `ACCEL_COMMAND` is preserved.
   Response feedback remains inactive during the bridge. An already-active
   gas domain may still release into coast earlier on shallow climbs. At road
-  speed in PID control, the brake-domain
-  `ACCEL_COMMAND` adds an Odyssey-calibrated grade term, limiting extra downhill deceleration
-  to the requested deceleration's magnitude as a gentle request approaches zero. The creep-speed brake trial adds
+  speed, brake-domain `ACCEL_COMMAND` preserves the bounded raw acceleration request.
+  The raw-request trial isolates Honda's response from the prior brake-grade correction;
+  internal grade compensation and physical benefit remain unestablished. The creep-speed brake trial adds
   at most 0.25 m/s² of request-sensitive deceleration below 2 m/s, tapering to zero at zero request
   and at -0.80 m/s². It requires active control with neither pedal pressed and remains continuous
   across control-state transitions. This feedforward calibration does not accumulate acceleration error or
   retain a released request. Physical benefit remains unmeasured. At road speed, level-road,
   stopping and missing-pose behavior retain the raw-request rules. Early brake release requires
-  fresh received braking state, an easing negative request, current overdeceleration, and a
+  fresh received braking state, a negative request, current overdeceleration, and a
   same-gear coast forecast that can supply the request. Without a qualified forecast, an active
   brake follows the easing negative command. At 8–35 m/s in PID control with qualified CAN and
   pose, an active brake remains available through zero and positive net-acceleration requests

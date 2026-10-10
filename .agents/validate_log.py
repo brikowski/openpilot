@@ -183,7 +183,7 @@ DOWNHILL_PITCH = -0.012       # rad (~-0.7 deg / -1.2% grade, -0.12 m/s^2 of hil
 DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode is >=0.5 s of
                               # longActive & request > 0.02 & BRAKE_REQUEST & pitch < DOWNHILL_PITCH
 DOMAIN_PITCH_FILTER_TAU = 0.5  # Legacy ody-op compensated-domain model.
-ODYSSEY_BRAKE_GRADE_GAIN = 0.3  # MUST track honda/carcontroller.py.
+ODYSSEY_BRAKE_GRADE_GAIN = 0.3  # Source-matched historical brake calibration.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
 THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRAKE_ENTRY.
@@ -194,11 +194,12 @@ REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {
   "6a5578d12c15", "6410ed017553", "b45dbbe7c061", "67068dfcbc88",
   "93ee3157bf10", "6d81db7b5fff", "6ed95de658e9", "aab32c0957b7", "339d23b9909b", "4bd512b7e92b", "bb5915f8d66c", "0474b3f6ca93", "5df4a11cd143",
 }
+RAW_ROAD_BRAKE_COMMITS = {"fb4da310aabf"}
 CREEP_BRAKE_CONTINUITY_COMMITS = {
   "fb194cf07ef1", "fc557b4ee5d2", "48f151363793", "ba7b308209e8",
   "cfe404adec77", "1b613c490a97", "9749eff86d25", "4854cdfb4a40", "e441ed11e5bc", "6dee887e0a7e",
   "0cdd66c97535", "dfff4b1170d1", "c59c156ae694", "90fb5c2faa12", "9c7a2ca3ef9f", "bc93a6b141a3",
-} | REQUEST_BOUNDED_BRAKE_GRADE_COMMITS
+} | REQUEST_BOUNDED_BRAKE_GRADE_COMMITS | RAW_ROAD_BRAKE_COMMITS
 CREEP_BRAKE_TRANSLATION_COMMITS = {"ce98fbddd07b"} | CREEP_BRAKE_CONTINUITY_COMMITS
 COAST_RESPONSE_BRAKE_ENTRY_COMMITS = {"7b4f974f9a63"} | CREEP_BRAKE_TRANSLATION_COMMITS
 POST_E820_ODYSSEY_BRAKE_COMMITS = {
@@ -321,7 +322,7 @@ BRAKE_ONSET_RATE_LIMIT_COMMITS = {
   "aa8a2e60fbad",
   "0bd54951753f",
 }
-BRAKE_GRADE_TRANSLATION_COMMITS = {
+BRAKE_GRADE_TRANSLATION_COMMITS = ({
   "0fbe4df19eea",
   "ff33e79f665a",
   "6915be202bb7",
@@ -329,7 +330,7 @@ BRAKE_GRADE_TRANSLATION_COMMITS = {
   "f697fa4c6588",
   "16f0ec75fa50",
   "e82025624994",
-} | POST_E820_ODYSSEY_BRAKE_COMMITS
+} | POST_E820_ODYSSEY_BRAKE_COMMITS) - RAW_ROAD_BRAKE_COMMITS
 RESPONSE_QUALIFIED_BRAKE_RELEASE_COMMITS = {"e82025624994"} | POST_E820_ODYSSEY_BRAKE_COMMITS
 # Before the upstream-rooted Odyssey port, selected fork commits carried internal learner values in
 # carOutput.actuatorsOutput.gas/brake. The allowlist is deliberate: unknown revisions are treated
@@ -661,7 +662,8 @@ def _brake_passthrough_expected(opendbc_commit):
   """Whether every brake-domain frame should carry the raw controller request."""
   commit = (opendbc_commit or "")[:12]
   return (commit in RAW_DOMAIN_COMMITS | THREE_DOMAIN_COMMITS
-          and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS | BRAKE_GRADE_TRANSLATION_COMMITS)
+          and commit not in LOW_SPEED_BRAKE_PID_COMMITS | BRAKE_ONSET_RATE_LIMIT_COMMITS | BRAKE_GRADE_TRANSLATION_COMMITS |
+                  CREEP_BRAKE_TRANSLATION_COMMITS)
 
 
 def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_request, dt, *,
@@ -670,30 +672,34 @@ def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_
   requested = np.asarray(requested, dtype=float)
   expected = requested.copy()
   commit = (opendbc_commit or "")[:12]
-  if commit not in BRAKE_GRADE_TRANSLATION_COMMITS:
+  if commit not in BRAKE_GRADE_TRANSLATION_COMMITS | CREEP_BRAKE_TRANSLATION_COMMITS:
     return expected, np.zeros(len(expected), dtype=bool), False
 
-  pitch = np.asarray(pitch, dtype=float)
-  if commit in INVALID_PITCH_RESET_COMMITS:
-    filtered_pitch = np.empty_like(pitch)
-    pitch_valid = np.isfinite(pitch)
-    pitch_state = 0.0
-    alpha = dt / (DOMAIN_PITCH_FILTER_TAU + dt)
-    for i, value in enumerate(pitch):
-      pitch_state = pitch_state + alpha * (value - pitch_state) if pitch_valid[i] else 0.0
-      filtered_pitch[i] = pitch_state
-  else:
-    filtered_pitch = _causal_lpf(pitch, dt, DOMAIN_PITCH_FILTER_TAU, initial=0.0)
-    pitch_valid = np.ones(len(pitch), dtype=bool)
-  eligible = (np.asarray(speed, dtype=float) >= LOW_SPEED_DOMAIN_VEGO) & np.asarray(pid, dtype=bool) & \
-             np.asarray(brake_request, dtype=bool) & pitch_valid
-  grade_accel = np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY * ODYSSEY_BRAKE_GRADE_GAIN
-  if commit in REQUEST_BOUNDED_BRAKE_GRADE_COMMITS:
-    grade_accel = np.maximum(grade_accel, requested)
-  translated = np.minimum(requested + grade_accel, 0.0)
-  if commit in REQUEST_BOUNDED_BRAKE_GRADE_COMMITS:
-    translated = np.where(requested < 0.0, translated, requested)
-  expected[eligible] = np.clip(translated[eligible], HondaParams.BOSCH_ACCEL_MIN, HondaParams.BOSCH_ACCEL_MAX)
+  if commit in RAW_ROAD_BRAKE_COMMITS:
+    expected = np.clip(expected, HondaParams.BOSCH_ACCEL_MIN, HondaParams.BOSCH_ACCEL_MAX)
+  eligible = np.zeros(len(expected), dtype=bool)
+  if commit in BRAKE_GRADE_TRANSLATION_COMMITS:
+    pitch = np.asarray(pitch, dtype=float)
+    if commit in INVALID_PITCH_RESET_COMMITS:
+      filtered_pitch = np.empty_like(pitch)
+      pitch_valid = np.isfinite(pitch)
+      pitch_state = 0.0
+      alpha = dt / (DOMAIN_PITCH_FILTER_TAU + dt)
+      for i, value in enumerate(pitch):
+        pitch_state = pitch_state + alpha * (value - pitch_state) if pitch_valid[i] else 0.0
+        filtered_pitch[i] = pitch_state
+    else:
+      filtered_pitch = _causal_lpf(pitch, dt, DOMAIN_PITCH_FILTER_TAU, initial=0.0)
+      pitch_valid = np.ones(len(pitch), dtype=bool)
+    eligible = (np.asarray(speed, dtype=float) >= LOW_SPEED_DOMAIN_VEGO) & np.asarray(pid, dtype=bool) & \
+               np.asarray(brake_request, dtype=bool) & pitch_valid
+    grade_accel = np.sin(filtered_pitch) * ACCELERATION_DUE_TO_GRAVITY * ODYSSEY_BRAKE_GRADE_GAIN
+    if commit in REQUEST_BOUNDED_BRAKE_GRADE_COMMITS:
+      grade_accel = np.maximum(grade_accel, requested)
+    translated = np.minimum(requested + grade_accel, 0.0)
+    if commit in REQUEST_BOUNDED_BRAKE_GRADE_COMMITS:
+      translated = np.where(requested < 0.0, translated, requested)
+    expected[eligible] = np.clip(translated[eligible], HondaParams.BOSCH_ACCEL_MIN, HondaParams.BOSCH_ACCEL_MAX)
   if commit in CREEP_BRAKE_TRANSLATION_COMMITS:
     state_eligible = True if commit in CREEP_BRAKE_CONTINUITY_COMMITS else np.asarray(pid, dtype=bool)
     creep = (np.asarray(speed) >= 0.0) & (np.asarray(speed) < 2.0) & state_eligible & \
@@ -1698,7 +1704,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
       switch_accel, entry_threshold, requested, aego, BR, active,
       dt=dt,
     ))
-  if model_valid and source_commit in BRAKE_GRADE_TRANSLATION_COMMITS:
+  if model_valid and source_commit in RESPONSE_QUALIFIED_BRAKE_RELEASE_COMMITS:
     cycle_parser = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
     cycles = []
     for timestamp, control, state, frame in _acc_control_cycle_inputs(msgs):
