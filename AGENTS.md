@@ -9,11 +9,13 @@ Make the Odyssey follow `carControl`'s lateral and longitudinal commands as accu
 smoothly as its Honda actuators allow. Preserve `ody-op` as the known-good rollback baseline and keep
 production changes minimal relative to current `commaai/openpilot` and `commaai/opendbc`.
 
-Prefer behavior that responds dynamically to the commanded state. Use reliable live or learned
-vehicle state when it directly represents the behavior being controlled; use fixed values only
-when a suitable signal is unavailable, unreliable, or needed as a constraint or fallback. Use the
-simplest implementation that works, without duplicate logic or new learning solely to remove a
-constant. Remove unnecessary tuning, documentation, abstractions, and code.
+Prefer the simplest appropriate behavior that directly responds to the commanded and observed
+vehicle state. Favor reliable live or learned state and straightforward control over unnecessary
+fixed tuning, heuristics, and special cases. Use fixed values when they are the simplest correct
+solution or necessary constraints or fallbacks. Keep behavior and implementation simple while
+preserving correct, smooth, reliable control. Remove redundant or obsolete logic instead of adding
+compensating logic. Add complexity or learning only for a meaningful behavioral benefit, and keep
+code, tuning, abstractions, and documentation to what is useful.
 
 For every comparable private full-rate route, resolve the exact parent and nested `opendbc` revisions,
 reconstruct the command path with zero-order-held CAN, and identify the first repeatable breakdown:

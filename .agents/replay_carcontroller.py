@@ -32,6 +32,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from contextlib import nullcontext
+from unittest.mock import patch
 
 import numpy as np
 
@@ -228,11 +230,7 @@ def main(argv=None):
 
   CP = next(m.carParams for m in msgs if m.which() == "carParams")
   cc = make_replay_controller(CP)
-  if args.disable_brake_release:
-    cc.odyssey_brake_release.update = lambda *unused: False
   baseline = make_replay_controller(CP) if args.compare_no_release else None
-  if baseline is not None:
-    baseline.odyssey_brake_release.update = lambda *unused: False
   torque_updates, gear_updates, brake_updates = (odyssey_received_state(src) if CP.carFingerprint == "HONDA_ODYSSEY_5G_MMR"
                                                 else (None, None, None))
   state_times = np.asarray([m.logMonoTime for m in msgs if m.which() == 'carState'], dtype=np.int64)
@@ -276,9 +274,11 @@ def main(argv=None):
       if baseline is not None:
         baseline.frame = cc.frame
     previous_brake = cc.odyssey_brake_selected
-    actuators, can_sends = cc.update(control, cs_shim, controller_time)
+    with patch("opendbc.car.honda.carcontroller.odyssey_brake_release", return_value=False) if args.disable_brake_release else nullcontext():
+      actuators, can_sends = cc.update(control, cs_shim, controller_time)
     if baseline is not None:
-      base_actuators, base_sends = baseline.update(control, cs_shim, controller_time)
+      with patch("opendbc.car.honda.carcontroller.odyssey_brake_release", return_value=False):
+        base_actuators, base_sends = baseline.update(control, cs_shim, controller_time)
       diff = twin_can_difference(base_sends, can_sends)
       for key, count in diff.items():
         twin[key] += count

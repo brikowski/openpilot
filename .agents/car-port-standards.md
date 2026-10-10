@@ -40,6 +40,8 @@ active safety rails.
   and measured acceleration above a negative request select mutually exclusive braking when fresh
   valid CAN confirms inactive gas and braking. Brake selection need not wait for the coast learner
   to settle; learning and gas entry retain their response interval.
+  Excess road-speed braking may release when fresh brake feedback and the qualified coast estimate
+  show that coast supplies the current negative request; release does not require a request trend.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
   The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
   request-ramped, bounded pitch load. Its grade-proportional gas term rises

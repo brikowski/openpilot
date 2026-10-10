@@ -91,7 +91,8 @@ def test_received_braking_uses_powertrain_bus_and_independent_timestamp(monkeypa
 
 
 @pytest.mark.parametrize('bound', ['carState', 'sendcan'])
-def test_replay_applies_timing_bound_to_both_controllers_and_reports_it(monkeypatch, tmp_path, bound):
+@pytest.mark.parametrize('disable_release', [False, True])
+def test_replay_applies_timing_bound_to_both_controllers_and_reports_it(monkeypatch, tmp_path, bound, disable_release):
   params = CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)
   control = structs.CarControl.new_message()
   control.longActive = True
@@ -128,11 +129,22 @@ def test_replay_applies_timing_bound_to_both_controllers_and_reports_it(monkeypa
     return real_update(self, control, state, now)
 
   monkeypatch.setattr(replay.CarController, 'update', capture_time)
+  from opendbc.car.honda import carcontroller as honda
+  release_calls = []
+  real_release = honda.odyssey_brake_release
+
+  def capture_release(*args, **kwargs):
+    release_calls.append(args[0])
+    return real_release(*args, **kwargs)
+
+  monkeypatch.setattr(honda, 'odyssey_brake_release', capture_release)
   output = tmp_path / 'timing.json'
-  replay.main(['synthetic/rlog.zst', str(output), '--controller-time-bound', bound, '--compare-no-release'])
+  options = ['--disable-brake-release'] if disable_release else []
+  replay.main(['synthetic/rlog.zst', str(output), '--controller-time-bound', bound, '--compare-no-release', *options])
   result = json.loads(output.read_text())
   expected_times = state_times if bound == 'carState' else send_times
   assert calls == [time for time in expected_times for _ in range(2)]
+  assert release_calls == ([] if disable_release else expected_times[::2])
   assert result['controller_time_bound'] == bound
   assert result['controller_time_gap_max_ms'] == 70.
   assert result['same_cycle_gas_wire_comparison']['paired'] == 30

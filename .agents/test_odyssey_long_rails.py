@@ -98,6 +98,19 @@ ACCEL_SWEEP = np.concatenate([
 
 
 class TestOdysseyLongRails(unittest.TestCase):
+  def test_brake_release_follows_coast_response_during_slow_request_easing(self):
+    requests = np.r_[np.full(70, -.2), np.linspace(-.4, -.2, 202), np.full(20, -.2)]
+    braking = np.r_[np.zeros(70, dtype=bool), np.ones(222, dtype=bool)]
+    response = np.r_[np.full(70, -.3), np.full(222, -.55)]
+    rejects, seen = _run(True, requests, pitch=0., vego=20., aegos=response, target_gear=7,
+                         computer_braking=braking)
+    assert not rejects
+    mild = [(i, command) for i, command in enumerate(seen) if i * 2 >= 70 and requests[i * 2] > -.3]
+    assert mild
+    assert all(gas == GAS_INACTIVE and brake == 0 for _, (_, gas, brake) in mild)
+    assert all(abs(accel / 100 - requests[i * 2]) <= .01 for i, (accel, _, _) in mild)
+    assert any(brake == 1 for _, _, brake in seen[35:80])
+
   def test_brake_to_gas_handoff_waits_for_idle_feedback_inside_safety_rails(self):
     requests = [-.4] * 20 + [.05] * 40
     braking = [True] * 28 + [False] * 32
