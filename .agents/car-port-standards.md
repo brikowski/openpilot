@@ -111,8 +111,9 @@ active safety rails.
 - The Odyssey steering trial preserves the ordinary physical 2560-count map by
   rescaling the torque normalization and slew together. Extra counts are limited to persistent,
   same-direction 15–33 m/s curvature under-response while lateral control is active and
-  unoverridden. Persistence follows the upstream torque request; issued torque retains its physical
-  slew limit. `carOutput` reports the bounded controller command. The gate is not evidence
+  unoverridden. Persistence follows the upstream torque request. Once qualified, authority follows
+  that request within the existing 3840-count limit; issued torque retains its physical slew limit.
+  `carOutput` reports the bounded controller command. The gate is not evidence
   that the EPS accepts extra torque or that road tracking improves.
 - Read `values.py`, `hondacan.py`, the DBC, and `safety/modes/honda.h` together before changing a
   rail or signal. Numeric command fidelity is incomplete if the active domain bits disagree.
