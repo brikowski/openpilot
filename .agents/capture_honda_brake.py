@@ -66,6 +66,8 @@ class Capture:
     if frames:
       self.record("can", received_ns=received_ns,
                   frames=[[address, bytes(data).hex(), bus] for address, data, bus in frames])
+    if self.active and not self.parked():
+      raise RuntimeError("stationary Park or fresh valid CAN lost")
     if any(bus == 1 and address in self.cp.addresses and len(data) != self.cp.message_states[address].size
            for address, data, bus in frames):
       raise RuntimeError("invalid state frame length")
@@ -103,6 +105,7 @@ def capture(panda, output, seconds):
   require_exclusive_panda()
   if panda.health()["safety_mode"] == SAFETY.silent:
     panda.set_safety_mode(SAFETY.noOutput)  # Receive CAN after the stopped manager's heartbeat expires.
+  panda.can_clear(0xFFFF)  # Host reception time cannot date frames queued before this capture.
   deadline = time.monotonic() + 3
   while not c.parked() and time.monotonic() < deadline:
     c.can_recv()

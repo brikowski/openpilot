@@ -28,6 +28,9 @@ class RecordedPanda:
     self.modes.append((mode, param))
     self.state['safety_mode'] = mode
 
+  def can_clear(self, bus):
+    self.pending = []
+
   def can_recv(self):
     self.tick += 1
     frames = [self.packer.make_can_msg(name, 1, {**values, **({"COUNTER": self.tick % 4} if name != 'WHEEL_SPEEDS' else {})})
@@ -98,6 +101,37 @@ def test_missing_stale_invalid_or_wrong_bus_state_cannot_authorize_queries(parke
     c.panda = type('Frames', (), {'can_recv': lambda self, frames=frames: frames})()
     c.can_recv()
     assert not c.parked(), bad
+
+
+def test_buffered_park_before_capture_cannot_authorize_queries(parked, monkeypatch):
+  p, _, _ = parked
+  queued = [p.can_recv()]
+  p.values['GEARBOX_AUTO']['GEAR_SHIFTER'] = 4
+  receive = p.can_recv
+  monkeypatch.setattr(p, 'can_recv', lambda: queued.pop(0) if queued else receive())
+  monkeypatch.setattr(p, 'can_clear', lambda bus: queued.clear() if bus == 0xFFFF else None)
+  with pytest.raises(RuntimeError, match='Park'):
+    m.capture(p, io.StringIO(), 1)
+  assert not p.sent
+
+
+@pytest.mark.parametrize('during_receive', [False, True])
+def test_buffered_park_after_reception_stall_cannot_refresh_active_guard(parked, monkeypatch, during_receive):
+  p, c, clock = parked
+  c.active = True
+  def stall():
+    clock[0] += 250_000_001
+  if during_receive:
+    receive = p.can_recv
+    def slow_receive():
+      stall()
+      return receive()
+    monkeypatch.setattr(p, 'can_recv', slow_receive)
+  else:
+    stall()
+  with pytest.raises(RuntimeError, match='Park'):
+    c.can_recv()
+  assert not p.sent
 
 
 @pytest.mark.parametrize("key,value", [("controls_allowed", True), ("faults", 1),
