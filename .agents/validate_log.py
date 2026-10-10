@@ -192,7 +192,7 @@ THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRA
 # Keep source-matched brake diagnostics enabled for each SHA.
 REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {
   "6a5578d12c15", "6410ed017553", "b45dbbe7c061", "67068dfcbc88",
-  "93ee3157bf10", "6d81db7b5fff", "6ed95de658e9", "aab32c0957b7", "339d23b9909b", "4bd512b7e92b",
+  "93ee3157bf10", "6d81db7b5fff", "6ed95de658e9", "aab32c0957b7", "339d23b9909b", "4bd512b7e92b", "bb5915f8d66c",
 }
 CREEP_BRAKE_CONTINUITY_COMMITS = {
   "fb194cf07ef1", "fc557b4ee5d2", "48f151363793", "ba7b308209e8",
