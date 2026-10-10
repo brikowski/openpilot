@@ -66,6 +66,9 @@ active safety rails.
   brake follows the easing negative command. At 8–35 m/s in PID control with qualified CAN and
   pose, an active brake remains available through zero and positive net-acceleration requests
   below the learned coast acceleration. It releases when the request reaches that forecast.
+  A settled hold also yields to a positive-request acceleration shortfall when fresh received
+  gas and brake feedback are idle. The existing response margin applies; the held forecast
+  is not updated from that controlled response.
   Gas and brake remain mutually exclusive; nonnegative brake targets retain raw `ACCEL_COMMAND`.
   Missing or unreliable state retains the raw-sign fallback for nonnegative requests. This does
   not create positive-request brake entry or extend low-speed stopping authority.
