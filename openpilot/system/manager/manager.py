@@ -19,7 +19,6 @@ from openpilot.system.athena.registration import register, UNREGISTERED_DONGLE_I
 from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.common.version import get_build_metadata
 from openpilot.common.hardware.hw import Paths
-from openpilot.tools.honda_brake_test import manage_brake_test
 
 
 def manager_init() -> None:
@@ -98,12 +97,6 @@ def manager_cleanup() -> None:
   cloudlog.info("everything is dead")
 
 
-def ensure_manager_processes(sm, params, ignore, started):
-  brake_test = manage_brake_test(params, sm, managed_processes)
-  return ensure_running(managed_processes.values(), started and not brake_test, params=params, CP=sm['carParams'],
-                        not_run=ignore + (["pandad", "updated"] if brake_test else []))
-
-
 def manager_thread() -> None:
   cloudlog.bind(daemon="manager")
   cloudlog.info("manager start")
@@ -122,7 +115,7 @@ def manager_thread() -> None:
   pm = messaging.PubMaster(['managerState'])
 
   params.put_bool("IsOffroad", True, block=True)
-  ensure_manager_processes(sm, params, ignore, False)
+  ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore)
 
   started_prev = False
   ignition_prev = False
@@ -148,7 +141,7 @@ def manager_thread() -> None:
     started_prev = started
     ignition_prev = ignition
 
-    ensure_manager_processes(sm, params, ignore, started)
+    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore)
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
                        for p in managed_processes.values() if p.proc)

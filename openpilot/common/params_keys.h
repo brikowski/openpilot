@@ -54,9 +54,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GsmMetered", {PERSISTENT, BOOL, "1"}},
     {"GsmRoaming", {PERSISTENT, BOOL}},
     {"HardwareSerial", {PERSISTENT, STRING}},
-    {"HondaBrakeTest", {PERSISTENT, STRING}},  // Panda ownership survives test/manager restarts until ignition off.
-    {"HondaBrakeTestCancel", {PERSISTENT, BOOL}},
-    {"HondaBrakeTestStatus", {PERSISTENT | DONT_LOG, JSON}},
     {"HasAcceptedTerms", {PERSISTENT, STRING, "0"}},
     {"InstallDate", {PERSISTENT, TIME}},
     {"IsDriverViewEnabled", {CLEAR_ON_MANAGER_START, BOOL}},

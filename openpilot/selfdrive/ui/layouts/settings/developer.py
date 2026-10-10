@@ -1,11 +1,9 @@
 from openpilot.common.params import Params
 from openpilot.selfdrive.ui.layouts.settings.lateral_maneuver import set_lateral_maneuver_mode
-from opendbc.car.honda.values import CAR
-from openpilot.tools.honda_brake_test import can_request_test, request_test
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
-from openpilot.system.ui.widgets.list_view import button_item, toggle_item
+from openpilot.system.ui.widgets.list_view import toggle_item
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 from openpilot.system.ui.lib.application import gui_app
@@ -77,13 +75,6 @@ class DeveloperLayout(Widget):
       callback=self._on_lat_maneuver_mode,
     )
 
-    self._brake_test = button_item(
-      lambda: tr("Honda Brake Diagnostic Test"), lambda: tr("Enable"),
-      description=lambda: tr("Stay parked in Park with the parking brake set. Follow the screen through an ignition cycle and pedal holds."),
-      callback=self._on_brake_test,
-      enabled=lambda: can_request_test(ui_state.CP, ui_state.sm) and not self._params.get("HondaBrakeTest"),
-    )
-
     self._alpha_long_toggle = toggle_item(
       lambda: tr("openpilot Longitudinal Control (Alpha)"),
       description=lambda: tr(DESCRIPTIONS["alpha_longitudinal"]),
@@ -107,7 +98,6 @@ class DeveloperLayout(Widget):
       self._joystick_toggle,
       self._long_maneuver_toggle,
       self._lat_maneuver_toggle,
-      self._brake_test,
       self._alpha_long_toggle,
       self._ui_debug_toggle,
     ], line_separator=True, spacing=0)
@@ -125,8 +115,6 @@ class DeveloperLayout(Widget):
 
   def _update_toggles(self):
     ui_state.update_params()
-    self._brake_test.set_visible(not self._is_release and ui_state.CP is not None and
-                                 ui_state.CP.carFingerprint == CAR.HONDA_ODYSSEY_5G_MMR)
 
     # Hide non-release toggles on release builds
     # TODO: we can do an onroad cycle, but alpha long toggle requires a deinit function to re-enable radar and not fault
@@ -167,10 +155,6 @@ class DeveloperLayout(Widget):
     self._params.put_bool("ShowDebugInfo", state, block=True)
     gui_app.set_show_touches(state)
     gui_app.set_show_fps(state)
-
-  def _on_brake_test(self):
-    if can_request_test(ui_state.CP, ui_state.sm) and not self._params.get("HondaBrakeTest"):
-      request_test(self._params)
 
   def _on_enable_adb(self, state: bool):
     self._params.put_bool("AdbEnabled", state, block=True)

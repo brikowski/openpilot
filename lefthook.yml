@@ -4,8 +4,8 @@ pre-commit:
     - name: staged whitespace
       run: git diff --cached --check
     - name: tuning tooling lint
-      run: .venv/bin/ruff check .agents openpilot/tools/honda_brake_capture.py openpilot/tools/honda_brake_test.py openpilot/selfdrive/ui/layouts/honda_brake_test.py --ignore ISC002
+      run: .venv/bin/ruff check .agents --ignore ISC002
     - name: tuning tooling tests
-      run: .venv/bin/python -m pytest .agents/test_validate_log.py .agents/test_extract.py .agents/test_inspect_response.py .agents/test_compare_uphill_response.py .agents/test_compare_lateral_response.py .agents/test_replay_carcontroller.py .agents/test_inspect_response_model.py .agents/test_inspect_pitch_grade.py .agents/test_private_paths.py .agents/test_check_offroad.py .agents/test_capture_honda_brake.py openpilot/common/tests/test_prefix.py -q
+      run: .venv/bin/python -m pytest .agents/test_validate_log.py .agents/test_extract.py .agents/test_inspect_response.py .agents/test_compare_uphill_response.py .agents/test_compare_lateral_response.py .agents/test_replay_carcontroller.py .agents/test_inspect_response_model.py .agents/test_inspect_pitch_grade.py .agents/test_private_paths.py .agents/test_check_offroad.py openpilot/common/tests/test_prefix.py -q
     - name: Honda tune lint
       run: .venv/bin/ruff check opendbc_repo/opendbc/car/honda
