@@ -194,7 +194,7 @@ REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {
   "6a5578d12c15", "6410ed017553", "b45dbbe7c061", "67068dfcbc88",
   "93ee3157bf10", "6d81db7b5fff", "6ed95de658e9", "aab32c0957b7", "339d23b9909b", "4bd512b7e92b", "bb5915f8d66c", "0474b3f6ca93", "5df4a11cd143",
 }
-RAW_ROAD_BRAKE_COMMITS = {"fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1"}
+RAW_ROAD_BRAKE_COMMITS = {"fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311"}
 CREEP_BRAKE_CONTINUITY_COMMITS = {
   "fb194cf07ef1", "fc557b4ee5d2", "48f151363793", "ba7b308209e8",
   "cfe404adec77", "1b613c490a97", "9749eff86d25", "4854cdfb4a40", "e441ed11e5bc", "6dee887e0a7e",
