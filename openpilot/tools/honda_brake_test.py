@@ -11,6 +11,7 @@ from openpilot.tools.honda_brake_capture import Capture, SAFETY, record_metadata
 
 MODE = "HondaBrakeTest"
 STATUS = "HondaBrakeTestStatus"
+CANCEL = "HondaBrakeTestCancel"
 
 
 def can_request_test(cp, sm):
@@ -36,6 +37,9 @@ def manage_brake_test(params, sm, procs):
   Persist active ownership across manager restarts; a crashed test must not start card.
   """
   mode = params.get(MODE)
+  if mode == 'requested' and params.get_bool(CANCEL):
+    params.remove(MODE)
+    mode = None
   states = sm['pandaStates']
   off = (sm.valid['pandaStates'] and sm.alive['pandaStates'] and len(states) > 0 and
          0 <= time.monotonic_ns() - sm.logMonoTime['pandaStates'] < 1_000_000_000 and
@@ -47,21 +51,22 @@ def manage_brake_test(params, sm, procs):
   elif mode == 'restore' and off and not sm['deviceState'].started:
     procs['honda_brake_test'].stop(block=True)
     params.remove(MODE)
+    params.put_bool(CANCEL, False, block=True)
     mode = None
   return mode not in (None, 'requested')
 
 
 def request_test(params):
+  params.put_bool(CANCEL, False, block=True)
   params.put(STATUS, {'title': 'Brake diagnostic test armed',
                       'instruction': 'Turn the car fully off. Wait for the next instruction before turning it on.'}, block=True)
   params.put(MODE, 'requested', block=True)
 
 
 def cancel_test(params):
-  if params.get(MODE) == 'requested':
-    params.remove(MODE)
-  elif params.get(MODE):
-    params.put(MODE, 'cancel', block=True)
+  if params.get(MODE):
+    # The UI must not change the ownership phase while manager is transferring Panda.
+    params.put_bool(CANCEL, True, block=True)
 
 
 class GuidedTest:
@@ -110,7 +115,7 @@ class GuidedTest:
 
   def wait_ignition(self, on):
     while True:
-      if on and self.params.get(MODE) != 'active':
+      if on and (self.params.get(MODE) != 'active' or self.params.get_bool(CANCEL)):
         raise RuntimeError('test cancelled')
       h = self.health()
       if h['controls_allowed'] or h['safety_mode'] != SAFETY.noOutput:
@@ -153,7 +158,7 @@ class GuidedTest:
       next_read = 0.
       deadline = time.monotonic() + 30
       while time.monotonic() < deadline:
-        if self.params.get(MODE) != 'active':
+        if self.params.get(MODE) != 'active' or self.params.get_bool(CANCEL):
           raise RuntimeError('test cancelled')
         self.health()
         c.can_recv()
@@ -172,7 +177,7 @@ class GuidedTest:
             samples += 1
             next_read = time.monotonic() + 1
           remaining = max(0, 5 - int(time.monotonic() - ready_since))
-          self.prompt(f'Step {index} of 5 — hold {remaining}s', instruction)
+          self.prompt(f'Step {index} of 5: hold {remaining}s', instruction)
           if time.monotonic() - ready_since >= 5 and samples >= 4:
             break
         time.sleep(0.02)
@@ -182,10 +187,11 @@ class GuidedTest:
   def run(self):
     try:
       self.sequence()
-      self.prompt('Brake test complete — data saved', 'Turn the car fully off. Wait for the normal screen, then restart normally.')
+      self.prompt('Brake test complete: data saved', 'Turn the car fully off. Wait for the normal screen, then restart normally.')
     except Exception as e:
       self.capture.record('error', exception=type(e).__name__, error=str(e))
-      self.prompt('Brake test stopped — partial data saved', f'{e}. Turn the car fully off; wait for the normal screen before restarting.')
+      self.prompt('Brake test stopped: partial data saved',
+                  'Keep Park and the parking brake set. Turn the car fully off; wait for the normal screen before restarting.')
     finally:
       self.capture.active = False
       self.capture.restore()

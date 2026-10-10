@@ -358,6 +358,8 @@ class TestParams:
     return bool(self.get(key))
   def put(self, key, value, **_):
     self.values[key] = value
+  def put_bool(self, key, value, **_):
+    self.values[key] = bool(value)
   def remove(self, key):
     self.values.pop(key, None)
 
@@ -485,7 +487,7 @@ def test_guided_sequence_saves_result_and_waits_for_off_before_restore(parked, m
   monkeypatch.setattr(guided.messaging, 'PubMaster', lambda _: Mock())
   monkeypatch.setattr(guided.messaging, 'SubMaster', lambda _: sm)
   cp = m.structs.CarParams.new_message(carFingerprint=guided.CAR.HONDA_ODYSSEY_5G_MMR)
-  params = TestParams(HondaBrakeTest='cancel' if failure == 'cancel' else 'active', CarParamsPersistent=cp.to_bytes())
+  params = TestParams(HondaBrakeTest='active', HondaBrakeTestCancel=failure == 'cancel', CarParamsPersistent=cp.to_bytes())
   if failure == 'length':
     p.response = bytes(55)
   output = io.StringIO()
@@ -570,15 +572,18 @@ def test_ownership_survives_manager_and_ignition_param_clears(tmp_path):
       assert params.get(guided.MODE) == mode
 
 
-def test_cancel_request_does_not_change_alpha_long_or_other_vehicle_settings():
+def test_cancel_request_does_not_change_alpha_long_or_other_vehicle_settings(parked):
   params = TestParams(AlphaLongitudinalEnabled=True, ExperimentalMode=True)
   guided.request_test(params)
   guided.cancel_test(params)
-  assert params.get(guided.MODE) is None
+  assert params.get(guided.MODE) == 'requested' and params.get_bool(guided.CANCEL)
+  procs = {'pandad': Mock(), 'honda_brake_test': Mock()}
+  assert not guided.manage_brake_test(params, StateSnapshot(parked[2][0]), procs)
+  assert params.get(guided.MODE) is None and not any(p.stop.called for p in procs.values())
   assert params.get_bool('AlphaLongitudinalEnabled') and params.get_bool('ExperimentalMode')
   params.put(guided.MODE, 'active')
   guided.cancel_test(params)
-  assert params.get(guided.MODE) == 'cancel'
+  assert params.get(guided.MODE) == 'active' and params.get_bool(guided.CANCEL)
   assert params.get_bool('AlphaLongitudinalEnabled')
 
 
@@ -613,3 +618,25 @@ def test_gear_warning_cannot_clear_itself_during_requalification(parked, monkeyp
   with pytest.raises(RuntimeError, match='Park'):
     c.qualify()
   assert not p.sent
+
+
+def test_cancel_during_ownership_transfer_cannot_release_panda(parked):
+  _, _, clock = parked
+  params = TestParams(HondaBrakeTest='requested')
+  procs = {'pandad': Mock(), 'honda_brake_test': Mock()}
+  procs['pandad'].stop.side_effect = lambda **_: guided.cancel_test(params)
+  assert guided.manage_brake_test(params, StateSnapshot(clock[0]), procs)
+  assert params.get(guided.MODE) == 'active'
+  assert params.get_bool(guided.CANCEL)
+  assert not procs['honda_brake_test'].stop.called
+
+
+def test_cancel_during_completed_handoff_cannot_prevent_restoration(parked):
+  _, _, clock = parked
+  params = TestParams(HondaBrakeTest='restore')
+  guided.cancel_test(params)
+  assert params.get(guided.MODE) == 'restore'
+  procs = {'pandad': Mock(), 'honda_brake_test': Mock()}
+  assert not guided.manage_brake_test(params, StateSnapshot(clock[0]), procs)
+  procs['honda_brake_test'].stop.assert_called_once_with(block=True)
+  assert params.get(guided.MODE) is None and not params.get_bool(guided.CANCEL)

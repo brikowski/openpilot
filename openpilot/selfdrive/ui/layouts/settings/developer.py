@@ -169,7 +169,7 @@ class DeveloperLayout(Widget):
     gui_app.set_show_fps(state)
 
   def _on_brake_test(self):
-    if can_request_test(ui_state.CP, ui_state.sm):
+    if can_request_test(ui_state.CP, ui_state.sm) and not self._params.get("HondaBrakeTest"):
       request_test(self._params)
 
   def _on_enable_adb(self, state: bool):
