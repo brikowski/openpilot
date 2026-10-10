@@ -231,13 +231,33 @@ def test_capture_restores_nooutput_after_success_or_failure(parked, failure):
       m.capture(p, output, 1)
   else:
     m.capture(p, output, 1)
-  assert p.modes == [(m.SAFETY.elm327, 1), (m.SAFETY.noOutput, 0)]
+  assert p.modes == [(m.SAFETY.elm327, 0), (m.SAFETY.noOutput, 0)]
   assert p.state['safety_mode'] == m.SAFETY.noOutput
   requests = [(a, int.from_bytes(d[2:4], 'big')) for a, d, _ in p.sent if d[0] == 3]
   assert requests[:2] == [(0x18DA28F1, 0xF181), (0x18DA2BF1, 0xF181)]
   assert all(r in m.READS for r in requests)
   if failure == 'length':
     assert any(json.loads(line).get('data_hex') == bytes(55).hex() for line in output.getvalue().splitlines())
+
+
+def test_capture_reaches_ecus_on_the_obd_connection(parked, monkeypatch):
+  p, _, clock = parked
+  receive = p.can_recv
+  def tick():
+    clock[0] += 1_000_000
+    return receive()
+  monkeypatch.setattr(p, 'can_recv', tick)
+  send = p.can_send
+  def obd_only(address, data, bus, **kwargs):
+    if p.modes[-1] == (m.SAFETY.elm327, 0):
+      send(address, data, bus, **kwargs)
+    else:
+      p.sent.append((address, bytes(data), bus))
+  monkeypatch.setattr(p, 'can_send', obd_only)
+  output = io.StringIO()
+  m.capture(p, output, 1)
+  responses = [json.loads(line) for line in output.getvalue().splitlines() if json.loads(line)['type'] == 'uds']
+  assert {(r['address'], r['did']) for r in responses} == m.READS
 
 
 def test_initial_unsafe_state_does_not_change_panda_mode(parked):
@@ -252,7 +272,7 @@ def test_silent_panda_can_receive_state_before_diagnostic_reads(parked):
   p, _, _ = parked
   p.state['safety_mode'] = m.SAFETY.silent
   m.capture(p, io.StringIO(), 1)
-  assert p.modes == [(m.SAFETY.noOutput, 0), (m.SAFETY.elm327, 1), (m.SAFETY.noOutput, 0)]
+  assert p.modes == [(m.SAFETY.noOutput, 0), (m.SAFETY.elm327, 0), (m.SAFETY.noOutput, 0)]
   assert p.sent
 
 

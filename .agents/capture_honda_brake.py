@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Capture parked Odyssey brake diagnostics and native CAN using exclusive Panda access.
 
-Stop openpilot before running; require ignition on, Park and parking brake applied. Restart afterward.
+Stop openpilot with ignition off, then turn ignition on with Park and parking brake applied.
+Turn ignition off again before restarting openpilot to avoid a mid-ignition radar handoff.
 Write the JSONL outside the checkout. CAN times are host batch reception times; diagnostic
 start/end times bracket each read. Returned/rejected TX retain their Panda source flags.
 Only firmware identification and VSA 22 4005 are read, without changing ECU sessions.
@@ -114,7 +115,7 @@ def capture(panda, output, seconds):
   c.check(SAFETY.noOutput)
   c.record("health", health=panda.health())
   try:
-    panda.set_safety_mode(SAFETY.elm327, 1)  # Keep bus 1 on the harness F-CAN, without OBD multiplexing.
+    panda.set_safety_mode(SAFETY.elm327)  # VSA and booster diagnostics use the OBD-multiplexed bus 1.
     c.active = True
     c.check(SAFETY.elm327)
     for address in (0x18DA28F1, 0x18DA2BF1):
