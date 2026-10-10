@@ -639,7 +639,7 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
   np.testing.assert_array_equal(current[-2:], [0., .01])
 
 
-@pytest.mark.parametrize("revision", sorted(RAW_ROAD_BRAKE_COMMITS))
+@pytest.mark.parametrize("revision", sorted(RAW_ROAD_BRAKE_COMMITS | {"9285a5a1007a"}))
 def test_raw_road_brake_revision_keeps_response_domains_and_creep_translation(revision):
   request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3])
   speed = np.array([20.] * 7 + [.5, 2.])

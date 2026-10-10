@@ -53,6 +53,7 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
   CI.update([])   # populates CarState-derived attrs the controller reads (acc_hud, etc.)
 
   active_values = np.broadcast_to(np.asarray(long_active, dtype=bool), len(accels))
+  speed_values = np.broadcast_to(np.asarray(vego, dtype=float), len(accels))
   aego_values = np.zeros(len(accels)) if aegos is None else np.broadcast_to(np.asarray(aegos, dtype=float), len(accels))
   gas_pressed_values = np.broadcast_to(np.asarray(gas_pressed, dtype=bool), len(accels))
   computer_braking_values = np.broadcast_to(np.asarray(computer_braking, dtype=bool), len(accels))
@@ -60,8 +61,9 @@ def _run(long_active, accels, pitch, vego, aegos=None, long_control_state=LongCt
   long_states = np.broadcast_to(np.asarray(long_control_state), len(accels))
   rejects, seen = [], []
   for i, accel in enumerate(accels):
+    speed = float(speed_values[i])
     CI.CS.out = structs.CarState(
-      vEgo=vego, vEgoRaw=vego, aEgo=float(aego_values[i]), standstill=vego < 0.1,
+      vEgo=speed, vEgoRaw=speed, aEgo=float(aego_values[i]), standstill=speed < 0.1,
       gasPressed=bool(gas_pressed_values[i]), brakePressed=brake_pressed, canValid=True,
       cruiseState=structs.CarState.CruiseState(enabled=True, available=True, speed=25.0),
     )
@@ -467,6 +469,26 @@ class TestOdysseyLongRails(unittest.TestCase):
     reengaged = seen[-10:]
     assert {accel for accel, _, _ in reengaged} == {10}
     assert all(gas != GAS_INACTIVE and brake == 0 for _, gas, brake in reengaged)
+
+  def test_reengagement_does_not_inherit_an_unissued_brake_request(self):
+    for inactive_frames in (1, 2):
+      for speed in (4.999, 5.0):
+        for request in (-.5, -.2, -.1, 0., .1):
+          with self.subTest(inactive_frames=inactive_frames, speed=speed, request=request):
+            active = [False] * inactive_frames + [True] * 4
+            speeds = [4.999] * inactive_frames + [speed] * 4
+            requests = [0.] * inactive_frames + [request] * 4
+            rejects, seen = _run(active, requests, pitch=0., vego=speeds)
+            assert not rejects
+            self.assertEqual(seen[0], (0, GAS_INACTIVE, 0))
+            expected_brake = request <= 0. if speed < 5. else request < -.3
+            expected_gas = request > 0. or (speed >= 5. and request == -.1)
+            for accel, gas, brake in seen[1:]:
+              self.assertEqual(accel, round(request * 100))
+              self.assertEqual(brake, expected_brake)
+              self.assertEqual(gas != GAS_INACTIVE, expected_gas)
+              if speed >= 5. and request == -.1:
+                self.assertEqual(gas, -60)
 
   def test_alpha_long_available(self):
     """The tune is unreachable if the platform cannot get openpilot longitudinal."""
