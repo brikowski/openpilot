@@ -94,7 +94,7 @@ build/
 !.vscode/*.code-snippets
 
 # agents
-.claude/
+.claude/*
 .context/
 PLAN.md
 TASK.md
