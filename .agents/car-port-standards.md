@@ -86,14 +86,15 @@ active safety rails.
   positive feedback still waits for the delayed observer. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` within the same received target gear and applies a bounded,
   slewed correction to `GAS_COMMAND` only. Received target-gear or transmission-activity changes
-  clear the delayed observer and integral. During warmup, already-issued positive correction may remain
-  while current acceleration still needs it, subject to current weight, headroom, bounds, and slew. New
-  positive feedback still waits for the delayed observer. The activity
+  clear delayed history. During warmup, already-issued positive correction may remain while current
+  acceleration still needs it, subject to current weight, headroom, bounds, and slew. This bounded hold
+  seeds the new integral so active feedback does not discard it. New positive feedback still waits for
+  the delayed observer. The activity
   byte is compared as reported state, without assuming a gear ratio or a shift-complete encoding. Missing,
   stale or invalid gear state disables feedback while preserving the feedforward map. A request
   change does not by itself veto feedback: the filtered delayed error is limited to the sign and
   magnitude of the latest acceleration error. Qualified feedback retains a bounded integral offset
-  at zero error; observer invalidation clears it. Added gas and the positive retained offset keep their
+  at zero error; ineligible feedback clears it. Added gas and the positive retained offset keep their
   existing bounds. Gas reduction and its retained offset use the mapped command's available headroom,
   including the low-speed trim.
   Accumulation respects these constraints, and output retains its slew limit.
