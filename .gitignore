@@ -94,7 +94,12 @@ build/
 !.vscode/*.code-snippets
 
 # agents
-.claude/
+# Project guidance lives in AGENTS.md and .agents/. Keep local editor/agent state untracked.
+/.agents/log-validation-ledger.jsonl
+/.agents/log-validation-ledger.md
+/.agents/tune-evidence.md
+/.agents/odyssey-tune-rationale.md
+.claude/*
 .context/
 PLAN.md
 TASK.md

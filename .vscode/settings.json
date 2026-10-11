@@ -3,6 +3,10 @@
   "editor.insertSpaces": true,
   "editor.renderWhitespace": "trailing",
   "files.trimTrailingWhitespace": true,
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python-envs.workspaceSearchPaths": [
+    "./.venv"
+  ],
   "search.exclude": {
     "**/.git": true,
     "**/.venv": true,
@@ -13,9 +17,11 @@
     "**/.venv": true,
     "**/__pycache__": true
   },
-  "python.analysis.exclude": [
-    "**/.git",
-    "**/.venv",
-    "**/__pycache__",
-  ]
+  "python.analysis.extraPaths": [
+    ".agents"
+  ],
+  "python.autoComplete.extraPaths": [
+    ".agents"
+  ],
+  "chatgpt.openOnStartup": true
 }
