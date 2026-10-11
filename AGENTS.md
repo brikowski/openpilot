@@ -50,10 +50,11 @@ behavior in the simplest appropriate layer.
 
 `ody-op-test` is the development, supervised-test, and rollback branch for Honda Bosch command following on
 `HONDA_ODYSSEY_5G_MMR`. Mechanism changes, tooling, and their tests are integrated linearly here in both
-the parent and nested `opendbc`. `ody-op` receives deliberate stable releases of vehicle code, build files, tests, and the paired
-gitlink, excluding custom agent, analysis, editor, and deployment tooling. Prepare and review the
-filtered tree with `.agents/publish_public.py`; publish with `--publish` only at a stable boundary.
-Public updates are manual. GitHub Actions checks both branches and never publishes or deploys.
+the parent and nested `opendbc`. After development software checks pass, GitHub Actions automatically
+publishes vehicle code, build files, tests, and the paired gitlink to `ody-op`, excluding custom
+agent, analysis, editor, and deployment tooling. `.agents/publish_public.py` owns the filter and
+preserves the public branch’s independent CI configuration. It can also preview a release locally.
+Automatic publication is not road-validated promotion and never deploys to the device.
 Use only these two branches; do not create additional branches or worktrees. Verify the public tree
 retains identical vehicle source, tests, and submodule pins. Publish the nested source before the
 parent; the parent gitlink identifies the exact Honda revision even if the nested public ref lags. Keep the parent

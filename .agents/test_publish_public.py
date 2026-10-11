@@ -65,7 +65,7 @@ class TestPublicRelease(unittest.TestCase):
     self.assertEqual(self.git('rev-parse', 'HEAD'), self.source)
     self.assertEqual(self.git('status', '--porcelain'), '')
 
-  def test_custom_tooling_is_absent_and_shared_ci_is_retained(self):
+  def test_custom_tooling_is_absent_and_public_ci_is_preserved(self):
     public = self.public()
     paths = self.git('ls-tree', '-r', '--name-only', public).splitlines()
     # Explicit names deliberately independent of the implementation's exclusion list.
@@ -74,7 +74,7 @@ class TestPublicRelease(unittest.TestCase):
                  'tools/deploy_ody_op.sh', 'tools/deploy_staging.sh', 'tools/sync_ody_op.sh',
                  'openpilot/tools/jotpluggler/layouts/brikowski.json'):
       self.assertNotIn(path, paths)
-    self.assertEqual(self.git('show', f'{public}:.github/workflows/tests.yml'), 'shared vehicle CI')
+    self.assertEqual(self.git('show', f'{public}:.github/workflows/tests.yml'), 'public CI')
     self.assertEqual(self.git('show', f'{public}:tools/README.md'), '# tools')
     self.assertEqual(self.git('show', f'{public}:.gitignore'), '*.pyc')
 

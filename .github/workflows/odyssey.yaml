@@ -59,3 +59,21 @@ jobs:
             python3 -m pytest .agents -q
             python3 .agents/preflash.py
           fi
+
+  publish:
+    needs: software
+    if: github.repository == 'brikowski/openpilot' && github.event_name == 'push' && github.ref == 'refs/heads/ody-op-test'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: false
+      - name: Publish validated vehicle source
+        run: |
+          git switch -C ody-op-test "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 .agents/publish_public.py --publish
