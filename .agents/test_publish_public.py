@@ -123,6 +123,30 @@ class TestPublicRelease(unittest.TestCase):
       mirror.main(['--publish'])
     self.assertFalse(any(c[0] == 'push' for c in calls))
 
+  def test_checkout_remote_with_or_without_git_suffix_can_publish(self):
+    for remote in ('https://github.com/brikowski/openpilot', 'https://github.com/brikowski/openpilot.git'):
+      calls = []
+
+      def fake_git(repo, *args, calls=calls, remote=remote, **kwargs):
+        calls.append(args)
+        if args[:2] == ('remote', 'get-url'):
+          return remote
+        if args == ('branch', '--show-current'):
+          return 'ody-op-test'
+        if args in (('rev-parse', 'HEAD'), ('rev-parse', 'origin/ody-op-test')):
+          return 'source'
+        if args == ('rev-parse', 'origin/ody-op'):
+          return 'public-parent'
+        if args[0] == 'push':
+          self.fail('Tooling-only update attempted publication')
+        return ''
+
+      with self.subTest(remote=remote), patch.object(mirror, 'git', side_effect=fake_git), \
+           patch.object(mirror, 'build_public', return_value='public-parent') as build:
+        mirror.main(['--publish'])
+        build.assert_called_once()
+        self.assertFalse(any(c[0] == 'push' for c in calls))
+
   def test_publication_rejects_an_unexpected_destination(self):
     with patch.object(mirror, 'git', return_value='https://github.com/other/openpilot.git'), \
          self.assertRaises(SystemExit):

@@ -77,7 +77,8 @@ def main(argv=None):
   parser.add_argument('--publish', action='store_true', help='publish this reviewed stable release')
   args = parser.parse_args(argv)
   repo = Path(__file__).resolve().parents[1]
-  if git(repo, 'remote', 'get-url', 'origin') != 'https://github.com/brikowski/openpilot.git':
+  if git(repo, 'remote', 'get-url', 'origin') not in (
+      'https://github.com/brikowski/openpilot', 'https://github.com/brikowski/openpilot.git'):
     raise SystemExit('refusing publication to an unexpected repository')
   git(repo, 'fetch', 'origin', '+refs/heads/ody-op-test:refs/remotes/origin/ody-op-test',
       '+refs/heads/ody-op:refs/remotes/origin/ody-op')
