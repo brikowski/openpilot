@@ -13,7 +13,7 @@ from tuning_metrics import brake_entry_tracking_profile, physical_edges, respons
 GAS_INACTIVE = -30000
 
 
-def received_context(data, time, history_s=1.5):
+def received_context(data, time, history_s=1.5, *, brake_edge_time=None):
   """Attach fresh received CAN context without changing the response-event selection."""
   grid = data["t"]
   index = int(np.searchsorted(grid, time, side="right") - 1)
@@ -25,6 +25,20 @@ def received_context(data, time, history_s=1.5):
     if key == "shift_activity":
       history = valid & (grid >= time - history_s) & (grid <= time)
       context["shift_edges_in_history"] = int(len(physical_edges(values, history)))
+  context.update(user_brake_at_entry=None, request_to_user_brake_s=None)
+  if brake_edge_time is not None and 0 <= index < len(grid) and grid[0] <= brake_edge_time <= time:
+    # The event edge is on this grid; allow floating-point cancellation when recovering its index.
+    start = int(np.searchsorted(grid, brake_edge_time - 1e-6))
+    values, age = data["user_brake"], data["user_brake_age"]
+    valid = np.isfinite(values) & (age >= 0.) & (age < .06)
+    if 0 <= start <= index and valid[start]:
+      context["user_brake_at_entry"] = float(values[start])
+      # USER_BRAKE is uncalibrated feedback. A rise above one DBC step differs from COMPUTER_BRAKING.
+      if (values[start] <= .015625 and np.all(valid[start:index + 1]) and
+          np.all(np.diff(grid[start:index + 1]) < .06)):
+        rises = np.flatnonzero(values[start:index + 1] > .015625)
+        if len(rises):
+          context["request_to_user_brake_s"] = float(grid[start + rises[0]] - brake_edge_time)
   return context
 
 
@@ -112,7 +126,9 @@ def inspect(route, *, threshold, limit, summary_only):
     threshold=threshold, limit=None,
   )
   for row in rows:
-    row.update(received_context(data, row["time"]))
+    edge_time = (row["time"] - row["domain_edge_age"]
+                 if row["domain"] == "brake" and row["domain_edge_age"] is not None else None)
+    row.update(received_context(data, row["time"], brake_edge_time=edge_time))
     index = int(np.searchsorted(data["t"], row["time"], side="right") - 1)
     boost = data["accel_boost"][index] if index >= 0 else np.nan
     row["accel_boost"] = float(boost) if np.isfinite(boost) else None
@@ -185,7 +201,8 @@ def inspect(route, *, threshold, limit, summary_only):
     print("  received CAN: " + ", ".join(f"{key}={value if value is not None else 'unavailable'}" for key, value in
                                           ((key, row[key]) for key in ("shift_activity", "shift_edges_in_history",
                                                                      "engine_torque_request", "can_long_accel",
-                                                                     "wheel_speed_spread", "user_brake"))))
+                                                                     "wheel_speed_spread", "user_brake", "user_brake_at_entry",
+                                                                     "request_to_user_brake_s"))))
   return rows
 
 

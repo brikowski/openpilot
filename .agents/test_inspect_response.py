@@ -34,6 +34,40 @@ def test_received_context_detects_activity_without_a_target_gear_edge_and_exclud
   assert received_context(data, -.01)['user_brake'] is None
 
 
+def test_received_brake_buildup_uses_fresh_history_and_never_future_samples():
+  t = np.arange(0., 2., .01)
+  data = {'t': t}
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
+    data[key] = np.zeros_like(t)
+    data[key + '_age'] = np.full_like(t, .01)
+  data['user_brake'] = np.where(t < 1.27, .015625, .125)
+  early = received_context(data, 1.1, brake_edge_time=1.)
+  assert early['user_brake_at_entry'] == .015625
+  assert early['request_to_user_brake_s'] is None
+  assert received_context(data, 1.5, brake_edge_time=1.)['request_to_user_brake_s'] == pytest.approx(.27)
+  assert received_context(data, 1.5, brake_edge_time=np.nextafter(1., 2.))['request_to_user_brake_s'] == pytest.approx(.27)
+  assert received_context(data, 1.5)['request_to_user_brake_s'] is None
+  assert received_context(data, -.01, brake_edge_time=1.)['request_to_user_brake_s'] is None
+  assert received_context(data, 1.5, brake_edge_time=-.01)['user_brake_at_entry'] is None
+  keep = (t < 1.12) | (t > 1.26)
+  gapped = {key: values[keep] for key, values in data.items()}
+  assert received_context(gapped, 1.5, brake_edge_time=1.)['request_to_user_brake_s'] is None
+  for age in (.06, -.01, np.nan):
+    data['user_brake_age'][120] = age
+    missing = received_context(data, 1.5, brake_edge_time=1.)
+    assert missing['user_brake'] == .125  # Fresh at the peak does not repair missing onset history.
+    assert missing['request_to_user_brake_s'] is None
+  data['user_brake_age'][120] = .01
+  data['user_brake'][120] = np.nan
+  assert received_context(data, 1.5, brake_edge_time=1.)['request_to_user_brake_s'] is None
+  data['user_brake'][:] = .125
+  active = received_context(data, 1.5, brake_edge_time=1.)
+  assert active['user_brake_at_entry'] == .125
+  assert active['request_to_user_brake_s'] is None
+  data['user_brake_age'][100] = .06
+  assert received_context(data, 1.5, brake_edge_time=1.)['user_brake_at_entry'] is None
+
+
 def test_brake_profile_separates_raw_request_from_grade_translated_wire():
   t = np.arange(0.0, 3.0, 0.01)
   brake = t >= 1.0
@@ -132,12 +166,17 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
   for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
     data[key] = np.zeros_like(t)
     data[key + '_age'] = np.full_like(t, .01)
+  data['user_brake'] = np.where(t < 2.26, .015625, .125)
   monkeypatch.setattr('inspect_response.load', lambda _: data)
   fresh = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
   assert fresh[0]['computer_braking_at_peak'] is True
+  assert fresh[0].get('user_brake_at_entry') == .015625
+  assert fresh[0].get('request_to_user_brake_s') == pytest.approx(.26)
   assert fresh[0].get('accel_boost') == .05
   assert fresh[0]['request'] == event['request'] and fresh[0]['wire'] == event['wire']
-  assert 'source=cruise boost-state=0.0500' in capsys.readouterr().out
+  printed = capsys.readouterr().out
+  assert 'source=cruise boost-state=0.0500' in printed
+  assert 'request_to_user_brake_s=' in printed
   data['accel_boost'][:] = np.nan
   missing = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
   assert [row['time'] for row in missing] == [row['time'] for row in fresh]
