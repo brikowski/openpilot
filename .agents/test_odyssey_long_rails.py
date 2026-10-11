@@ -434,16 +434,18 @@ class TestOdysseyLongRails(unittest.TestCase):
   def test_gas_response_is_bounded_and_bidirectional(self):
     """Response correction may reduce gas early without reshaping ACCEL_COMMAND."""
     accels = np.full(400, 0.50)
-    _, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20, target_gear=7)
-    _, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20, target_gear=7)
+    under_rejects, under_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=-0.20, target_gear=7)
+    over_rejects, over_response = _run(True, accels, pitch=0.0, vego=20.0, aegos=1.20, target_gear=7)
+    assert not under_rejects and not over_rejects
     under_gas = np.array([gas for _, gas, _ in under_response])
     over_gas = np.array([gas for _, gas, _ in over_response])
     assert (under_gas[:25] == under_gas[0]).all()
     assert over_gas[0] == under_gas[0]
     assert over_gas[1] < over_gas[0]
-    assert ((0 <= under_gas[0] - over_gas[:25]) & (under_gas[0] - over_gas[:25] <= 100)).all()
+    assert ((0 <= over_gas) & (over_gas <= under_gas[0])).all()
+    assert (under_gas[0] - over_gas[:25]).max() > 100
     assert (abs(np.diff(over_gas[:25])) <= 10).all()
-    assert 0 < under_gas[-1] - over_gas[-1] <= 200
+    assert 0 < under_gas[-1] - under_gas[0] <= 100
     assert all(accel == 50 and brake == 0 for accel, _, brake in under_response + over_response)
 
   def test_unidentified_windfactor_is_not_production_state(self):
