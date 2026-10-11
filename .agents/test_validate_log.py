@@ -641,6 +641,7 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
 
 @pytest.mark.parametrize("revision", sorted(RAW_ROAD_BRAKE_COMMITS | {
   "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
+  "15630df75391", "79eac9455954", "b648cfce1b7c", "27529eb3acb5",
 }))
 def test_raw_road_brake_revision_keeps_response_domains_and_creep_translation(revision):
   request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3])
