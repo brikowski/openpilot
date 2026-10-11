@@ -77,7 +77,7 @@
       }
     },
     {
-      "label": "Pull ody-op and Sync Submodules",
+      "label": "Pull ody-op-test and Sync Submodules",
       "type": "shell",
       "command": "tools/sync_ody_op.sh",
       "options": {
@@ -122,7 +122,7 @@
       }
     },
     {
-      "label": "Publish and Deploy ody-op",
+      "label": "Publish and Deploy ody-op-test",
       "type": "shell",
       "command": "tools/deploy_ody_op.sh deploy",
       "options": {

@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE="${ODYSSEY_DEVICE:-}"
 SSH_KEY="${ODYSSEY_SSH_KEY:-}"
-BRANCH=ody-op
+BRANCH=ody-op-test
 DEVICE_REMOTE=https://github.com/brikowski/openpilot.git
 DEVICE_UV_CACHE=/data/uv-cache
 DEVICE_UV_PYTHON=/data/uv-python
@@ -23,9 +23,9 @@ usage() {
 Usage: tools/deploy_ody_op.sh <deploy|verify>
 
 Commands:
-  deploy  Verify and publish the paired ody-op source, switch/build the offroad
+  deploy  Verify and publish the paired ody-op-test source, switch/build the offroad
           device without changing Alpha Long, reboot, and verify exact state.
-  verify  Read-only comparison of the device against this checkout's ody-op pair.
+  verify  Read-only comparison of the device against this checkout's ody-op-test pair.
 
 Environment:
   ODYSSEY_DEVICE   Device address (required)
@@ -170,7 +170,7 @@ printf '%s\n' '$marker'
   set -e
   printf '%s\n' "$output"
   if ! printf '%s\n' "$output" | rg -q "$marker"; then
-    echo "ody-op build did not complete; refusing to treat the device as deployed" >&2
+    echo "ody-op-test build did not complete; refusing to treat the device as deployed" >&2
     if (( rc == 0 )); then
       return 1
     fi

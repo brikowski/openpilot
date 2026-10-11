@@ -56,7 +56,7 @@ def test_remote_recipes_check_offroad_before_switch_and_reboot(command):
   # captures its argument and terminates; no switch, build, SSH or reboot runs.
   mocks = '''
 local_pair() { PARENT_SHA=x; OPENDBC_SHA=x; }
-git() { if [[ "$*" == *ls-remote* ]]; then echo 'x refs/heads/ody-op'; fi; }
+git() { if [[ "$*" == *ls-remote* ]]; then echo 'x refs/heads/ody-op-test'; fi; }
 .venv/bin/python() { return 0; }
 remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return 1; }
 '''
@@ -65,11 +65,11 @@ remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return
   code = (root / "tools/check_offroad.py").read_text().strip()
   assert result.stdout.count(code) == (2 if command == "deploy_device" else 1)
   if command == "deploy_device":
-    assert "tools/op.sh switch origin 'ody-op'" in result.stdout
+    assert "tools/op.sh switch origin 'ody-op-test'" in result.stdout
   else:
-    assert "test \"$branch\" = 'ody-op'" in result.stdout
+    assert "test \"$branch\" = 'ody-op-test'" in result.stdout
   if command == "deploy_device":
-    target = "Params().put('UpdaterTargetBranch', 'ody-op')"
+    target = "Params().put('UpdaterTargetBranch', 'ody-op-test')"
     assert result.stdout.index(code) < result.stdout.index(target) < result.stdout.index("tools/op.sh switch")
     assert result.stdout.rindex(code) < result.stdout.index("sudo reboot")
 

@@ -9,17 +9,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sync_upstream
 
 
-def test_only_recovery_branch_is_allowed():
-  assert sync_upstream.ALLOWED_BRANCHES == {"ody-op"}
+def test_only_development_branch_is_allowed():
+  assert sync_upstream.ALLOWED_BRANCHES == {"ody-op-test"}
 
 
-def test_private_mirror_cannot_enter_upstream_rebase(monkeypatch):
+def test_public_branch_cannot_enter_upstream_rebase(monkeypatch):
   def branch_only(args, **kwargs):
     assert args == ["git", "branch", "--show-current"] and not kwargs
-    return "ody-op-test"
+    return "ody-op"
 
   monkeypatch.setattr(sync_upstream, "output", branch_only)
-  monkeypatch.setattr(sync_upstream, "run", lambda *args, **kwargs: pytest.fail("private mirror reached a mutation"))
+  monkeypatch.setattr(sync_upstream, "run", lambda *args, **kwargs: pytest.fail("public branch reached a mutation"))
   with pytest.raises(SystemExit, match="refusing local rebase"):
     sync_upstream.main([])
 
@@ -33,9 +33,9 @@ def test_opendbc_rebase_is_skipped_when_pinned_base_is_already_present(monkeypat
 
   monkeypatch.setattr(sync_upstream, "run", fake_run)
 
-  assert not sync_upstream.opendbc_needs_rebase("compatible-pin", "ody-op")
+  assert not sync_upstream.opendbc_needs_rebase("compatible-pin", "ody-op-test")
   assert calls == [
-    (["git", "merge-base", "--is-ancestor", "compatible-pin", "ody-op"],
+    (["git", "merge-base", "--is-ancestor", "compatible-pin", "ody-op-test"],
      {"cwd": sync_upstream.OPENDBC, "check": False}),
   ]
 
@@ -47,4 +47,4 @@ def test_opendbc_rebase_is_required_when_pinned_base_is_missing(monkeypatch):
     lambda args, **kwargs: subprocess.CompletedProcess(args, 1),
   )
 
-  assert sync_upstream.opendbc_needs_rebase("new-pin", "ody-op")
+  assert sync_upstream.opendbc_needs_rebase("new-pin", "ody-op-test")

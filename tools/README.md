@@ -65,11 +65,11 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 
 ## Private Odyssey workflow
 
-Use `ody-op` for vehicle development, supervised tests, and rollback. Custom tooling is locally
-ignored there and tracked on the existing `ody-op-test` mirror. Before pushing tooling, mirror the
-current vehicle source and pins and verify `.agents/publish_public.py` produces no public change.
-Its automatic publisher preserves public CI and excludes custom tooling. Device build/health
-checks and road assessment remain separate gates.
+Use `ody-op-test` for development, tooling, and supervised tests. `ody-op` is the public install
+branch. Successful development software checks automatically publish vehicle code, tests, and
+submodule pins, excluding custom tooling and preserving public CI configuration. Preview locally
+with `.venv/bin/python .agents/publish_public.py`. The workflow never deploys to the device; device
+build/health checks and road assessment remain separate gates.
 
 Set `ODYSSEY_DEVICE` to the comma device address in your local shell before using live-device
 tasks. Private rlogs and route evidence live in Proton Drive; the analysis scripts discover the
@@ -90,13 +90,13 @@ This checkout also exposes a small set of explicit VS Code tasks in
   can be source-equivalent while still appearing in both histories; inspect the actual diff before
   importing anything. **Sync Upstream Locally**
   runs `.agents/sync_upstream.py`; it can rewrite local history, never pushes, and requires both
-  repositories to be clean and on `ody-op`.
+  repositories to be clean and on `ody-op-test`.
 - **Run Jotpluggler** and **Run Cabana** inspect a local route; build the binaries once with
   `tools/op.sh build openpilot/tools/jotpluggler/jotpluggler openpilot/tools/cabana/cabana` if they
   are not present. Cabana accepts `live` when `ODYSSEY_DEVICE` names the comma device.
 - **Run Odyssey software checks** runs the focused lint, Odyssey rail/sync tests, and the nested
   `opendbc_repo/test.sh` suite. These are software/CAN-safety gates, not ride-quality evidence.
-- **Publish and Deploy ody-op** is the guarded custom deployment. It requires clean paired
+- **Publish and Deploy ody-op-test** is the guarded custom deployment. It requires clean paired
   repositories, matching parent/submodule SHAs, publishes `opendbc_repo` before the parent, requires
   a confirmed offroad device and preserves Alpha Long, recreates the frozen environment and managed Python under `/data`, builds,
   reboots, and verifies exact source and runtime health. The task calls
