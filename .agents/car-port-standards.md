@@ -89,8 +89,8 @@ active safety rails.
   stale or invalid gear state disables feedback while preserving the feedforward map. A request
   change does not by itself veto feedback: the filtered delayed error is limited to the sign and
   magnitude of the latest acceleration error. Qualified feedback retains a bounded integral offset
-  at zero error; observer invalidation clears it and saturation prevents further accumulation into
-  the correction rail. Output retains its slew limit.
+  at zero error; observer invalidation clears it. Accumulation respects the existing correction
+  bounds and the mapped gas headroom, including the low-speed trim. Output retains its slew limit.
   Domain rules, raw gas-domain `ACCEL_COMMAND`, the negative bridge,
   and brake translation remain unchanged; feedback can affect the exhausted-gas coast fallback. Replay
   establishes command shape, not that the resulting vehicle acceleration is improved.
