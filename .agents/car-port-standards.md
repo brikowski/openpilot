@@ -24,7 +24,7 @@ active safety rails.
   Keep it diagnostic until qualified; it is not interchangeable with net `aEgo`.
 - The Honda Bosch ECU closes its own acceleration/brake loop. Do not stack a generic OpenPilot PID
   around `ACCEL_COMMAND` or use CAN shaping to hide an upstream planner/controller mismatch.
-- On the current `ody-op-test` Odyssey port, the controller chooses mutually exclusive gas/brake
+- On the current `ody-op` Odyssey port, the controller chooses mutually exclusive gas/brake
   domains from the raw request, with response-qualified gas entry from settled coast, brake entry
   from observed coast with a prior forecast, and early release of an already-active road-speed brake domain. Its
   active behavior is low-speed non-positive → brake below 5 m/s, fallback road-speed brake entry at -0.30
@@ -86,7 +86,9 @@ active safety rails.
   positive feedback still waits for the delayed observer. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` within the same received target gear and applies a bounded,
   slewed correction to `GAS_COMMAND` only. Received target-gear or transmission-activity changes
-  clear the delayed observer while the existing correction retains its slew limit. The activity
+  clear the delayed observer and integral. During warmup, already-issued positive correction may remain
+  while current acceleration still needs it, subject to current weight, headroom, bounds, and slew. New
+  positive feedback still waits for the delayed observer. The activity
   byte is compared as reported state, without assuming a gear ratio or a shift-complete encoding. Missing,
   stale or invalid gear state disables feedback while preserving the feedforward map. A request
   change does not by itself veto feedback: the filtered delayed error is limited to the sign and

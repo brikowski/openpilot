@@ -6,7 +6,7 @@ and invariants; private route history and derivations belong in the Proton Drive
 ## Project objective
 
 Make the Odyssey follow `carControl`'s lateral and longitudinal commands as accurately and
-smoothly as its Honda actuators allow. Preserve `ody-op-test` as the known-good rollback baseline and keep
+smoothly as its Honda actuators allow. Preserve `ody-op` as the known-good rollback baseline and keep
 production changes minimal relative to current `commaai/openpilot` and `commaai/opendbc`.
 
 Prefer the simplest appropriate behavior that directly responds to the commanded and observed
@@ -48,18 +48,17 @@ behavior in the simplest appropriate layer.
 
 ## What this branch is
 
-`ody-op-test` is the development, supervised-test, and rollback branch for Honda Bosch command following on
-`HONDA_ODYSSEY_5G_MMR`. Mechanism changes, tooling, and their tests are integrated linearly here in both
-the parent and nested `opendbc`. After development software checks pass, GitHub Actions automatically
-publishes vehicle code, build files, tests, and the paired gitlink to `ody-op`, excluding custom
-agent, analysis, editor, and deployment tooling. `.agents/publish_public.py` owns the filter and
-preserves the public branch’s independent CI configuration. It can also preview a release locally.
-Automatic publication is not road-validated promotion and never deploys to the device.
-Use only these two branches; do not create additional branches or worktrees. Verify the public tree
-retains identical vehicle source, tests, and submodule pins. Publish the nested source before the
-parent; the parent gitlink identifies the exact Honda revision even if the nested public ref lags. Keep the parent
-and nested opendbc SHAs paired; use `git revert` to change or retire a candidate, and keep the prior
-road-known-good pair reachable.
+`ody-op` is the development, supervised-test, and rollback branch for Honda Bosch command following on
+`HONDA_ODYSSEY_5G_MMR`. Integrate vehicle changes and their tests linearly in both the parent and nested
+`opendbc`. Do not create branches or worktrees. Keep parent and nested SHAs paired, publish the nested
+source first, use `git revert` to change or retire a candidate, and keep prior road-known-good pairs reachable.
+
+Keep custom agent, analysis, editor, and deployment files locally ignored on `ody-op`; their tracked
+copies live on the existing `ody-op-test` private-tooling mirror. Before publishing private tooling,
+mirror the current vehicle code and gitlink there and verify `.agents/publish_public.py` produces no
+public vehicle change. This prevents its automatic publisher from restoring older vehicle code.
+The filter preserves public CI, vehicle tests, build files, and exact submodule pins. Publication is
+not road-validated promotion and never deploys to the device.
 
 Old experiment branches and their mechanisms are historical evidence, not active targets or
 accepted knowledge. Their private measurements remain in Proton Drive's `evidence/tune-evidence.md`;
@@ -194,7 +193,7 @@ Promotion of production behavior additionally requires exact route, parent, and 
 provenance; first-divergence ownership; a coherent, attributable design; source-compatible full-rate comparison with
 adequate exposure; an attributable improvement or required safety fix without unacceptable
 regression; and an explicit keep/change/retire decision. Resolve DBC signal meaning from the exact
-nested revision; do not infer alignment from matching signal names across `ody-op-test`,
+nested revision; do not infer alignment from matching signal names across `ody-op`,
 `sunnypilot/staging`, or another branch.
 
 Gas response, brake response, and their transitions may be changed together as a coordinated
@@ -203,19 +202,19 @@ interactions, and use component-level tests or offline ablations when needed for
 separate road deployments are not mandatory for each component. Retain overlapping corrections
 only with a stated role and supporting evidence, not merely because they were already deployed.
 
-Commit each software-validated candidate and its tests directly to `ody-op-test` for supervised car
+Commit each software-validated candidate and its tests directly to `ody-op` for supervised car
 testing before road benefit is established; a commit is not a promotion. After the source,
 mutation, focused-test, preflash, and provenance gates pass, deployment
 is the default next step for a supervised road test when the user authorizes it; do not defer it
 merely because the candidate is unpromoted. Verify the root SHA, nested `opendbc` gitlink SHA, remote
-refs, and clean state separately from device health and road behavior. Keep the `ody-op-test` and nested
+refs, and clean state separately from device health and road behavior. Keep the `ody-op` and nested
 `opendbc` rollback SHAs reachable throughout.
 
 No new logs is not an implementation blocker. It may block performance assessment of a specific
 implemented change that needs new road evidence; continue independent analysis and candidate work.
 
 Device availability is not an implementation gate. Continue in-scope analysis, OpenPilot and Honda changes,
-tests, commits, and publication on `ody-op-test` when the evidence and software gates pass, even if the
+tests, commits, and publication on `ody-op` when the evidence and software gates pass, even if the
 device is offline or onroad. A published commit or queued updater download is not an installation:
 defer the guarded switch and exact device readback until the device is reachable and offroad, then
 assess road response separately. An unmeasured installed candidate also does not block an
