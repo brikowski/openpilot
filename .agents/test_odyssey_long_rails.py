@@ -124,6 +124,19 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all((accel, gas, brake) == (5, GAS_INACTIVE, 0) for accel, gas, brake in seen[10:18])
     assert all(accel == 5 and gas > 0 and brake == 0 for accel, gas, brake in seen[18:])
 
+  def test_brake_release_waits_in_coast_without_brake_reentry_inside_safety_rails(self):
+    requests = np.r_[np.zeros(100), np.full(60, -.95), np.full(100, -.4), np.full(10, -.4), np.full(10, -.95)]
+    response = np.r_[np.full(160, -.8), np.full(100, -.9), np.full(20, -.8)]
+    braking = np.r_[np.zeros(100, dtype=bool), np.ones(60, dtype=bool), np.zeros(120, dtype=bool)]
+    pressure = np.r_[np.zeros(100), np.full(160, .125), np.full(20, .015625)]
+    rejects, seen = _run(True, requests, pitch=.04, vego=22., aegos=response, target_gear=7,
+                         computer_braking=braking, user_brake=pressure)
+    self.assertEqual(rejects, [])
+    self.assertTrue(all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[50:80]))
+    self.assertTrue(all(command == (-40, GAS_INACTIVE, 0) for command in seen[80:130]))
+    self.assertTrue(all(accel == -40 and gas >= 0 and brake == 0 for accel, gas, brake in seen[130:135]))
+    self.assertTrue(all(accel == -95 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[135:]))
+
   def test_inactive_brake_overdeceleration_recovers_gas_inside_safety_rails(self):
     accels = np.full(220, -0.4)
     accels[-20:] = -1.0

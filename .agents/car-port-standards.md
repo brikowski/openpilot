@@ -76,8 +76,10 @@ active safety rails.
   not create positive-request brake entry or extend low-speed stopping authority.
   New gas entry at 8–35 m/s in PID control waits in coast while fresh received computer-braking
   or positive `USER_BRAKE` feedback remains active. It releases `BRAKE_REQUEST` immediately,
-  preserves numeric `ACCEL_COMMAND`, and uses no fixed delay. Existing gas continuity and
-  unreliable-state fallbacks remain available.
+  preserves numeric `ACCEL_COMMAND`, and uses no fixed delay. A qualified handoff keeps its
+  settled brake history while feedback blocks gas, so it does not reselect braking merely because
+  the issued domain changed to coast. A gear change or new brake selection requires fresh settling.
+  Existing gas continuity and unreliable-state fallbacks remain available.
   Replay does not prove road benefit.
 - The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
   near-zero lookup term. During startup, measured excess acceleration may reduce gas;
@@ -97,8 +99,9 @@ active safety rails.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
   settled, pedal-free coast or a settled negative-request brake selection with inactive actuators in the same target
   gear with valid CAN and fresh received gear, gas and braking state, using the existing recent five-sample median
-  throughout eligible coast. Held brake observations also require `USER_BRAKE` within one DBC
-  quantization step of zero; the shared VSA reception timestamp qualifies that signal.
+  throughout eligible coast. All coast observations require `USER_BRAKE` within one DBC
+  quantization step of zero, including after the brake command releases; the shared VSA reception
+  timestamp qualifies that signal.
   Nonnegative brake holding uses the prior coast estimate without learning its controlled response as coast.
   At 8–35 m/s, qualified pedal-free manual coast can initialize the same learner before engagement.
   Manual observations also require idle received gas/braking and pressure within one DBC step of zero;
