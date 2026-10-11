@@ -108,7 +108,7 @@ active safety rails.
   measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
   signs and fresh valid received state. Gas resumes when measured or predicted coast no longer
   exceeds the request. Without a learned estimate, release still requires falling mild negative
-  demand and exhausted bounded gas feedback; request trend uses elapsed control time. No new
+  demand and an already-issued zero gas command; request trend uses elapsed control time. No new
   learner or gas-map gain is added. This selection does not activate friction braking, alter
   `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.

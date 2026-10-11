@@ -143,6 +143,13 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert all(abs(accel / 100 - requests[i * 2]) <= .01 for i, (accel, _, _) in enumerate(seen))
       assert all(brake == 0 for _, _, brake in seen)
 
+  def test_downhill_zero_gas_releases_without_coast_history_inside_safety_rails(self):
+    requests = np.r_[np.full(200, .05), np.full(40, -.01)]
+    rejects, seen = _run(True, requests, vego=21., pitch=-.03, aegos=.5, target_gear=7)
+    assert not rejects
+    assert seen[99][1] == 0
+    assert all(command == (-1, GAS_INACTIVE, 0) for command in seen[100:])
+
   def test_braking_does_not_weaken_when_a_stronger_request_enters_stopping(self):
     requests = np.repeat([-.15, -.17, -.19, -.21, -.15, 0., .1], 2)
     states = np.repeat([LongCtrlState.pid, LongCtrlState.stopping, LongCtrlState.stopping,
