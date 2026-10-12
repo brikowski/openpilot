@@ -8,8 +8,10 @@ from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
 def test_received_context_detects_activity_without_a_target_gear_edge_and_excludes_stale_updates():
   t = np.arange(0., 2., .01)
   data = {'t': t, 'gear': np.full_like(t, 7.)}
-  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
-    data[key] = np.where(t < 1., 110., 119.) if key == 'shift_activity' else np.full_like(t, .1)
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake',
+              'rpm', 'wheel_rl', 'wheel_rr'):
+    value = {'rpm': 1800., 'wheel_rl': 72., 'wheel_rr': 72.}.get(key, .1)
+    data[key] = np.where(t < 1., 110., 119.) if key == 'shift_activity' else np.full_like(t, value)
     data[key + '_age'] = np.full_like(t, .01)
   data['user_brake'] = np.where(t <= 1.1, .0625, .25)
   result = received_context(data, 1.1)
@@ -37,8 +39,9 @@ def test_received_context_detects_activity_without_a_target_gear_edge_and_exclud
 def test_received_brake_buildup_uses_fresh_history_and_never_future_samples():
   t = np.arange(0., 2., .01)
   data = {'t': t}
-  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
-    data[key] = np.zeros_like(t)
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake',
+              'rpm', 'wheel_rl', 'wheel_rr'):
+    data[key] = np.full_like(t, {'rpm': 1800., 'wheel_rl': 72., 'wheel_rr': 72.}.get(key, 0.))
     data[key + '_age'] = np.full_like(t, .01)
   data['user_brake'] = np.where(t < 1.27, .015625, .125)
   early = received_context(data, 1.1, brake_edge_time=1.)
@@ -66,6 +69,48 @@ def test_received_brake_buildup_uses_fresh_history_and_never_future_samples():
   assert active['request_to_user_brake_s'] is None
   data['user_brake_age'][100] = .06
   assert received_context(data, 1.5, brake_edge_time=1.)['user_brake_at_entry'] is None
+
+
+def test_received_rpm_speed_variation_needs_fresh_complete_causal_history():
+  t = np.arange(0., 3., .01)
+  data = {'t': t, 'vego': np.ones_like(t), 'gear': np.full_like(t, 6.)}
+  for key, value in {'shift_activity': 102., 'engine_torque_request': 0., 'can_long_accel': 0.,
+                     'wheel_speed_spread': 0., 'user_brake': 0., 'rpm': 1800.,
+                     'wheel_rl': 70., 'wheel_rr': 74.}.items():
+    data[key] = np.full_like(t, value)
+    data[key + '_age'] = np.full_like(t, .01)
+  data['rpm'][t >= 1.5] = 1980.
+  data['rpm'][t > 2.] = 9000.
+  result = received_context(data, 2.)
+  assert result['rpm_per_mps'] == 99.
+  assert result['rpm_per_mps_span_pct'] == pytest.approx(100. * 9. / ((100 * 90. + 51 * 99.) / 151))
+  assert result['shift_edges_in_history'] == 0 and not np.any(np.diff(data['gear']))
+  assert received_context(data, .4)['rpm_per_mps'] == 90.
+  assert received_context(data, .4)['rpm_per_mps_span_pct'] is None
+  assert received_context(data, -.01)['rpm_per_mps'] is None
+  for key in ('rpm', 'wheel_rl', 'wheel_rr'):
+    for age in (.06, -.01, np.nan):
+      data[key + '_age'][200] = age
+      assert received_context(data, 2.)['rpm_per_mps'] is None
+      assert received_context(data, 2.)['rpm_per_mps_span_pct'] is None
+      data[key + '_age'][200] = .01
+      data[key + '_age'][120] = age
+      missing = received_context(data, 2.)
+      assert missing['rpm_per_mps'] == 99.
+      assert missing['rpm_per_mps_span_pct'] is None
+      data[key + '_age'][120] = .01
+    keep = data[key][200]
+    for value in (np.nan, -1.) if key == 'rpm' else (np.nan, 0., -1.):
+      data[key][200] = value
+      assert received_context(data, 2.)['rpm_per_mps'] is None
+      data[key][200] = keep
+  keep = (t < 1.1) | (t > 1.2)
+  gapped = {key: values[keep] for key, values in data.items()}
+  assert received_context(gapped, 2.)['rpm_per_mps'] == 99.
+  assert received_context(gapped, 2.)['rpm_per_mps_span_pct'] is None
+  data['rpm'][:] = 0.
+  assert received_context(data, 2.)['rpm_per_mps'] == 0.
+  assert received_context(data, 2.)['rpm_per_mps_span_pct'] is None
 
 
 def test_brake_profile_separates_raw_request_from_grade_translated_wire():
@@ -164,9 +209,10 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
           'consumed_has_lead': np.zeros_like(t), 'consumed_plan_source': np.zeros_like(t, dtype=int),
           'accel_boost': np.where(t <= event['time'], .05, .15),
           'gear': np.full_like(t, 6.), 'engine_torque': np.full_like(t, -100.), 'rpm': np.full_like(t, 1800.)}
-  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
-    data[key] = np.zeros_like(t)
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake', 'wheel_rl', 'wheel_rr'):
+    data[key] = np.full_like(t, 72. if key.startswith('wheel_') and key != 'wheel_speed_spread' else 0.)
     data[key + '_age'] = np.full_like(t, .01)
+  data['rpm_age'] = np.full_like(t, .01)
   data['user_brake'] = np.where(t < 2.26, .015625, .125)
   monkeypatch.setattr('inspect_response.load', lambda _: data)
   fresh = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
@@ -179,6 +225,7 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
   printed = capsys.readouterr().out
   assert 'source=cruise boost-state=0.0500' in printed
   assert 'request_to_user_brake_s=' in printed
+  assert 'rpm_per_mps=90.0, rpm_per_mps_span_pct=0.0' in printed
   data['accel_boost'][:] = np.nan
   missing = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
   assert [row['time'] for row in missing] == [row['time'] for row in fresh]

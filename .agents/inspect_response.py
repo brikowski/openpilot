@@ -25,6 +25,23 @@ def received_context(data, time, history_s=1.5, *, brake_edge_time=None):
     if key == "shift_activity":
       history = valid & (grid >= time - history_s) & (grid <= time)
       context["shift_edges_in_history"] = int(len(physical_edges(values, history)))
+  # RPM per rear-wheel m/s is observed context, not a fixed gear ratio or proof of a shift.
+  valid = np.ones(len(grid), dtype=bool)
+  for key in ("rpm", "wheel_rl", "wheel_rr"):
+    values, age = data[key], data[key + "_age"]
+    valid &= np.isfinite(values) & (age >= 0.) & (age < .06)
+  speed = (data["wheel_rl"] + data["wheel_rr"]) / 7.2
+  valid &= (data["rpm"] >= 0.) & (data["wheel_rl"] > 0.) & (data["wheel_rr"] > 0.)
+  ratio = np.divide(data["rpm"], speed, out=np.full(len(grid), np.nan), where=valid)
+  context.update(rpm_per_mps=None, rpm_per_mps_span_pct=None)
+  if index >= 0 and valid[index]:
+    context["rpm_per_mps"] = float(ratio[index])
+    start = int(np.searchsorted(grid, time - history_s, side="right") - 1)
+    if 0 <= start < index and np.all(np.diff(grid[start:index + 1]) < .06):
+      history = ratio[start:index + 1]
+      # An unavailable sample leaves the history mean NaN.
+      if np.mean(history) > 0.:
+        context["rpm_per_mps_span_pct"] = float(100. * np.ptp(history) / np.mean(history))
   context.update(user_brake_at_entry=None, request_to_user_brake_s=None)
   if brake_edge_time is not None and 0 <= index < len(grid) and grid[0] <= brake_edge_time <= time:
     # The event edge is on this grid; allow floating-point cancellation when recovering its index.
@@ -200,6 +217,7 @@ def inspect(route, *, threshold, limit, summary_only):
     )))
     print("  received CAN: " + ", ".join(f"{key}={value if value is not None else 'unavailable'}" for key, value in
                                           ((key, row[key]) for key in ("shift_activity", "shift_edges_in_history",
+                                                                     "rpm_per_mps", "rpm_per_mps_span_pct",
                                                                      "engine_torque_request", "can_long_accel",
                                                                      "wheel_speed_spread", "user_brake", "user_brake_at_entry",
                                                                      "request_to_user_brake_s"))))
