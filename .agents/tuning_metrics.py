@@ -11,13 +11,19 @@ CRUISE_SET_SPEED_UNSET_MPS = 255.0 / 3.6  # selfdrive.car.cruise.V_CRUISE_UNSET,
 
 
 def causal_lpf(x, dt, tau, initial=None):
+  """Preserve missing samples and restart at the next observed value."""
   if len(x) == 0:
     return x
   alpha = dt / (tau + dt)
   y = np.empty_like(x)
-  y[0] = x[0] if initial is None else initial + alpha * (x[0] - initial)
-  for i in range(1, len(x)):
-    y[i] = y[i - 1] + alpha * (x[i] - y[i - 1])
+  previous = initial
+  for i, value in enumerate(x):
+    if not np.isfinite(value):
+      y[i] = np.nan
+      previous = None
+    else:
+      previous = value if previous is None else previous + alpha * (value - previous)
+      y[i] = previous
   return y
 
 

@@ -850,6 +850,13 @@ def test_causal_lpf_can_reproduce_a_zero_initialized_controller_filter():
   assert causal_lpf(samples, dt=0.1, tau=0.1, initial=0.0).tolist() == [0.5, 0.75, 0.875]
 
 
+def test_causal_lpf_preserves_missing_samples_and_recovers_without_bridging_them():
+  samples = np.array([np.nan, 0., 2., np.nan, 10., 12., np.inf, 20., 22.])
+
+  np.testing.assert_allclose(causal_lpf(samples, dt=0.1, tau=0.1),
+                             [np.nan, 0., 1., np.nan, 10., 11., np.nan, 20., 21.], equal_nan=True)
+
+
 def test_physical_edges_do_not_splice_disjoint_mask_windows():
   signal = np.array([False, False, True, True, True, True])
   split_mask = np.array([True, True, False, False, True, True])

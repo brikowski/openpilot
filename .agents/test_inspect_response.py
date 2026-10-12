@@ -159,7 +159,8 @@ def test_brake_entry_tracking_profile_captures_early_lag_and_late_overresponse()
   assert not brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
 
 
-def test_response_jerk_event_preserves_first_divergence_and_domain_context(monkeypatch, capsys):
+@pytest.mark.parametrize("missing", [None, slice(0, 20), slice(50, 70)])
+def test_response_jerk_event_preserves_first_divergence_and_domain_context(monkeypatch, capsys, missing):
   t = np.arange(0.0, 8.0, 0.01)
   requested = np.zeros_like(t)
   command_ramp = (t >= 2.0) & (t < 2.5)
@@ -169,12 +170,16 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
   response_ramp = (t >= 2.6) & (t < 2.9)
   actual[response_ramp] = -2.0 * (t[response_ramp] - 2.6)
   actual[t >= 2.9] = -0.6
+  wire = requested.copy()
+  if missing is not None:
+    wire[missing] = np.nan
+    actual[missing] = np.nan
   brake = t >= 2.0
   computer_braking = t >= 2.08
   gas = np.where(brake, -30000.0, 100.0)
 
   rows = response_jerk_events(
-    t, requested, requested, requested, actual, np.ones_like(t, dtype=bool), brake,
+    t, requested, requested, wire, actual, np.ones_like(t, dtype=bool), brake,
     computer_braking, gas,
     np.full_like(t, 20.0), np.zeros_like(t), np.zeros_like(t, dtype=bool),
     np.zeros_like(t, dtype=int), np.full_like(t, 6.0), np.full_like(t, -100.0),
@@ -200,7 +205,7 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
   assert event["gear_edges_in_history"] == 0
   assert event["gear"] == 6.0
 
-  data = {'route': 'synthetic', 't': t, 'request': requested, 'atarget': requested + 1., 'consumed_atarget': requested, 'accel_command': requested,
+  data = {'route': 'synthetic', 't': t, 'request': requested, 'atarget': requested + 1., 'consumed_atarget': requested, 'accel_command': wire,
           'aego': actual, 'active': np.ones_like(t, dtype=bool), 'pid': np.ones_like(t, dtype=bool),
           'gas_pressed': np.zeros_like(t, dtype=bool), 'brake_pressed': np.zeros_like(t, dtype=bool),
           'brake_request': brake, 'computer_braking': computer_braking, 'computer_braking_age': np.full_like(t, .01),
