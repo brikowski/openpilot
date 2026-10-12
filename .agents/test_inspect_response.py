@@ -155,12 +155,13 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
   assert event["gear_edges_in_history"] == 0
   assert event["gear"] == 6.0
 
-  data = {'route': 'synthetic', 't': t, 'request': requested, 'atarget': requested, 'accel_command': requested,
+  data = {'route': 'synthetic', 't': t, 'request': requested, 'atarget': requested + 1., 'consumed_atarget': requested, 'accel_command': requested,
           'aego': actual, 'active': np.ones_like(t, dtype=bool), 'pid': np.ones_like(t, dtype=bool),
           'gas_pressed': np.zeros_like(t, dtype=bool), 'brake_pressed': np.zeros_like(t, dtype=bool),
           'brake_request': brake, 'computer_braking': computer_braking, 'computer_braking_age': np.full_like(t, .01),
           'gas_command': gas, 'vego': np.full_like(t, 20.), 'pitch': np.zeros_like(t),
-          'has_lead': np.zeros_like(t, dtype=bool), 'plan_source': np.zeros_like(t, dtype=int),
+          'has_lead': np.ones_like(t, dtype=bool), 'plan_source': np.full_like(t, 4, dtype=int),
+          'consumed_has_lead': np.zeros_like(t), 'consumed_plan_source': np.zeros_like(t, dtype=int),
           'accel_boost': np.where(t <= event['time'], .05, .15),
           'gear': np.full_like(t, 6.), 'engine_torque': np.full_like(t, -100.), 'rpm': np.full_like(t, 1800.)}
   for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake'):
@@ -170,6 +171,7 @@ def test_response_jerk_event_preserves_first_divergence_and_domain_context(monke
   monkeypatch.setattr('inspect_response.load', lambda _: data)
   fresh = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
   assert fresh[0]['computer_braking_at_peak'] is True
+  assert fresh[0]['plan_request_rms'] == 0. and fresh[0]['plan_source'] == 0 and not fresh[0]['has_lead']
   assert fresh[0].get('user_brake_at_entry') == .015625
   assert fresh[0].get('request_to_user_brake_s') == pytest.approx(.26)
   assert fresh[0].get('accel_boost') == .05

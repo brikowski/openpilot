@@ -38,6 +38,8 @@ def test_model_commands_and_learned_boost_follow_publication_without_blending(mo
     plan = m.init('longitudinalPlan')
     plan.aTarget = -.2
     plan.shouldStop = timestamp == 1_070_000_000
+    plan.hasLead = plan.shouldStop
+    plan.longitudinalPlanSource = "e2e" if plan.shouldStop else "cruise"
     if boost is not None:
       plan.accelBoost = boost
     messages.append(m)
@@ -55,6 +57,8 @@ def test_model_commands_and_learned_boost_follow_publication_without_blending(mo
   np.testing.assert_allclose(out["consumed_atarget"][3:], -.2)
   assert np.isnan(out["consumed_should_stop"][:3]).all()
   np.testing.assert_array_equal(out["consumed_should_stop"][3:14], [0.] * 5 + [1.] * 5 + [0.])
+  np.testing.assert_array_equal(out["consumed_has_lead"], out["consumed_should_stop"])
+  np.testing.assert_array_equal(out["consumed_plan_source"][:14], [-1] * 3 + [0] * 5 + [4] * 5 + [0])
   assert not np.any(out['request'])
   monkeypatch.setattr(extract, 'LogReader', lambda _: iter(m for m in messages if m.which() != 'longitudinalPlan'))
   missing = extract._build('synthetic')
@@ -174,9 +178,10 @@ def test_cruise_setpoint_changes_do_not_invent_overspeed_before_publication(monk
 
 def test_new_plan_reference_signals_ignore_previous_extraction_cache(monkeypatch, tmp_path):
   np.savez(tmp_path / "synthetic.v10.npz", t0=0., request=[0.])
+  np.savez(tmp_path / "synthetic.v11.npz", t0=0., consumed_atarget=[0.])
   monkeypatch.setattr(extract, "CACHE", str(tmp_path))
   monkeypatch.setattr(extract, "_segments", lambda _: ("synthetic", []))
-  monkeypatch.setattr(extract, "_build", lambda _: {"route": "synthetic", "t0": 0., "consumed_atarget": np.array([-.2])})
+  monkeypatch.setattr(extract, "_build", lambda _: {"route": "synthetic", "t0": 0., "consumed_atarget": np.array([-.2]), "consumed_plan_source": np.array([4])})
   out = extract.load("synthetic")
-  assert "consumed_atarget" in out
+  assert "consumed_atarget" in out and "consumed_plan_source" in out
   np.testing.assert_array_equal(out["consumed_atarget"], [-.2])

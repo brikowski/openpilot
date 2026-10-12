@@ -26,7 +26,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set or resampling semantics change, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 11
+SCHEMA = 12
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 ACC_CONTROL_ADDR = 0x1DF
@@ -253,8 +253,9 @@ def _build(route):
   # interpolate. Linear interpolation invents planner values between messages and can conceal the
   # exact plan -> longcontrol divergence at a state-machine transition.
   out["atarget"] = plan_to_control(grid, np.asarray(lp["t"]) - t0, lp["atarget"])
-  for key in ("atarget", "should_stop"):
+  for key in ("atarget", "should_stop", "has_lead"):
     out["consumed_" + key] = consumed_plan(cc["t"], ctl["t"], ctl["plan_reference"], lp["t"], lp[key])
+  out["consumed_plan_source"] = _enum(consumed_plan(cc["t"], ctl["t"], ctl["plan_reference"], lp["t"], lp["source"]))
   # Total learned boost state, not the speed/model-weighted increment applied to acceleration.
   out["accel_boost"] = plan_to_control(grid, np.asarray(lp["t"]) - t0, lp["accel_boost"])
   # Discrete CAN: zero-order hold only.

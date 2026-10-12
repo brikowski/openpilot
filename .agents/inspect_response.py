@@ -118,10 +118,10 @@ def inspect(route, *, threshold, limit, summary_only):
   # Represent unavailable braking feedback in the event's received-state validity mask.
   computer_braking = np.where((braking_age >= 0.) & (braking_age < .06), data["computer_braking"], np.nan)
   rows = response_jerk_events(
-    data["t"], data["atarget"], data["request"], data["accel_command"], data["aego"],
+    data["t"], data["consumed_atarget"], data["request"], data["accel_command"], data["aego"],
     clean_active, data["brake_request"], computer_braking, data["gas_command"],
     data["vego"], data["pitch"],
-    data["has_lead"], data["plan_source"], data["gear"], data["engine_torque"], data["rpm"],
+    data["consumed_has_lead"] > .5, data["consumed_plan_source"], data["gear"], data["engine_torque"], data["rpm"],
     gas_inactive=GAS_INACTIVE,
     threshold=threshold, limit=None,
   )
