@@ -641,7 +641,7 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
 
 @pytest.mark.parametrize("revision", sorted(RAW_ROAD_BRAKE_COMMITS | {
   "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
-  "15630df75391", "79eac9455954", "b648cfce1b7c", "27529eb3acb5", "de09d811f22e", "4356682b22be",
+  "15630df75391", "79eac9455954", "b648cfce1b7c", "27529eb3acb5", "de09d811f22e", "4356682b22be", "ebc74ef659c3",
 }))
 def test_raw_road_brake_revision_keeps_response_domains_and_creep_translation(revision):
   request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3, -.15, -.1, -.05])
@@ -651,7 +651,7 @@ def test_raw_road_brake_revision_keeps_response_domains_and_creep_translation(re
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(len(request), pitch), active, active, .01)
     assert modeled and revision not in BRAKE_GRADE_TRANSLATION_COMMITS
-    creep_expected = [-.4, -.225, -.175] if revision in ("de09d811f22e", "4356682b22be") else [-.275, -.1416666667, -.0916666667]
+    creep_expected = [-.4, -.225, -.175] if revision in ("de09d811f22e", "4356682b22be", "ebc74ef659c3") else [-.275, -.1416666667, -.0916666667]
     np.testing.assert_allclose(expected, [-3.5, -.5, -.15, -.05, 0., .1, 2., -.55, -.3, *creep_expected])
     np.testing.assert_array_equal(eligible, [False] * 7 + [True, False, True, True, True])
   switch, threshold, valid, note = _domain_model(revision, request, speed, np.zeros(len(request)), np.ones(len(request)), .01)
