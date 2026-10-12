@@ -41,7 +41,7 @@ active safety rails.
   For mild requests above the road-brake boundary, a prior coast forecast below the request by the
   response margin retains existing gas feedback through transient measured excess acceleration.
   Stronger requests retain the measured-response guard. A prior coast forecast
-  and measured acceleration above a negative request select mutually exclusive braking when fresh
+  and measured acceleration above the request, including a nonnegative request, select mutually exclusive braking when fresh
   valid CAN confirms inactive gas and braking. Brake selection need not wait for the coast learner
   to settle; learning and gas entry retain their response interval.
   Excess road-speed braking may release when fresh active brake feedback and the qualified coast
@@ -78,7 +78,7 @@ active safety rails.
   is not updated from that controlled response.
   Gas and brake remain mutually exclusive; nonnegative brake targets retain raw `ACCEL_COMMAND`.
   Missing or unreliable state retains the raw-sign fallback for nonnegative requests. This does
-  not create positive-request brake entry or extend low-speed stopping authority.
+  not extend low-speed stopping authority.
   New gas entry at 8–35 m/s in PID control waits in coast while fresh received computer-braking
   or positive `USER_BRAKE` feedback remains active. It releases `BRAKE_REQUEST` immediately,
   preserves numeric `ACCEL_COMMAND`, and uses no fixed delay. A qualified handoff keeps its
