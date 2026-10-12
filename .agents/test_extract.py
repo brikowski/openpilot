@@ -53,6 +53,7 @@ def test_model_commands_and_learned_boost_follow_publication_without_blending(mo
   np.testing.assert_allclose(out['accel_boost'][2:12], [.00125] * 5 + [.0025] * 5)
   assert np.all(out['accel_boost'][12:] == 0.)  # Older messages default this schema field to zero.
   np.testing.assert_allclose(out['atarget'][2:], -.2)
+  np.testing.assert_array_equal(out['plan_source'][:2], [-1, -1])
   assert np.isnan(out["consumed_atarget"][:3]).all()
   np.testing.assert_allclose(out["consumed_atarget"][3:], -.2)
   assert np.isnan(out["consumed_should_stop"][:3]).all()
@@ -180,6 +181,8 @@ def test_resampling_changes_ignore_previous_extraction_cache(monkeypatch, tmp_pa
   np.savez(tmp_path / "synthetic.v10.npz", t0=0., request=[0.])
   np.savez(tmp_path / "synthetic.v11.npz", t0=0., consumed_atarget=[0.])
   np.savez(tmp_path / "synthetic.v12.npz", t0=0., consumed_atarget=[0.], lat_output_torque_can=[1000.])
+  np.savez(tmp_path / "synthetic.v13.npz", t0=0., consumed_atarget=[0.], steering_pressed=[False])
+  np.savez(tmp_path / "synthetic.v14.npz", t0=0., consumed_atarget=[0.], gas_output=[.5])
   monkeypatch.setattr(extract, "CACHE", str(tmp_path))
   monkeypatch.setattr(extract, "_segments", lambda _: ("synthetic", []))
   monkeypatch.setattr(extract, "_build", lambda _: {"route": "synthetic", "t0": 0., "consumed_atarget": np.array([-.2]), "consumed_plan_source": np.array([4])})
@@ -198,10 +201,39 @@ def test_steering_output_authority_changes_follow_publication_without_blending(m
     messages.append(m)
   for timestamp, count in ((1_010_000_000, 0.), (1_030_000_000, -2560.), (1_060_000_000, -3840.)):
     m = log.Event.new_message(logMonoTime=timestamp)
-    m.init('carOutput').actuatorsOutput.torqueOutputCan = count
+    a = m.init('carOutput').actuatorsOutput
+    a.torqueOutputCan, a.torque = count, count / 3840.
+    a.accel = .25 if count == -2560. else -.5 if count == -3840. else 0.
+    a.gas = .25 if count == -2560. else 0.
+    a.brake = .2 if count == -3840. else 0.
     messages.append(m)
   monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
   monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
   out = extract._build('synthetic')
   assert np.isnan(out['lat_output_torque_can'][0])
   np.testing.assert_array_equal(out['lat_output_torque_can'][1:8], [0., 0., -2560., -2560., -2560., -3840., -3840.])
+  for key, middle, last in [('wire', .25, -.5), ('gas_output', .25, 0.), ('brake_output', 0., .2),
+                             ('lat_output_torque', -2. / 3., -1.)]:
+    assert np.isnan(out[key][0])
+    np.testing.assert_allclose(out[key][1:8], [0., 0., middle, middle, middle, last, last])
+
+
+def test_pedals_overrides_and_faults_follow_state_publication(monkeypatch):
+  from openpilot.cereal import log
+
+  messages = []
+  for i in range(100):
+    m = log.Event.new_message(logMonoTime=1_000_000_000 + i * 10_000_000)
+    m.init('carControl')
+    messages.append(m)
+  for timestamp, active in ((1_010_000_000, True), (1_040_000_000, False), (1_070_000_000, True)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    state = m.init('carState')
+    state.gasPressed = state.brakePressed = state.steeringPressed = active
+    state.steerFaultTemporary = state.steerFaultPermanent = active
+    messages.append(m)
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  for key in ('gas_pressed', 'brake_pressed', 'steering_pressed', 'steer_fault_temp', 'steer_fault_perm'):
+    np.testing.assert_array_equal(out[key][1:9], [True, True, True, False, False, False, True, True])

@@ -10,7 +10,8 @@ state signals are interpolated onto carControl time; received CAN uses independe
 verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
 spread is m/s. can_long_accel has unqualified scale and reference frame on this Odyssey;
 keep it diagnostic rather than substituting it for net aEgo.
-Published planner/model commands and reported steering actuator commands are held.
+Published planner/model commands, reported actuator commands, and pedal/override/fault
+flags are held from their publication times.
 consumed_atarget/consumed_should_stop match the exact
 plan named by same-cycle controlsState; missing references remain NaN.
 """
@@ -27,7 +28,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set or resampling semantics change, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 13
+SCHEMA = 15
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 ACC_CONTROL_ADDR = 0x1DF
@@ -224,7 +225,7 @@ def _build(route):
   def zoh(src, key):
     if not len(src["t"]):
       return np.full(len(grid), np.nan)
-    return hold_last(grid, np.asarray(src["t"]) - t0, np.asarray(src[key], dtype=float))
+    return plan_to_control(grid, np.asarray(src["t"]) - t0, src[key])
 
   # CarController input - the car-port boundary. See AGENTS.md.
   out["request"] = np.asarray(cc["accel"], dtype=float)
@@ -237,16 +238,13 @@ def _build(route):
     out[k] = lin(cs, k)
   # Cruise setpoints are discrete published commands, including driver button changes.
   out["vcruise"] = zoh(cs, "vcruise")
-  if cs["t"]:
-    out["vcruise"][grid < cs["t"][0] - t0] = np.nan
   for k in ("gas_pressed", "brake_pressed", "steering_pressed", "steer_fault_temp", "steer_fault_perm"):
-    out[k] = lin(cs, k) > 0.5
-  out["wire"] = lin(co, "accel")
-  out["gas_output"] = lin(co, "gas_output")
-  out["brake_output"] = lin(co, "brake_output")
-  out["lat_output_torque"] = lin(co, "torque")
-  # Reported actuator commands are discrete publications, including authority changes.
-  out["lat_output_torque_can"] = plan_to_control(grid, np.asarray(co["t"]) - t0, co["torque_output_can"])
+    out[k] = zoh(cs, k) > 0.5
+  out["wire"] = zoh(co, "accel")
+  out["gas_output"] = zoh(co, "gas_output")
+  out["brake_output"] = zoh(co, "brake_output")
+  out["lat_output_torque"] = zoh(co, "torque")
+  out["lat_output_torque_can"] = zoh(co, "torque_output_can")
   out["lat_state_active"] = zoh(ctl, "lat_active") > 0.5
   out["lat_saturated"] = zoh(ctl, "saturated") > 0.5
   out["actual_lat_accel"] = lin(ctl, "actual_lat_accel")
@@ -267,11 +265,7 @@ def _build(route):
   for key, samples in rx.items():
     out[key] = zoh(samples, "value")
     timestamps = np.asarray(samples["t"]) - t0
-    out[key + "_age"] = grid - hold_last(grid, timestamps, timestamps)
-    if len(timestamps):
-      before_first = grid < timestamps[0]
-      out[key][before_first] = np.nan
-      out[key + "_age"][before_first] = np.nan
+    out[key + "_age"] = grid - plan_to_control(grid, timestamps, timestamps)
   wheels = np.asarray([out[f"wheel_{s}"] for s in ("fl", "fr", "rl", "rr")])
   out["wheel_speed_spread"] = (np.max(wheels, axis=0) - np.min(wheels, axis=0)) / 3.6
   out["wheel_speed_spread_age"] = np.max([out[f"wheel_{s}_age"] for s in ("fl", "fr", "rl", "rr")], axis=0)
