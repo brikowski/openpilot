@@ -29,6 +29,7 @@ from tuning_metrics import (
   brake_release_hold_metrics,
   causal_lpf as _causal_lpf,
   command_transition_metrics,
+  consumed_plan,
   cruise_input_metrics,
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
@@ -992,6 +993,7 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   _, lp_has_lead = _series(msgs, "longitudinalPlan",
                            lambda m: 1.0 if m.longitudinalPlan.hasLead else 0.0)
   t_ctl, ctl_lat_active = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "active"))
+  _, ctl_plan_reference = _series(msgs, "controlsState", lambda m: m.controlsState.longitudinalPlanMonoTime / 1e9)
   _, ctl_saturated = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "saturated"))
   _, ctl_actual_lat_accel = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "actualLateralAccel"))
   _, ctl_desired_lat_accel = _series(msgs, "controlsState", lambda m: _torque_state_field(m, "desiredLateralAccel"))
@@ -1038,15 +1040,11 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   saturated = onto(t_ctl, ctl_saturated) > 0.5
   actual_lat_accel = onto(t_ctl, ctl_actual_lat_accel)
   desired_lat_accel = onto(t_ctl, ctl_desired_lat_accel)
-  # controlsd consumes the latest published plan through SubMaster. Hold aTarget exactly; linear
-  # interpolation invents an upstream command between 20 Hz plan messages and masks transitions.
-  atarget = _hold_last(grid, t_lp, lp_atarget) if len(t_lp) else cc_accel.copy()
-  if len(t_lp):
-    cruise_plan = _hold_last(grid, t_lp, lp_cruise) > 0.5
-    allow_throttle = _hold_last(grid, t_lp, lp_allow_throttle) > 0.5
-    has_lead = _hold_last(grid, t_lp, lp_has_lead) > 0.5
-  else:
-    cruise_plan = allow_throttle = has_lead = np.zeros(len(grid), dtype=bool)
+  # A newly published plan may not have reached controlsd; use its recorded input reference.
+  atarget = consumed_plan(grid, t_ctl, ctl_plan_reference, t_lp, lp_atarget)
+  cruise_plan = consumed_plan(grid, t_ctl, ctl_plan_reference, t_lp, lp_cruise) > 0.5
+  allow_throttle = consumed_plan(grid, t_ctl, ctl_plan_reference, t_lp, lp_allow_throttle) > 0.5
+  has_lead = consumed_plan(grid, t_ctl, ctl_plan_reference, t_lp, lp_has_lead) > 0.5
   gaspressed = onto(t_cs, cs_gaspressed) > 0.5
   brakepressed = onto(t_cs, cs_brakepressed) > 0.5
   dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
@@ -1096,27 +1094,17 @@ def analyze(msgs, platform, alpha_longitudinal=None):
     r["notes"].append(f"LIMITED RATE EXPOSURE: {r['engaged_min']:.1f} min engaged; "
                       f"rate-based checks are reported but not graded. Individual events remain evidence.")
 
-  # === convergence ===
-  # ANCHOR THIS TO THE CAR-PORT INPUT, not to longitudinalPlan.aTarget. Per the model-following
-  # rule, `carControl.actuators.accel` is what CarController was actually asked for; `aTarget` is
-  # one stage upstream and `longcontrol` legitimately overrides it (accel limits, the
-  # stopping/starting state machine). Referencing aTarget silently credits or blames us for
-  # longcontrol's work. `passthrough_rms` and the following checks were corrected on 2026-07-29;
-  # this one was missed and still read aTarget until 2026-08-05.
-  #
-  # Both are recorded because they answer different questions and the ledger has 51 rows of the
-  # old one: `track_rms` is achieved-vs-commanded (car port + Honda ECU + vehicle) and is the
-  # attributable number; `track_rms_plan` keeps the old planner-referenced value so historical
-  # rows stay comparable. `plan_override_rms` is the gap between them - if it is large, longcontrol
-  # is doing something aTarget does not show and neither number should be read as the car's.
-  if pid.sum() > 10:
-    r["track_rms"] = float(np.sqrt(np.nanmean((aego[pid] - cc_accel[pid]) ** 2)))
-    r["track_rms_plan"] = float(np.sqrt(np.nanmean((aego[pid] - atarget[pid]) ** 2)))
-    r["plan_override_rms"] = float(np.sqrt(np.nanmean((atarget[pid] - cc_accel[pid]) ** 2)))
-  else:
-    r["track_rms"] = None
-    r["track_rms_plan"] = None
-    r["plan_override_rms"] = None
+  # Vehicle tracking uses the car-port input; plan tracking uses longcontrol's exact consumed input.
+  # Older ledger rows may use publication timing. Reference coverage identifies resolved cycles.
+  r["track_rms"] = float(np.sqrt(np.nanmean((aego[pid] - cc_accel[pid]) ** 2))) if pid.sum() > 10 else None
+  matched_plan = active & np.isfinite(atarget)
+  r["plan_reference_active_frames"] = int(matched_plan.sum())
+  r["plan_reference_active_frac"] = float(matched_plan.sum() / active.sum()) if active.any() else None
+  if np.any(active & ~matched_plan):
+    r["notes"].append("Plan diagnostics exclude active cycles without a matched consumed-plan reference.")
+  matched_pid = pid & matched_plan
+  r["track_rms_plan"] = float(np.sqrt(np.nanmean((aego[matched_pid] - atarget[matched_pid]) ** 2))) if matched_pid.sum() > 10 else None
+  r["plan_override_rms"] = float(np.sqrt(np.mean((atarget[matched_pid] - cc_accel[matched_pid]) ** 2))) if matched_pid.sum() > 10 else None
 
   # Passthrough should now hold in both domains. Preserve the historical gas-domain metric by
   # excluding frames where an older controller added material braking.

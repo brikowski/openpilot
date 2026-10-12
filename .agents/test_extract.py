@@ -20,6 +20,11 @@ def test_model_commands_and_learned_boost_follow_publication_without_blending(mo
 
   messages = []
   for i in range(100):
+    control_time = 1_000_000_000 + i * 10_000_000 - 100_000
+    state = log.Event.new_message(logMonoTime=control_time)
+    state.init('controlsState').longitudinalPlanMonoTime = max(
+      (t for t in (1_020_000_000, 1_070_000_000, 1_120_000_000) if t < control_time), default=0)
+    messages.append(state)
     m = log.Event.new_message(logMonoTime=1_000_000_000 + i * 10_000_000)
     m.init('carControl')
     messages.append(m)
@@ -32,6 +37,7 @@ def test_model_commands_and_learned_boost_follow_publication_without_blending(mo
     m = log.Event.new_message(logMonoTime=timestamp)
     plan = m.init('longitudinalPlan')
     plan.aTarget = -.2
+    plan.shouldStop = timestamp == 1_070_000_000
     if boost is not None:
       plan.accelBoost = boost
     messages.append(m)
@@ -45,7 +51,14 @@ def test_model_commands_and_learned_boost_follow_publication_without_blending(mo
   np.testing.assert_allclose(out['accel_boost'][2:12], [.00125] * 5 + [.0025] * 5)
   assert np.all(out['accel_boost'][12:] == 0.)  # Older messages default this schema field to zero.
   np.testing.assert_allclose(out['atarget'][2:], -.2)
+  assert np.isnan(out["consumed_atarget"][:3]).all()
+  np.testing.assert_allclose(out["consumed_atarget"][3:], -.2)
+  assert np.isnan(out["consumed_should_stop"][:3]).all()
+  np.testing.assert_array_equal(out["consumed_should_stop"][3:14], [0.] * 5 + [1.] * 5 + [0.])
   assert not np.any(out['request'])
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(m for m in messages if m.which() != 'longitudinalPlan'))
+  missing = extract._build('synthetic')
+  assert np.isnan(missing['atarget']).all() and np.isnan(missing['consumed_atarget']).all()
 
 
 def test_select_lead_field_follows_published_mpc_source():
@@ -157,3 +170,13 @@ def test_cruise_setpoint_changes_do_not_invent_overspeed_before_publication(monk
   np.testing.assert_array_equal(out['vcruise'][1:6], [80., 80., 80., 80., 60.])
   assert np.all(out['vego'][1:5] < out['vcruise'][1:5] / 3.6)
   assert out['vego'][5] > out['vcruise'][5] / 3.6
+
+
+def test_new_plan_reference_signals_ignore_previous_extraction_cache(monkeypatch, tmp_path):
+  np.savez(tmp_path / "synthetic.v10.npz", t0=0., request=[0.])
+  monkeypatch.setattr(extract, "CACHE", str(tmp_path))
+  monkeypatch.setattr(extract, "_segments", lambda _: ("synthetic", []))
+  monkeypatch.setattr(extract, "_build", lambda _: {"route": "synthetic", "t0": 0., "consumed_atarget": np.array([-.2])})
+  out = extract.load("synthetic")
+  assert "consumed_atarget" in out
+  np.testing.assert_array_equal(out["consumed_atarget"], [-.2])

@@ -37,6 +37,7 @@ from tuning_metrics import (
   brake_release_hold_metrics,
   causal_lpf,
   command_transition_metrics,
+  consumed_plan,
   cruise_input_metrics,
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
@@ -723,6 +724,37 @@ def test_learner_telemetry_is_only_read_from_legacy_caroutput_semantics():
   assert not _has_learner_telemetry("f453a51e0081")
   assert _has_learner_telemetry("e29fe3dccd09")
   assert not _has_learner_telemetry("future-unknown")
+
+
+def test_consumed_plan_waits_for_the_reference_in_same_cycle_controls_state():
+  grid = np.array([20., 20.01, 20.02, 20.03, 20.04])
+  control_t = grid - .001
+  plan_t = np.array([10., 20.025])
+  references = np.array([10.] * 4 + [20.025])
+  values = np.array([-.4, .8])
+  np.testing.assert_array_equal(consumed_plan(grid, control_t, references, plan_t, values), [-.4] * 4 + [.8])
+  assert hold_last(grid, plan_t, values)[3] == .8  # published but not consumed
+
+
+def test_consumed_plan_does_not_substitute_for_unresolved_or_previous_cycles():
+  grid = np.array([100., 100.01, 100.02, 100.03, 100.04, 100.05])
+  control_t = grid[:5] - .001
+  references = np.array([90., 0., 99.98, 100.035, 90.])
+  plan_t, values = np.array([90., 100.035]), np.array([-.4, .8])
+  actual = consumed_plan(grid, control_t, references, plan_t, values)
+  np.testing.assert_array_equal(actual[[0, 4]], [-.4, -.4])
+  assert np.isnan(actual[[1, 2, 3, 5]]).all()
+  assert np.isnan(consumed_plan(grid, [], [], plan_t, values)).all()
+  assert np.isnan(consumed_plan(grid, control_t, references, [], [])).all()
+  assert np.isnan(consumed_plan(grid[:1], control_t, references, plan_t, values)).all()
+
+
+def test_consumed_plan_preserves_integer_nanosecond_references():
+  base = 9_100_000_000_000_000
+  grid = np.array([base + 102, base + 202], dtype=np.int64)
+  control_t = grid - 2
+  plan_t = np.array([base, base + 1], dtype=np.int64)
+  np.testing.assert_array_equal(consumed_plan(grid, control_t, plan_t, plan_t, [-.4, .8]), [-.4, .8])
 
 
 def test_hold_last_does_not_invent_intermediate_can_values():

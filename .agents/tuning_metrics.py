@@ -94,6 +94,30 @@ def hold_last(grid, t, values):
   return np.asarray(values, dtype=float)[np.clip(idx, 0, len(t) - 1)]
 
 
+def consumed_plan(grid, control_t, references, plan_t, values):
+  """Match the plan named by same-cycle controlsState; unresolved cycles remain NaN.
+
+  All timestamps and references must use the same units. Half the observed control period
+  bounds controlsState-to-carControl pairing without accepting a previous control cycle.
+  """
+  grid, control_t, references, plan_t = map(np.asarray, (grid, control_t, references, plan_t))
+  out = np.full(len(grid), np.nan)
+  if len(grid) < 2 or not len(control_t) or not len(plan_t):
+    return out
+  period = np.median(np.diff(grid))
+  if not np.isfinite(period) or period <= 0:
+    return out
+  ci = np.searchsorted(control_t, grid, side='right') - 1
+  age = grid - control_t[np.maximum(ci, 0)]
+  ref = references[np.maximum(ci, 0)]
+  pi = np.searchsorted(plan_t, ref)
+  safe = np.minimum(pi, len(plan_t) - 1)
+  matched = ((ci >= 0) & (age >= 0) & (age < period / 2) & (ref > 0) &
+             (ref <= control_t[np.maximum(ci, 0)]) & (pi < len(plan_t)) & (plan_t[safe] == ref))
+  out[matched] = np.asarray(values, dtype=float)[safe[matched]]
+  return out
+
+
 def after_grace(mask, dt, grace_s):
   """Keep only the portion of each True run that persists beyond ``grace_s``."""
   frames = max(0, int(np.ceil(grace_s / max(dt, 1e-6))))

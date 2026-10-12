@@ -10,7 +10,8 @@ state signals are interpolated onto carControl time; received CAN uses independe
 verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
 spread is m/s. can_long_accel has unqualified scale and reference frame on this Odyssey;
 keep it diagnostic rather than substituting it for net aEgo.
-Published planner/model commands are held to locate the first attribution divergence.
+Published planner/model commands are held. consumed_atarget/consumed_should_stop match the exact
+plan named by same-cycle controlsState; missing references remain NaN.
 """
 import argparse
 import os
@@ -18,14 +19,14 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tuning_metrics import hold_last
+from tuning_metrics import consumed_plan, hold_last
 
 from private_paths import rlog_root
 from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set or resampling semantics change, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 10
+SCHEMA = 11
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 ACC_CONTROL_ADDR = 0x1DF
@@ -96,7 +97,7 @@ def _decode(paths):
                         "steer_angle", "steer_rate", "steering_torque", "steering_pressed",
                         "steer_fault_temp", "steer_fault_perm")}
   co = {k: [] for k in ("t", "accel", "gas_output", "brake_output", "torque", "torque_output_can")}
-  ctl = {k: [] for k in ("t", "lat_active", "saturated", "actual_lat_accel", "desired_lat_accel")}
+  ctl = {k: [] for k in ("t", "lat_active", "saturated", "actual_lat_accel", "desired_lat_accel", "plan_reference")}
   lp = {k: [] for k in ("t", "atarget", "accel_boost", "source", "allow_throttle", "has_lead", "should_stop")}
   sc = {k: [] for k in ("t", "gas", "accel", "brake_request")}
   rx = {k: {"t": [], "value": []} for k in RECEIVED_SIGNALS}
@@ -143,6 +144,7 @@ def _decode(paths):
       co["torque"].append(a.torque)
       co["torque_output_can"].append(a.torqueOutputCan)
     elif w == "controlsState":
+      ctl["plan_reference"].append(m.controlsState.longitudinalPlanMonoTime / 1e9)
       state = m.controlsState.lateralControlState
       ctl["t"].append(t)
       ctl["lat_active"].append(float(state.torqueState.active) if state.which() == "torqueState" else np.nan)
@@ -250,8 +252,9 @@ def _build(route):
   # aTarget is a published decision consumed through SubMaster, not a continuous trajectory to
   # interpolate. Linear interpolation invents planner values between messages and can conceal the
   # exact plan -> longcontrol divergence at a state-machine transition.
-  out["atarget"] = plan_to_control(grid, np.asarray(lp["t"]) - t0, lp["atarget"]) \
-    if len(lp["t"]) else out["request"].copy()
+  out["atarget"] = plan_to_control(grid, np.asarray(lp["t"]) - t0, lp["atarget"])
+  for key in ("atarget", "should_stop"):
+    out["consumed_" + key] = consumed_plan(cc["t"], ctl["t"], ctl["plan_reference"], lp["t"], lp[key])
   # Total learned boost state, not the speed/model-weighted increment applied to acceleration.
   out["accel_boost"] = plan_to_control(grid, np.asarray(lp["t"]) - t0, lp["accel_boost"])
   # Discrete CAN: zero-order hold only.
