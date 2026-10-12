@@ -83,7 +83,8 @@ active safety rails.
   or positive `USER_BRAKE` feedback remains active. It releases `BRAKE_REQUEST` immediately,
   preserves numeric `ACCEL_COMMAND`, and uses no fixed delay. A qualified handoff keeps its
   settled brake history through qualified coast and while feedback blocks gas, so early release does
-  not discard an established handoff. A gear change or new brake selection requires fresh settling.
+  not discard an established handoff. A new brake selection restarts brake settling; a gear change
+  restarts settling for coast observations while retaining any prior estimate for the received gear.
   Existing gas continuity and unreliable-state fallbacks remain available.
   Replay does not prove road benefit.
 - The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
