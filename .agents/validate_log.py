@@ -30,6 +30,7 @@ from tuning_metrics import (
   causal_lpf as _causal_lpf,
   command_transition_metrics,
   consumed_plan,
+  pedal_intervention_metrics,
   cruise_input_metrics,
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
@@ -393,16 +394,10 @@ SHADOW_WIND_GAS_RAIL_MARGIN = 100.0
 # False and it was graded - 2 brake taps became "6.6 per 10 min" and flagged. A per-10-minute rate
 # needs at least a 10 minute window to mean anything.
 THIN_ENGAGED_MIN = 10.0       # min engaged: below this the drive is context, not evidence
-# ...and a rate alone is still not enough: require a real count of events too, so one or two taps
-# can never flag however the arithmetic is scaled.
-INTERVENTION_MIN_EVENTS = 3
-# Interventions are the only checks graded by what the DRIVER did rather than by telemetry we
-# derive ourselves - the one signal that can't be explained away by a modeling choice. Rates are
-# per 10 engaged minutes so a long drive isn't penalized for having more opportunities.
-OVERRIDE_RATE_FLAG = 3.0      # gas-pedal overrides / 10 min engaged -> tune under-delivering
-TAKEOVER_RATE_FLAG = 2.0      # brake-pedal takeouts / 10 min engaged -> braking late or too weak
-TAKEOVER_LOOKBACK_S = 0.5     # s: Honda drops longActive the same frame the brake switch closes,
-                              # so attribute a brake press to OP if OP was engaged just before it.
+# Pedal rates identify contexts to inspect; planned stops and upstream requests can explain them.
+OVERRIDE_RATE_FLAG = 3.0      # gas presses near engagement / 10 min engaged
+TAKEOVER_RATE_FLAG = 2.0      # brake presses near engagement / 10 min engaged
+TAKEOVER_LOOKBACK_S = 0.5     # s: either pedal can drop longActive on the same cycle.
 
 # --- interface accel rail saturation ---
 # The wire command is clipped to BOSCH_ACCEL_MIN/MAX. Sitting on the upper rail means the planner
@@ -1178,23 +1173,10 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   r["crashes"] = crashes
   r["crashed_procs"] = crashed_procs
 
-  # === driver interventions ===
-  # Every other check grades the tune with telemetry we chose how to interpret; these count the
-  # times the driver overruled it. Gas override: on Bosch, gasPressed does NOT drop ACC, so
-  # engaged-and-gas-pressed is directly "OP wasn't giving me enough". Brake takeover: the brake
-  # switch DOES drop longActive on the same frame, so counting `active & brakePressed` would
-  # read ~0 on every drive - attribute a brake press to OP if OP was engaged in the preceding
-  # TAKEOVER_LOOKBACK_S instead.
-  ovr = active & gaspressed
-  r["override_events"] = int(np.sum(np.diff(ovr.astype(int)) == 1))
-  r["override_frac"] = float(ovr.sum() / active.sum()) if active.sum() else 0.0
-  look = max(1, int(round(TAKEOVER_LOOKBACK_S / dt)))
-  bp_edges = np.where(np.diff(brakepressed.astype(int)) == 1)[0]
-  r["takeover_events"] = int(sum(1 for i in bp_edges if active[max(0, i - look):i + 1].any()))
-  # Total brake presses (engaged or not) makes the takeover count self-validating: 0 takeovers out
-  # of 80 presses means the driver never braked out of OP, while 0 out of 0 means brakePressed
-  # never arrived and the metric proved nothing.
-  r["brake_presses"] = int(len(bp_edges))
+  # Pedal presses are inspection leads; command context and driver intent establish the cause.
+  r.update(pedal_intervention_metrics(
+    grid, active, t_cs, cs_gaspressed, cs_brakepressed, lookback_s=TAKEOVER_LOOKBACK_S,
+  ))
   per10 = r["engaged_min"] / 10.0
   r["override_rate"] = float(r["override_events"] / per10) if per10 > 0 else 0.0
   r["takeover_rate"] = float(r["takeover_events"] / per10) if per10 > 0 else 0.0
@@ -1909,19 +1891,19 @@ def verdicts(r):
         f"{r['rail_lo_frac']*100:.1f}% at {HondaParams.BOSCH_ACCEL_MIN:.1f} m/s^2",
         status="planner asking past the interface rails (learner freezes at accel max)" if rail_bad else None)
 
-  # driver interventions - graded on what the DRIVER did, not on telemetry we interpret.
+  # Driver interventions describe pedal use, not whether the car port followed its command.
   # Suppressed (reported, forced OK) on a thin sample, where one merge inflates the rate.
   thin = r.get("thin_sample", False)
   suffix = " [thin sample - not graded]" if thin else ""
   if "override_rate" in r:
     add("gas overrides", thin or r["override_rate"] <= OVERRIDE_RATE_FLAG,
-        f"{r['override_events']} events, {r['override_rate']:.1f}/10min engaged "
+        f"{r['override_events']} events of {r.get('gas_presses', 'unknown')} gas presses, {r['override_rate']:.1f}/10min engaged "
         f"({r['override_frac']*100:.1f}% of engaged frames){suffix}",
-        status="driver adding gas repeatedly - tune under-delivering accel" if not thin and r["override_rate"] > OVERRIDE_RATE_FLAG else None)
+        status="driver adding gas repeatedly - inspect commanded and achieved motion" if not thin and r["override_rate"] > OVERRIDE_RATE_FLAG else None)
     add("brake takeovers", thin or r["takeover_rate"] <= TAKEOVER_RATE_FLAG,
         f"{r['takeover_events']} events of {r.get('brake_presses', 0)} brake presses, "
         f"{r['takeover_rate']:.1f}/10min engaged{suffix}",
-        status="driver braking out of OP repeatedly - braking late or too weak" if not thin and r["takeover_rate"] > TAKEOVER_RATE_FLAG else None)
+        status="driver braking near engagement repeatedly - inspect intent and command path" if not thin and r["takeover_rate"] > TAKEOVER_RATE_FLAG else None)
 
   # Fresh test2 must not add braking; on historical/ody-op rows this remains a measured readout of
   # the known supplemental controller rather than an assertion that it is absent.
@@ -2528,7 +2510,7 @@ def main():
   print("\n  CONVERGENCE / SAFETY")
   show(conv)
   if any(c["check"] in driver for c in v):
-    print("\n  DRIVER INTERVENTIONS (ground truth - what the driver overruled)")
+    print("\n  DRIVER PEDAL USE (recent engagement; inspect intent and command context)")
     show(driver)
   print("\n  WATCHLIST (cross-brand candidate tweaks)")
   show({c["check"] for c in v} - conv - driver - quality - hardware - lateral - configuration)

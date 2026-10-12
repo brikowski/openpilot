@@ -100,6 +100,33 @@ def hold_last(grid, t, values):
   return np.asarray(values, dtype=float)[np.clip(idx, 0, len(t) - 1)]
 
 
+def pedal_intervention_metrics(control_t, active, state_t, gas_pressed, brake_pressed, *, lookback_s):
+  """Count observed pedal rising edges near prior engagement, without assigning their cause.
+
+  Use native pedal timestamps: either pedal can coincide with longitudinal disengagement,
+  and a short press can fall entirely between control samples. An already-held pedal at
+  capture start or re-engagement is not another press.
+  """
+  control_t, state_t = np.asarray(control_t), np.asarray(state_t)
+  active = np.asarray(active, dtype=bool)
+  out = {}
+  for values, total, events in ((gas_pressed, "gas_presses", "override_events"),
+                                (brake_pressed, "brake_presses", "takeover_events")):
+    pedal = np.asarray(values, dtype=float)
+    edges = np.flatnonzero((pedal[1:] > .5) & (pedal[:-1] <= .5)) + 1
+    out[total] = int(len(edges))
+    out[events] = 0
+    for time in state_t[edges]:
+      start = np.searchsorted(control_t, time - lookback_s)
+      end = np.searchsorted(control_t, time, side="right")
+      out[events] += int(active[start:end].any())
+  gas = hold_last(control_t, state_t, gas_pressed) > .5
+  if len(state_t):
+    gas &= control_t >= state_t[0]
+  out["override_frac"] = float(np.sum(active & gas) / active.sum()) if active.any() else 0.0
+  return out
+
+
 def consumed_plan(grid, control_t, references, plan_t, values):
   """Match the plan named by same-cycle controlsState; unresolved cycles remain NaN.
 

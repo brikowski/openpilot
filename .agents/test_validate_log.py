@@ -38,6 +38,7 @@ from tuning_metrics import (
   causal_lpf,
   command_transition_metrics,
   consumed_plan,
+  pedal_intervention_metrics,
   cruise_input_metrics,
   descent_hold_metrics,
   gas_reentry_pulse_metrics,
@@ -60,6 +61,44 @@ from tuning_metrics import (
   stop_lurch_metrics,
   under_set_speed_metrics,
 )
+
+
+@pytest.mark.parametrize("pedal,field", [("gas", "override_events"), ("brake", "takeover_events")])
+def test_pedal_press_counts_when_longitudinal_disengages_on_that_cycle(pedal, field):
+  times = np.arange(5) * .1
+  active = times < .2
+  gas = np.array([0, 0, 1, 1, 0]) if pedal == "gas" else np.zeros(5)
+  brake = np.array([0, 0, 1, 1, 0]) if pedal == "brake" else np.zeros(5)
+  metrics = pedal_intervention_metrics(times, active, times, gas, brake, lookback_s=.5)
+  assert metrics[field] == 1
+  assert metrics["override_frac"] == 0.
+
+
+def test_pedal_press_uses_native_edges_and_never_future_engagement():
+  control_t = np.array([0., .1, .2, .3])
+  state_t = np.array([0., .115, .125, .3])
+  metrics = pedal_intervention_metrics(control_t, np.ones(4), state_t, [0, 1, 0, 0], [0] * 4, lookback_s=.5)
+  assert metrics["gas_presses"] == metrics["override_events"] == 1  # Entire press lies between control samples.
+  assert metrics["override_frac"] == 0.
+  metrics = pedal_intervention_metrics(control_t, [0, 0, 1, 1], state_t, [0, 1, 1, 1], [0] * 4, lookback_s=.5)
+  assert metrics["gas_presses"] == 1
+  assert metrics["override_events"] == 0  # Re-engagement while the pedal stays held is not a press.
+  assert metrics["override_frac"] == 1.
+
+
+def test_pedal_press_lookback_uses_elapsed_time_across_log_gaps():
+  metrics = pedal_intervention_metrics([0., 10.], [1, 0], [0., 10.1], [0, 1], [0, 1], lookback_s=.5)
+  assert metrics["gas_presses"] == metrics["brake_presses"] == 1
+  assert metrics["override_events"] == metrics["takeover_events"] == 0
+
+
+def test_initial_or_unavailable_pedal_state_cannot_create_a_press():
+  metrics = pedal_intervention_metrics([0., .1, .2], [1, 1, 1], [.05, .15], [1, 1], [np.nan, 1], lookback_s=.5)
+  assert metrics["gas_presses"] == metrics["brake_presses"] == 0
+  assert metrics["override_events"] == metrics["takeover_events"] == 0
+  assert metrics["override_frac"] == pytest.approx(2 / 3)  # First pedal observation cannot apply before .05s.
+  metrics = pedal_intervention_metrics([0., .1], [1, 1], [], [], [], lookback_s=.5)
+  assert metrics == {"gas_presses": 0, "override_events": 0, "brake_presses": 0, "takeover_events": 0, "override_frac": 0.}
 
 
 def test_direct_steering_matches_following_caroutput_and_counts_extended_commands():
