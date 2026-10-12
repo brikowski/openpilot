@@ -176,12 +176,32 @@ def test_cruise_setpoint_changes_do_not_invent_overspeed_before_publication(monk
   assert out['vego'][5] > out['vcruise'][5] / 3.6
 
 
-def test_new_plan_reference_signals_ignore_previous_extraction_cache(monkeypatch, tmp_path):
+def test_resampling_changes_ignore_previous_extraction_cache(monkeypatch, tmp_path):
   np.savez(tmp_path / "synthetic.v10.npz", t0=0., request=[0.])
   np.savez(tmp_path / "synthetic.v11.npz", t0=0., consumed_atarget=[0.])
+  np.savez(tmp_path / "synthetic.v12.npz", t0=0., consumed_atarget=[0.], lat_output_torque_can=[1000.])
   monkeypatch.setattr(extract, "CACHE", str(tmp_path))
   monkeypatch.setattr(extract, "_segments", lambda _: ("synthetic", []))
   monkeypatch.setattr(extract, "_build", lambda _: {"route": "synthetic", "t0": 0., "consumed_atarget": np.array([-.2]), "consumed_plan_source": np.array([4])})
   out = extract.load("synthetic")
   assert "consumed_atarget" in out and "consumed_plan_source" in out
   np.testing.assert_array_equal(out["consumed_atarget"], [-.2])
+
+
+def test_steering_output_authority_changes_follow_publication_without_blending(monkeypatch):
+  from openpilot.cereal import log
+
+  messages = []
+  for i in range(100):
+    m = log.Event.new_message(logMonoTime=1_000_000_000 + i * 10_000_000)
+    m.init('carControl')
+    messages.append(m)
+  for timestamp, count in ((1_010_000_000, 0.), (1_030_000_000, -2560.), (1_060_000_000, -3840.)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    m.init('carOutput').actuatorsOutput.torqueOutputCan = count
+    messages.append(m)
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  assert np.isnan(out['lat_output_torque_can'][0])
+  np.testing.assert_array_equal(out['lat_output_torque_can'][1:8], [0., 0., -2560., -2560., -2560., -3840., -3840.])

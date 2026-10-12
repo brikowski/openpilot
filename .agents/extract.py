@@ -10,7 +10,8 @@ state signals are interpolated onto carControl time; received CAN uses independe
 verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
 spread is m/s. can_long_accel has unqualified scale and reference frame on this Odyssey;
 keep it diagnostic rather than substituting it for net aEgo.
-Published planner/model commands are held. consumed_atarget/consumed_should_stop match the exact
+Published planner/model commands and reported steering actuator commands are held.
+consumed_atarget/consumed_should_stop match the exact
 plan named by same-cycle controlsState; missing references remain NaN.
 """
 import argparse
@@ -26,7 +27,7 @@ from openpilot.tools.lib.logreader import LogReader
 
 # BUMP THIS whenever the extracted signal set or resampling semantics change, or a stale cache will silently answer a
 # question with the wrong columns. It is part of the cache key, so old caches are simply ignored.
-SCHEMA = 12
+SCHEMA = 13
 CACHE = os.environ.get("EXTRACT_CACHE", "/tmp/comma_extract_cache")
 ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"   # MUST track validate_log.py
 ACC_CONTROL_ADDR = 0x1DF
@@ -244,7 +245,8 @@ def _build(route):
   out["gas_output"] = lin(co, "gas_output")
   out["brake_output"] = lin(co, "brake_output")
   out["lat_output_torque"] = lin(co, "torque")
-  out["lat_output_torque_can"] = lin(co, "torque_output_can")
+  # Reported actuator commands are discrete publications, including authority changes.
+  out["lat_output_torque_can"] = plan_to_control(grid, np.asarray(co["t"]) - t0, co["torque_output_can"])
   out["lat_state_active"] = zoh(ctl, "lat_active") > 0.5
   out["lat_saturated"] = zoh(ctl, "saturated") > 0.5
   out["actual_lat_accel"] = lin(ctl, "actual_lat_accel")

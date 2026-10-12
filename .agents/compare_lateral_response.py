@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Screen high-authority Odyssey lateral response against source-compatible stock routes.
+"""Screen high-authority Odyssey controller tracking across source-qualified routes.
 
 This matches observed drives; it does not predict what either controller would have done on the
 other road. Require overlap before comparing actual versus desired lateral acceleration.
+Authority is reported carOutput, and actual acceleration is the torque controller's steering-angle
+estimate. Inspect raw steering CAN and body motion separately before tuning.
 """
 import argparse
 
@@ -23,10 +25,10 @@ def lateral_points(d, *, stride=10):
   mask = (d["lat_active"] & d["lat_state_active"] & ~d["steering_pressed"] &
           ~d["steer_fault_temp"] & ~d["steer_fault_perm"] &
           np.isfinite(actual) & np.isfinite(desired) &
-          (d["vego"] >= 20.0) & (d["vego"] <= 24.0) &
+          np.isfinite(d["vego"]) & (d["vego"] > 0.0) & np.isfinite(d["pitch"]) &
           (np.abs(desired) >= 0.5) & (np.abs(desired) <= 2.0) &
-          (d["pitch"] >= 0.015) & (d["pitch"] <= 0.055) &
-          (np.abs(slope) < 0.5) & (np.abs(d["lat_output_torque_can"]) >= 2559.0))
+          (np.abs(slope) < 0.5) & np.isfinite(d["lat_output_torque_can"]) &
+          (np.abs(d["lat_output_torque_can"]) >= 2559.0))
   indices = np.flatnonzero(mask)[::stride]
   under = np.sign(desired[indices]) * (desired[indices] - actual[indices])
   return np.column_stack((d["vego"][indices], desired[indices], d["pitch"][indices],
@@ -74,7 +76,7 @@ def main():
   print(f"matched {result['matched']}/{result['candidate_samples']} candidate samples to "
         f"{result['unique_baseline']} distinct baseline samples")
   if result["matched"]:
-    print(f"candidate/baseline under-response median "
+    print(f"candidate/baseline controller tracking under-response median "
           f"{result['candidate_under_median']:+.3f}/{result['baseline_under_median']:+.3f} m/s2")
     print(f"candidate/baseline MAE {result['candidate_mae']:.3f}/{result['baseline_mae']:.3f}, "
           f"RMS {result['candidate_rms']:.3f}/{result['baseline_rms']:.3f} m/s2")

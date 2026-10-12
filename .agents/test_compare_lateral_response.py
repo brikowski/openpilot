@@ -19,7 +19,7 @@ class TestLateralResponseMatch(unittest.TestCase):
     self.assertAlmostEqual(result["candidate_mae"], 0.2)
     self.assertAlmostEqual(result["baseline_mae"], 0.1)
 
-  def test_filter_uses_signed_tracking_error_and_can_authority(self):
+  def test_filter_uses_signed_tracking_error_and_reported_authority(self):
     n = 5
     d = {
       "t": np.arange(n) * 0.1,
@@ -37,6 +37,36 @@ class TestLateralResponseMatch(unittest.TestCase):
     points = lateral_points(d, stride=1)
     self.assertEqual(len(points), 4)
     np.testing.assert_allclose(points[:, 4], 0.2)
+
+  def test_filter_covers_speed_and_grade_without_accepting_unreliable_state(self):
+    n = 15
+    d = {
+      "t": np.arange(n) * 0.1,
+      "desired_lat_accel": np.full(n, 1.0),
+      "actual_lat_accel": np.full(n, 0.8),
+      "lat_active": np.ones(n, dtype=bool),
+      "lat_state_active": np.ones(n, dtype=bool),
+      "steering_pressed": np.zeros(n, dtype=bool),
+      "steer_fault_temp": np.zeros(n, dtype=bool),
+      "steer_fault_perm": np.zeros(n, dtype=bool),
+      "vego": np.array([8., 17., 22., 30., 35., *([22.] * 10)]),
+      "pitch": np.array([-.04, 0., .04, -.02, .07, *([.04] * 10)]),
+      "lat_output_torque_can": np.full(n, 2560.),
+    }
+    d["lat_active"][5] = False
+    d["lat_state_active"][6] = False
+    d["steering_pressed"][7] = True
+    d["steer_fault_temp"][8] = True
+    d["steer_fault_perm"][9] = True
+    d["vego"][10] = 0.
+    d["vego"][11] = np.inf
+    d["pitch"][12] = np.nan
+    d["lat_output_torque_can"][13] = np.inf
+    d["lat_output_torque_can"][14] = 1000.
+    points = lateral_points(d, stride=1)
+    np.testing.assert_array_equal(points[:, 0], [8., 17., 22., 30., 35.])
+    np.testing.assert_array_equal(points[:, 2], [-.04, 0., .04, -.02, .07])
+    np.testing.assert_allclose(points[:, 4], .2)
 
 
 if __name__ == "__main__":
