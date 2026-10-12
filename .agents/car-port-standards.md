@@ -38,9 +38,9 @@ active safety rails.
   It bypasses pre-activation
   and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
   `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration requires assistance.
-  For mild requests above the road-brake boundary, a prior coast forecast below the request by the
-  response margin retains existing gas feedback through transient measured excess acceleration.
-  Stronger requests retain the measured-response guard. A prior coast forecast
+  During active gas control, a qualified coast forecast below the negative request retains gas
+  through transient measured excess acceleration. Sustained excess in the existing same-drivetrain
+  delayed-response observer restores fallback selection; a request beyond coast releases this authority. A prior coast forecast
   and measured acceleration above the request, including a nonnegative request, select mutually exclusive braking when fresh
   valid CAN confirms inactive gas and braking. Brake selection need not wait for the coast learner
   to settle; learning and gas entry retain their response interval.
