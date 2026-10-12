@@ -26,7 +26,7 @@ active safety rails.
   around `ACCEL_COMMAND` or use CAN shaping to hide an upstream planner/controller mismatch.
 - On the current `ody-op-test` Odyssey port, the controller chooses mutually exclusive gas/brake
   domains from the raw request, with response-qualified gas entry from settled coast, brake entry
-  from observed coast with a prior forecast, and early release of an already-active road-speed brake domain. Its
+  from observed coast with a prior forecast, and response-qualified road-speed brake release. Its
   active behavior is low-speed non-positive → brake below 5 m/s, fallback road-speed brake entry at -0.30
   m/s², and active-gas continuity above Honda's upstream -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
@@ -44,8 +44,11 @@ active safety rails.
   and measured acceleration above a negative request select mutually exclusive braking when fresh
   valid CAN confirms inactive gas and braking. Brake selection need not wait for the coast learner
   to settle; learning and gas entry retain their response interval.
-  Excess road-speed braking may release when fresh brake feedback and the qualified coast estimate
-  show that coast supplies the current negative request; release does not require a request trend.
+  Excess road-speed braking may release when fresh active brake feedback and the qualified coast
+  estimate show that coast supplies the current negative request. Qualified coast overrides the fixed
+  fallback entry while measured response remains within the existing response margin. A stronger request
+  than predicted coast, a measured shortfall beyond that margin, or unreliable state restores fallback
+  braking. Release does not require a request trend.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
   The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
   request-ramped, bounded pitch load. Its grade-proportional gas term rises
@@ -79,8 +82,8 @@ active safety rails.
   New gas entry at 8–35 m/s in PID control waits in coast while fresh received computer-braking
   or positive `USER_BRAKE` feedback remains active. It releases `BRAKE_REQUEST` immediately,
   preserves numeric `ACCEL_COMMAND`, and uses no fixed delay. A qualified handoff keeps its
-  settled brake history while feedback blocks gas, so it does not reselect braking merely because
-  the issued domain changed to coast. A gear change or new brake selection requires fresh settling.
+  settled brake history through qualified coast and while feedback blocks gas, so early release does
+  not discard an established handoff. A gear change or new brake selection requires fresh settling.
   Existing gas continuity and unreliable-state fallbacks remain available.
   Replay does not prove road benefit.
 - The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
