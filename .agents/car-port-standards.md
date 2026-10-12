@@ -111,7 +111,9 @@ active safety rails.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
   settled, pedal-free coast or a settled negative-request brake selection with inactive actuators in the same target
   gear with valid CAN and fresh received gear, gas and braking state, using the existing recent five-sample median
-  throughout eligible coast. All coast observations require `USER_BRAKE` within one DBC
+  throughout eligible coast. Learning and prediction use live calibrated pitch as their shared gravity
+  reference; gas feedforward and response feedback retain their separate filtered pitch.
+  All coast observations require `USER_BRAKE` within one DBC
   quantization step of zero, including after the brake command releases; the shared VSA reception
   timestamp qualifies that signal.
   Nonnegative brake holding uses the prior coast estimate without learning its controlled response as coast.
