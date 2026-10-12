@@ -360,18 +360,15 @@ class Device:
 
   def _update_wakefulness(self):
     alert = None
-    urgent_alert = False
-    state_missing = False
+    keep_awake = False
     enabled = None
     if ui_state.started:
       sm = ui_state.sm
-      # A missing selfdriveState can mean the alert renderer is showing a system failure.
-      state_missing = not sm.alive['selfdriveState']
+      keep_awake = (ui_state.alpha_long_enabled and sm.alive['carState'] and sm.valid['carState'] and
+                    sm.recv_frame['carState'] >= ui_state.started_frame and sm['carState'].cruiseState.enabled)
       if sm.recv_frame['selfdriveState'] >= ui_state.started_frame and sm.alive['selfdriveState']:
         ss = sm['selfdriveState']
         alert = (ss.alertSize.raw, ss.alertStatus.raw, ss.alertText1, ss.alertText2) if ss.alertSize.raw else None
-        urgent_alert = bool(alert and ss.alertStatus in (log.SelfdriveState.AlertStatus.userPrompt,
-                                                          log.SelfdriveState.AlertStatus.critical))
         enabled = ss.enabled
     else:
       now = time.monotonic()
@@ -383,7 +380,7 @@ class Device:
 
     awake, timeout_edge = self._wake_policy.update(
       time.monotonic(), self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
-      enabled=enabled, alert=alert, urgent_alert=urgent_alert, state_missing=state_missing,
+      enabled=enabled, alert=alert, keep_awake=keep_awake,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
     if timeout_edge:
