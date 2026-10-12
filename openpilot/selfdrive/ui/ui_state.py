@@ -106,6 +106,7 @@ class UIState:
     self.personality: log.LongitudinalPersonality = log.LongitudinalPersonality.standard
     self.has_longitudinal_control: bool = False
     self.alpha_long_enabled: bool = self.params.get_bool("AlphaLongitudinalEnabled")
+    self.screen_timeout_enabled: bool = self.params.get("ScreenTimeoutEnabled", return_default=True)
     self.is_body: bool | None = False
     self.CP: car.CarParams | None = None
     self.light_sensor: float = -1.0
@@ -240,6 +241,7 @@ class UIState:
     # For slower operations
     # Update longitudinal control state
     self.alpha_long_enabled = self.params.get_bool("AlphaLongitudinalEnabled")
+    self.screen_timeout_enabled = self.params.get("ScreenTimeoutEnabled", return_default=True)
     CP_bytes = self.params.get("CarParamsPersistent")
     if CP_bytes is not None:
       self.CP = messaging.log_from_bytes(CP_bytes, car.CarParams)
@@ -381,6 +383,7 @@ class Device:
     awake, timeout_edge = self._wake_policy.update(
       time.monotonic(), self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
       enabled=enabled, alert=alert, keep_awake=keep_awake,
+      timeout_enabled=ui_state.screen_timeout_enabled,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
     if timeout_edge:
