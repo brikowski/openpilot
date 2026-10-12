@@ -26,6 +26,10 @@ class TogglesLayoutMici(NavScroller):
                                                    "These are alpha features. Expect mistakes.\n" +
                                                    "The path colors show acceleration and braking.")
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
+    screen_timeout = BigParamControl("screen timeout", "ScreenTimeoutEnabled",
+                                     description="Turn off the screen after 15 seconds of inactivity.\n" +
+                                                 "Stay on while cruise and Alpha Long are enabled.\n" +
+                                                 "Disable to keep the screen on.")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
                                              "Only above 31 mph (50 km/h), with no turn signal.")
@@ -45,6 +49,7 @@ class TogglesLayoutMici(NavScroller):
       self._personality_toggle,
       self._experimental_btn,
       is_metric_toggle,
+      screen_timeout,
       ldw_toggle,
       always_on_dm_toggle,
       record_front,
@@ -56,6 +61,7 @@ class TogglesLayoutMici(NavScroller):
     self._refresh_toggles = (
       ("ExperimentalMode", self._experimental_btn),
       ("IsMetric", is_metric_toggle),
+      ("ScreenTimeoutEnabled", screen_timeout),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
       ("RecordFront", record_front),

@@ -6,9 +6,9 @@ from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePoli
 
 
 def step(policy, now, *, ignition=True, started=True, enabled=False, alert=None, keep_awake=False,
-         touch=False, offroad_alerts=None):
+         timeout_enabled=True, touch=False, offroad_alerts=None):
   return policy.update(now, DISPLAY_TIMEOUT, ignition=ignition, started=started, enabled=enabled, alert=alert,
-                       keep_awake=keep_awake, touch=touch,
+                       keep_awake=keep_awake, timeout_enabled=timeout_enabled, touch=touch,
                        offroad_alerts=offroad_alerts, pc=False)
 
 
@@ -81,7 +81,7 @@ def display(monkeypatch, tmp_path):
   sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False)),
                 selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0)))
   state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, experimental_mode=False,
-                          started_frame=100, sm=sm)
+                          screen_timeout_enabled=True, started_frame=100, sm=sm)
   monkeypatch.setattr(module, 'ui_state', state)
   monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[]))
   monkeypatch.setattr(module, 'PC', False)
@@ -127,3 +127,74 @@ def test_unreliable_cruise_state_releases_display_hold(display, unreliable):
   now[0] = 46.1
   device._update_wakefulness()
   assert not device.awake
+
+
+@pytest.mark.parametrize('onroad', [False, True])
+def test_timeout_switch_applies_live_and_restarts_full_timeout(display, onroad):
+  state, device, now = display
+  state.started = onroad
+  state.ignition = onroad
+  state.params = SimpleNamespace(get=lambda _: None, get_bool=lambda _: False)
+  device._update_wakefulness()
+  now[0] = 15.1
+  device._update_wakefulness()
+  assert not device.awake
+  state.screen_timeout_enabled = False
+  now[0] = 16
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 100
+  device._update_wakefulness()
+  assert device.awake
+  state.screen_timeout_enabled = True
+  now[0] = 101
+  device._update_wakefulness()
+  now[0] = 116
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 116.1
+  device._update_wakefulness()
+  assert not device.awake
+
+
+@pytest.mark.parametrize('variant', ['tizi', 'mici'])
+def test_screen_timeout_setting_persists_and_refreshes_live(display, monkeypatch, variant):
+  import pyray as rl
+  from openpilot.common.params import Params
+  from openpilot.selfdrive.ui import ui_state as module
+  from openpilot.system.ui.lib.application import gui_app
+
+  params = Params()
+  assert params.get('ScreenTimeoutEnabled', return_default=True) is True
+  params.put_bool('ScreenTimeoutEnabled', True, block=True)
+  state = object.__new__(module.UIState)
+  state._initialize()
+  monkeypatch.setattr(state, 'usb_connected', False)
+  monkeypatch.setattr(state, '_engaged_transition_callbacks', [])
+  monkeypatch.setattr(module, 'cable_connected', lambda: False)
+  monkeypatch.setattr(gui_app, 'texture', lambda *args, **kwargs: rl.Texture())
+  monkeypatch.setattr(gui_app, 'font', lambda *args, **kwargs: rl.Font())
+  if variant == 'tizi':
+    from openpilot.selfdrive.ui.layouts.settings import toggles
+    monkeypatch.setattr(toggles, 'ui_state', state)
+    layout = toggles.TogglesLayout()
+    toggle = layout._toggles['ScreenTimeoutEnabled'].action_item.toggle
+    checked = toggle.get_state
+  else:
+    from openpilot.selfdrive.ui.mici.layouts.settings import toggles as mici_toggles
+    monkeypatch.setattr(mici_toggles, 'ui_state', state)
+    layout = mici_toggles.TogglesLayoutMici()
+    toggle = next(item for key, item in layout._refresh_toggles if key == 'ScreenTimeoutEnabled')
+
+    def checked():
+      return toggle._checked
+  assert checked()
+  for enabled in (False, True):
+    toggle._handle_mouse_release(None)
+    assert Params().get_bool('ScreenTimeoutEnabled') is enabled
+    state.update_params()
+    assert state.screen_timeout_enabled is enabled
+    assert params.get('OnroadCycleRequested') is None
+  params.put_bool('ScreenTimeoutEnabled', False, block=True)
+  layout._update_toggles()
+  assert not checked()
