@@ -169,7 +169,7 @@ class TestOdysseyLongRails(unittest.TestCase):
                         LongCtrlState.stopping, LongCtrlState.pid, LongCtrlState.stopping, LongCtrlState.stopping], 2)
     rejects, seen = _run(True, requests, pitch=None, vego=.3, long_control_state=states)
     assert not rejects
-    assert [accel for accel, _, _ in seen] == [-28, -31, -35, -38, -28, 0, 10]
+    assert [accel for accel, _, _ in seen] == [-40, -42, -44, -46, -40, 0, 10]
     assert all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[:6])
     assert seen[6][1] > 0 and seen[6][2] == 0
 
@@ -177,7 +177,7 @@ class TestOdysseyLongRails(unittest.TestCase):
     requests = [-1.0, -0.8, -0.3, -0.1, 0.0, 0.1, -0.1, -0.3]
     rejects, seen = _run(True, np.repeat(requests, 2), pitch=None, vego=0.6)
     assert not rejects
-    assert [accel for accel, _, _ in seen] == [-100, -80, -55, -18, 0, 10, -18, -55]
+    assert [accel for accel, _, _ in seen] == [-100, -80, -55, -35, 0, 10, -35, -55]
     assert all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[:5] + seen[6:])
     assert seen[5][1] > 0 and seen[5][2] == 0
 
@@ -478,8 +478,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     rejects, seen = _run(True, accels, pitch=0.0, vego=1.0, aegos=aegos)
     assert not rejects
     commands = np.array([accel for accel, _, _ in seen])
-    np.testing.assert_array_equal(commands[:15], np.full(15, -38))
-    np.testing.assert_array_equal(commands[15:], np.full(25, -31))
+    np.testing.assert_array_equal(commands[:15], np.full(15, -46))
+    np.testing.assert_array_equal(commands[15:], np.full(25, -42))
 
   def test_low_speed_positive_reengagement_has_no_stale_brake(self):
     """An inactive interval must not leave stale braking on positive re-engagement."""

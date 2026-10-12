@@ -641,22 +641,23 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
 
 @pytest.mark.parametrize("revision", sorted(RAW_ROAD_BRAKE_COMMITS | {
   "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
-  "15630df75391", "79eac9455954", "b648cfce1b7c", "27529eb3acb5",
+  "15630df75391", "79eac9455954", "b648cfce1b7c", "27529eb3acb5", "de09d811f22e",
 }))
 def test_raw_road_brake_revision_keeps_response_domains_and_creep_translation(revision):
-  request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3])
-  speed = np.array([20.] * 7 + [.5, 2.])
+  request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3, -.15, -.1, -.05])
+  speed = np.array([20.] * 7 + [.5, 2., .5, 1.5, .5])
   active = np.ones(len(request), dtype=bool)
   for pitch in (-.05, 0., .05, np.nan):
     expected, eligible, modeled = _expected_brake_command(
       revision, request, speed, np.full(len(request), pitch), active, active, .01)
     assert modeled and revision not in BRAKE_GRADE_TRANSLATION_COMMITS
-    np.testing.assert_allclose(expected, [-3.5, -.5, -.15, -.05, 0., .1, 2., -.55, -.3])
-    np.testing.assert_array_equal(eligible, [False] * 7 + [True, False])
+    creep_expected = [-.4, -.225, -.175] if revision == "de09d811f22e" else [-.275, -.1416666667, -.0916666667]
+    np.testing.assert_allclose(expected, [-3.5, -.5, -.15, -.05, 0., .1, 2., -.55, -.3, *creep_expected])
+    np.testing.assert_array_equal(eligible, [False] * 7 + [True, False, True, True, True])
   switch, threshold, valid, note = _domain_model(revision, request, speed, np.zeros(len(request)), np.ones(len(request)), .01)
   assert valid and "response-qualified" in note and "coast braking" in note
   np.testing.assert_array_equal(switch, request)
-  np.testing.assert_array_equal(threshold, [-.30] * 7 + [0., 0.])
+  np.testing.assert_array_equal(threshold, [-.30] * 7 + [0.] * 5)
   assert not _brake_passthrough_expected(revision)
 
 

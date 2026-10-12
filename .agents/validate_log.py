@@ -194,10 +194,11 @@ REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {
   "6a5578d12c15", "6410ed017553", "b45dbbe7c061", "67068dfcbc88",
   "93ee3157bf10", "6d81db7b5fff", "6ed95de658e9", "aab32c0957b7", "339d23b9909b", "4bd512b7e92b", "bb5915f8d66c", "0474b3f6ca93", "5df4a11cd143",
 }
+MILD_CREEP_BRAKE_COMMITS = {"de09d811f22e"}
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
   "15630df75391", "79eac9455954", "b648cfce1b7c", "27529eb3acb5",
-}
+} | MILD_CREEP_BRAKE_COMMITS
 CREEP_BRAKE_CONTINUITY_COMMITS = {
   "fb194cf07ef1", "fc557b4ee5d2", "48f151363793", "ba7b308209e8",
   "cfe404adec77", "1b613c490a97", "9749eff86d25", "4854cdfb4a40", "e441ed11e5bc", "6dee887e0a7e",
@@ -708,7 +709,8 @@ def _expected_brake_command(opendbc_commit, requested, speed, pitch, pid, brake_
     creep = (np.asarray(speed) >= 0.0) & (np.asarray(speed) < 2.0) & state_eligible & \
             np.asarray(brake_request, dtype=bool) & ~np.asarray(gas_pressed, dtype=bool) & \
             ~np.asarray(brake_pressed, dtype=bool) & (requested > -0.8) & (requested < 0.0)
-    correction = np.interp(requested, [-0.8, -0.3, 0.0], [0.0, -0.25, 0.0])
+    correction = (np.interp(requested, [-0.8, -0.3, -0.1, 0.0], [0.0, -0.25, -0.25, 0.0])
+                  if commit in MILD_CREEP_BRAKE_COMMITS else np.interp(requested, [-0.8, -0.3, 0.0], [0.0, -0.25, 0.0]))
     expected[creep] += correction[creep] * np.interp(np.asarray(speed)[creep], [1.0, 2.0], [1.0, 0.0])
     eligible |= creep
   return expected, eligible, True
