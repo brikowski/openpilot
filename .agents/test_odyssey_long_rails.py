@@ -263,7 +263,7 @@ class TestOdysseyLongRails(unittest.TestCase):
     shortfall_gas = np.array([gas for _, gas, _ in shortfall])
     np.testing.assert_array_equal(shortfall_gas[:26], matched_gas[:26])
     assert shortfall_gas[26] > matched_gas[26]
-    assert 0 < shortfall_gas[-1] - matched_gas[-1] <= 100
+    assert shortfall_gas[-1] - matched_gas[-1] > 100
     assert shortfall_gas.max() <= GAS_MAX
 
   def test_gas_response_waits_for_negative_bridge_exit(self):
@@ -277,7 +277,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert gas[0] == -60 and gas[99] > 0
     assert np.max(np.diff(gas[:100])) <= 25
     np.testing.assert_array_equal(gas[:126], matched_gas[:126])
-    assert 0 < gas[-1] - matched_gas[-1] <= 100
+    assert gas[-1] - matched_gas[-1] > 100
+    assert gas.max() <= GAS_MAX
     assert np.max(np.diff(gas[99:])) <= 100
     assert np.max(np.diff(gas[101:])) <= 10
 
@@ -445,7 +446,9 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert ((0 <= over_gas) & (over_gas <= under_gas[0])).all()
     assert (under_gas[0] - over_gas[:25]).max() > 100
     assert (abs(np.diff(over_gas[:25])) <= 10).all()
-    assert 0 < under_gas[-1] - under_gas[0] <= 100
+    assert under_gas[-1] - under_gas[0] > 100
+    assert under_gas.max() <= GAS_MAX
+    assert (abs(np.diff(under_gas)) <= 10).all()
     assert all(accel == 50 and brake == 0 for accel, _, brake in under_response + over_response)
 
   def test_unidentified_windfactor_is_not_production_state(self):
