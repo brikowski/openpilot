@@ -74,8 +74,10 @@ This is independent of the Panda `alternativeExperience` AEB-forwarding flag and
 guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the radar ECU is
 disabled.
 
-The current Odyssey lateral baseline uses the stock `[0, 2560]` LKA map, `latAccelFactor 0.9`, and
-`steerActuatorDelay 0.15`. Prior 3840 screens are historical comparisons, not a permanent exclusion.
+The stock Odyssey lateral reference uses the `[0, 2560]` LKA map, `latAccelFactor 0.9`, and
+`steerActuatorDelay 0.15`. The installed steering-authority trial rescales torque normalization and
+slew to preserve the ordinary physical map while conditionally exposing a 3840-count ceiling; see
+[`.agents/car-port-standards.md`](.agents/car-port-standards.md). Its road benefit remains unpromoted.
 
 `extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,
 steering response, overrides, and fault diagnostics. For full-rate Odyssey stock-radar routes,
