@@ -66,10 +66,11 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 ## Private Odyssey workflow
 
 Use `ody-op-test` for development, tooling, and supervised tests. `ody-op` is the public install
-branch. Successful development software checks automatically publish vehicle code, tests, and
-submodule pins, excluding custom tooling and preserving public CI configuration. Preview locally
-with `.venv/bin/python .agents/publish_public.py`. The workflow never deploys to the device; device
-build/health checks and road assessment remain separate gates.
+branch. GitHub Actions runs software checks; public releases are manual. At a stable release point
+after checks pass, preview with `.venv/bin/python .agents/publish_public.py`, then publish with
+`.venv/bin/python .agents/publish_public.py --publish`. This retains vehicle code, tests, and submodule
+pins, excludes custom tooling, and preserves public CI configuration. Publication never deploys to
+the device; device build/health checks and road assessment remain separate gates.
 
 Set `ODYSSEY_DEVICE` to the comma device address in your local shell before using live-device
 tasks. Private rlogs and route evidence live in Proton Drive; the analysis scripts discover the

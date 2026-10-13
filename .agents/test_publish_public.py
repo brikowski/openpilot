@@ -174,7 +174,9 @@ class TestPublicRelease(unittest.TestCase):
       mirror.main(['--publish'])
     self.assertEqual(calls[-1], ('push', 'origin', 'candidate:refs/heads/ody-op'))
 
-  def test_preview_never_publishes(self):
+  def test_only_explicit_publication_pushes(self):
+    pushes = []
+
     def fake_git(repo, *args, **kwargs):
       if args[:2] == ('remote', 'get-url'):
         return 'https://github.com/brikowski/openpilot.git'
@@ -185,11 +187,15 @@ class TestPublicRelease(unittest.TestCase):
       if args == ('rev-parse', 'origin/ody-op'):
         return 'public-parent'
       if args[0] == 'push':
-        self.fail('Preview attempted publication')
+        pushes.append(args)
       return ''
 
-    with patch.object(mirror, 'git', side_effect=fake_git), patch.object(mirror, 'build_public', return_value='candidate'):
-      mirror.main([])
+    for argv, expected in (([], []), (['--publish'], [('push', 'origin', 'candidate:refs/heads/ody-op')])):
+      with self.subTest(argv=argv), patch.object(mirror, 'git', side_effect=fake_git), \
+           patch.object(mirror, 'build_public', return_value='candidate'):
+        pushes.clear()
+        mirror.main(argv)
+        self.assertEqual(pushes, expected)
 
 
 if __name__ == '__main__':
