@@ -1,0 +1,77 @@
+name: Odyssey software checks
+
+on:
+  push:
+    branches: [ody-op-test, ody-op]
+  pull_request:
+    branches: [ody-op-test, ody-op]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Development revision to validate
+        required: true
+        type: string
+    outputs:
+      source:
+        description: Exact revision that passed software checks
+        value: ${{ jobs.software.outputs.source }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: odyssey-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 1
+  DEBUG: 0
+  PYTHONPATH: ${{ github.workspace }}
+  RAYLIB_BACKEND: headless
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: lfs.fetchexclude
+  GIT_CONFIG_VALUE_0: openpilot/selfdrive/modeld/models/big_driving_tinygrad.pkl
+
+jobs:
+  software:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          submodules: true
+      - name: Record tested revision
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Set up upstream build environment
+        run: ./tools/op.sh setup
+      - name: Check frozen dependencies and lint
+        run: |
+          uv lock --check
+          ruff check openpilot opendbc_repo/opendbc/car/honda
+      - name: Build openpilot
+        run: scons -j2
+      - name: Test vehicle commands, safety, controllers, and UI
+        run: |
+          python3 -m pytest -q \
+            opendbc_repo/opendbc/car/honda/tests/test_honda.py \
+            opendbc_repo/opendbc/safety/tests/test_honda.py \
+            openpilot/common/tests/test_prefix.py \
+            openpilot/selfdrive/car/tests/test_cruise_speed.py \
+            openpilot/selfdrive/controls/tests/test_controlsd.py \
+            openpilot/selfdrive/controls/tests/test_longitudinal_planner.py \
+            openpilot/selfdrive/ui/tests/test_display_wake.py \
+            openpilot/selfdrive/ui/tests/test_lead_bar.py \
+            openpilot/selfdrive/ui/tests/test_settings.py
+      - name: Test development tools and Odyssey interface
+        if: github.ref != 'refs/heads/ody-op'
+        run: |
+          if [ -d .agents ]; then
+            ruff check .agents --ignore ISC002
+            python3 -m pytest .agents -q
+            python3 .agents/preflash.py
+          fi

@@ -27,6 +27,8 @@ DESCRIPTIONS = {
   "AlwaysOnDM": tr_noop("Enable driver monitoring even when openpilot is not engaged."),
   'RecordFront': tr_noop("Upload data from the cabin camera and help improve the driver monitoring algorithm."),
   "IsMetric": tr_noop("Display speed in km/h instead of mph."),
+  "ScreenTimeoutEnabled": tr_noop("Turn off the screen after 15 seconds of inactivity, except while cruise and Alpha Long are enabled. " +
+                                 "Disable to keep the screen on."),
   "RecordAudio": tr_noop("Record and store microphone audio while driving. The audio will be included in the dashcam video in comma connect."),
 }
 
@@ -85,6 +87,12 @@ class TogglesLayout(Widget):
         lambda: tr("Use Metric System"),
         DESCRIPTIONS["IsMetric"],
         "metric.png",
+        False,
+      ),
+      "ScreenTimeoutEnabled": (
+        lambda: tr("Screen Timeout"),
+        DESCRIPTIONS["ScreenTimeoutEnabled"],
+        "settings.png",
         False,
       ),
     }
