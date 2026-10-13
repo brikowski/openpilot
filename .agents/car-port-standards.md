@@ -97,8 +97,10 @@ active safety rails.
   its retained-offset bound. New positive feedback still waits for
   the delayed observer. The activity
   byte is compared as reported state, without assuming a gear ratio or a shift-complete encoding. Missing,
-  stale or invalid gear state disables feedback while preserving the feedforward map. A request
-  change does not by itself veto feedback: the filtered delayed error is limited to the sign and
+  stale or invalid gear state disables feedback while preserving the feedforward map. Falling grade
+  restarts feedback with a positive learned offset while retaining feedback already reducing gas. With zero offset,
+  grade changes alone do not restart the observer. A request change does not by itself veto feedback:
+  the filtered delayed error is limited to the sign and
   magnitude of the latest acceleration error. Qualified feedback retains a bounded integral offset
   at zero error; ineligible feedback clears it. Output uses the mapped command's available headroom
   in both directions, including the low-speed trim. Fresh delayed feedback uses that headroom for
