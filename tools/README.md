@@ -66,8 +66,11 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 ## Private Odyssey workflow
 
 Use `ody-op-test` for development, tooling, and supervised tests. `ody-op` is the public install
-branch. GitHub Actions runs software checks; public releases are manual. At a stable release point
-after checks pass, preview with `.venv/bin/python .agents/publish_public.py`, then publish with
+branch. GitHub Actions publishes the latest `ody-op-test` every Monday at 6:15 AM America/Chicago
+after software checks pass. The scheduler lives on the existing default branch, `master`, and publishes
+the exact checked revision; development advances during testing abort that release. The weekly task
+does not sync upstream or rebase the tune. For a manual
+release, preview with `.venv/bin/python .agents/publish_public.py`, then publish with
 `.venv/bin/python .agents/publish_public.py --publish`. This retains vehicle code, tests, and submodule
 pins, excludes custom tooling, and preserves public CI configuration. Publication never deploys to
 the device; device build/health checks and road assessment remain separate gates.

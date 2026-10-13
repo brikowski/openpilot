@@ -3,8 +3,8 @@
 
 Build through a temporary Git index: leave the checkout untouched, keep vehicle tests and exact
 submodule pins, and inherit the public branch's independent CI configuration. Publication only fast-forwards;
-a stale checkout or concurrent public update cannot overwrite newer source. Run --publish manually
-after reviewing a stable release and passing software checks; the default remains a local preview.
+a stale checkout or concurrent public update cannot overwrite newer source. The Monday workflow
+runs --publish after software checks; the same command is available manually. The default is a local preview.
 """
 import argparse
 import os

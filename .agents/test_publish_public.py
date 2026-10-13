@@ -103,25 +103,24 @@ class TestPublicRelease(unittest.TestCase):
     self.assertEqual(self.git('show', f'{updated}:car.py'), 'next vehicle change')
 
   def test_unpublished_development_source_cannot_release(self):
-    calls = []
+    with tempfile.TemporaryDirectory() as remote:
+      subprocess.run(['git', 'init', '--bare', '-q', remote], check=True)
+      self.git('remote', 'add', 'origin', remote)
+      self.git('push', '-q', 'origin', f'{self.source}:refs/heads/ody-op-test', f'{self.parent}:refs/heads/ody-op')
+      advanced = self.git('commit-tree', f'{self.source}^{{tree}}', '-p', self.source, '-m', 'development advanced during checks')
+      self.git('push', '-q', 'origin', f'{advanced}:refs/heads/ody-op-test')
+      actual_git = mirror.git
 
-    def fake_git(repo, *args, **kwargs):
-      calls.append(args)
-      if args[:2] == ('remote', 'get-url'):
-        return 'https://github.com/brikowski/openpilot.git'
-      if args == ('rev-parse', 'HEAD'):
-        return 'old-source'
-      if args == ('rev-parse', 'origin/ody-op-test'):
-        return 'new-source'
-      if args == ('branch', '--show-current'):
-        return 'ody-op-test'
-      if args in (('status', '--porcelain'),) or args[0] == 'fetch':
-        return ''
-      self.fail(f'Unpublished source attempted {args}')
+      def local_git(repo, *args, **kwargs):
+        if args[:2] == ('remote', 'get-url'):
+          return 'https://github.com/brikowski/openpilot.git'
+        return actual_git(repo, *args, **kwargs)
 
-    with patch.object(mirror, 'git', side_effect=fake_git), self.assertRaises(SystemExit):
-      mirror.main(['--publish'])
-    self.assertFalse(any(c[0] == 'push' for c in calls))
+      with patch.object(mirror, '__file__', str(self.repo / '.agents/publish_public.py')), \
+           patch.object(mirror, 'git', side_effect=local_git), self.assertRaises(SystemExit):
+        mirror.main(['--publish'])
+      self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/ody-op').split()[0], self.parent)
+      self.assertEqual(self.git('rev-parse', 'HEAD'), self.source)
 
   def test_checkout_remote_with_or_without_git_suffix_can_publish(self):
     for remote in ('https://github.com/brikowski/openpilot', 'https://github.com/brikowski/openpilot.git'):

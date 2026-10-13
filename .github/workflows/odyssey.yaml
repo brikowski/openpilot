@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [ody-op-test, ody-op]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Development revision to validate
+        required: true
+        type: string
+    outputs:
+      source:
+        description: Exact revision that passed software checks
+        value: ${{ jobs.software.outputs.source }}
 
 permissions:
   contents: read
@@ -27,10 +37,16 @@ jobs:
   software:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref || github.ref }}
           submodules: true
+      - name: Record tested revision
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Set up upstream build environment
         run: ./tools/op.sh setup
       - name: Check frozen dependencies and lint
