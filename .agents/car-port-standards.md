@@ -101,8 +101,8 @@ active safety rails.
   change does not by itself veto feedback: the filtered delayed error is limited to the sign and
   magnitude of the latest acceleration error. Qualified feedback retains a bounded integral offset
   at zero error; ineligible feedback clears it. Output uses the mapped command's available headroom
-  in both directions, including the low-speed trim. The positive retained offset remains bounded
-  to 100 counts; the negative offset uses available gas-reduction headroom.
+  in both directions, including the low-speed trim. Fresh delayed feedback uses that headroom for
+  its integral offset; warmup seeds positive memory to at most 100 counts.
   Accumulation respects these constraints, and output retains its slew limit. Mapped headroom also bounds
   feedback during high-demand launches.
   Domain rules, raw gas-domain `ACCEL_COMMAND`, the negative bridge,
