@@ -48,27 +48,33 @@ remote() {
 }
 
 local_pair() {
-  cd "$ROOT_DIR"
-  if test "$(git branch --show-current)" != "$BRANCH"; then
+  local parent_branch parent_status child_status child_branch gitlink
+  cd "$ROOT_DIR" || return
+  parent_branch=$(git branch --show-current) || return
+  if test "$parent_branch" != "$BRANCH"; then
     echo "refusing: parent checkout is not $BRANCH" >&2
     return 1
   fi
-  if test -n "$(git status --porcelain)"; then
+  parent_status=$(git status --porcelain) || return
+  if test -n "$parent_status"; then
     echo "refusing: parent checkout is dirty" >&2
     return 1
   fi
-  if test -n "$(git -C opendbc_repo status --porcelain)"; then
+  child_status=$(git -C opendbc_repo status --porcelain) || return
+  if test -n "$child_status"; then
     echo "refusing: nested opendbc checkout is dirty" >&2
     return 1
   fi
-  if test "$(git -C opendbc_repo branch --show-current)" != "$BRANCH"; then
+  child_branch=$(git -C opendbc_repo branch --show-current) || return
+  if test "$child_branch" != "$BRANCH"; then
     echo "refusing: nested opendbc checkout is not $BRANCH" >&2
     return 1
   fi
 
-  PARENT_SHA=$(git rev-parse HEAD)
-  OPENDBC_SHA=$(git -C opendbc_repo rev-parse HEAD)
-  if test "$(git ls-tree HEAD opendbc_repo | awk '{print $3}')" != "$OPENDBC_SHA"; then
+  PARENT_SHA=$(git rev-parse HEAD) || return
+  OPENDBC_SHA=$(git -C opendbc_repo rev-parse HEAD) || return
+  gitlink=$(git rev-parse HEAD:opendbc_repo) || return
+  if test "$gitlink" != "$OPENDBC_SHA"; then
     echo "refusing: parent gitlink does not match the nested checkout" >&2
     return 1
   fi
@@ -76,7 +82,8 @@ local_pair() {
 }
 
 verify_device() {
-  local_pair
+  # The retry loop calls this conditionally, where errexit is ignored.
+  local_pair || return
   remote "
 set -euo pipefail
 cd /data/openpilot

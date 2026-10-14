@@ -107,3 +107,51 @@ def test_offroad_recipe_selects_available_environment_and_propagates_failure(tmp
     assert result.stdout.splitlines()[0] == expected
     assert received.read_text().strip() == (root / "tools/check_offroad.py").read_text().strip()
   assert ("guard-passed" in result.stdout) == (expected is not None and guard_status == 0)
+
+
+@pytest.mark.parametrize("failure", [
+  "none", "parent_branch", "parent_dirty", "child_dirty", "child_branch", "gitlink",
+  "read_directory", "read_parent_branch", "read_parent_status", "read_child_status", "read_child_branch",
+  "read_parent_revision", "read_child_revision", "read_gitlink",
+])
+def test_conditional_verification_rejects_invalid_local_source(failure):
+  root = Path(__file__).parents[1]
+  script = (root / "tools/deploy_ody_op.sh").read_text().rsplit('\nmain "$@"', 1)[0]
+  script = '\n'.join(f"ROOT_DIR={shlex.quote(str(root))}" if line.startswith("ROOT_DIR=") else line
+                     for line in script.splitlines())
+  # Exercise real local_pair guards in the exact conditional/substitution context
+  # used by reboot verification. Git and remote calls have no external effects.
+  mocks = r'''
+cd() { [[ "$failure" != read_directory ]] || return 73; builtin cd "$@"; }
+git() {
+  case "$*" in
+    'branch --show-current') [[ "$failure" == parent_branch ]] && echo ody-op || echo ody-op-test ;;
+    'status --porcelain') [[ "$failure" != parent_dirty ]] || echo ' M changed' ;;
+    '-C opendbc_repo status --porcelain') [[ "$failure" != child_dirty ]] || echo ' M changed' ;;
+    '-C opendbc_repo branch --show-current') [[ "$failure" == child_branch ]] && echo ody-op || echo ody-op-test ;;
+    'rev-parse HEAD') echo parent ;;
+    '-C opendbc_repo rev-parse HEAD') echo child ;;
+    'ls-tree HEAD opendbc_repo')
+      if [[ "$failure" == gitlink ]]; then echo '160000 commit other opendbc_repo'; else echo '160000 commit child opendbc_repo'; fi ;;
+    'rev-parse HEAD:opendbc_repo') [[ "$failure" == gitlink ]] && echo other || echo child ;;
+    *) return 97 ;;
+  esac
+  case "$failure:$*" in
+    'read_parent_branch:branch --show-current'|'read_parent_status:status --porcelain'|\
+    'read_child_status:-C opendbc_repo status --porcelain'|'read_child_branch:-C opendbc_repo branch --show-current'|\
+    'read_parent_revision:rev-parse HEAD'|'read_child_revision:-C opendbc_repo rev-parse HEAD'|\
+    'read_gitlink:ls-tree HEAD opendbc_repo'|'read_gitlink:rev-parse HEAD:opendbc_repo') return 73 ;;
+  esac
+}
+remote() { echo REMOTE_CALLED; }
+PARENT_SHA=parent
+OPENDBC_SHA=child
+if output=$(verify_device 2>&1); then result=accepted; else result=refused; fi
+printf '%s\n%s\n' "$result" "$output"
+'''
+  result = subprocess.run(["bash", "-c", script + "\nfailure=" + shlex.quote(failure) + "\n" + mocks],
+                          capture_output=True, text=True, check=True)
+  lines = result.stdout.splitlines()
+  valid = failure == "none"
+  assert lines[0] == ("accepted" if valid else "refused")
+  assert ("REMOTE_CALLED" in lines) == valid
