@@ -223,6 +223,33 @@ class _ProvenanceMessage:
     return self._service
 
 
+def test_honda_brake_firmware_retains_query_identity_and_changes_without_logging_ids():
+  from opendbc.car.structs import car
+
+  cp = car.CarParams()
+  cp.brand = "honda"
+  vsa = {"ecu": "vsa", "address": 0x18da28f1, "bus": 1,
+         "request": [b"\x22\xf1\x81"], "fwVersion": b"57114-ABC-A100\x00\x00"}
+  booster = {**vsa, "ecu": "electricBrakeBooster", "address": 0x18da2bf1,
+             "fwVersion": b"46114-ABC-A200\x00\x00"}
+  cp.carFw = [vsa, booster, vsa, {**vsa, "fwVersion": b"57114-ABC-A300\x00\x00"},
+              {**vsa, "request": [b"\x22\xf1\x12"], "fwVersion": b"57114-ABC-A999\x00\x00"},
+              {**vsa, "fwVersion": b"unique-manufacturer-identifier"}, {**vsa, "ecu": "srs"}]
+  msg = SimpleNamespace(carParams=cp.as_reader(), which=lambda: "carParams")
+  expected = [
+    {"ecu": "electricBrakeBooster", "address": "0x18da2bf1", "bus": 1, "version": "46114-ABC-A200"},
+    {"ecu": "vsa", "address": "0x18da28f1", "bus": 1, "version": "57114-ABC-A100"},
+    {"ecu": "vsa", "address": "0x18da28f1", "bus": 1, "version": "57114-ABC-A300"},
+  ]
+  assert validate_log._honda_brake_firmware([msg, msg]) == expected
+  assert validate_log._provenance([msg])["honda_brake_firmware"] == expected
+  cp.brand = "toyota"
+  msg.carParams = cp.as_reader()
+  assert validate_log._honda_brake_firmware([msg]) == []
+  assert validate_log._honda_brake_firmware([]) == []
+  assert validate_log._honda_brake_firmware([SimpleNamespace(which=lambda: "carParams", carParams=SimpleNamespace())]) == []
+
+
 def test_provenance_records_exact_source_model_mode_and_selected_settings(monkeypatch):
   parent = "a" * 40
   nested = "b" * 40
@@ -267,6 +294,7 @@ def test_provenance_records_exact_source_model_mode_and_selected_settings(monkey
     "UpdaterTargetBranch": "ody-op",
   }
   assert provenance["provenance_exact"]
+  assert provenance["honda_brake_firmware"] == []
 
 
 def test_provenance_does_not_claim_exact_source_for_dirty_or_mixed_model(monkeypatch):

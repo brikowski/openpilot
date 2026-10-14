@@ -19,7 +19,8 @@ from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.tools.lib.logreader import LogReader
 from private_paths import evidence_path, evidence_root, rlog_root
 # Same reason: read the interface accel rails from the live params, not a copied number.
-from opendbc.car.honda.values import CarControllerParams as HondaParams
+from opendbc.car.fw_query_definitions import StdQueries
+from opendbc.car.honda.values import CarControllerParams as HondaParams, FW_QUERY_CONFIG as HondaFwQueries
 
 # CUSTOM TOOLING: keep behavior-changing array math independent from route I/O and ledger policy,
 # so synthetic traces can prove each metric both passes and fails before it grades a road drive.
@@ -886,10 +887,34 @@ def _model_provenance(msgs, parent_entries):
   return kind, kinds, selected_blob, small_blob, big_blob
 
 
+def _honda_brake_firmware(msgs):
+  """Report normal application-software IDs, excluding manufacturer-specific identifiers.
+
+  These identify reported software, not hardware part numbers or the latest available firmware.
+  """
+  versions = set()
+  for msg in msgs:
+    if msg.which() != "carParams":
+      continue
+    cp = msg.carParams
+    if _text(_safe_attr(cp, "brand")) != "honda":
+      continue
+    for fw in _safe_attr(cp, "carFw", ()) or ():
+      ecu = _text(_safe_attr(fw, "ecu"))
+      request = [bytes(q) for q in _safe_attr(fw, "request", ()) or ()]
+      value = bytes(_safe_attr(fw, "fwVersion", b""))
+      if (ecu in ("vsa", "electricBrakeBooster") and request == [StdQueries.UDS_VERSION_REQUEST] and
+          re.fullmatch(HondaFwQueries.fw_version_regex, value)):
+        versions.add((ecu, fw.address, fw.bus, value.rstrip(b"\x00").decode("ascii")))
+  return [{"ecu": ecu, "address": hex(address), "bus": bus, "version": version}
+          for ecu, address, bus, version in sorted(versions)]
+
+
 def _provenance(msgs):
   """Which code actually drove the car, read from the log's own initData - NOT from the local
   checkout, which says nothing about what the device was running. Without this an A/B between
   branches produces ledger rows that are indistinguishable after the fact."""
+  brake_firmware = _honda_brake_firmware(msgs)
   for m in msgs:
     if m.which() == "initData":
       d = m.initData
@@ -929,6 +954,7 @@ def _provenance(msgs):
         "longitudinal_personality_values": personality_values,
         "settings": settings,
         "provenance_exact": exact,
+        "honda_brake_firmware": brake_firmware,
       }
   return {
     "git_branch": None, "git_commit": None, "git_commit_full": None,
@@ -938,7 +964,7 @@ def _provenance(msgs):
     "model_small_blob_full": None, "model_big_blob_full": None,
     "experimental_mode": None, "experimental_mode_values": [],
     "longitudinal_personality": None, "longitudinal_personality_values": [],
-    "settings": {}, "provenance_exact": False,
+    "settings": {}, "provenance_exact": False, "honda_brake_firmware": brake_firmware,
   }
 
 
