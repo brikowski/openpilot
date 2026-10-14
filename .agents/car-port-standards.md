@@ -136,6 +136,8 @@ active safety rails.
   rescaling the torque tune and slew together. The torque learner fits normalized output;
   changing its scale can change fitted gains, friction and physical bucket coverage. Compare the
   actually consumed parameters rather than assuming the learned map is unchanged.
+  Torque-cache identity includes Honda's steering route. Discard incompatible or unassociated
+  caches so they cannot return after the previous-route metadata advances.
   Extra counts are limited to persistent,
   same-direction 15–33 m/s curvature under-response while lateral control is active and
   unoverridden. Once qualified, authority follows the continuing upstream torque request through
