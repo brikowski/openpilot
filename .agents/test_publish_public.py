@@ -18,6 +18,8 @@ class TestPublicRelease(unittest.TestCase):
     self.git('config', 'user.name', 'Mirror Test')
     self.git('config', 'user.email', 'mirror@example.invalid')
     self.write('.github/workflows/tests.yml', 'public CI\n')
+    self.scheduler = (Path(__file__).resolve().parents[1] / '.github/workflows/odyssey-release.yaml').read_text()
+    self.write('.github/workflows/odyssey-release.yaml', self.scheduler)
     self.write('car.py', 'baseline\n')
     self.git('add', '.')
     self.git('commit', '-qm', 'upstream')
@@ -39,6 +41,7 @@ class TestPublicRelease(unittest.TestCase):
                  '.vscode/tasks.json', '.codex/local.json', '.claude/local.json'):
       self.write(path, 'development tooling\n')
     self.write('.github/workflows/tests.yml', 'shared vehicle CI\n')
+    self.write('.github/workflows/odyssey-release.yaml', 'unpublished scheduler edit\n')
     self.git('add', '.')
     (self.repo / 'opendbc_repo').mkdir()
     self.git('update-index', '--add', '--cacheinfo', f'160000,{self.parent},opendbc_repo')
@@ -77,6 +80,16 @@ class TestPublicRelease(unittest.TestCase):
     self.assertEqual(self.git('show', f'{public}:.github/workflows/tests.yml'), 'public CI')
     self.assertEqual(self.git('show', f'{public}:tools/README.md'), '# tools')
     self.assertEqual(self.git('show', f'{public}:.gitignore'), '*.pyc')
+
+  def test_weekly_scheduler_survives_vehicle_releases(self):
+    public = self.public()
+    self.assertEqual(self.git('show', f'{public}:.github/workflows/odyssey-release.yaml') + '\n', self.scheduler)
+    self.write('car.py', 'next vehicle change\n')
+    self.git('add', 'car.py')
+    self.git('commit', '-qm', 'vehicle update')
+    updated = self.public(source='HEAD', parent=public)
+    self.assertNotEqual(updated, public)
+    self.assertEqual(self.git('show', f'{updated}:.github/workflows/odyssey-release.yaml') + '\n', self.scheduler)
 
   def test_dependencies_keep_vehicle_tests_without_custom_hooks(self):
     public = self.public()

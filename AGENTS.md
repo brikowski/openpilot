@@ -50,10 +50,12 @@ behavior in the simplest appropriate layer.
 
 `ody-op-test` is the development and supervised-test branch for Honda Bosch command following on
 `HONDA_ODYSSEY_5G_MMR`, including tooling and documentation. `ody-op` is the clean public install
-branch. Integrate changes and their tests linearly on `ody-op-test` in both the parent and nested
-`opendbc`. GitHub Actions runs software checks and publishes the latest `ody-op-test` to `ody-op`
-every Monday at 6:15 AM America/Chicago after those checks pass. The small scheduler also lives on
-the repository's existing default branch, `master`, because GitHub schedules run there. It publishes
+branch and repository default. Target development pull requests to `ody-op-test`. Integrate changes
+and their tests linearly on `ody-op-test` in both the parent and nested `opendbc`. GitHub Actions runs
+software checks and publishes the latest `ody-op-test` to `ody-op`
+every Monday at 6:15 AM America/Chicago after those checks pass. The small scheduler lives on
+the default branch, `ody-op`, with its reviewed source also in `ody-op-test`. `master` is inactive
+history; use `upstream/master` for deliberate upstream updates. The scheduler publishes
 the exact checked revision and rejects development advances during testing. The weekly task does
 not sync upstream or rebase the tune. Manual releases remain
 available: preview with `.venv/bin/python .agents/publish_public.py`, then publish with
