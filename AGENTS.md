@@ -82,8 +82,9 @@ guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the
 disabled.
 
 The stock Odyssey lateral reference uses the `[0, 2560]` LKA map, `latAccelFactor 0.9`, and
-`steerActuatorDelay 0.15`. The installed steering-authority trial rescales the seed torque tune and
-slew to preserve ordinary seed feedforward while conditionally exposing a 3840-count ceiling. The
+`steerActuatorDelay 0.15`. The steering-authority trial rescales the seed torque tune and
+slew to preserve ordinary seed feedforward while conditionally exposing a 3840-count ceiling.
+The speed range qualifies entry; a continuing request retains qualified authority through speed changes. The
 torque learner's fit and physical bucket coverage depend on normalization; seed preservation does
 not prove that the learned map is unchanged. See
 [`.agents/car-port-standards.md`](.agents/car-port-standards.md). Its road benefit remains unpromoted.

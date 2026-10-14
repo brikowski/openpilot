@@ -138,10 +138,10 @@ active safety rails.
   actually consumed parameters rather than assuming the learned map is unchanged.
   Torque-cache identity includes Honda's steering route. Discard incompatible or unassociated
   caches so they cannot return after the previous-route metadata advances.
-  Extra counts are limited to persistent,
-  same-direction 15–33 m/s curvature under-response while lateral control is active and
+  Extra counts start only for persistent,
+  same-direction curvature under-response at 15–33 m/s while lateral control is active and
   unoverridden. Once qualified, authority follows the continuing upstream torque request through
-  tracking convergence. Falling demand, a direction change, or ineligible vehicle state closes the
+  tracking convergence and speed changes. Falling demand, a direction change, or ineligible vehicle state closes the
   gate. The existing 3840-count limit and physical slew limit remain.
   `carOutput` reports the bounded controller command. The gate is not evidence
   that the EPS accepts extra torque or that road tracking improves.
