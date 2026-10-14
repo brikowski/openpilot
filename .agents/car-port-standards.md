@@ -132,8 +132,11 @@ active safety rails.
   learner or gas-map gain is added. This selection does not activate friction braking, alter
   `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
-- The Odyssey steering trial preserves the ordinary physical 2560-count map by
-  rescaling the torque normalization and slew together. Extra counts are limited to persistent,
+- The Odyssey steering trial preserves the ordinary physical seed feedforward by
+  rescaling the torque tune and slew together. The torque learner fits normalized output;
+  changing its scale can change fitted gains, friction and physical bucket coverage. Compare the
+  actually consumed parameters rather than assuming the learned map is unchanged.
+  Extra counts are limited to persistent,
   same-direction 15–33 m/s curvature under-response while lateral control is active and
   unoverridden. Once qualified, authority follows the continuing upstream torque request through
   tracking convergence. Falling demand, a direction change, or ineligible vehicle state closes the

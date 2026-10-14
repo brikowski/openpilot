@@ -82,8 +82,10 @@ guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the
 disabled.
 
 The stock Odyssey lateral reference uses the `[0, 2560]` LKA map, `latAccelFactor 0.9`, and
-`steerActuatorDelay 0.15`. The installed steering-authority trial rescales torque normalization and
-slew to preserve the ordinary physical map while conditionally exposing a 3840-count ceiling; see
+`steerActuatorDelay 0.15`. The installed steering-authority trial rescales the seed torque tune and
+slew to preserve ordinary seed feedforward while conditionally exposing a 3840-count ceiling. The
+torque learner's fit and physical bucket coverage depend on normalization; seed preservation does
+not prove that the learned map is unchanged. See
 [`.agents/car-port-standards.md`](.agents/car-port-standards.md). Its road benefit remains unpromoted.
 
 `extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,
