@@ -1,5 +1,6 @@
 """Exercise the public Git tree independently of the working checkout and private tools."""
 import subprocess
+import re
 import tempfile
 import tomllib
 import unittest
@@ -7,6 +8,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import publish_public as mirror
+
+
+def test_release_checks_are_independent_of_public_caller_branch():
+  workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/odyssey.yaml').read_text()
+  step = workflow.split('- name: Test development tools and Odyssey interface\n', 1)[1]
+  assert 'github.ref' not in step, 'The public caller must not skip checked-out development tooling'
+  group = re.search(r'^  group: (.+)$', workflow, re.MULTILINE).group(1)
+  public = group.replace('${{ github.workflow }}', 'Odyssey software checks').replace('${{ github.ref }}', 'refs/heads/ody-op')
+  release = group.replace('${{ github.workflow }}', 'Odyssey weekly release').replace('${{ github.ref }}', 'refs/heads/ody-op')
+  assert public != release, 'A public-branch push must not cancel release validation'
 
 
 class TestPublicRelease(unittest.TestCase):

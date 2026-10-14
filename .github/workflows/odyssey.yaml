@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: odyssey-checks-${{ github.ref }}
+  group: odyssey-checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -68,7 +68,6 @@ jobs:
             openpilot/selfdrive/ui/tests/test_lead_bar.py \
             openpilot/selfdrive/ui/tests/test_settings.py
       - name: Test development tools and Odyssey interface
-        if: github.ref != 'refs/heads/ody-op'
         run: |
           if [ -d .agents ]; then
             ruff check .agents --ignore ISC002
