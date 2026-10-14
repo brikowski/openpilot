@@ -69,7 +69,8 @@ active safety rails.
   retain a released request. Physical benefit remains unmeasured. At road speed, level-road,
   stopping and missing-pose behavior retain the raw-request rules. Early brake release requires
   fresh received braking state, a negative request, current overdeceleration, and a
-  same-gear coast forecast that can supply the request. Without a qualified forecast, an active
+  same-gear coast forecast that can supply the request. Release and gas handoff share active
+  feedback: `COMPUTER_BRAKING` or finite `USER_BRAKE` above one DBC step. Without a qualified forecast, an active
   brake follows the easing negative command. At 8–35 m/s in PID control with qualified CAN and
   pose, an active brake remains available through zero and positive net-acceleration requests
   below the learned coast acceleration. It releases when the request reaches that forecast.
