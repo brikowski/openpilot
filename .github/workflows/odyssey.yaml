@@ -1,10 +1,6 @@
 name: Odyssey software checks
 
 on:
-  push:
-    branches: [ody-op-test, ody-op]
-  pull_request:
-    branches: [ody-op-test, ody-op]
   workflow_dispatch:
 
 permissions:
