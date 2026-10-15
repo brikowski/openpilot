@@ -7,13 +7,14 @@ from openpilot.cereal import log
 from openpilot.selfdrive.car.cruise import VCruiseHelper, V_CRUISE_MIN, V_CRUISE_MAX, V_CRUISE_INITIAL, IMPERIAL_INCREMENT
 from opendbc.car.structs import car
 from openpilot.common.constants import CV
-from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 
 ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 
 
 def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
+  from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
+
   man = Maneuver(
     '',
     duration=t_end,
@@ -141,10 +142,15 @@ class TestVCruiseHelper(OpenpilotTestCase):
     Asserts allowed cruise speeds on enabling with SET.
     """
 
-    for v_ego in np.linspace(0, 100, 101):
-      self.reset_cruise_speed_state()
-      assert not self.v_cruise_helper.v_cruise_initialized
+    for initial_speed, cases in (
+      (V_CRUISE_INITIAL, ((0., 40), (5., 40), (20., 72), (29.5, 106), (50., 145))),
+      (90, ((0., 90), (20., 90), (30., 108), (50., 145))),
+    ):
+      for v_ego, expected in cases:
+        self.reset_cruise_speed_state()
+        assert not self.v_cruise_helper.v_cruise_initialized
 
-      self.enable(float(v_ego))
-      assert V_CRUISE_INITIAL <= self.v_cruise_helper.v_cruise_kph <= V_CRUISE_MAX
-      assert self.v_cruise_helper.v_cruise_initialized
+        self.v_cruise_helper.initialize_v_cruise(car.CarState(vEgo=v_ego), initial_speed)
+        assert self.v_cruise_helper.v_cruise_kph == expected
+        assert self.v_cruise_helper.v_cruise_cluster_kph == expected
+        assert self.v_cruise_helper.v_cruise_initialized
