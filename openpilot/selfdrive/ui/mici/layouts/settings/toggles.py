@@ -47,6 +47,10 @@ class TogglesLayoutMici(NavScroller):
     self._initial_cruise_speed = InitialCruiseSpeedButton()
     self._initial_cruise_speed.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control and not ui_state.CP.pcmCruise)
     is_metric_toggle = BigParamControl("use metric units", "IsMetric", toggle_callback=self._initial_cruise_speed.refresh)
+    screen_timeout = BigParamControl("screen timeout", "ScreenTimeoutEnabled",
+                                     description="Turn off the screen after 15 seconds of inactivity.\n" +
+                                                 "Stay on while cruise and Alpha Long are enabled.\n" +
+                                                 "Disable to keep the screen on.")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
                                              "Only above 31 mph (50 km/h), with no turn signal.")
@@ -67,6 +71,7 @@ class TogglesLayoutMici(NavScroller):
       self._experimental_btn,
       self._initial_cruise_speed,
       is_metric_toggle,
+      screen_timeout,
       ldw_toggle,
       always_on_dm_toggle,
       record_front,
@@ -78,6 +83,7 @@ class TogglesLayoutMici(NavScroller):
     self._refresh_toggles = (
       ("ExperimentalMode", self._experimental_btn),
       ("IsMetric", is_metric_toggle),
+      ("ScreenTimeoutEnabled", screen_timeout),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
       ("RecordFront", record_front),
