@@ -38,6 +38,14 @@ active safety rails.
   It bypasses pre-activation
   and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
   `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration requires assistance.
+  An already-active gas domain also retains a positive response correction through the feedforward
+  floor while fresh, pedal-free state remains within the existing response margin. This requires the
+  same received drivetrain state, active PID
+  control, idle brake feedback and 8–35 m/s; it neither starts new gas authority nor requires a coast
+  estimate to retain already-qualified feedback. A request for more deceleration than the current
+  response margin or a known coast forecast, exhausted correction or unreliable state restores
+  existing fallbacks.
+  Road benefit remains unmeasured.
   During active gas control, a qualified coast forecast below the negative request retains gas
   through transient measured excess acceleration. Sustained excess in the existing same-drivetrain
   delayed-response observer restores fallback selection; a request beyond coast releases this authority. A prior coast forecast
