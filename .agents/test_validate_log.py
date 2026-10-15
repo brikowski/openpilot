@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import validate_log
+import inspect_following
 from validate_log import (
   BRAKE_GRADE_TRANSLATION_COMMITS,
   BRAKE_ONSET_RATE_LIMIT_COMMITS,
@@ -61,6 +62,56 @@ from tuning_metrics import (
   stop_lurch_metrics,
   under_set_speed_metrics,
 )
+
+
+@pytest.mark.parametrize("consumer", ["validator", "inspector"])
+@pytest.mark.parametrize("capture", ["native", "sparse", "wrong_bus", "bad_checksum"])
+def test_longitudinal_coverage_requires_fresh_acc_frames(monkeypatch, capsys, consumer, capture):
+  from opendbc.can import CANPacker
+  packer = CANPacker(validate_log.ODYSSEY_PT_DBC)
+  messages = []
+  grid = 1.0 + np.arange(600) * .01
+
+  def event(kind, timestamp, value):
+    return SimpleNamespace(which=lambda: kind, logMonoTime=timestamp, **{kind: value})
+
+  for tick, time in enumerate(grid):
+    timestamp = int(round(time * 1e9))
+    messages.extend([
+      event("carControl", timestamp, SimpleNamespace(longActive=True, orientationNED=[0., 0., 0.],
+                                                     actuators=SimpleNamespace(accel=.5))),
+      event("carState", timestamp, SimpleNamespace(vEgo=15., aEgo=.5, brakePressed=False)),
+      event("longitudinalPlan", timestamp, SimpleNamespace(aTarget=.5)),
+      event("controlsState", timestamp, SimpleNamespace(longitudinalPlanMonoTime=timestamp)),
+    ])
+    frames = [packer.make_can_msg("STEERING_CONTROL", 1, {"STEER_TORQUE": 0})]
+    if tick % (20 if capture == "sparse" else 2) == 0:
+      address, data, bus = packer.make_can_msg("ACC_CONTROL", 0 if capture == "wrong_bus" and tick else 1,
+                                            {"ACCEL_COMMAND": .5, "GAS_COMMAND": 123})
+      if capture == "bad_checksum" and tick:
+        data = data[:-1] + bytes([data[-1] ^ 1])
+      frames.append((address, data, bus))
+    messages.append(event("sendcan", timestamp,
+                          [SimpleNamespace(address=a, dat=d, src=b) for a, d, b in frames]))
+
+  if consumer == "validator":
+    zeros = np.zeros(len(grid))
+    active = np.ones(len(grid), dtype=bool)
+    result = validate_log._following(messages, grid, np.full(len(grid), .5), active, active,
+                                    zeros, np.full(len(grid), 15.), zeros.astype(bool), zeros.astype(bool),
+                                    np.full(len(grid), .5), zeros, zeros, .01, zeros.astype(bool), "unknown",
+                                    zeros.astype(bool), active, zeros.astype(bool))
+    assert (result["follow_gas_rms"] is not None) == (capture == "native")
+    if capture == "native":
+      assert result["follow_gas_rms"] == pytest.approx(0.)
+  else:
+    monkeypatch.setattr(inspect_following, "_local_reader", lambda _: messages)
+    if capture == "native":
+      inspect_following.inspect("synthetic")
+      assert "ACC_CONTROL 50.0 Hz" in capsys.readouterr().out
+    else:
+      with pytest.raises(SystemExit, match="not full-rate"):
+        inspect_following.inspect("synthetic")
 
 
 @pytest.mark.parametrize("pedal,field", [("gas", "override_events"), ("brake", "takeover_events")])

@@ -7,6 +7,8 @@ Unlike the aggregate ledger check, this prints the individual intervals and comp
 * ``carControl.actuators.accel`` is the command actually passed into ``CarController.update``.
 * ``longitudinalPlan.aTarget`` is an upstream planner output that still passes through longcontrol.
 
+Longitudinal coverage counts verified bus-1 ACC_CONTROL updates, not steering-only publications.
+
 That distinction matters when deciding whether a deviation belongs to the car port.
 """
 import argparse
@@ -54,15 +56,15 @@ def inspect(route):
   for msg in msgs:
     if msg.which() != "sendcan":
       continue
-    cp.update([(msg.logMonoTime, [(can.address, can.dat, can.src) for can in msg.sendcan])])
-    if cp.can_valid:
+    frames = [(can.address, can.dat, can.src) for can in msg.sendcan if can.address == 0x1DF and can.src == 1]
+    if frames and 0x1DF in cp.update([(msg.logMonoTime, frames)]):
       t_can.append(msg.logMonoTime / 1e9)
       brake_request.append(float(cp.vl["ACC_CONTROL"]["BRAKE_REQUEST"]))
       wire_accel.append(float(cp.vl["ACC_CONTROL"]["ACCEL_COMMAND"]))
 
   t_can = np.asarray(t_can)
   if _rate(t_can) < 20.0:
-    raise SystemExit("sendcan is not full-rate; event inspection would be misleading")
+    raise SystemExit("ACC_CONTROL is not full-rate; event inspection would be misleading")
 
   def linear(t, values):
     return np.interp(t_cc, t, np.asarray(values, dtype=float))
@@ -78,7 +80,7 @@ def inspect(route):
   brake_domain = active & br
 
   print(f"\n=== {route} ===")
-  print(f"carControl { _rate(t_cc):.1f} Hz, longitudinalPlan {_rate(t_lp):.1f} Hz, sendcan {_rate(t_can):.1f} Hz")
+  print(f"carControl { _rate(t_cc):.1f} Hz, longitudinalPlan {_rate(t_lp):.1f} Hz, ACC_CONTROL {_rate(t_can):.1f} Hz")
   matched = active & np.isfinite(plan)
   rms = float(np.sqrt(np.mean((cc_accel[matched] - plan[matched]) ** 2))) if matched.any() else np.nan
   print(f"Consumed-plan references: {matched.sum()}/{active.sum()} active cycles; carControl - plan RMS {rms:.4f} m/s^2")

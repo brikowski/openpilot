@@ -437,7 +437,7 @@ SOAK_ADVISORY_C = 70.0        # C: cold-start silicon at/above this = the parked
 # carControl/carOutput/carState are 100Hz native; qlog keeps 1 in 10 (cereal/services.py), so 50Hz
 # separates a real rlog from a decimated one with a wide margin either side.
 NATIVE_RATE_MIN = 50.0        # Hz: below this on the control services, treat the route as qlog
-SENDCAN_RATE_MIN = 20.0       # Hz: sendcan is 100Hz native, 1-in-139 on qlog (~0.7Hz)
+SENDCAN_RATE_MIN = 20.0       # Hz: verified ACC_CONTROL is 50 Hz native; qlog is too sparse.
 CAN_RATE_MIN = 20.0           # Hz: can is 100Hz native, 1-in-2053 on qlog (~3 msgs/segment)
 
 def _series(msgs, which, extract):
@@ -1512,8 +1512,9 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     t, br, ac, gas = [], [], [], []
     for m in msgs:
       if m.which() == "sendcan":
-        cp.update([(m.logMonoTime, [(c.address, c.dat, c.src) for c in m.sendcan])])
-        if cp.can_valid:
+        # Parser validity persists between updates; only verified ACC frames establish coverage.
+        frames = [(c.address, c.dat, c.src) for c in m.sendcan if c.address == 0x1DF and c.src == 1]
+        if frames and 0x1DF in cp.update([(m.logMonoTime, frames)]):
           t.append(m.logMonoTime / 1e9)
           br.append(int(cp.vl["ACC_CONTROL"]["BRAKE_REQUEST"]))
           ac.append(float(cp.vl["ACC_CONTROL"]["ACCEL_COMMAND"]))
