@@ -102,8 +102,8 @@ class SelfdriveD:
     self.is_metric = self.params.get_bool("IsMetric")
     self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
     self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
-    self.eco_mode = self.params.get_bool("EcoModeEnabled")
-    self.factory_eco_mode = None
+    self.eco_mode = False
+    self.factory_eco_mode = False
 
     car_recognized = self.CP.brand != 'mock'
 
@@ -461,9 +461,7 @@ class SelfdriveD:
 
   def _update_eco_mode(self, CS):
     if self.CP.openpilotLongitudinalControl and not self.CP.passive and CS.canValid and CS.ecoModeValid:
-      if self.factory_eco_mode != CS.ecoMode:
-        self.factory_eco_mode = CS.ecoMode
-        self.params.put_bool("EcoModeEnabled", CS.ecoMode)
+      self.factory_eco_mode = CS.ecoMode
 
   def _update_personality(self, CS):
     # Decrement the selected mode's personality on distance button press.
@@ -582,7 +580,7 @@ class SelfdriveD:
       self.is_metric = self.params.get_bool("IsMetric")
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
-      eco_mode = self.params.get_bool("EcoModeEnabled")
+      eco_mode = self.factory_eco_mode
       self.eco_mode, self.personality = eco_mode, self.params.get(get_longitudinal_personality_param(eco_mode), return_default=True)
       time.sleep(0.1)
 

@@ -22,9 +22,6 @@ DESCRIPTIONS = {
     "In relaxed mode openpilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with " +
     "your steering wheel distance button."
   ),
-  "EcoModeEnabled": tr_noop("Use gentler acceleration when returning to your set speed. " +
-                            "Defaults to the farthest following distance, with a separate saved driving personality. Requested braking is preserved. " +
-                            "On the Bosch Odyssey, the factory ECON selection is applied at startup and when it changes."),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
     "without a turn signal activated while driving over 31 mph (50 km/h)."
@@ -53,12 +50,6 @@ class TogglesLayout(Widget):
         lambda: tr("Disengage on Accelerator Pedal"),
         DESCRIPTIONS["DisengageOnAccelerator"],
         "disengage_on_accelerator.png",
-        False,
-      ),
-      "EcoModeEnabled": (
-        lambda: tr("Eco Mode"),
-        DESCRIPTIONS["EcoModeEnabled"],
-        "speed_limit.png",
         False,
       ),
       "IsLdwEnabled": (
@@ -99,7 +90,7 @@ class TogglesLayout(Widget):
       buttons=[lambda: tr("Aggressive"), lambda: tr("Standard"), lambda: tr("Relaxed")],
       button_width=255,
       callback=self._set_longitudinal_personality,
-      selected_index=self._params.get(get_longitudinal_personality_param(self._params.get_bool("EcoModeEnabled")), return_default=True),
+      selected_index=self._params.get(get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode), return_default=True),
       icon="speed_limit.png"
     )
 
@@ -139,9 +130,6 @@ class TogglesLayout(Widget):
         self._locked_toggles.add(param)
 
       self._toggles[param] = toggle
-      if param == "EcoModeEnabled":
-        toggle.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control)
-
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
         self._toggles["LongitudinalPersonality"] = self._long_personality_setting
@@ -153,7 +141,6 @@ class TogglesLayout(Widget):
 
   def _update_state(self):
     if ui_state.sm.updated["selfdriveState"]:
-      self._toggles["EcoModeEnabled"].action_item.set_state(self._params.get_bool("EcoModeEnabled"))
       personality = PERSONALITY_TO_INT[ui_state.sm["selfdriveState"].personality]
       if personality != ui_state.personality and ui_state.started:
         self._long_personality_setting.action_item.set_selected_button(personality)
@@ -189,16 +176,13 @@ class TogglesLayout(Widget):
     self._params.put_bool(param, state, block=True)
     if param == "IsMetric":
       self._initial_cruise_speed.action_item.refresh()
-    if param == "EcoModeEnabled":
-      self._refresh_personality()
-
     if self._toggle_defs[param][3]:
       self._params.put_bool("OnroadCycleRequested", True, block=True)
 
   def _set_longitudinal_personality(self, button_index: int):
-    key = get_longitudinal_personality_param(self._params.get_bool("EcoModeEnabled"))
+    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
     self._params.put(key, button_index, block=True)
 
   def _refresh_personality(self):
-    key = get_longitudinal_personality_param(self._params.get_bool("EcoModeEnabled"))
+    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
     self._long_personality_setting.action_item.set_selected_button(self._params.get(key, return_default=True))

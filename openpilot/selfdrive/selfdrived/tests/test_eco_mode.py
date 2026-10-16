@@ -1,69 +1,75 @@
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 from opendbc.car.structs import car
-from openpilot.common.params import Params, ParamKeyFlag
-from openpilot.selfdrive.selfdrived.alertmanager import AlertManager
-from openpilot.selfdrive.selfdrived.events import Events
-from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
-from openpilot.selfdrive.selfdrived.state import StateMachine
+from openpilot.common.params import Params, UnknownKeyName
+from openpilot.selfdrive.selfdrived import selfdrived
 
 
-def test_eco_setting_defaults_off_and_survives_drive_transitions(tmp_path):
-  params = Params(str(tmp_path))
-  assert params.get_default_value('EcoModeEnabled') is False
-  assert params.get_bool('EcoModeEnabled') is False
-  for selected in (True, False):
-    params.put_bool('EcoModeEnabled', selected, block=True)
-    params.clear_all(ParamKeyFlag.CLEAR_ON_MANAGER_START | ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION |
-                     ParamKeyFlag.CLEAR_ON_OFFROAD_TRANSITION)
-    assert Params(str(tmp_path)).get_bool('EcoModeEnabled') is selected
+@pytest.fixture
+def daemon(monkeypatch, tmp_path):
+  monkeypatch.setenv('PARAMS_ROOT', str(tmp_path))
+  params = Params()
+  Path(params.get_param_path('EcoModeEnabled')).write_text('1')
+  monkeypatch.setattr(selfdrived.messaging, 'PubMaster', Mock())
+  monkeypatch.setattr(selfdrived.messaging, 'SubMaster', Mock(return_value=SimpleNamespace(frame=1)))
+  monkeypatch.setattr(selfdrived.messaging, 'sub_sock', Mock())
+  metadata = SimpleNamespace(openpilot=SimpleNamespace(comma_remote=False), tested_channel=False)
+  monkeypatch.setattr(selfdrived, 'get_build_metadata', lambda: metadata)
+  return selfdrived.SelfdriveD(car.CarParams.new_message(brand='honda', openpilotLongitudinalControl=True))
+
+
+def poll_params(daemon, monkeypatch):
+  done = threading.Event()
+  monkeypatch.setattr(selfdrived.time, 'sleep', lambda _: done.set())
+  daemon.params_thread(done)
+
+
+def test_old_software_setting_cannot_select_eco(daemon, monkeypatch):
+  with pytest.raises(UnknownKeyName):
+    daemon.params.get('EcoModeEnabled')
+  assert daemon.eco_mode is False
+  assert daemon.factory_eco_mode is False
+  poll_params(daemon, monkeypatch)
+  daemon.publish_selfdriveState(car.CarState.new_message())
+  assert daemon.pm.send.call_args.args[1].selfdriveState.ecoMode is False
 
 
 @pytest.mark.parametrize('longitudinal,passive', [(True, False), (False, False), (True, True)])
-def test_live_eco_setting_reaches_published_state(monkeypatch, tmp_path, longitudinal, passive):
-  daemon = SelfdriveD.__new__(SelfdriveD)
-  daemon.params = Params(str(tmp_path))
-  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=longitudinal, passive=passive)
-  daemon.eco_mode = False
-  daemon.enabled = daemon.active = False
-  daemon.state_machine = StateMachine()
-  daemon.events = Events()
-  daemon.events_prev = []
-  daemon.AM = AlertManager()
-  daemon.sm = SimpleNamespace(frame=1)
-  daemon.pm = Mock()
-
-  for selected in (True, False):
-    daemon.params.put_bool('EcoModeEnabled', selected, block=True)
-    done = threading.Event()
-    monkeypatch.setattr('openpilot.selfdrive.selfdrived.selfdrived.time.sleep', lambda _, done=done: done.set())
-    daemon.params_thread(done)
-    daemon.publish_selfdriveState(car.CarState.new_message())
-    message = daemon.pm.send.call_args.args[1]
-    assert message.selfdriveState.ecoMode == (selected and longitudinal and not passive)
-    assert message.selfdriveState.personality == (2 if selected else 1)
+@pytest.mark.parametrize('initial_factory_eco', [False, True])
+def test_factory_state_selects_matching_published_preference(daemon, monkeypatch, longitudinal, passive, initial_factory_eco):
+  daemon.CP.openpilotLongitudinalControl = longitudinal
+  daemon.CP.passive = passive
+  for selected in (initial_factory_eco, not initial_factory_eco, initial_factory_eco):
+    CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=selected)
+    daemon._update_eco_mode(CS)
+    poll_params(daemon, monkeypatch)
+    daemon.publish_selfdriveState(CS)
+    message = daemon.pm.send.call_args.args[1].selfdriveState
+    enabled = selected and longitudinal and not passive
+    assert message.ecoMode == enabled
+    assert message.personality == (2 if enabled else 1)
+    # Old stored software selections cannot override the factory switch.
+    Path(daemon.params.get_param_path('EcoModeEnabled')).write_text('0' if selected else '1')
+    poll_params(daemon, monkeypatch)
+    assert daemon.eco_mode == enabled
 
 
-def test_distance_button_saves_each_mode_independently(monkeypatch, tmp_path):
-  daemon = SelfdriveD.__new__(SelfdriveD)
-  daemon.params = Params(str(tmp_path))
-  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
-  daemon.events = Events()
+def test_distance_button_saves_each_mode_independently(daemon, monkeypatch):
   assert daemon.params.get('EcoLongitudinalPersonality', return_default=True) == 2
   daemon.params.put('LongitudinalPersonality', 0, block=True)
   monkeypatch.setattr(daemon.params, 'put', lambda key, value: Params.put(daemon.params, key, value, block=True))
-  CS = car.CarState.new_message()
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True)
   CS.buttonEvents = [{'type': 'gapAdjustCruise', 'pressed': False}]
 
   for eco, initial, changed in ((True, 2, 1), (False, 0, 2), (True, 1, 0), (False, 2, 1)):
-    daemon.params.put_bool('EcoModeEnabled', eco, block=True)
-    done = threading.Event()
-    monkeypatch.setattr('openpilot.selfdrive.selfdrived.selfdrived.time.sleep', lambda _, done=done: done.set())
-    daemon.params_thread(done)
+    CS.ecoMode = eco
+    daemon._update_eco_mode(CS)
+    poll_params(daemon, monkeypatch)
     assert daemon.personality == initial
     daemon._update_personality(CS)
     assert daemon.personality == changed
@@ -71,79 +77,30 @@ def test_distance_button_saves_each_mode_independently(monkeypatch, tmp_path):
     assert daemon.params.get(key) == changed
 
 
-@pytest.mark.parametrize('longitudinal,passive', [(True, False), (False, False), (True, True)])
-@pytest.mark.parametrize('initial_factory_eco', [False, True])
-def test_factory_selection_and_manual_override(monkeypatch, tmp_path, longitudinal, passive, initial_factory_eco):
-  daemon = SelfdriveD.__new__(SelfdriveD)
-  daemon.params = Params(str(tmp_path))
-  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=longitudinal, passive=passive)
-  daemon.factory_eco_mode = None
-  put = daemon.params.put_bool
-  writes = []
-
-  def save(key, value):
-    writes.append(value)
-    put(key, value, block=True)
-
-  monkeypatch.setattr(daemon.params, 'put_bool', save)
-  eligible = longitudinal and not passive
-  put('EcoModeEnabled', not initial_factory_eco if eligible else False, block=True)
-  for index, selected in enumerate((initial_factory_eco, not initial_factory_eco, initial_factory_eco), 1):
-    CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=selected)
-    daemon._update_eco_mode(CS)
-    assert daemon.params.get_bool('EcoModeEnabled') == (selected and eligible)
-    assert len(writes) == (index if eligible else 0)
-    # A manual change remains selected while the factory mode stays unchanged.
-    put('EcoModeEnabled', not selected if eligible else False, block=True)
-    count = len(writes)
-    daemon._update_eco_mode(CS)
-    assert len(writes) == count
-    assert daemon.params.get_bool('EcoModeEnabled') == (not selected if eligible else False)
-
-
-def test_factory_selection_runs_in_existing_step(tmp_path):
-  daemon = SelfdriveD.__new__(SelfdriveD)
-  daemon.params = Params(str(tmp_path))
-  daemon.params.put_bool = lambda key, value: Params.put_bool(daemon.params, key, value, block=True)
-  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
-  daemon.factory_eco_mode = None
-  daemon.initialized = False
+def test_factory_selection_runs_in_existing_step(daemon):
   CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=True)
   daemon.data_sample = Mock(return_value=CS)
   daemon.update_events = daemon.update_alerts = daemon.publish_selfdriveState = Mock()
   daemon.step()
-  assert daemon.params.get_bool('EcoModeEnabled') is True
+  assert daemon.factory_eco_mode is True
 
 
 @pytest.mark.parametrize('can_valid,mode_valid', [(False, True), (True, False), (False, False)])
-def test_missing_factory_state_preserves_manual_selection(tmp_path, can_valid, mode_valid):
-  daemon = SelfdriveD.__new__(SelfdriveD)
-  daemon.params = Params(str(tmp_path))
-  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
-  daemon.factory_eco_mode = None
-  for selected in (False, True):
-    daemon.params.put_bool('EcoModeEnabled', selected, block=True)
-    daemon._update_eco_mode(car.CarState.new_message(canValid=can_valid, ecoModeValid=mode_valid, ecoMode=not selected))
-    assert daemon.factory_eco_mode is None
-    assert daemon.params.get_bool('EcoModeEnabled') == selected
+@pytest.mark.parametrize('previous_eco', [False, True])
+def test_missing_factory_state_preserves_last_valid_selection(daemon, monkeypatch, can_valid, mode_valid, previous_eco):
+  daemon._update_eco_mode(car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=previous_eco))
+  daemon._update_eco_mode(car.CarState.new_message(canValid=can_valid, ecoModeValid=mode_valid, ecoMode=not previous_eco))
+  poll_params(daemon, monkeypatch)
+  assert daemon.factory_eco_mode == previous_eco
+  assert daemon.eco_mode == previous_eco
 
 
 @pytest.mark.parametrize('previous_eco', [False, True])
-def test_mode_switch_waits_for_matching_following_preference(monkeypatch, tmp_path, previous_eco):
-  daemon = SelfdriveD.__new__(SelfdriveD)
-  daemon.params = Params(str(tmp_path))
-  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
+def test_mode_switch_waits_for_matching_following_preference(daemon, monkeypatch, previous_eco):
   daemon.eco_mode = previous_eco
   daemon.personality = 2 if previous_eco else 0
   daemon.params.put('LongitudinalPersonality', 0, block=True)
-  daemon.params.put_bool('EcoModeEnabled', not previous_eco, block=True)
-  daemon.enabled = daemon.active = False
-  daemon.state_machine = StateMachine()
-  daemon.events = Events()
-  daemon.events_prev = []
-  daemon.AM = AlertManager()
-  daemon.sm = SimpleNamespace(frame=1)
-  daemon.pm = Mock()
+  daemon._update_eco_mode(car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=not previous_eco))
   get = daemon.params.get
 
   def read_with_publication(key, **kwargs):
@@ -153,9 +110,7 @@ def test_mode_switch_waits_for_matching_following_preference(monkeypatch, tmp_pa
     return get(key, **kwargs)
 
   monkeypatch.setattr(daemon.params, 'get', read_with_publication)
-  done = threading.Event()
-  monkeypatch.setattr('openpilot.selfdrive.selfdrived.selfdrived.time.sleep', lambda _: done.set())
-  daemon.params_thread(done)
+  poll_params(daemon, monkeypatch)
   pending = daemon.pm.send.call_args.args[1].selfdriveState
   assert pending.ecoMode == previous_eco
   assert pending.personality == (2 if previous_eco else 0)
