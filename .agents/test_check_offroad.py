@@ -46,6 +46,19 @@ def test_deployment_accepts_new_valid_offroad_state():
   params.get_bool.assert_called_once_with("IsOffroad")
 
 
+def test_deployment_rejects_a_parked_capture_hold():
+  sm = MagicMock()
+  sm.updated = sm.valid = sm.alive = {"deviceState": True}
+  sm.logMonoTime = {"deviceState": 20}
+  sm.__getitem__.return_value = SimpleNamespace(started=False)
+  params = MagicMock()
+  params.get_bool.return_value = True
+  params.all_keys.return_value = ["IsOffroad", "OdysseyRadarTest"]
+  with patch.object(guard.messaging, "SubMaster", return_value=sm), patch.object(guard, "Params", return_value=params), \
+       patch.object(guard.time, "monotonic_ns", return_value=10), pytest.raises(SystemExit, match="parked radar capture"):
+    guard.main()
+
+
 @pytest.mark.parametrize("command", ["verify_device", "deploy_device"])
 def test_remote_recipes_check_offroad_before_switch_and_reboot(command):
   root = Path(__file__).parents[1]

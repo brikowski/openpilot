@@ -92,6 +92,9 @@ class DeveloperLayout(Widget):
     self._on_enable_ui_debug(self._params.get_bool("ShowDebugInfo"))
 
     self._scroller = Scroller([
+      # BEGIN ODYSSEY PARKED DIAGNOSTICS
+      self._radar_test_button(),
+      # END ODYSSEY PARKED DIAGNOSTICS
       self._adb_toggle,
       self._ssh_toggle,
       self._ssh_keys,
@@ -104,6 +107,12 @@ class DeveloperLayout(Widget):
 
     # Toggles should be not available to change in onroad state
     ui_state.add_offroad_transition_callback(self._update_toggles)
+  # BEGIN ODYSSEY PARKED DIAGNOSTICS
+
+  def _radar_test_button(self):
+    from openpilot.selfdrive.ui.layouts.settings.odyssey_radar import OdysseyRadarTestItem
+    return OdysseyRadarTestItem()
+  # END ODYSSEY PARKED DIAGNOSTICS
 
   def _render(self, rect):
     self._scroller.render(rect)

@@ -9,6 +9,13 @@ from unittest.mock import patch
 
 import publish_public as mirror
 
+DIAGNOSTIC_INTEGRATION_PATHS = (
+  'openpilot/common/params_keys.h', 'openpilot/system/hardware/hardwared.py',
+  'openpilot/system/manager/manager.py', 'openpilot/system/manager/process_config.py',
+  'openpilot/selfdrive/pandad/pandad.cc', 'openpilot/selfdrive/ui/layouts/settings/developer.py',
+  'openpilot/selfdrive/ui/ui_state.py',
+)
+
 
 def test_release_checks_are_independent_of_public_caller_branch():
   workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/odyssey.yaml').read_text()
@@ -51,6 +58,11 @@ class TestPublicRelease(unittest.TestCase):
                  'openpilot/tools/jotpluggler/layouts/brikowski.json', '.agents/analysis.py',
                  '.vscode/tasks.json', '.codex/local.json', '.claude/local.json'):
       self.write(path, 'development tooling\n')
+    for path in ('openpilot/selfdrive/ui/layouts/settings/odyssey_radar.py',
+                 'openpilot/selfdrive/pandad/odyssey_radar_test.h', 'openpilot/tools/odyssey/radar_test.py'):
+      self.write(path, 'development diagnostic\n')
+    for path in DIAGNOSTIC_INTEGRATION_PATHS:
+      self.write(path, 'upstream integration\n# BEGIN ODYSSEY PARKED DIAGNOSTICS\nOdysseyRadarTest\n# END ODYSSEY PARKED DIAGNOSTICS\n')
     self.write('.github/workflows/tests.yml', 'shared vehicle CI\n')
     self.write('.github/workflows/odyssey-release.yaml', 'unpublished scheduler edit\n')
     self.git('add', '.')
@@ -110,6 +122,17 @@ class TestPublicRelease(unittest.TestCase):
     self.assertEqual([p['name'] for p in packages], ['openpilot', 'pytest'])
     self.assertEqual(packages[0]['optional-dependencies']['testing'], [{'name': 'pytest'}])
     self.assertEqual(packages[0]['metadata']['requires-dist'], [])
+
+  def test_parked_diagnostics_and_their_integrations_are_absent(self):
+    public = self.public()
+    paths = self.git('ls-tree', '-r', '--name-only', public).splitlines()
+    for path in ('openpilot/selfdrive/ui/layouts/settings/odyssey_radar.py',
+                 'openpilot/selfdrive/pandad/odyssey_radar_test.h', 'openpilot/tools/odyssey/radar_test.py'):
+      self.assertNotIn(path, paths)
+    for path in DIAGNOSTIC_INTEGRATION_PATHS:
+      self.assertEqual(self.git('show', f'{public}:{path}'), 'upstream integration')
+      with self.assertRaises(ValueError):
+        mirror.public_text(path, '# BEGIN ODYSSEY PARKED DIAGNOSTICS\nOdysseyRadarTest\n')
 
   def test_tooling_only_changes_do_not_publish_but_vehicle_updates_do(self):
     public = self.public()

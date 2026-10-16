@@ -124,6 +124,9 @@ def manager_thread() -> None:
     sm.update(1000)
 
     started = sm['deviceState'].started
+    # BEGIN ODYSSEY PARKED DIAGNOSTICS
+    started = started and not params.get_bool("OdysseyRadarTest")
+    # END ODYSSEY PARKED DIAGNOSTICS
 
     if started and not started_prev:
       params.clear_all(ParamKeyFlag.CLEAR_ON_ONROAD_TRANSITION)

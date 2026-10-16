@@ -258,6 +258,9 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     pandaStates = sm['pandaStates']
     peripheralState = sm['peripheralState']
+    # BEGIN ODYSSEY PARKED DIAGNOSTICS
+    onroad_conditions["not_odyssey_radar_test"] = not params.get_bool("OdysseyRadarTest")
+    # END ODYSSEY PARKED DIAGNOSTICS
 
     # handle requests to cycle system started state
     if params.get_bool("OnroadCycleRequested"):

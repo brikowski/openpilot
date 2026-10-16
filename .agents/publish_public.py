@@ -17,8 +17,16 @@ EXCLUDED = {
   'AGENTS.md', 'lefthook.yml', 'tools/check_offroad.py', 'tools/deploy_ody_op.sh',
   'tools/deploy_staging.sh', 'tools/sync_ody_op.sh',
   'openpilot/tools/jotpluggler/layouts/brikowski.json',
+  'openpilot/selfdrive/ui/layouts/settings/odyssey_radar.py',
+  'openpilot/selfdrive/pandad/odyssey_radar_test.h',
 }
-PREFIXES = ('.agents/', '.vscode/', '.codex/', '.claude/')
+PREFIXES = ('.agents/', '.vscode/', '.codex/', '.claude/', 'openpilot/tools/odyssey/')
+DIAGNOSTIC_INTEGRATIONS = (
+  'openpilot/common/params_keys.h', 'openpilot/system/hardware/hardwared.py',
+  'openpilot/system/manager/manager.py', 'openpilot/system/manager/process_config.py',
+  'openpilot/selfdrive/pandad/pandad.cc', 'openpilot/selfdrive/ui/layouts/settings/developer.py',
+  'openpilot/selfdrive/ui/ui_state.py',
+)
 
 
 def git(repo, *args, env=None, data=None):
@@ -27,6 +35,12 @@ def git(repo, *args, env=None, data=None):
 
 
 def public_text(path, text):
+  if path in DIAGNOSTIC_INTEGRATIONS:
+    text = re.sub(r'^[ \t]*(?://|#) BEGIN ODYSSEY PARKED DIAGNOSTICS\n.*?^[ \t]*(?://|#) END ODYSSEY PARKED DIAGNOSTICS\n',
+                  '', text, flags=re.MULTILINE | re.DOTALL)
+    if 'ODYSSEY PARKED DIAGNOSTICS' in text or 'OdysseyRadarTest' in text or 'odyssey_radar' in text:
+      raise ValueError(f'Unremoved parked diagnostic integration in {path}')
+    return text
   if path == 'tools/README.md':
     return text.split('\n## Private Odyssey workflow\n', 1)[0].rstrip() + '\n'
   if path == '.gitignore':
@@ -56,7 +70,7 @@ def build_public(repo, source, parent):
     if removed:
       git(repo, 'update-index', '--force-remove', '--', *removed, env=env)
     git(repo, 'restore', f'--source={parent}', '--staged', '--', '.github', env=env)
-    for path in ('tools/README.md', '.gitignore', 'pyproject.toml', 'uv.lock'):
+    for path in ('tools/README.md', '.gitignore', 'pyproject.toml', 'uv.lock', *DIAGNOSTIC_INTEGRATIONS):
       if path in paths:
         original = subprocess.run(['git', 'show', f'{source}:{path}'], cwd=repo,
                                   stdout=subprocess.PIPE, check=True).stdout

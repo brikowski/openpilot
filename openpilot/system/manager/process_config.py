@@ -126,3 +126,8 @@ procs = [
 ]
 
 managed_processes = {p.name: p for p in procs}
+# BEGIN ODYSSEY PARKED DIAGNOSTICS
+managed_processes["odyssey_radar_test"] = PythonProcess(
+  "odyssey_radar_test", "openpilot.tools.odyssey.radar_test", lambda started, params, CP: params.get_bool("OdysseyRadarTest"))
+managed_processes["updated"].should_run = lambda started, params, CP: not started and not params.get_bool("OdysseyRadarTest")
+# END ODYSSEY PARKED DIAGNOSTICS
