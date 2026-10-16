@@ -52,7 +52,9 @@ class TogglesLayoutMici(NavScroller):
     eco_mode = BigParamControl("eco mode", "EcoModeEnabled", toggle_callback=self._refresh_personality,
                                description="Use gentler acceleration when returning to your set speed.\n" +
                                            "Default to the farthest following distance.\n" +
-                                           "Save driving personality separately. Keep requested braking.")
+                                           "Save driving personality separately. Keep requested braking.\n" +
+                                           "On the Bosch Odyssey, apply factory ECON at startup and when it changes.")
+    self._eco_mode_control = eco_mode
     eco_mode.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control)
     is_metric_toggle = BigParamControl("use metric units", "IsMetric", toggle_callback=self._initial_cruise_speed.refresh)
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
@@ -106,7 +108,9 @@ class TogglesLayoutMici(NavScroller):
   def _update_state(self):
     super()._update_state()
 
-    key = get_longitudinal_personality_param(ui_state.params.get_bool("EcoModeEnabled"))
+    eco_mode = ui_state.params.get_bool("EcoModeEnabled")
+    self._eco_mode_control.set_checked(eco_mode)
+    key = get_longitudinal_personality_param(eco_mode)
     if self._personality_toggle._param != key:
       self._refresh_personality()
 

@@ -77,3 +77,14 @@ def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant)
   assert selected() == 0
   toggle._handle_mouse_release(None)
   assert selected() == 1
+
+  from openpilot.cereal import log
+  state.started = True
+  state.sm = Mock(updated={'selfdriveState': True})
+  for enabled, personality in ((False, 0), (True, 1)):
+    params.put_bool('EcoModeEnabled', enabled, block=True)
+    message = log.SelfdriveState.new_message(personality=personality)
+    state.sm.__getitem__ = Mock(return_value=message)
+    layout._update_state()
+    assert selected() == personality
+    assert (toggle._state if variant == 'tici' else toggle._checked) == enabled

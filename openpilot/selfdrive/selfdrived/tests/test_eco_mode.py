@@ -71,6 +71,63 @@ def test_distance_button_saves_each_mode_independently(monkeypatch, tmp_path):
     assert daemon.params.get(key) == changed
 
 
+@pytest.mark.parametrize('longitudinal,passive', [(True, False), (False, False), (True, True)])
+@pytest.mark.parametrize('initial_factory_eco', [False, True])
+def test_factory_selection_and_manual_override(monkeypatch, tmp_path, longitudinal, passive, initial_factory_eco):
+  daemon = SelfdriveD.__new__(SelfdriveD)
+  daemon.params = Params(str(tmp_path))
+  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=longitudinal, passive=passive)
+  daemon.factory_eco_mode = None
+  put = daemon.params.put_bool
+  writes = []
+
+  def save(key, value):
+    writes.append(value)
+    put(key, value, block=True)
+
+  monkeypatch.setattr(daemon.params, 'put_bool', save)
+  eligible = longitudinal and not passive
+  put('EcoModeEnabled', not initial_factory_eco if eligible else False, block=True)
+  for index, selected in enumerate((initial_factory_eco, not initial_factory_eco, initial_factory_eco), 1):
+    CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=selected)
+    daemon._update_eco_mode(CS)
+    assert daemon.params.get_bool('EcoModeEnabled') == (selected and eligible)
+    assert len(writes) == (index if eligible else 0)
+    # A manual change remains selected while the factory mode stays unchanged.
+    put('EcoModeEnabled', not selected if eligible else False, block=True)
+    count = len(writes)
+    daemon._update_eco_mode(CS)
+    assert len(writes) == count
+    assert daemon.params.get_bool('EcoModeEnabled') == (not selected if eligible else False)
+
+
+def test_factory_selection_runs_in_existing_step(tmp_path):
+  daemon = SelfdriveD.__new__(SelfdriveD)
+  daemon.params = Params(str(tmp_path))
+  daemon.params.put_bool = lambda key, value: Params.put_bool(daemon.params, key, value, block=True)
+  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
+  daemon.factory_eco_mode = None
+  daemon.initialized = False
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=True)
+  daemon.data_sample = Mock(return_value=CS)
+  daemon.update_events = daemon.update_alerts = daemon.publish_selfdriveState = Mock()
+  daemon.step()
+  assert daemon.params.get_bool('EcoModeEnabled') is True
+
+
+@pytest.mark.parametrize('can_valid,mode_valid', [(False, True), (True, False), (False, False)])
+def test_missing_factory_state_preserves_manual_selection(tmp_path, can_valid, mode_valid):
+  daemon = SelfdriveD.__new__(SelfdriveD)
+  daemon.params = Params(str(tmp_path))
+  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
+  daemon.factory_eco_mode = None
+  for selected in (False, True):
+    daemon.params.put_bool('EcoModeEnabled', selected, block=True)
+    daemon._update_eco_mode(car.CarState.new_message(canValid=can_valid, ecoModeValid=mode_valid, ecoMode=not selected))
+    assert daemon.factory_eco_mode is None
+    assert daemon.params.get_bool('EcoModeEnabled') == selected
+
+
 @pytest.mark.parametrize('previous_eco', [False, True])
 def test_mode_switch_waits_for_matching_following_preference(monkeypatch, tmp_path, previous_eco):
   daemon = SelfdriveD.__new__(SelfdriveD)

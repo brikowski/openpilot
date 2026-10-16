@@ -23,7 +23,8 @@ DESCRIPTIONS = {
     "your steering wheel distance button."
   ),
   "EcoModeEnabled": tr_noop("Use gentler acceleration when returning to your set speed. " +
-                            "Defaults to the farthest following distance, with a separate saved driving personality. Requested braking is preserved."),
+                            "Defaults to the farthest following distance, with a separate saved driving personality. Requested braking is preserved. " +
+                            "On the Bosch Odyssey, the factory ECON selection is applied at startup and when it changes."),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
     "without a turn signal activated while driving over 31 mph (50 km/h)."
@@ -152,6 +153,7 @@ class TogglesLayout(Widget):
 
   def _update_state(self):
     if ui_state.sm.updated["selfdriveState"]:
+      self._toggles["EcoModeEnabled"].action_item.set_state(self._params.get_bool("EcoModeEnabled"))
       personality = PERSONALITY_TO_INT[ui_state.sm["selfdriveState"].personality]
       if personality != ui_state.personality and ui_state.started:
         self._long_personality_setting.action_item.set_selected_button(personality)
