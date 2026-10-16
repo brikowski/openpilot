@@ -528,6 +528,7 @@ class SelfdriveD:
 
   def publish_selfdriveState(self, CS):
     # selfdriveState
+    eco_mode, personality = self.eco_mode, self.personality
     ss_msg = messaging.new_message('selfdriveState')
     ss_msg.valid = True
     ss = ss_msg.selfdriveState
@@ -536,8 +537,8 @@ class SelfdriveD:
     ss.state = self.state_machine.state
     ss.engageable = not self.events.contains(ET.NO_ENTRY)
     ss.experimentalMode = self.CP.openpilotLongitudinalControl
-    ss.personality = self.personality
-    ss.ecoMode = self.eco_mode and self.CP.openpilotLongitudinalControl and not self.CP.passive
+    ss.personality = personality
+    ss.ecoMode = eco_mode and self.CP.openpilotLongitudinalControl and not self.CP.passive
 
     ss.alertText1 = self.AM.current_alert.alert_text_1
     ss.alertText2 = self.AM.current_alert.alert_text_2
@@ -573,8 +574,8 @@ class SelfdriveD:
       self.is_metric = self.params.get_bool("IsMetric")
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
-      self.eco_mode = self.params.get_bool("EcoModeEnabled")
-      self.personality = self.params.get(get_longitudinal_personality_param(self.eco_mode), return_default=True)
+      eco_mode = self.params.get_bool("EcoModeEnabled")
+      self.eco_mode, self.personality = eco_mode, self.params.get(get_longitudinal_personality_param(eco_mode), return_default=True)
       time.sleep(0.1)
 
   def run(self):

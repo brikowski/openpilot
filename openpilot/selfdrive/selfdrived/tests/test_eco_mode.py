@@ -69,3 +69,40 @@ def test_distance_button_saves_each_mode_independently(monkeypatch, tmp_path):
     assert daemon.personality == changed
     key = 'EcoLongitudinalPersonality' if eco else 'LongitudinalPersonality'
     assert daemon.params.get(key) == changed
+
+
+@pytest.mark.parametrize('previous_eco', [False, True])
+def test_mode_switch_waits_for_matching_following_preference(monkeypatch, tmp_path, previous_eco):
+  daemon = SelfdriveD.__new__(SelfdriveD)
+  daemon.params = Params(str(tmp_path))
+  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
+  daemon.eco_mode = previous_eco
+  daemon.personality = 2 if previous_eco else 0
+  daemon.params.put('LongitudinalPersonality', 0, block=True)
+  daemon.params.put_bool('EcoModeEnabled', not previous_eco, block=True)
+  daemon.enabled = daemon.active = False
+  daemon.state_machine = StateMachine()
+  daemon.events = Events()
+  daemon.events_prev = []
+  daemon.AM = AlertManager()
+  daemon.sm = SimpleNamespace(frame=1)
+  daemon.pm = Mock()
+  get = daemon.params.get
+
+  def read_with_publication(key, **kwargs):
+    if key in ('LongitudinalPersonality', 'EcoLongitudinalPersonality'):
+      # The native Params read releases the GIL; publication may run while it is pending.
+      daemon.publish_selfdriveState(car.CarState.new_message())
+    return get(key, **kwargs)
+
+  monkeypatch.setattr(daemon.params, 'get', read_with_publication)
+  done = threading.Event()
+  monkeypatch.setattr('openpilot.selfdrive.selfdrived.selfdrived.time.sleep', lambda _: done.set())
+  daemon.params_thread(done)
+  pending = daemon.pm.send.call_args.args[1].selfdriveState
+  assert pending.ecoMode == previous_eco
+  assert pending.personality == (2 if previous_eco else 0)
+  daemon.publish_selfdriveState(car.CarState.new_message())
+  applied = daemon.pm.send.call_args.args[1].selfdriveState
+  assert applied.ecoMode == (not previous_eco)
+  assert applied.personality == (0 if previous_eco else 2)
