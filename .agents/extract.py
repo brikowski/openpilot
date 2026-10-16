@@ -5,7 +5,8 @@
     d = load("<private-route-id>")     # first call decodes; later calls hit the cache
     mph = d["vego"] * 2.23694
 
-The cache is for exploration only; validate_log reads source logs independently. Continuous
+The cache rebuilds when local log segments change. It is for exploration only; validate_log reads
+source logs independently. Continuous
 state signals are interpolated onto carControl time; received CAN uses independently timestamped
 verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
 spread is m/s. can_long_accel has unqualified scale and reference frame on this Odyssey;
@@ -88,6 +89,14 @@ def _segments(route):
   if len(full) != 1:
     raise SystemExit(f"'{route}' matches {len(full)} routes: {sorted(full)}")
   return full.pop(), [os.path.join(root, s, "rlog.zst") for s in segs]
+
+
+def _source_signature(paths):
+  sources = []
+  for path in paths:
+    stat = os.stat(path)
+    sources.append((path, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+  return np.asarray(sources, dtype=str)
 
 
 def _decode(paths):
@@ -306,17 +315,21 @@ def _build(route):
 
 def load(route, refresh=False):
   """Decoded, grid-aligned signals for a route. Cached on disk after the first call."""
-  full, _ = _segments(route)
+  full, paths = _segments(route)
+  sources = _source_signature(paths)
   os.makedirs(CACHE, exist_ok=True)
   path = os.path.join(CACHE, f"{full}.v{SCHEMA}.npz")
   if os.path.exists(path) and not refresh:
     with np.load(path, allow_pickle=False) as z:
-      d = {k: z[k] for k in z.files}
-    d["route"] = full
-    d["t0"] = float(d["t0"])
-    return d
+      if "_sources" in z and np.array_equal(z["_sources"], sources):
+        d = {k: z[k] for k in z.files if k != "_sources"}
+        d["route"] = full
+        d["t0"] = float(d["t0"])
+        return d
   d = _build(full)
-  np.savez_compressed(path, **{k: v for k, v in d.items() if k != "route"})
+  if not np.array_equal(sources, _source_signature(_segments(full)[1])):
+    raise RuntimeError(f"{full}: logs changed during extraction; retry after the transfer finishes")
+  np.savez_compressed(path, _sources=sources, **{k: v for k, v in d.items() if k != "route"})
   return d
 
 

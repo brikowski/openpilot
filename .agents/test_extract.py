@@ -1,6 +1,9 @@
+import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 import extract
 from extract import plan_to_control, select_lead_field
@@ -189,6 +192,90 @@ def test_resampling_changes_ignore_previous_extraction_cache(monkeypatch, tmp_pa
   out = extract.load("synthetic")
   assert "consumed_atarget" in out and "consumed_plan_source" in out
   np.testing.assert_array_equal(out["consumed_atarget"], [-.2])
+
+
+@pytest.fixture
+def cached_route(monkeypatch, tmp_path):
+  root = tmp_path / 'rlogs'
+  root.mkdir()
+  route = '00000001--abc'
+  for segment in (0, 1):
+    path = root / f'{route}--{segment}'
+    path.mkdir()
+    (path / 'rlog.zst').write_text(str(segment))
+  monkeypatch.setattr(extract, 'rlog_root', lambda: root)
+  monkeypatch.setattr(extract, 'CACHE', str(tmp_path / 'cache'))
+  builds = []
+
+  def build(full):
+    _, paths = extract._segments(full)
+    values = [int(Path(path).read_text()) for path in paths]
+    builds.append(values)
+    return {'route': full, 't0': 0., 'request': np.asarray(values, dtype=float)}
+
+  monkeypatch.setattr(extract, '_build', build)
+  return root, route, builds
+
+
+def test_extraction_cache_reuses_unchanged_logs_and_hides_metadata(cached_route):
+  _, route, builds = cached_route
+  first = extract.load(route)
+  again = extract.load(route[:8])
+  assert set(first) == set(again) == {'route', 't0', 'request'}
+  np.testing.assert_array_equal(again['request'], [0., 1.])
+  assert builds == [[0, 1]]
+  extract.load(route, refresh=True)
+  assert builds == [[0, 1], [0, 1]]
+
+
+@pytest.mark.parametrize('change', ['append', 'remove', 'rename', 'replace_preserving_mtime'])
+def test_extraction_cache_rebuilds_when_route_logs_change(cached_route, change):
+  root, route, builds = cached_route
+  extract.load(route)
+  if change == 'append':
+    path = root / f'{route}--10'
+    path.mkdir()
+    (path / 'rlog.zst').write_text('10')
+    expected = [0., 1., 10.]
+  elif change == 'remove':
+    (root / f'{route}--1' / 'rlog.zst').unlink()
+    expected = [0.]
+  elif change == 'rename':
+    (root / f'{route}--1').rename(root / f'{route}--10')
+    expected = [0., 1.]
+  else:
+    path = root / f'{route}--1' / 'rlog.zst'
+    before = path.stat()
+    path.write_text('9')  # Same length; a transfer may preserve modification time.
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    expected = [0., 9.]
+  np.testing.assert_array_equal(extract.load(route)['request'], expected)
+  assert len(builds) == 2
+
+
+def test_extraction_cache_without_source_metadata_is_rebuilt(cached_route):
+  _, route, builds = cached_route
+  os.makedirs(extract.CACHE)
+  np.savez(os.path.join(extract.CACHE, f'{route}.v{extract.SCHEMA}.npz'), t0=0., request=[9.])
+  np.testing.assert_array_equal(extract.load(route)['request'], [0., 1.])
+  assert builds == [[0, 1]]
+
+
+def test_extraction_refuses_logs_changed_while_decoding(cached_route, monkeypatch):
+  root, route, _ = cached_route
+  original = extract._build
+
+  def growing(full):
+    result = original(full)
+    path = root / f'{route}--2'
+    path.mkdir()
+    (path / 'rlog.zst').write_text('2')
+    return result
+
+  monkeypatch.setattr(extract, '_build', growing)
+  with pytest.raises(RuntimeError, match='logs changed during extraction'):
+    extract.load(route)
+  assert not os.path.exists(os.path.join(extract.CACHE, f'{route}.v{extract.SCHEMA}.npz'))
 
 
 def test_steering_output_authority_changes_follow_publication_without_blending(monkeypatch):
