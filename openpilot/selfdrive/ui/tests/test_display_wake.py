@@ -6,9 +6,9 @@ from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePoli
 
 
 def step(policy, now, *, ignition=True, started=True, enabled=False, alert=None, keep_awake=False,
-         timeout_enabled=True, touch=False, offroad_alerts=None):
+         touch=False, offroad_alerts=None):
   return policy.update(now, DISPLAY_TIMEOUT, ignition=ignition, started=started, enabled=enabled, alert=alert,
-                       keep_awake=keep_awake, timeout_enabled=timeout_enabled, touch=touch,
+                       keep_awake=keep_awake, touch=touch,
                        offroad_alerts=offroad_alerts, pc=False)
 
 
@@ -80,8 +80,7 @@ def display(monkeypatch, tmp_path):
 
   sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False)),
                 selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0)))
-  state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False,
-                          screen_timeout_enabled=True, started_frame=100, sm=sm)
+  state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, sm=sm)
   monkeypatch.setattr(module, 'ui_state', state)
   monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[]))
   monkeypatch.setattr(module, 'PC', False)
@@ -128,7 +127,9 @@ def test_unreliable_cruise_state_releases_display_hold(display, unreliable):
 
 
 @pytest.mark.parametrize('onroad', [False, True])
-def test_timeout_switch_applies_live_and_restarts_full_timeout(display, onroad):
+def test_timeout_applies_onroad_and_offroad_and_touch_restarts_it(display, onroad):
+  from openpilot.selfdrive.ui import ui_state as module
+
   state, device, now = display
   state.started = onroad
   state.ignition = onroad
@@ -137,34 +138,31 @@ def test_timeout_switch_applies_live_and_restarts_full_timeout(display, onroad):
   now[0] = 15.1
   device._update_wakefulness()
   assert not device.awake
-  state.screen_timeout_enabled = False
+  module.gui_app.mouse_events = [SimpleNamespace(left_down=True)]
   now[0] = 16
   device._update_wakefulness()
   assert device.awake
-  now[0] = 100
+  module.gui_app.mouse_events = []
+  now[0] = 31
   device._update_wakefulness()
   assert device.awake
-  state.screen_timeout_enabled = True
-  now[0] = 101
-  device._update_wakefulness()
-  now[0] = 116
-  device._update_wakefulness()
-  assert device.awake
-  now[0] = 116.1
+  now[0] = 31.1
   device._update_wakefulness()
   assert not device.awake
 
 
 @pytest.mark.parametrize('variant', ['tizi', 'mici'])
-def test_screen_timeout_setting_persists_and_refreshes_live(display, monkeypatch, variant):
+def test_screen_timeout_has_no_setting_and_ignores_legacy_value(display, monkeypatch, variant):
   import pyray as rl
-  from openpilot.common.params import Params
+  from pathlib import Path
+  from openpilot.common.params import Params, UnknownKeyName
   from openpilot.selfdrive.ui import ui_state as module
   from openpilot.system.ui.lib.application import gui_app
 
   params = Params()
-  assert params.get('ScreenTimeoutEnabled', return_default=True) is True
-  params.put_bool('ScreenTimeoutEnabled', True, block=True)
+  with pytest.raises(UnknownKeyName):
+    params.get('ScreenTimeoutEnabled')
+  Path(params.get_param_path('ScreenTimeoutEnabled')).write_text('0')
   state = object.__new__(module.UIState)
   state._initialize()
   monkeypatch.setattr(state, 'usb_connected', False)
@@ -176,23 +174,13 @@ def test_screen_timeout_setting_persists_and_refreshes_live(display, monkeypatch
     from openpilot.selfdrive.ui.layouts.settings import toggles
     monkeypatch.setattr(toggles, 'ui_state', state)
     layout = toggles.TogglesLayout()
-    toggle = layout._toggles['ScreenTimeoutEnabled'].action_item.toggle
-    checked = toggle.get_state
+    assert 'ScreenTimeoutEnabled' not in layout._toggles
   else:
     from openpilot.selfdrive.ui.mici.layouts.settings import toggles as mici_toggles
     monkeypatch.setattr(mici_toggles, 'ui_state', state)
     layout = mici_toggles.TogglesLayoutMici()
-    toggle = next(item for key, item in layout._refresh_toggles if key == 'ScreenTimeoutEnabled')
-
-    def checked():
-      return toggle._checked
-  assert checked()
-  for enabled in (False, True):
-    toggle._handle_mouse_release(None)
-    assert Params().get_bool('ScreenTimeoutEnabled') is enabled
-    state.update_params()
-    assert state.screen_timeout_enabled is enabled
-    assert params.get('OnroadCycleRequested') is None
-  params.put_bool('ScreenTimeoutEnabled', False, block=True)
+    assert 'ScreenTimeoutEnabled' not in dict(layout._refresh_toggles)
+  state.update_params()
   layout._update_toggles()
-  assert not checked()
+  assert not hasattr(state, 'screen_timeout_enabled')
+  assert params.get('OnroadCycleRequested') is None
