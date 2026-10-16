@@ -92,11 +92,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"NetworkMetered", {PERSISTENT, BOOL}},
     {"ObdMultiplexingChanged", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
     {"ObdMultiplexingEnabled", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
-    // BEGIN ODYSSEY PARKED DIAGNOSTICS
-    {"OdysseyRadarTest", {PERSISTENT, BOOL}},
-    {"OdysseyRadarTestStop", {PERSISTENT, BOOL}},
-    {"OdysseyRadarTestStatus", {PERSISTENT | DONT_LOG, JSON}},
-    // END ODYSSEY PARKED DIAGNOSTICS
     {"Offroad_CarUnrecognized", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, JSON}},
     {"Offroad_ChestnutBranch", {CLEAR_ON_MANAGER_START, JSON}},
     {"Offroad_ChestnutModelError", {CLEAR_ON_MANAGER_START, JSON}},

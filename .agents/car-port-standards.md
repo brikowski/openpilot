@@ -1,21 +1,5 @@
 # Honda car-port and safety guidance
 
-The development-only **Developer → Parked Radar ECU Capture** starts with ignition off,
-holds OpenPilot offroad across the prompted ignition cycle, records full-rate stock CAN,
-and reads only F181/F112/F191 from the radar and camera on bus 1. It does not change ECU
-sessions, communication control, actuation or CMBS behavior. Panda uses existing ELM327 safety
-with a closed harness relay and no OBD multiplexing; pandad additionally restricts diagnostic
-transmission. Stop immediately blocks reads and selects NO_OUTPUT; exit requires five seconds
-of fresh ignition-off state. The persistent hold also survives manager restart. If the worker is
-interrupted, Stop remains available; restart the comma with ignition off to recover the hold.
-Alpha Long and learned parameters are preserved. Stationary capture cannot establish AEB/FCW function.
-
-Existing authorized SSH remains available. From `/data/openpilot`, monitor with
-`python3 -m openpilot.tools.odyssey.radar_test --monitor`, or stop reads with `--stop`.
-SSH is optional and connection loss does not affect the local test. Captures remain private under
-`/data/odyssey/radar-tests/` (`source.json`, `events.jsonl`, `traffic.rlog.bz2`); they are not uploader routes.
-The public publisher removes this test, its UI, parameters, and all marked integrations.
-
 This is the repository-owned guidance for edits under `opendbc_repo/opendbc/car/` and the Honda
 panda-safety layer. Keep route IDs, measurements, and experiment history in Proton Drive's
 `evidence/tune-evidence.md`; this file describes the current invariants only.

@@ -16,9 +16,6 @@
 #include "common/timing.h"
 #include "common/util.h"
 #include "common/hardware/hw.h"
-// BEGIN ODYSSEY PARKED DIAGNOSTICS
-#include "selfdrive/pandad/odyssey_radar_test.h"
-// END ODYSSEY PARKED DIAGNOSTICS
 
 #define MAX_IR_PANDA_VAL 50
 #define CUTOFF_IL 400
@@ -61,9 +58,6 @@ Panda *connect(std::string serial) {
 
 void can_send_thread(Panda *panda, bool fake_send) {
   util::set_thread_name("pandad_can_send");
-  // BEGIN ODYSSEY PARKED DIAGNOSTICS
-  Params diagnostic_params;
-  // END ODYSSEY PARKED DIAGNOSTICS
 
   AlignedBuffer aligned_buf;
   std::unique_ptr<Context> context(Context::create());
@@ -80,16 +74,6 @@ void can_send_thread(Panda *panda, bool fake_send) {
 
     capnp::FlatArrayMessageReader cmsg(aligned_buf.align(msg.get()));
     cereal::Event::Reader event = cmsg.getRoot<cereal::Event>();
-    // BEGIN ODYSSEY PARKED DIAGNOSTICS
-    if (diagnostic_params.getBool("OdysseyRadarTest")) {
-      bool allowed = !diagnostic_params.getBool("OdysseyRadarTestStop");
-      for (auto frame : event.getSendcan()) {
-        auto data = frame.getDat();
-        allowed &= odyssey_radar_test_tx(frame.getAddress(), frame.getSrc(), data.begin(), data.size());
-      }
-      if (!allowed) continue;
-    }
-    // END ODYSSEY PARKED DIAGNOSTICS
 
     // Don't send if older than 1 second
     if ((nanos_since_boot() - event.getLogMonoTime() < 1e9) && !fake_send) {
@@ -219,16 +203,6 @@ std::optional<bool> send_panda_states(PubMaster *pm, Panda *panda, bool is_onroa
 
   // set safety mode to NO_OUTPUT when car is off or we're not onroad. ELM327 is an alternative if we want to leverage athenad/connect
   bool should_close_relay = !ignition_local || !is_onroad;
-  // BEGIN ODYSSEY PARKED DIAGNOSTICS
-  static Params diagnostic_params;
-  if (diagnostic_params.getBool("OdysseyRadarTest")) {
-    auto mode = diagnostic_params.getBool("OdysseyRadarTestStop") ? cereal::CarParams::SafetyModel::NO_OUTPUT : cereal::CarParams::SafetyModel::ELM327;
-    const uint16_t param = mode == cereal::CarParams::SafetyModel::ELM327 ? 1U : 0U;
-    if (health.safety_mode_pkt != static_cast<uint8_t>(mode) || health.safety_param_pkt != param) {
-      panda->set_safety_model(mode, param);
-    }
-  } else
-  // END ODYSSEY PARKED DIAGNOSTICS
   if (should_close_relay && (health.safety_mode_pkt != (uint8_t)(cereal::CarParams::SafetyModel::NO_OUTPUT))) {
     panda->set_safety_model(cereal::CarParams::SafetyModel::NO_OUTPUT);
   }
@@ -416,13 +390,6 @@ void pandad_run(Panda *panda) {
       if (sm.updated("deviceState")) {
         is_onroad = sm["deviceState"].getDeviceState().getStarted();
       }
-      // BEGIN ODYSSEY PARKED DIAGNOSTICS
-      static Params diagnostic_params;
-      if (diagnostic_params.getBool("OdysseyRadarTest")) {
-        is_onroad = false;
-        engaged = false;
-      }
-      // END ODYSSEY PARKED DIAGNOSTICS
       process_panda_state(panda, &pm, engaged, is_onroad, spoofing_started);
       panda_safety.configureSafetyMode(is_onroad);
     }

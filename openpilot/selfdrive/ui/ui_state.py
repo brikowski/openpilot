@@ -390,10 +390,6 @@ class Device:
       timeout_enabled=ui_state.screen_timeout_enabled,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
-    # BEGIN ODYSSEY PARKED DIAGNOSTICS
-    if not ui_state.started and ui_state.params.get_bool("OdysseyRadarTest"):
-      awake, timeout_edge = True, False
-    # END ODYSSEY PARKED DIAGNOSTICS
     if timeout_edge:
       for callback in self._interactive_timeout_callbacks:
         callback()
