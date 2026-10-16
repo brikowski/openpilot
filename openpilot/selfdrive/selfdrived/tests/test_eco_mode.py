@@ -45,4 +45,27 @@ def test_live_eco_setting_reaches_published_state(monkeypatch, tmp_path, longitu
     daemon.publish_selfdriveState(car.CarState.new_message())
     message = daemon.pm.send.call_args.args[1]
     assert message.selfdriveState.ecoMode == (selected and longitudinal and not passive)
-    assert message.selfdriveState.personality == 1
+    assert message.selfdriveState.personality == (2 if selected else 1)
+
+
+def test_distance_button_saves_each_mode_independently(monkeypatch, tmp_path):
+  daemon = SelfdriveD.__new__(SelfdriveD)
+  daemon.params = Params(str(tmp_path))
+  daemon.CP = car.CarParams.new_message(openpilotLongitudinalControl=True)
+  daemon.events = Events()
+  assert daemon.params.get('EcoLongitudinalPersonality', return_default=True) == 2
+  daemon.params.put('LongitudinalPersonality', 0, block=True)
+  monkeypatch.setattr(daemon.params, 'put', lambda key, value: Params.put(daemon.params, key, value, block=True))
+  CS = car.CarState.new_message()
+  CS.buttonEvents = [{'type': 'gapAdjustCruise', 'pressed': False}]
+
+  for eco, initial, changed in ((True, 2, 1), (False, 0, 2), (True, 1, 0), (False, 2, 1)):
+    daemon.params.put_bool('EcoModeEnabled', eco, block=True)
+    done = threading.Event()
+    monkeypatch.setattr('openpilot.selfdrive.selfdrived.selfdrived.time.sleep', lambda _, done=done: done.set())
+    daemon.params_thread(done)
+    assert daemon.personality == initial
+    daemon._update_personality(CS)
+    assert daemon.personality == changed
+    key = 'EcoLongitudinalPersonality' if eco else 'LongitudinalPersonality'
+    assert daemon.params.get(key) == changed

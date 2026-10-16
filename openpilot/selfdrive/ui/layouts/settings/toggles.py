@@ -6,6 +6,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.layouts.settings.initial_cruise_speed import InitialCruiseSpeedControl
+from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -22,7 +23,7 @@ DESCRIPTIONS = {
     "your steering wheel distance button."
   ),
   "EcoModeEnabled": tr_noop("Use gentler acceleration when returning to your set speed. " +
-                            "Your selected following distance and requested braking are preserved."),
+                            "Defaults to the farthest following distance, with a separate saved driving personality. Requested braking is preserved."),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
     "without a turn signal activated while driving over 31 mph (50 km/h)."
@@ -105,7 +106,7 @@ class TogglesLayout(Widget):
       buttons=[lambda: tr("Aggressive"), lambda: tr("Standard"), lambda: tr("Relaxed")],
       button_width=255,
       callback=self._set_longitudinal_personality,
-      selected_index=self._params.get("LongitudinalPersonality", return_default=True),
+      selected_index=self._params.get(get_longitudinal_personality_param(self._params.get_bool("EcoModeEnabled")), return_default=True),
       icon="speed_limit.png"
     )
 
@@ -172,6 +173,7 @@ class TogglesLayout(Widget):
   def _update_toggles(self):
     ui_state.update_params()
     self._initial_cruise_speed.action_item.refresh()
+    self._refresh_personality()
 
     if ui_state.CP is not None:
       self._long_personality_setting.action_item.set_enabled(ui_state.has_longitudinal_control)
@@ -193,9 +195,16 @@ class TogglesLayout(Widget):
     self._params.put_bool(param, state, block=True)
     if param == "IsMetric":
       self._initial_cruise_speed.action_item.refresh()
+    if param == "EcoModeEnabled":
+      self._refresh_personality()
 
     if self._toggle_defs[param][3]:
       self._params.put_bool("OnroadCycleRequested", True, block=True)
 
   def _set_longitudinal_personality(self, button_index: int):
-    self._params.put("LongitudinalPersonality", button_index, block=True)
+    key = get_longitudinal_personality_param(self._params.get_bool("EcoModeEnabled"))
+    self._params.put(key, button_index, block=True)
+
+  def _refresh_personality(self):
+    key = get_longitudinal_personality_param(self._params.get_bool("EcoModeEnabled"))
+    self._long_personality_setting.action_item.set_selected_button(self._params.get(key, return_default=True))

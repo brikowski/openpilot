@@ -17,6 +17,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
 
 from openpilot.selfdrive.car.car_events import CarEvents
+from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
@@ -124,7 +125,7 @@ class SelfdriveD:
     self.events_prev = []
     self.logged_comm_issue = None
     self.not_running_prev = None
-    self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+    self.personality = self.params.get(get_longitudinal_personality_param(self.eco_mode), return_default=True)
     self.recalibrating_seen = False
     self.dm_lockout_set = False
     self.dm_uncertain_alerted = False
@@ -455,11 +456,14 @@ class SelfdriveD:
       if self.sm['modelV2'].frameDropPerc > 1 and not big_model_settling:
         self.events.add(EventName.modeldLagging)
 
-    # Decrement personality on distance button press
+    self._update_personality(CS)
+
+  def _update_personality(self, CS):
+    # Decrement the selected mode's personality on distance button press.
     if self.CP.openpilotLongitudinalControl:
       if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents):
         self.personality = (self.personality - 1) % 3
-        self.params.put('LongitudinalPersonality', self.personality)
+        self.params.put(get_longitudinal_personality_param(self.eco_mode), self.personality)
         self.events.add(EventName.personalityChanged)
 
   def data_sample(self):
@@ -570,7 +574,7 @@ class SelfdriveD:
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       self.eco_mode = self.params.get_bool("EcoModeEnabled")
-      self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+      self.personality = self.params.get(get_longitudinal_personality_param(self.eco_mode), return_default=True)
       time.sleep(0.1)
 
   def run(self):

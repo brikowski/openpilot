@@ -35,6 +35,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"DisengageOnAccelerator", {PERSISTENT, BOOL, "0"}},
     {"DongleId", {PERSISTENT, STRING}},
     {"EcoModeEnabled", {PERSISTENT, BOOL, "0"}},
+    {"EcoLongitudinalPersonality", {PERSISTENT, INT, std::to_string(static_cast<int>(cereal::LongitudinalPersonality::RELAXED))}},
     {"DoReboot", {CLEAR_ON_MANAGER_START, BOOL}},
     {"DoShutdown", {CLEAR_ON_MANAGER_START, BOOL}},
     {"DoUninstall", {CLEAR_ON_MANAGER_START, BOOL}},

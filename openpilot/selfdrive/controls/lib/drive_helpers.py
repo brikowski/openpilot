@@ -13,6 +13,10 @@ MAX_LATERAL_JERK = 5.0  # m/s^3
 MAX_LATERAL_ACCEL_NO_ROLL = 3.0  # m/s^2
 
 
+def get_longitudinal_personality_param(eco_mode: bool) -> str:
+  return 'EcoLongitudinalPersonality' if eco_mode else 'LongitudinalPersonality'
+
+
 def should_stop(v_ego: float, a_target: float) -> bool:
   return bool(v_ego < 0.3 and a_target < 0.1)
 
