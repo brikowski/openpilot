@@ -824,6 +824,7 @@ struct SelfdriveState {
   # configurable driving settings
   experimentalMode @10 :Bool;
   personality @11 :LongitudinalPersonality;
+  ecoMode @14 :Bool;
 
   enum AudibleAlert {
     none @0;

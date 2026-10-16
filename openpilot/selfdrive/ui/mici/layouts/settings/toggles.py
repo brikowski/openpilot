@@ -47,6 +47,10 @@ class TogglesLayoutMici(NavScroller):
                                                                "Use the steering wheel distance button on supported cars.")
     self._initial_cruise_speed = InitialCruiseSpeedButton()
     self._initial_cruise_speed.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control and not ui_state.CP.pcmCruise)
+    eco_mode = BigParamControl("eco mode", "EcoModeEnabled",
+                               description="Use gentler acceleration when returning to your set speed.\n" +
+                                           "Keep your selected following distance and requested braking.")
+    eco_mode.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control)
     is_metric_toggle = BigParamControl("use metric units", "IsMetric", toggle_callback=self._initial_cruise_speed.refresh)
     screen_timeout = BigParamControl("screen timeout", "ScreenTimeoutEnabled",
                                      description="Turn off the screen after 15 seconds of inactivity.\n" +
@@ -70,6 +74,7 @@ class TogglesLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._personality_toggle,
       self._initial_cruise_speed,
+      eco_mode,
       is_metric_toggle,
       screen_timeout,
       ldw_toggle,
@@ -82,6 +87,7 @@ class TogglesLayoutMici(NavScroller):
     # Toggle lists
     self._refresh_toggles = (
       ("IsMetric", is_metric_toggle),
+      ("EcoModeEnabled", eco_mode),
       ("ScreenTimeoutEnabled", screen_timeout),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),

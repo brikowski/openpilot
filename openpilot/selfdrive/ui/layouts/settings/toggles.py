@@ -21,6 +21,8 @@ DESCRIPTIONS = {
     "In relaxed mode openpilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with " +
     "your steering wheel distance button."
   ),
+  "EcoModeEnabled": tr_noop("Use gentler acceleration when returning to your set speed. " +
+                            "Your selected following distance and requested braking are preserved."),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
     "without a turn signal activated while driving over 31 mph (50 km/h)."
@@ -51,6 +53,12 @@ class TogglesLayout(Widget):
         lambda: tr("Disengage on Accelerator Pedal"),
         DESCRIPTIONS["DisengageOnAccelerator"],
         "disengage_on_accelerator.png",
+        False,
+      ),
+      "EcoModeEnabled": (
+        lambda: tr("Eco Mode"),
+        DESCRIPTIONS["EcoModeEnabled"],
+        "speed_limit.png",
         False,
       ),
       "IsLdwEnabled": (
@@ -137,6 +145,8 @@ class TogglesLayout(Widget):
         self._locked_toggles.add(param)
 
       self._toggles[param] = toggle
+      if param == "EcoModeEnabled":
+        toggle.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control)
 
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":

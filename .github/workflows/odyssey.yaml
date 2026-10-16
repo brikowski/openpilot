@@ -60,6 +60,7 @@ jobs:
             openpilot/selfdrive/car/tests/test_cruise_speed.py \
             openpilot/selfdrive/controls/tests/test_controlsd.py \
             openpilot/selfdrive/controls/tests/test_longitudinal_planner.py \
+            openpilot/selfdrive/selfdrived/tests/test_eco_mode.py \
             openpilot/selfdrive/locationd/test/test_torqued.py \
             openpilot/selfdrive/ui/tests/test_display_wake.py \
             openpilot/selfdrive/ui/tests/test_lead_bar.py \

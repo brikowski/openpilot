@@ -15,7 +15,7 @@ class Plant:
   messaging_initialized = False
 
   def __init__(self, lead_relevancy=False, speed=0.0, distance_lead=2.0,
-               enabled=True, only_lead2=False, only_radar=False, e2e=False, personality=0, force_decel=False):
+               enabled=True, only_lead2=False, only_radar=False, e2e=False, personality=0, force_decel=False, eco=False):
     self.rate = 1. / DT_MDL
 
     if not Plant.messaging_initialized:
@@ -40,6 +40,7 @@ class Plant:
     self.only_lead2 = only_lead2
     self.only_radar = only_radar
     self.e2e = e2e
+    self.eco = eco
     self.personality = personality
     self.force_decel = force_decel
 
@@ -119,6 +120,7 @@ class Plant:
 
     control.controlsState.longControlState = LongCtrlState.pid if self.enabled else LongCtrlState.off
     ss.selfdriveState.experimentalMode = self.e2e
+    ss.selfdriveState.ecoMode = self.eco
     ss.selfdriveState.personality = self.personality
     control.controlsState.forceDecel = self.force_decel
     car_state.carState.vEgo = float(self.speed)
