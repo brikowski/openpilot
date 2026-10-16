@@ -208,7 +208,11 @@ class Capture:
       if self.params.get_bool(STOP) or now >= self.deadline:
         raise TestStopped("Stopped while waiting for parked vehicle")
       error = control_error(self.sm, now) or parked_error(self.cp, now)
-      ready = not ignition_off(self.sm, now) and not error
+      off = ignition_off(self.sm, now)
+      message = "Turn ignition ON. Stay in Park with parking brake set." if off else (error or "Confirming parked vehicle...")
+      if self.status_value["message"] != message:
+        self.status("ignition_on", message)
+      ready = not off and not error
       ready_since = (ready_since or now) if ready else None
       if ready_since is not None and now - ready_since >= 2:
         break

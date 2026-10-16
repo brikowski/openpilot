@@ -185,7 +185,8 @@ def test_complete_capture_uses_real_uds_and_flow_control(monkeypatch, first_repl
   def recv():
     clock.now += 0.1
     capture.sm = state(clock.now, ignition=capture.status_value.get("phase") != "ignition_off")
-    capture.cp, _ = vehicle(clock.now)
+    changes = {"SCM_FEEDBACK": {"PARKING_BRAKE_ON": 0}} if capture.status_value.get("phase") == "ignition_on" and clock.now < 106.5 else None
+    capture.cp, _ = vehicle(clock.now, changes)
     return [pending.pop(0)] if pending else []
 
   def send(raw):
@@ -215,6 +216,7 @@ def test_complete_capture_uses_real_uds_and_flow_control(monkeypatch, first_repl
   assert len([e for e in events if e.get("data_hex") == b"hardware-or-software".hex()]) == expected_replies
   assert len([e for e in events if e.get("error")]) == 6 - expected_replies
   assert events[-1]["phase"] == "complete"
+  assert any(e["message"] == "Set the parking brake" for e in events)
   assert capture.params.get_bool(rt.ACTIVE), "Completion must not restart Alpha Long with ignition on"
   capture.params.put_bool(rt.STOP, True)
   with pytest.raises(rt.TestStopped):
@@ -227,12 +229,24 @@ def test_capture_preserves_original_can_and_panda_timestamps(tmp_path):
   capture = rt.Capture(params, tmp_path)
   _, frames = vehicle(time.monotonic())
   raw = rt.can_list_to_can_capnp(frames)
+  sm = state()
+  sm.services = list(sm)
+  sm.updated = dict.fromkeys(sm.services, True)
+  sm.update = lambda timeout: None
+  capture.sm = sm
   with pytest.MonkeyPatch.context() as patch:
     patch.setattr(messaging, "drain_sock_raw", lambda *args, **kwargs: [raw])
     assert capture.can_recv() == frames
   capture.log.close()
   capture.events.close()
-  assert bz2.decompress((tmp_path / "traffic.rlog.bz2").read_bytes()) == raw
+  data = bz2.decompress((tmp_path / "traffic.rlog.bz2").read_bytes())
+  assert data.startswith(raw)
+  events = list(log.Event.read_multiple_bytes(data))
+  assert len(events) == 4
+  for event in events[1:]:
+    assert event.logMonoTime == int(100e9) and event.valid
+    if event.which() == "pandaStates":
+      assert event.pandaStates[0].to_dict() == sm["pandaStates"][0].to_dict()
   assert rt.parked_error(capture.cp, time.monotonic()) is None
 
 
@@ -317,9 +331,15 @@ def test_ui_keeps_status_and_stop_visible(monkeypatch, tmp_path):
   monkeypatch.setattr(ui.gui_app, "texture", lambda *a, **kw: rl.Texture())
   item = ui.OdysseyRadarTestItem()
   item._set_description_visible = Mock()
+  item.get_item_height = Mock(return_value=420)
   item._update_state()
   item._set_description_visible.assert_called_once_with(True)
   assert "Recording baseline" in item.description
+  assert item.rect.height == 420
+  params.put(rt.STATUS, {"message": "Longer status after a guard change", "monotonic": time.monotonic()})
+  item.get_item_height.return_value = 520
+  item._update_state()
+  assert "Longer status" in item.description and item.rect.height == 520
   assert item.action_item.enabled and item.action_item.text == "STOP"
   params.put("CarParamsPersistent", b"invalid")
   assert item.is_visible, "Stop must remain reachable if saved identification is lost"

@@ -5,7 +5,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog, alert_dialog
-from openpilot.system.ui.widgets.list_view import ButtonAction, ListItem
+from openpilot.system.ui.widgets.list_view import ButtonAction, ListItem, ITEM_PADDING
 from openpilot.tools.odyssey.radar_test import ACTIVE, STOP, STATUS, supported, start_allowed, request_start
 
 
@@ -42,6 +42,7 @@ class OdysseyRadarTestItem(ListItem):
     super()._update_state()
     # Keep instructions and live status visible without requiring another tap.
     self._set_description_visible(True)
+    self._rect.height = self.get_item_height(self._font, int(self._rect.width - 2 * ITEM_PADDING))
 
   def _handle_mouse_release(self, mouse_pos):
     pass
