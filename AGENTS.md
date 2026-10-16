@@ -6,7 +6,9 @@ and invariants; private route history and derivations belong in the Proton Drive
 ## Project objective
 
 Make the Odyssey follow `carControl`'s lateral and longitudinal commands as accurately and
-smoothly as its Honda actuators allow. Keep production changes minimal relative to current
+smoothly as its Honda actuators allow in Standard and ECON modes. Treat ECON as native vehicle
+behavior; account for it only where observed response requires it, without duplicating its response
+or affecting Standard mode with ECON-specific logic. Keep production changes minimal relative to current
 `commaai/openpilot` and its pinned `commaai/opendbc`.
 
 Prefer the simplest appropriate behavior that directly responds to the commanded and observed

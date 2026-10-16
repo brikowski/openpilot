@@ -22,7 +22,6 @@ class Maneuver:
     self.ensure_slowdown = kwargs.get("ensure_slowdown", False)
     self.enabled = kwargs.get("enabled", True)
     self.e2e = kwargs.get("e2e", False)
-    self.eco = kwargs.get("eco", False)
     self.personality = kwargs.get("personality", 0)
     self.force_decel = kwargs.get("force_decel", False)
 
@@ -38,7 +37,6 @@ class Maneuver:
       only_lead2=self.only_lead2,
       only_radar=self.only_radar,
       e2e=self.e2e,
-      eco=self.eco,
       personality=self.personality,
       force_decel=self.force_decel,
     )

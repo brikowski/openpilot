@@ -1,18 +1,20 @@
-# Optional Eco mode
+# Factory ECON and following preference
 
 On the Bosch Odyssey, the car's ECON button selects Eco Mode while OpenPilot controls longitudinal
 motion. There is no OpenPilot Eco setting. Eco stays off until a validated factory status is received.
-It uses the existing speed-dependent cruise acceleration envelope for speed recovery, including
-model-based driving. It introduces no new tuning constants.
+Factory ECON adds no OpenPilot acceleration cap. Its effect on Honda hardware remains native.
 
-Eco defaults to Relaxed, the farthest following distance. Its driving personality is saved separately
-from normal mode and can be changed in settings or with the steering-wheel distance button.
-Turning Eco off restores the normal-mode preference.
+Each ECON activation starts Relaxed, the farthest following distance. Turning ECON off selects
+Standard, the middle following distance. Settings and the steering-wheel distance button can change
+the selected profile until the next mode switch.
 
-The planner still considers lead and model braking and stop requests. Stopping control,
-lateral control, Honda CAN translation and safety limits retain their existing
-behavior. `carControl` remains authoritative at the Honda controller. Mode changes use the existing
-cruise acceleration slew; turning Eco off restores the normal envelope.
+A validated ECON change clears the temporary Honda gas-feedback and coast-response history.
+Gas feedback keeps its output slew while rebuilding from current response.
+Steering, camera calibration and vehicle-parameter learners keep their existing qualification rules
+and stored calibration. No separate ECON gas map or permanent acceleration tune is learned.
+
+Lead and model braking and stop requests, lateral control, CAN encoding and safety limits retain
+their existing behavior. `carControl` remains authoritative at the Honda controller.
 
 The selected mode is published as `selfdriveState.ecoMode` for replay, settings and attribution.
 With Eco disabled, the existing planner calculations are unchanged.

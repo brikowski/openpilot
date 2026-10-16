@@ -582,9 +582,10 @@ class SelfdriveD:
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       eco_mode = self.factory_eco_mode
       personality_param = get_longitudinal_personality_param(eco_mode)
-      if eco_mode and not self.eco_mode:
-        # Each ECON activation starts relaxed; distance-button changes last for this Eco session.
-        self.params.put(personality_param, self.params.get_default_value(personality_param), block=True)
+      if eco_mode != self.eco_mode:
+        # Mode changes start Relaxed in ECON and Standard otherwise; live adjustments remain available.
+        personality = log.LongitudinalPersonality.relaxed if eco_mode else log.LongitudinalPersonality.standard
+        self.params.put(personality_param, personality, block=True)
       self.eco_mode, self.personality = eco_mode, self.params.get(personality_param, return_default=True)
       time.sleep(0.1)
 

@@ -66,7 +66,7 @@ def test_distance_button_saves_each_mode_independently(daemon, monkeypatch):
   CS = car.CarState.new_message(canValid=True, ecoModeValid=True)
   CS.buttonEvents = [{'type': 'gapAdjustCruise', 'pressed': False}]
 
-  for eco, initial, changed in ((True, 2, 1), (False, 0, 2), (True, 2, 1), (False, 2, 1)):
+  for eco, initial, changed in ((True, 2, 1), (False, 1, 0), (True, 2, 1), (False, 1, 0)):
     CS.ecoMode = eco
     daemon._update_eco_mode(CS)
     poll_params(daemon, monkeypatch)
@@ -84,7 +84,7 @@ def test_eco_entry_starts_relaxed_after_closer_selection(daemon, monkeypatch):
   CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=True)
   CS.buttonEvents = [{'type': 'gapAdjustCruise', 'pressed': False}]
 
-  for _ in range(2):
+  for activation in range(2):
     daemon._update_eco_mode(CS)
     poll_params(daemon, monkeypatch)
     daemon.pm.send.reset_mock()
@@ -93,7 +93,7 @@ def test_eco_entry_starts_relaxed_after_closer_selection(daemon, monkeypatch):
     assert message.ecoMode is True
     assert message.personality == 2
     assert daemon.params.get('EcoLongitudinalPersonality') == 2
-    assert daemon.params.get('LongitudinalPersonality') == 0
+    assert daemon.params.get('LongitudinalPersonality') == (0 if activation == 0 else 1)
 
     # A live adjustment survives repeated ECON frames and parameter polling.
     daemon._update_personality(CS)
@@ -104,7 +104,8 @@ def test_eco_entry_starts_relaxed_after_closer_selection(daemon, monkeypatch):
     CS.ecoMode = False
     daemon._update_eco_mode(CS)
     poll_params(daemon, monkeypatch)
-    assert daemon.personality == 0
+    assert daemon.personality == 1
+    assert daemon.params.get('LongitudinalPersonality') == 1
     assert daemon.params.get('EcoLongitudinalPersonality') == 1
     CS.ecoMode = True
 
@@ -149,4 +150,4 @@ def test_mode_switch_waits_for_matching_following_preference(daemon, monkeypatch
   daemon.publish_selfdriveState(car.CarState.new_message())
   applied = daemon.pm.send.call_args.args[1].selfdriveState
   assert applied.ecoMode == (not previous_eco)
-  assert applied.personality == (0 if previous_eco else 2)
+  assert applied.personality == (1 if previous_eco else 2)
