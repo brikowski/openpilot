@@ -62,11 +62,11 @@ def test_factory_state_selects_matching_published_preference(daemon, monkeypatch
 def test_distance_button_saves_each_mode_independently(daemon, monkeypatch):
   assert daemon.params.get('EcoLongitudinalPersonality', return_default=True) == 2
   daemon.params.put('LongitudinalPersonality', 0, block=True)
-  monkeypatch.setattr(daemon.params, 'put', lambda key, value: Params.put(daemon.params, key, value, block=True))
+  monkeypatch.setattr(daemon.params, 'put', lambda key, value, **kwargs: Params.put(daemon.params, key, value, block=True))
   CS = car.CarState.new_message(canValid=True, ecoModeValid=True)
   CS.buttonEvents = [{'type': 'gapAdjustCruise', 'pressed': False}]
 
-  for eco, initial, changed in ((True, 2, 1), (False, 0, 2), (True, 1, 0), (False, 2, 1)):
+  for eco, initial, changed in ((True, 2, 1), (False, 0, 2), (True, 2, 1), (False, 2, 1)):
     CS.ecoMode = eco
     daemon._update_eco_mode(CS)
     poll_params(daemon, monkeypatch)
@@ -75,6 +75,38 @@ def test_distance_button_saves_each_mode_independently(daemon, monkeypatch):
     assert daemon.personality == changed
     key = 'EcoLongitudinalPersonality' if eco else 'LongitudinalPersonality'
     assert daemon.params.get(key) == changed
+
+
+def test_eco_entry_starts_relaxed_after_closer_selection(daemon, monkeypatch):
+  daemon.params.put('EcoLongitudinalPersonality', 0, block=True)
+  daemon.params.put('LongitudinalPersonality', 0, block=True)
+  monkeypatch.setattr(daemon.params, 'put', lambda key, value, **kwargs: Params.put(daemon.params, key, value, block=True))
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=True)
+  CS.buttonEvents = [{'type': 'gapAdjustCruise', 'pressed': False}]
+
+  for _ in range(2):
+    daemon._update_eco_mode(CS)
+    poll_params(daemon, monkeypatch)
+    daemon.pm.send.reset_mock()
+    daemon.publish_selfdriveState(CS)
+    message = daemon.pm.send.call_args_list[0].args[1].selfdriveState
+    assert message.ecoMode is True
+    assert message.personality == 2
+    assert daemon.params.get('EcoLongitudinalPersonality') == 2
+    assert daemon.params.get('LongitudinalPersonality') == 0
+
+    # A live adjustment survives repeated ECON frames and parameter polling.
+    daemon._update_personality(CS)
+    daemon._update_eco_mode(CS)
+    poll_params(daemon, monkeypatch)
+    assert daemon.personality == 1
+
+    CS.ecoMode = False
+    daemon._update_eco_mode(CS)
+    poll_params(daemon, monkeypatch)
+    assert daemon.personality == 0
+    assert daemon.params.get('EcoLongitudinalPersonality') == 1
+    CS.ecoMode = True
 
 
 def test_factory_selection_runs_in_existing_step(daemon):
