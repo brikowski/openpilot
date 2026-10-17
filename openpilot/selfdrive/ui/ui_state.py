@@ -374,6 +374,10 @@ class Device:
         ss = sm['selfdriveState']
         alert = (ss.alertSize.raw, ss.alertStatus.raw, ss.alertText1, ss.alertText2) if ss.alertSize.raw else None
         enabled = ss.enabled
+      lead_present = (sm.alive['radarState'] and sm.valid['radarState'] and
+                      sm.recv_frame['radarState'] >= ui_state.started_frame and
+                      (sm['radarState'].leadOne.present or sm['radarState'].leadTwo.present))
+      keep_awake = keep_awake and (alert is not None or lead_present)
     else:
       now = time.monotonic()
       if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:

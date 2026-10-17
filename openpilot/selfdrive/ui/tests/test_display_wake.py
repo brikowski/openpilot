@@ -27,7 +27,7 @@ def test_onroad_timeout_touch_and_alert_wake():
   assert step(policy, 48.1, alert=notification) == (False, True)
 
 
-def test_continuous_cruise_hold_and_full_timeout_after_release():
+def test_continuous_activity_hold_and_full_timeout_after_release():
   policy = DisplayWakePolicy()
   for now in (0, 15, 31, 100):
     assert step(policy, now, keep_awake=True) == (True, False)
@@ -74,12 +74,13 @@ def display(monkeypatch, tmp_path):
   from openpilot.selfdrive.ui import ui_state as module
 
   class SubMaster(dict):
-    alive = {'carState': True, 'selfdriveState': True}
-    valid = {'carState': True, 'selfdriveState': True}
-    recv_frame = {'carState': 100, 'selfdriveState': 100}
+    alive = {'carState': True, 'selfdriveState': True, 'radarState': True}
+    valid = {'carState': True, 'selfdriveState': True, 'radarState': True}
+    recv_frame = {'carState': 100, 'selfdriveState': 100, 'radarState': 100}
 
   sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False)),
-                selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0)))
+                selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0)),
+                radarState=SimpleNamespace(leadOne=SimpleNamespace(present=False), leadTwo=SimpleNamespace(present=False)))
   state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, sm=sm)
   monkeypatch.setattr(module, 'ui_state', state)
   monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[]))
@@ -93,7 +94,7 @@ def display(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize('cruise,alpha,engaged',
                          [(c, a, e) for c in (False, True) for a in (False, True) for e in (False, True)])
-def test_display_uses_cruise_and_alpha_long(display, cruise, alpha, engaged):
+def test_cruise_without_lead_or_popup_still_times_out(display, cruise, alpha, engaged):
   state, device, now = display
   state.sm['carState'].cruiseState.enabled = cruise
   state.sm['selfdriveState'].enabled = engaged
@@ -101,7 +102,71 @@ def test_display_uses_cruise_and_alpha_long(display, cruise, alpha, engaged):
   device._update_wakefulness()
   now[0] = 15.1
   device._update_wakefulness()
+  assert not device.awake
+
+
+@pytest.mark.parametrize('lead', ['leadOne', 'leadTwo'])
+@pytest.mark.parametrize('cruise,alpha', [(c, a) for c in (False, True) for a in (False, True)])
+def test_lead_holds_alpha_cruise_display_and_restarts_timeout_after_loss(display, lead, cruise, alpha):
+  state, device, now = display
+  state.sm['carState'].cruiseState.enabled = cruise
+  state.alpha_long_enabled = alpha
+  selected = getattr(state.sm['radarState'], lead)
+  selected.present = True
+  device._update_wakefulness()
+  now[0] = 30
+  device._update_wakefulness()
   assert device.awake == (cruise and alpha)
+  if not (cruise and alpha):
+    return
+  selected.present = False
+  now[0] = 31
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 46
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 46.1
+  device._update_wakefulness()
+  assert not device.awake
+  selected.present = True
+  now[0] = 47
+  device._update_wakefulness()
+  assert device.awake
+
+
+def test_popup_and_lead_must_both_clear_before_alpha_cruise_timeout(display):
+  state, device, now = display
+  state.sm['carState'].cruiseState.enabled = True
+  state.alpha_long_enabled = True
+  state.sm['radarState'].leadOne.present = True
+  ss = state.sm['selfdriveState']
+  ss.alertSize.raw = 1
+  ss.alertStatus = SimpleNamespace(raw=0)
+  ss.alertText1, ss.alertText2 = 'Notification', ''
+  for timestamp in (0, 15, 60):
+    now[0] = timestamp
+    device._update_wakefulness()
+    assert device.awake
+  state.sm['radarState'].leadOne.present = False
+  now[0] = 61
+  device._update_wakefulness()
+  now[0] = 90
+  device._update_wakefulness()
+  assert device.awake
+  ss.alertSize.raw = 0
+  now[0] = 91
+  device._update_wakefulness()
+  now[0] = 106
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 106.1
+  device._update_wakefulness()
+  assert not device.awake
+  ss.alertSize.raw = 1
+  now[0] = 107
+  device._update_wakefulness()
+  assert device.awake
 
 
 @pytest.mark.parametrize('unreliable', ['stale', 'invalid', 'previous_drive'])
@@ -109,6 +174,7 @@ def test_unreliable_cruise_state_releases_display_hold(display, unreliable):
   state, device, now = display
   state.sm['carState'].cruiseState.enabled = True
   state.alpha_long_enabled = True
+  state.sm['radarState'].leadOne.present = True
   device._update_wakefulness()
   now[0] = 30
   device._update_wakefulness()
@@ -119,6 +185,29 @@ def test_unreliable_cruise_state_releases_display_hold(display, unreliable):
     state.sm.valid['carState'] = False
   else:
     state.sm.recv_frame['carState'] = state.started_frame - 1
+  now[0] = 31
+  device._update_wakefulness()
+  now[0] = 46.1
+  device._update_wakefulness()
+  assert not device.awake
+
+
+@pytest.mark.parametrize('unreliable', ['stale', 'invalid', 'previous_drive'])
+def test_unreliable_lead_cannot_hold_alpha_cruise_display(display, unreliable):
+  state, device, now = display
+  state.sm['carState'].cruiseState.enabled = True
+  state.alpha_long_enabled = True
+  state.sm['radarState'].leadOne.present = True
+  device._update_wakefulness()
+  now[0] = 30
+  device._update_wakefulness()
+  assert device.awake
+  if unreliable == 'stale':
+    state.sm.alive['radarState'] = False
+  elif unreliable == 'invalid':
+    state.sm.valid['radarState'] = False
+  else:
+    state.sm.recv_frame['radarState'] = state.started_frame - 1
   now[0] = 31
   device._update_wakefulness()
   now[0] = 46.1
