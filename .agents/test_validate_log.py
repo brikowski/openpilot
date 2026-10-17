@@ -764,6 +764,7 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
   "2f0623e73d37", "656df65f7f86", "74e0c83a689f", "8b7f8d14ce22", "b01b03f0460a", "164b2fdae22d",
   "b3435c9b0471", "6d4b34f86ae9", "471679b1bbf5", "20d94ad68231", "ad0758964f2e", "9c7a2ed886b2", "22a330576690",
   "4fa53fdd874e", "7a656c446285", "3167c9873773",
+  "dac4f6604220", "53b97cd6a85b", "d1c39963637d",
 }))
 def test_raw_road_brake_revision_keeps_fallback_and_creep_translation(revision):
   request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3, -.15, -.1, -.05])
@@ -777,7 +778,8 @@ def test_raw_road_brake_revision_keeps_fallback_and_creep_translation(revision):
                                                                         "2f0623e73d37", "656df65f7f86", "74e0c83a689f", "8b7f8d14ce22", "b01b03f0460a",
                                                                         "164b2fdae22d", "b3435c9b0471", "6d4b34f86ae9", "471679b1bbf5",
                                                                         "20d94ad68231", "ad0758964f2e", "9c7a2ed886b2", "22a330576690",
-                                                                        "4fa53fdd874e", "7a656c446285", "3167c9873773")
+                                                                        "4fa53fdd874e", "7a656c446285", "3167c9873773",
+                                                                        "dac4f6604220", "53b97cd6a85b", "d1c39963637d")
                       else [-.275, -.1416666667, -.0916666667])
     np.testing.assert_allclose(expected, [-3.5, -.5, -.15, -.05, 0., .1, 2., -.55, -.3, *creep_expected])
     np.testing.assert_array_equal(eligible, [False] * 7 + [True, False, True, True, True])
@@ -1911,6 +1913,55 @@ def test_lateral_metrics_reports_command_output_and_safety_telemetry():
   assert np.isclose(metrics["lat_model_rms"], 0.2)
   assert metrics["steering_override_events"] == 1
   assert metrics["steer_fault_events"] == 1
+
+
+@pytest.mark.parametrize('flag_index,expected', [(0, 0), (50, 1), (70, 0)])
+@pytest.mark.parametrize('fault_field', ['steerFaultTemporary', 'steerFaultPermanent'])
+def test_fault_published_after_disengagement_is_not_an_active_steering_fault(monkeypatch, flag_index, expected, fault_field):
+  from openpilot.cereal import log
+
+  messages = []
+  observed = {}
+  following = validate_log._following
+
+  def inspect_pedals(*args, **kwargs):
+    observed['pedals'] = args[7:9]
+    return following(*args, **kwargs)
+
+  monkeypatch.setattr(validate_log, '_following', inspect_pedals)
+  for i in range(120):
+    timestamp = 1_000_000_000 + i * 10_000_000
+    cc = log.Event.new_message(logMonoTime=timestamp)
+    control = cc.init('carControl')
+    active = i <= 70 and not (flag_index == 0 and i == 1)
+    control.latActive = active
+    control.actuators.torque = .5
+    co = log.Event.new_message(logMonoTime=timestamp)
+    output = co.init('carOutput').actuatorsOutput
+    output.torque, output.torqueOutputCan = .5, 1280
+    cs = log.Event.new_message(logMonoTime=timestamp + 4_000_000)
+    state = cs.init('carState')
+    state.vEgo = 25.
+    # State changes arrive after this cycle's command. A later fault cannot overlap it.
+    flagged = i == flag_index
+    state.steeringPressed = state.gasPressed = state.brakePressed = flagged
+    setattr(state, fault_field, flagged)
+    ctl = log.Event.new_message(logMonoTime=timestamp + 4_000_000)
+    torque = ctl.init('controlsState').lateralControlState.init('torqueState')
+    torque.active = active
+    torque.actualLateralAccel = torque.desiredLateralAccel = 1.
+    torque.saturated = flagged
+    plan = log.Event.new_message(logMonoTime=timestamp)
+    plan.init('longitudinalPlan')
+    messages.extend((cc, co, cs, ctl, plan))
+  messages.sort(key=lambda m: m.logMonoTime)
+  metrics = validate_log.analyze(messages, ODYSSEY, alpha_longitudinal=True)
+  assert metrics['steer_fault_events'] == expected
+  assert metrics['steer_fault_frames'] == expected
+  assert metrics['steering_override_events'] == expected
+  assert metrics['lat_saturated_frac'] == pytest.approx(expected / (71 - int(flag_index == 0)))
+  for pressed in observed['pedals']:
+    np.testing.assert_array_equal(pressed[flag_index:flag_index + 3], [False, True, False])
 
 
 def test_lateral_metrics_reports_high_authority_openpilot_following():

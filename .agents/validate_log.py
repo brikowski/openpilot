@@ -190,8 +190,8 @@ ODYSSEY_BRAKE_GRADE_GAIN = 0.3  # Source-matched historical brake calibration.
 DOMAIN_WIND_SPEED_BP = [0.0, 13.4, 22.4, 31.3, 40.2]
 DOMAIN_WIND_BRAKE_V = [0.000, 0.049, 0.136, 0.267, 0.441]
 THREE_DOMAIN_ROAD_BRAKE_ENTRY = -0.30  # MUST track the current ODYSSEY_ROAD_BRAKE_ENTRY.
-# These descendants retain the -0.30 fallback entry, grade-translated ACCEL_COMMAND,
-# and response-qualified active-brake release. Some also qualify earlier entry from coast.
+# These descendants retain the -0.30 fallback entry and response-qualified brake release.
+# ACCEL_COMMAND translation is revision-specific; some also qualify entry from coast.
 # Keep source-matched brake diagnostics enabled for each SHA.
 REQUEST_BOUNDED_BRAKE_GRADE_COMMITS = {
   "6a5578d12c15", "6410ed017553", "b45dbbe7c061", "67068dfcbc88",
@@ -203,6 +203,8 @@ MILD_CREEP_BRAKE_COMMITS = {
   # These descendants retain raw road braking and mild-creep translation.
   "b3435c9b0471", "6d4b34f86ae9", "471679b1bbf5", "20d94ad68231", "ad0758964f2e", "9c7a2ed886b2", "22a330576690",
   "4fa53fdd874e", "7a656c446285", "3167c9873773",
+  # Gas-feedback retention and factory-ECON descendants keep this brake translation and fallback.
+  "dac4f6604220", "53b97cd6a85b", "d1c39963637d",
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
@@ -1049,6 +1051,12 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   grid = t_cc
   def onto(t, v):
     return np.interp(grid, t, v) if len(t) else np.full_like(grid, np.nan)
+
+  def held(t, v):
+    sampled = _hold_last(grid, t, v)
+    if len(t):
+      sampled[grid < t[0]] = np.nan
+    return sampled
   aego = onto(t_cs, cs_aego)
   vego = onto(t_cs, cs_vego)
   wire = onto(t_co, co_accel)
@@ -1060,11 +1068,12 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   lat_output_can = onto(t_co, co_lat_torque_can)
   steering_angle = onto(t_cs, cs_steering_angle)
   steering_rate = onto(t_cs, cs_steering_rate)
-  steering_pressed = onto(t_cs, cs_steering_pressed) > 0.5
-  steer_fault_temp = onto(t_cs, cs_steer_fault_temp) > 0.5
-  steer_fault_perm = onto(t_cs, cs_steer_fault_perm) > 0.5
-  ctl_active = onto(t_ctl, ctl_lat_active) > 0.5
-  saturated = onto(t_ctl, ctl_saturated) > 0.5
+  # Published flags are discrete; blending can move faults before disengagement.
+  steering_pressed = held(t_cs, cs_steering_pressed) > 0.5
+  steer_fault_temp = held(t_cs, cs_steer_fault_temp) > 0.5
+  steer_fault_perm = held(t_cs, cs_steer_fault_perm) > 0.5
+  ctl_active = held(t_ctl, ctl_lat_active) > 0.5
+  saturated = held(t_ctl, ctl_saturated) > 0.5
   actual_lat_accel = onto(t_ctl, ctl_actual_lat_accel)
   desired_lat_accel = onto(t_ctl, ctl_desired_lat_accel)
   # A newly published plan may not have reached controlsd; use its recorded input reference.
@@ -1072,8 +1081,8 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   cruise_plan = consumed_plan(grid, t_ctl, ctl_plan_reference, t_lp, lp_cruise) > 0.5
   allow_throttle = consumed_plan(grid, t_ctl, ctl_plan_reference, t_lp, lp_allow_throttle) > 0.5
   has_lead = consumed_plan(grid, t_ctl, ctl_plan_reference, t_lp, lp_has_lead) > 0.5
-  gaspressed = onto(t_cs, cs_gaspressed) > 0.5
-  brakepressed = onto(t_cs, cs_brakepressed) > 0.5
+  gaspressed = held(t_cs, cs_gaspressed) > 0.5
+  brakepressed = held(t_cs, cs_brakepressed) > 0.5
   dt = float(np.median(np.diff(grid))) if len(grid) > 1 else 0.01
 
   if platform == ODYSSEY and not r["qlog_fallback"] and alpha_longitudinal is True:
