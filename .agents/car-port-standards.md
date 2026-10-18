@@ -142,19 +142,12 @@ active safety rails.
   learner or gas-map gain is added. This selection does not activate friction braking, alter
   `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
-- The Odyssey steering trial preserves the ordinary physical seed feedforward by
-  rescaling the torque tune and slew together. The torque learner fits normalized output;
-  changing its scale can change fitted gains, friction and physical bucket coverage. Compare the
-  actually consumed parameters rather than assuming the learned map is unchanged.
-  Torque-cache identity includes Honda's steering route. Discard incompatible or unassociated
-  caches so they cannot return after the previous-route metadata advances.
-  Extra counts start only for persistent,
-  same-direction curvature under-response at 15–33 m/s while lateral control is active and
-  unoverridden. Once qualified, authority follows the continuing upstream torque request through
-  tracking convergence and speed changes. Falling demand, a direction change, or ineligible vehicle state closes the
-  gate. The existing 3840-count limit and physical slew limit remain.
-  `carOutput` reports the bounded controller command. The gate is not evidence
-  that the EPS accepts extra torque or that road tracking improves.
+- The Odyssey uses the stock 2560-count steering range, seed factor 0.9, friction 0.2 and
+  Honda's ordinary steering rate limiter. `carOutput` reports actual emitted counts and their
+  normalized value; inactive output is zero. Torque-cache identity includes the seed configuration
+  and Honda's steering route. Discard incompatible or unassociated caches so they cannot return
+  after the previous-route metadata advances. Output fidelity does not prove EPS acceptance or
+  closed-loop tracking benefit.
 - Read `values.py`, `hondacan.py`, the DBC, and `safety/modes/honda.h` together before changing a
   rail or signal. Numeric command fidelity is incomplete if the active domain bits disagree.
 

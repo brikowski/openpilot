@@ -41,6 +41,25 @@ class TestTorqued(OpenpilotTestCase):
     assert len(estimator.filtered_points) == 0
     assert estimator.filtered_params['latAccelFactor'].x == changed.lateralTuning.torque.latAccelFactor
 
+  def test_odyssey_stock_range_rejects_trial_normalization_cache(self):
+    current = HondaInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)
+    previous = current.as_reader().as_builder()
+    previous.lateralTuning.torque.latAccelFactor = 1.35
+    previous.lateralTuning.torque.friction = .2 / 1.5
+    self.cache_params(previous)
+    params = Params()
+    unrelated = ('CalibrationParams', 'LiveParametersV2', 'LiveDelay')
+    for key in unrelated:
+      params.put(key, b'preserved', block=True)
+
+    estimator = TorqueEstimator(current)
+    assert len(estimator.filtered_points) == 0
+    assert estimator.filtered_params['latAccelFactor'].x == current.lateralTuning.torque.latAccelFactor
+    assert estimator.filtered_params['frictionCoefficient'].x == current.lateralTuning.torque.friction
+    assert params.get('LiveTorqueParameters') is None
+    for key in unrelated:
+      assert params.get(key) == b'preserved'
+
   def test_honda_steering_path_change_discards_cached_params(self):
     for previous_alpha in (False, True):
       with self.subTest(previous_alpha=previous_alpha):

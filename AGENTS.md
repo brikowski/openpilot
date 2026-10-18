@@ -85,13 +85,11 @@ This is independent of the Panda `alternativeExperience` AEB-forwarding flag and
 guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the radar ECU is
 disabled.
 
-The stock Odyssey lateral reference uses the `[0, 2560]` LKA map, `latAccelFactor 0.9`, and
-`steerActuatorDelay 0.15`. The steering-authority trial rescales the seed torque tune and
-slew to preserve ordinary seed feedforward while conditionally exposing a 3840-count ceiling.
-The speed range qualifies entry; a continuing request retains qualified authority through speed changes. The
-torque learner's fit and physical bucket coverage depend on normalization; seed preservation does
-not prove that the learned map is unchanged. See
-[`.agents/car-port-standards.md`](.agents/car-port-standards.md). Its road benefit remains unpromoted.
+The Odyssey uses the stock `[0, 2560]` LKA map, `latAccelFactor 0.9`, `friction 0.2`, and
+`steerActuatorDelay 0.15`, with Honda's ordinary steering rate limiter. `carOutput` reports the
+emitted counts normalized by 2560, including zero while inactive. The torque learner's fit and
+physical bucket coverage depend on normalization; incompatible torque-configuration or steering-route
+caches must not be restored. See [`.agents/car-port-standards.md`](.agents/car-port-standards.md).
 
 `extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,
 steering response, overrides, and fault diagnostics. For full-rate Odyssey stock-radar routes,
