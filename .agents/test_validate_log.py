@@ -192,34 +192,81 @@ def test_direct_steering_decoder_uses_bus_one_sendcan_only():
   assert decoded[0, 3] == 2
 
 
-def test_steering_forwarding_matches_counter_and_measures_radar_extension():
-  t = np.arange(100, dtype=float) * 0.01
-  torque = np.concatenate((np.zeros(20), np.full(40, 2560.0), np.full(40, 3000.0)))
-  request = np.ones(100)
-  counter = np.arange(100) % 4
-  sent = np.column_stack((t, torque, request, counter))
-  forwarded_torque = torque.copy()
-  forwarded_torque[-40:] = 2800.0
-  received = np.column_stack((t + 0.02, forwarded_torque, request, counter))
-  # Same counter but outside the bounded transport window must not match a stale source frame.
-  received = np.vstack((received, [1.20, 100.0, 1.0, 0.0]))
-  state_t = np.arange(0.0, 1.3, 0.01)
-  state_count = len(state_t)
-
-  metrics = steering_forwarding_metrics(
-    sent, received, state_t, np.full(state_count, 25.0), np.zeros(state_count),
-    np.zeros(state_count), np.zeros(state_count),
-    min_speed=70.0 / 3.6, cap_command=2559, extended_command=2560,
-    settle_s=0.20, max_delay_s=0.10,
+def _forwarding_metrics(sent, received, state_t=None, pressed=None):
+  if state_t is None:
+    state_t = received[:, 0]
+  n = len(state_t)
+  return steering_forwarding_metrics(
+    sent, received, state_t, np.full(n, 25.0), np.zeros(n) if pressed is None else pressed,
+    np.zeros(n), np.zeros(n), min_speed=70.0 / 3.6, cap_command=2559,
+    extended_command=2560, settle_s=0.20, max_age_s=0.10,
   )
 
-  assert metrics["lat_radar_forward_matched_frames"] == 100
-  assert np.isclose(metrics["lat_radar_forward_delay_ms_median"], 20.0)
-  assert metrics["lat_radar_forward_source_max_abs"] == 3000.0
-  assert metrics["lat_radar_forward_output_max_abs"] == 2800.0
-  assert np.isclose(metrics["lat_radar_forward_extended_source_sec"], 0.40)
-  assert np.isclose(metrics["lat_radar_forward_extended_output_sec"], 0.40)
-  assert np.isclose(metrics["lat_radar_forward_extended_gain_median"], 2800.0 / 3000.0)
+
+def test_steering_forwarding_does_not_infer_latency_from_regenerated_counters():
+  t = np.arange(120) * 0.01
+  torque = np.r_[np.arange(20) * 100, np.full(40, 2560), np.full(60, 3000)]
+  sent = np.c_[t, torque, np.ones(len(t)), np.arange(len(t)) % 4]
+  # The gateway samples/holds values and advances an independent counter.
+  received = np.c_[t + .025, np.minimum(torque[np.arange(len(t)) // 2 * 2], 2800),
+                   np.ones(len(t)), (np.arange(len(t)) + 1) % 4]
+  metrics = _forwarding_metrics(sent, received)
+
+  assert metrics["lat_radar_forward_observed_frames"] == len(received)
+  assert metrics["lat_radar_forward_cap_stable_sec"] > .5
+  assert metrics["lat_radar_forward_source_max_abs"] == 3000
+  assert metrics["lat_radar_forward_output_max_abs"] == 2800
+  assert np.isclose(metrics["lat_radar_forward_extended_gain_median"], 2800 / 3000)
+  assert not any(k in metrics for k in ("lat_radar_forward_delay_ms_median",
+                                      "lat_radar_forward_delay_ms_p99", "lat_radar_forward_mae",
+                                      "lat_radar_forward_corr", "lat_radar_forward_matched_frames"))
+  received[:, 3] = 0
+  assert _forwarding_metrics(sent, received) == metrics
+
+
+def test_steering_forwarding_requires_settled_signed_command_and_fresh_support():
+  t = np.arange(100) * .01
+  sent = np.c_[t, np.full(len(t), 3000), np.ones(len(t)), np.arange(len(t)) % 4]
+  received = sent.copy()
+  metrics = _forwarding_metrics(sent, received)
+  assert metrics["lat_radar_forward_extended_source_sec"] > .7
+  assert metrics["lat_radar_forward_cap_exact_frac"] == 1
+  for field, values in ((1, np.where(np.arange(len(t)) % 2, -3000, 3000)),
+                        (1, 3000 + np.arange(len(t))), (2, np.arange(len(t)) % 2)):
+    changed = sent.copy()
+    changed[:, field] = values
+    assert _forwarding_metrics(changed, received)["lat_radar_forward_cap_stable_sec"] == 0
+
+  # Restart settling across a TX gap, and do not count stale TX or state as exposure.
+  gapped = np.delete(sent, np.arange(20, 90), axis=0)
+  assert _forwarding_metrics(gapped, received)["lat_radar_forward_cap_stable_sec"] == 0
+  stale = _forwarding_metrics(sent, received, state_t=np.array([0.]))
+  assert stale["lat_radar_forward_cap_stable_sec"] == 0
+  late = received.copy()
+  late[:, 0] += 2
+  assert _forwarding_metrics(sent, late)["lat_radar_forward_cap_stable_sec"] == 0
+  early = received.copy()
+  early[:, 0] -= 2
+  assert _forwarding_metrics(sent, early)["lat_radar_forward_observed_frames"] == 0
+  pressed = _forwarding_metrics(sent, received, pressed=np.ones(len(t)))
+  assert pressed["lat_radar_forward_cap_stable_sec"] == 0
+
+
+def test_steering_forwarding_retains_missing_request_and_received_gaps():
+  t = np.arange(100) * .01
+  sent = np.c_[t, np.full(len(t), 3000), np.ones(len(t)), np.arange(len(t)) % 4]
+  received = sent.copy()
+  received[:, 2] = 0
+  metrics = _forwarding_metrics(sent, received)
+  assert metrics["lat_radar_forward_stable_dropped_request_frames"] > 70
+  assert metrics["lat_radar_forward_extended_source_sec"] > .7
+  assert metrics["lat_radar_forward_extended_output_sec"] == 0
+  assert metrics["lat_radar_forward_extended_gain_median"] == 0
+  assert metrics["lat_radar_forward_cap_exact_frac"] == 0
+
+  # Sparse received samples must not turn an unobserved gap into sustained exposure.
+  sparse = sent[[0, 50, 51, 52, 99]]
+  assert _forwarding_metrics(sent, sparse)["lat_radar_forward_cap_stable_sec"] < .1
 
 
 def test_domain_achieved_following_separates_gas_and_brake_response():

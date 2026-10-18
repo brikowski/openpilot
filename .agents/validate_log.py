@@ -1105,7 +1105,7 @@ def analyze(msgs, platform, alpha_longitudinal=None):
     cap_command=ODYSSEY_STOCK_LKA_MAX - 1,
     extended_command=ODYSSEY_STOCK_LKA_MAX,
     settle_s=0.20,
-    max_delay_s=0.10,
+    max_age_s=0.10,
   ))
 
   r.update(lateral_metrics(
@@ -1872,23 +1872,19 @@ def verdicts(r):
         f"active max {direct_max}; "
         + (f"exact {r['lat_direct_exact_frac'] * 100.0:.2f}%, "
            f"MAE {r['lat_direct_mae']:.3f} counts" if paired else "no bounded output pairs"))
-  if r.get("lat_radar_forward_matched_frames"):
-    corr = r.get("lat_radar_forward_corr")
-    mae = r.get("lat_radar_forward_mae")
+  if r.get("lat_radar_forward_observed_frames"):
     cap_sec = r.get("lat_radar_forward_cap_stable_sec") or 0.0
     cap_gain = r.get("lat_radar_forward_cap_gain_median")
     source_extended = r.get("lat_radar_forward_extended_source_sec") or 0.0
     output_extended = r.get("lat_radar_forward_extended_output_sec") or 0.0
-    add("lateral radar forwarding (diagnostic)", True,
-        f"{r['lat_radar_forward_matched_frames']} counter-matched frames, median delay "
-        f"{r['lat_radar_forward_delay_ms_median']:.1f} ms; active MAE "
-        f"{mae:.1f} counts, corr {corr:.4f}; clean controller/radar max "
-        f"{r['lat_radar_forward_source_max_abs']:.0f}/{r['lat_radar_forward_output_max_abs']:.0f}; "
-        f"stable >=2559 {cap_sec:.2f}s, median gain "
-        f"{cap_gain:.3f}; >2560 controller/radar {source_extended:.2f}/{output_extended:.2f}s"
-        if mae is not None and corr is not None and cap_gain is not None else
-        f"{r['lat_radar_forward_matched_frames']} counter-matched frames; insufficient clean "
-        "high-command exposure for forwarding gain")
+    detail = f"{r['lat_radar_forward_observed_frames']} fresh ZOH observations; "
+    if cap_gain is not None:
+      detail += (f"constant command >=2559 {cap_sec:.2f}s, median gain {cap_gain:.3f}; "
+                 f">2560 controller/radar {source_extended:.2f}/{output_extended:.2f}s; ")
+    else:
+      detail += "insufficient constant high-command exposure for forwarding gain; "
+    detail += f"{r['lat_radar_forward_stable_dropped_request_frames']} settled request drops"
+    add("lateral radar forwarding (diagnostic)", True, detail)
   if r.get("lat_model_rms") is not None:
     add("lateral model tracking (diagnostic)", True,
         f"actual-desired lateral accel RMS {r['lat_model_rms']:.3f}, "

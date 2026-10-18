@@ -206,19 +206,17 @@ def steering_direct_metrics(sent, output_t, output_torque_can, *, stock_cap, max
 
 def steering_forwarding_metrics(sent, received, state_t, speed, steering_pressed,
                                 steer_fault_temp, steer_fault_perm, *, min_speed,
-                                cap_command, extended_command, settle_s, max_delay_s):
-  """Compare camera/radar-bus steering sends with the radar-forwarded powertrain-bus frames.
+                                cap_command, extended_command, settle_s, max_age_s):
+  """Compare sustained bus-0 commands with observed bus-1 steering output.
 
-  Honda's two-bit counter repeats every four frames, so each received frame is matched to the
-  latest earlier sent frame with the same counter and a bounded transport delay. The caller passes
-  decoded ``[time, torque, request, counter]`` arrays and native car-state arrays; this function
-  remains independent from route I/O and DBC parsing for mutation-tested attribution.
+  The gateway can hold payloads while advancing its own counter. Counter equality therefore
+  cannot establish a source frame or transport delay. ZOH aligns fresh observations; gain is
+  measured only after the signed source command and request have remained constant. This
+  does not measure dynamic forwarding fidelity, EPS acceptance, or vehicle response.
   """
   keys = (
-    "lat_radar_forward_matched_frames", "lat_radar_forward_active_frames",
-    "lat_radar_forward_clean_frames", "lat_radar_forward_dropped_request_frames",
-    "lat_radar_forward_delay_ms_median", "lat_radar_forward_delay_ms_p99",
-    "lat_radar_forward_mae", "lat_radar_forward_corr",
+    "lat_radar_forward_observed_frames", "lat_radar_forward_clean_frames",
+    "lat_radar_forward_stable_dropped_request_frames",
     "lat_radar_forward_source_max_abs", "lat_radar_forward_output_max_abs",
     "lat_radar_forward_cap_stable_sec", "lat_radar_forward_cap_gain_median",
     "lat_radar_forward_cap_exact_frac", "lat_radar_forward_extended_source_sec",
@@ -234,76 +232,55 @@ def steering_forwarding_metrics(sent, received, state_t, speed, steering_pressed
   if not len(sent) or not len(received) or not len(state_t):
     return out
 
-  source_rows = []
-  received_rows = []
-  for counter in np.unique(received[:, 3]):
-    sent_idx = np.flatnonzero(sent[:, 3] == counter)
-    recv_idx = np.flatnonzero(received[:, 3] == counter)
-    if not len(sent_idx) or not len(recv_idx):
-      continue
-    source_pos = np.searchsorted(sent[sent_idx, 0], received[recv_idx, 0], side="right") - 1
-    valid = source_pos >= 0
-    source_idx = sent_idx[np.clip(source_pos, 0, len(sent_idx) - 1)]
-    delay = received[recv_idx, 0] - sent[source_idx, 0]
-    valid &= (delay >= 0.0) & (delay <= max_delay_s)
-    source_rows.extend(source_idx[valid])
-    received_rows.extend(recv_idx[valid])
-
-  if not source_rows:
-    return out
-  source_rows = np.asarray(source_rows, dtype=int)
-  received_rows = np.asarray(received_rows, dtype=int)
-  order = np.argsort(received[received_rows, 0])
-  source = sent[source_rows[order]]
-  forwarded = received[received_rows[order]]
-  delay = forwarded[:, 0] - source[:, 0]
-
-  state_idx = np.searchsorted(state_t, forwarded[:, 0], side="right") - 1
-  state_valid = state_idx >= 0
-  state_idx = np.clip(state_idx, 0, len(state_t) - 1)
+  source_idx = np.searchsorted(sent[:, 0], received[:, 0], side="right") - 1
+  source = sent[np.maximum(source_idx, 0)]
+  age = received[:, 0] - source[:, 0]
+  source_valid = (source_idx >= 0) & (age >= 0) & (age <= max_age_s)
+  state_idx = np.searchsorted(state_t, received[:, 0], side="right") - 1
+  state_age = received[:, 0] - state_t[np.maximum(state_idx, 0)]
+  state_valid = (state_idx >= 0) & (state_age >= 0) & (state_age <= max_age_s)
+  state_idx = np.maximum(state_idx, 0)
   speed = np.asarray(speed, dtype=float)[state_idx]
   steering_pressed = np.asarray(steering_pressed, dtype=bool)[state_idx]
   steer_fault_temp = np.asarray(steer_fault_temp, dtype=bool)[state_idx]
   steer_fault_perm = np.asarray(steer_fault_perm, dtype=bool)[state_idx]
 
   source_request = source[:, 2] > 0.5
-  forwarded_request = forwarded[:, 2] > 0.5
-  active = source_request & forwarded_request
-  clean = (active & state_valid & (speed >= min_speed) & ~steering_pressed &
+  forwarded_request = received[:, 2] > 0.5
+  observed = source_valid & state_valid
+  clean = (observed & source_request & (speed >= min_speed) & ~steering_pressed &
            ~steer_fault_temp & ~steer_fault_perm)
-  dropped = source_request & ~forwarded_request
   source_torque = source[:, 1]
-  forwarded_torque = forwarded[:, 1]
+  forwarded_torque = np.where(forwarded_request, received[:, 1], 0.0)
   out.update({
-    "lat_radar_forward_matched_frames": int(len(source)),
-    "lat_radar_forward_active_frames": int(active.sum()),
+    "lat_radar_forward_observed_frames": int(observed.sum()),
     "lat_radar_forward_clean_frames": int(clean.sum()),
-    "lat_radar_forward_dropped_request_frames": int(dropped.sum()),
-    "lat_radar_forward_delay_ms_median": float(np.median(delay) * 1e3),
-    "lat_radar_forward_delay_ms_p99": float(np.percentile(delay, 99) * 1e3),
     "lat_radar_forward_source_max_abs": float(np.max(np.abs(source_torque[clean]))) if clean.any() else None,
     "lat_radar_forward_output_max_abs": float(np.max(np.abs(forwarded_torque[clean]))) if clean.any() else None,
   })
-  if active.sum() > 1:
-    out["lat_radar_forward_mae"] = float(np.mean(np.abs(source_torque[active] - forwarded_torque[active])))
-    if np.std(source_torque[active]) > 0.0 and np.std(forwarded_torque[active]) > 0.0:
-      out["lat_radar_forward_corr"] = float(np.corrcoef(source_torque[active], forwarded_torque[active])[0, 1])
-
-  dt = float(np.median(np.diff(forwarded[:, 0]))) if len(forwarded) > 1 else 0.01
-  high = clean & (np.abs(source_torque) >= cap_command)
-  stable_high = after_grace(high, dt, settle_s)
+  changed = np.r_[True, np.any(sent[1:, 1:3] != sent[:-1, 1:3], axis=1) |
+                  (np.diff(sent[:, 0]) > max_age_s)]
+  run_start = np.maximum.accumulate(np.where(changed, sent[:, 0], -np.inf))
+  stable = clean & (source[:, 0] - run_start[np.maximum(source_idx, 0)] >= settle_s)
+  out["lat_radar_forward_stable_dropped_request_frames"] = int(np.sum(stable & ~forwarded_request))
+  gaps = np.diff(received[:, 0])
+  valid_gaps = gaps[(gaps > 0) & (gaps <= max_age_s)]
+  dt = float(np.median(valid_gaps)) if len(valid_gaps) else 0.0
+  duration = np.minimum(np.r_[gaps, dt], dt)
+  stable_high = stable & (np.abs(source_torque) >= cap_command)
   if stable_high.any():
     gain = np.abs(forwarded_torque[stable_high]) / np.maximum(np.abs(source_torque[stable_high]), 1.0)
-    out["lat_radar_forward_cap_stable_sec"] = float(stable_high.sum() * dt)
+    out["lat_radar_forward_cap_stable_sec"] = float(duration[stable_high].sum())
     out["lat_radar_forward_cap_gain_median"] = float(np.median(gain))
-    out["lat_radar_forward_cap_exact_frac"] = float(np.mean(source_torque[stable_high] == forwarded_torque[stable_high]))
+    out["lat_radar_forward_cap_exact_frac"] = float(np.mean(
+      forwarded_request[stable_high] & (source_torque[stable_high] == forwarded_torque[stable_high])))
   else:
     out["lat_radar_forward_cap_stable_sec"] = 0.0
 
-  extended = clean & (np.abs(source_torque) > extended_command)
+  extended = stable & (np.abs(source_torque) > extended_command)
   extended_output = extended & (np.abs(forwarded_torque) > extended_command)
-  out["lat_radar_forward_extended_source_sec"] = float(extended.sum() * dt)
-  out["lat_radar_forward_extended_output_sec"] = float(extended_output.sum() * dt)
+  out["lat_radar_forward_extended_source_sec"] = float(duration[extended].sum())
+  out["lat_radar_forward_extended_output_sec"] = float(duration[extended_output].sum())
   if extended.any():
     gain = np.abs(forwarded_torque[extended]) / np.maximum(np.abs(source_torque[extended]), 1.0)
     out["lat_radar_forward_extended_gain_median"] = float(np.median(gain))

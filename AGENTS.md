@@ -95,8 +95,9 @@ not prove that the learned map is unchanged. See
 
 `extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,
 steering response, overrides, and fault diagnostics. For full-rate Odyssey stock-radar routes,
-`validate_log.py` also counter-matches bus-0 `sendcan` to the physical bus-1 steering frame, so radar
-forwarding or attenuation is measured separately from the controller's map. On Alpha Long routes,
+`validate_log.py` compares sustained bus-0 `sendcan` commands with physical bus-1 steering output.
+The radar can hold payloads while advancing its own counter, so counter equality does not prove
+dynamic forwarding fidelity or transport delay. On Alpha Long routes,
 the controller instead sends steering directly on bus 1; compare that `sendcan` to same-cycle
 `carOutput`, not to the stock-radar forwarding path. Neither TX comparison proves EPS acceptance. These
 diagnostics do not by themselves prove lane tracking or closed-loop road behavior.
