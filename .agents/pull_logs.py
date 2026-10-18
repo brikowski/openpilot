@@ -8,6 +8,8 @@ Usage modes:
 
 SSH preserves private full-rate evidence that is not automatically available through hosted route
 sources. Qlogs are too decimated for transition and jerk metrics.
+Retained contiguous suffixes are usable when their transfer matches the device inventory;
+validation records their available segment extent rather than implying a whole drive.
 
 Device host comes from $COMMA_SSH or $ODYSSEY_DEVICE. Private rlogs and the
 ledger are found under the active Proton Drive folder in ~/Library/CloudStorage.
@@ -16,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -119,18 +122,36 @@ def _local_rlog_count(rid):
   return len(_local_segment_indices(rid))
 
 
-def _local_segments_contiguous(rid, expected_segments=None):
-  """Reject gaps before a local route is handed to validate_log."""
+def _remote_segment_indices(rid):
+  """Read currently retained rlogs, rather than assuming every route still starts at zero."""
+  pattern = shlex.quote(f"{REMOTE_ROOT}/{rid}--*/rlog.zst")
+  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} -printf '%h\\n'")
+  if result.returncode:
+    raise RuntimeError(result.stderr.strip() or "cannot read retained rlog inventory")
+  names = (Path(line).name for line in result.stdout.splitlines())
+  indices = sorted({int(name.rsplit("--", 1)[1]) for name in names
+                    if re.fullmatch(re.escape(rid) + r"--\d+", name)})
+  if not indices:
+    raise RuntimeError("no retained rlogs in remote inventory")
+  return indices
+
+
+def _local_segments_contiguous(rid, expected_segments=None, expected_indices=None):
+  """Reject transfer omissions and interior gaps; allow a verified retained suffix."""
   indices = _local_segment_indices(rid)
   if not indices:
     return False, "no complete rlog"
-  if indices[0] != 0:
+  if expected_indices is None and indices[0] != 0:
     return False, f"segment sequence starts at {indices[0]}, expected 0"
-  expected = list(range(indices[-1] + 1))
+  expected = list(range(indices[0], indices[-1] + 1))
   if indices != expected:
-    missing = [str(i) for i in range(indices[-1] + 1) if i not in set(indices)]
+    missing = [str(i) for i in expected if i not in set(indices)]
     preview = ",".join(missing[:8]) + (",..." if len(missing) > 8 else "")
     return False, f"non-contiguous local segments; missing {preview}"
+  if expected_indices is not None:
+    missing = sorted(set(expected_indices) - set(indices))
+    if missing:
+      return False, f"missing retained segment(s): {','.join(map(str, missing[:8]))}"
   if expected_segments is not None and len(indices) < expected_segments:
     return False, f"only {len(indices)}/{expected_segments} segments are complete"
   return True, ""
@@ -173,9 +194,16 @@ def pull(rid, expected_segments=None):
   for attempt in range(1, PULL_ATTEMPTS + 1):
     result = subprocess.run(cmd, capture_output=True, text=True)
     completed = _local_rlog_count(rid)
-    contiguous, completeness_detail = _local_segments_contiguous(rid, expected_segments)
+    try:
+      retained = _remote_segment_indices(rid)
+      contiguous, completeness_detail = _local_segments_contiguous(rid, expected_segments, retained)
+    except (RuntimeError, subprocess.TimeoutExpired) as e:
+      contiguous, completeness_detail = False, str(e)
     enough = contiguous and completed > 0
     if result.returncode == 0 and enough:
+      indices = _local_segment_indices(rid)
+      if indices[0] != 0:
+        print(f"  partial route: retained segments {indices[0]}–{indices[-1]}; initial segments unavailable")
       if attempt > 1:
         print(f"  pull recovered on attempt {attempt}/{PULL_ATTEMPTS}")
       return True

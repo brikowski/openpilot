@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pull_logs
@@ -53,6 +55,8 @@ def test_pull_retries_broken_pipe_with_partial_files_and_keepalives(monkeypatch,
   monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
   monkeypatch.setattr(pull_logs, "PULL_RETRY_DELAYS", (0, 0))
   monkeypatch.setattr(pull_logs.subprocess, "run", fake_run)
+  monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
+    [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/0000004c--bbbbbbbbbb--{i}" for i in range(2)), ""))
   monkeypatch.setattr(pull_logs.time, "sleep", lambda _: None)
 
   assert pull_logs.pull("0000004c--bbbbbbbbbb", expected_segments=2)
@@ -73,7 +77,8 @@ def test_pull_retries_broken_pipe_with_partial_files_and_keepalives(monkeypatch,
   assert errors[0]["expected_segments"] == 2
 
 
-def test_pull_rejects_noncontiguous_local_segments(monkeypatch, tmp_path):
+@pytest.mark.parametrize("retained", [(0, 1, 2), (0, 2)])
+def test_pull_rejects_noncontiguous_local_segments(monkeypatch, tmp_path, retained):
   route = "0000004c--bbbbbbbbbb"
   for segment in (0, 2):
     segment_dir = tmp_path / f"{route}--{segment}"
@@ -84,11 +89,77 @@ def test_pull_rejects_noncontiguous_local_segments(monkeypatch, tmp_path):
   monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
   monkeypatch.setattr(pull_logs.subprocess, "run",
                       lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
+  monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
+    [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/{route}--{i}" for i in retained), ""))
 
   assert not pull_logs.pull(route)
   errors = [json.loads(line) for line in pull_logs._pull_error_log().read_text().splitlines()]
   assert errors[-1]["completed_segments"] == 2
   assert "non-contiguous local segments" in errors[-1]["detail"]
+
+
+def test_pull_accepts_retained_suffix_only_after_matching_remote_files(monkeypatch, tmp_path, capsys):
+  route = "0000004c--bbbbbbbbbb"
+  for i in (4, 5, 6):
+    path = tmp_path / f"{route}--{i}"
+    path.mkdir()
+    (path / "rlog.zst").write_bytes(b"complete")
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
+  monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
+    [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/{route}--{i}" for i in (4, 5, 6)), ""))
+
+  assert pull_logs.pull(route, expected_segments=3)
+  assert "partial" in capsys.readouterr().out.lower()
+
+
+def test_pull_rejects_missing_retained_tail_even_when_the_count_matches(monkeypatch, tmp_path):
+  route = "0000004c--bbbbbbbbbb"
+  for i in (0, 1, 2):
+    path = tmp_path / f"{route}--{i}"
+    path.mkdir()
+    (path / "rlog.zst").write_bytes(b"complete")
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
+  monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
+    [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/{route}--{i}" for i in (1, 2, 3)), ""))
+
+  assert not pull_logs.pull(route, expected_segments=3)
+
+
+@pytest.mark.parametrize("first", [0, 4])
+@pytest.mark.parametrize("returncode", [0, 255])
+def test_pull_cannot_accept_local_files_without_remote_inventory(monkeypatch, tmp_path, first, returncode):
+  route = "0000004c--bbbbbbbbbb"
+  path = tmp_path / f"{route}--{first}"
+  path.mkdir()
+  (path / "rlog.zst").write_bytes(b"complete")
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
+  monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
+    [], returncode, "", "unreachable" if returncode else ""))
+
+  assert not pull_logs.pull(route, expected_segments=1)
+
+
+def test_pull_preserves_older_local_prefix_when_device_retains_a_suffix(monkeypatch, tmp_path, capsys):
+  route = "0000004c--bbbbbbbbbb"
+  for i in range(7):
+    path = tmp_path / f"{route}--{i}"
+    path.mkdir()
+    (path / "rlog.zst").write_bytes(b"complete")
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
+  monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
+    [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/{route}--{i}" for i in (4, 5, 6)), ""))
+
+  assert pull_logs.pull(route, expected_segments=3)
+  assert len(pull_logs._local_segment_indices(route)) == 7
+  assert "partial" not in capsys.readouterr().out.lower()
 
 
 def test_validate_uses_current_interpreter_without_refreshing_lock(monkeypatch):

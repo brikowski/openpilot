@@ -254,6 +254,21 @@ def test_local_segment_names_ignore_empty_interrupted_pull_directories(tmp_path)
   assert _local_segment_names(route, tmp_path) == [f"{route}--2", f"{route}--10"]
 
 
+@pytest.mark.parametrize(("indices", "first", "last", "missing"), [
+  ([4, 5, 6], 4, 6, []),
+  ([0, 1, 2], 0, 2, []),
+  ([0, 2], 0, 2, [1]),
+])
+def test_local_segment_coverage_preserves_leading_loss_and_interior_gaps(indices, first, last, missing):
+  from validate_log import _local_segment_coverage
+
+  names = [f"00000026--dddddddddd--{i}" for i in indices]
+  assert _local_segment_coverage(names) == {
+    "first": first, "last": last, "count": len(indices),
+    "starts_at_zero": first == 0, "missing_between": missing,
+  }
+
+
 def test_local_segment_names_reject_ambiguous_short_route(tmp_path):
   for route in ("00000029--eeeeeeeeee", "00000029--ffffffffff"):
     segment = tmp_path / f"{route}--0"

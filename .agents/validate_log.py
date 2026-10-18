@@ -2383,6 +2383,14 @@ def _local_segment_names(route, root=None):
   return names
 
 
+def _local_segment_coverage(names):
+  """Record the analyzed extent without implying that a retained suffix is a whole drive."""
+  indices = sorted({int(name.rsplit("--", 1)[-1]) for name in names})
+  return {"first": indices[0], "last": indices[-1], "count": len(indices),
+          "starts_at_zero": indices[0] == 0,
+          "missing_between": sorted(set(range(indices[0], indices[-1] + 1)) - set(indices))}
+
+
 def append_ledger(route, description, r, v):
   ts = datetime.now(UTC).strftime("%Y-%m-%d")
   row = {"date": ts, "route": route, "description": description or "",
@@ -2470,6 +2478,7 @@ def main():
   if not args.no_ledger:
     evidence_root()
 
+  segment_coverage = None
   if "/" in args.route or "|" in args.route:
     lr = LogReader(args.route)
   else:
@@ -2483,6 +2492,7 @@ def main():
       raise SystemExit(str(e)) from e
     if not segs:
       raise SystemExit(f"no local segments matching '{args.route}' under {rlog_root()}")
+    segment_coverage = _local_segment_coverage(segs)
     # RESOLVE the identifier to the full log id before it is ever used as a ledger key. A bare
     # prefix ("00000017") is a perfectly good way to name a local route, but _base_route's regex
     # needs the --hash, so an unresolved prefix falls through as a literal, misses the existing
@@ -2502,6 +2512,10 @@ def main():
   alpha_longitudinal = (bool(cp.openpilotLongitudinalControl)
                         if cp is not None and platform == ODYSSEY else None)
   r = analyze(msgs, platform, alpha_longitudinal)
+  r["local_segment_coverage"] = segment_coverage
+  if segment_coverage and (not segment_coverage["starts_at_zero"] or segment_coverage["missing_between"]):
+    r["notes"].append(f"PARTIAL route: segments {segment_coverage['first']}–{segment_coverage['last']}, "
+                      f"{segment_coverage['count']} available; metrics cover only recorded data.")
   v = verdicts(r)
 
   print(f"\n=== validate_log: {args.route}  [{platform}] ===")
