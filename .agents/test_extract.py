@@ -228,6 +228,34 @@ def test_extraction_cache_reuses_unchanged_logs_and_hides_metadata(cached_route)
   assert builds == [[0, 1], [0, 1]]
 
 
+@pytest.mark.parametrize('during_build', [False, True])
+def test_extraction_accepts_unchanged_content_after_metadata_updates(cached_route, monkeypatch, during_build):
+  root, route, builds = cached_route
+  path = root / f'{route}--1' / 'rlog.zst'
+
+  def metadata_update():
+    before = path.stat()
+    path.chmod(before.st_mode ^ 0o040)  # Metadata-only change; source bytes and modification time stay intact.
+    assert path.stat().st_mtime_ns == before.st_mtime_ns
+    assert path.read_text() == '1'
+
+  if during_build:
+    original = extract._build
+
+    def build(full):
+      result = original(full)
+      metadata_update()
+      return result
+
+    monkeypatch.setattr(extract, '_build', build)
+  else:
+    extract.load(route)
+    metadata_update()
+
+  np.testing.assert_array_equal(extract.load(route)['request'], [0., 1.])
+  assert builds == [[0, 1]]
+
+
 @pytest.mark.parametrize('change', ['append', 'remove', 'rename', 'replace_preserving_mtime'])
 def test_extraction_cache_rebuilds_when_route_logs_change(cached_route, change):
   root, route, builds = cached_route
@@ -273,6 +301,24 @@ def test_extraction_refuses_logs_changed_while_decoding(cached_route, monkeypatc
     return result
 
   monkeypatch.setattr(extract, '_build', growing)
+  with pytest.raises(RuntimeError, match='logs changed during extraction'):
+    extract.load(route)
+  assert not os.path.exists(os.path.join(extract.CACHE, f'{route}.v{extract.SCHEMA}.npz'))
+
+
+def test_extraction_refuses_replaced_content_while_decoding(cached_route, monkeypatch):
+  root, route, _ = cached_route
+  original = extract._build
+
+  def replacing(full):
+    result = original(full)
+    path = root / f'{route}--1' / 'rlog.zst'
+    before = path.stat()
+    path.write_text('9')
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    return result
+
+  monkeypatch.setattr(extract, '_build', replacing)
   with pytest.raises(RuntimeError, match='logs changed during extraction'):
     extract.load(route)
   assert not os.path.exists(os.path.join(extract.CACHE, f'{route}.v{extract.SCHEMA}.npz'))

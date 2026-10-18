@@ -5,8 +5,8 @@
     d = load("<private-route-id>")     # first call decodes; later calls hit the cache
     mph = d["vego"] * 2.23694
 
-The cache rebuilds when local log segments change. It is for exploration only; validate_log reads
-source logs independently. Continuous
+The cache follows source paths and contents; metadata-only File Provider updates do not invalidate it.
+It is for exploration only; validate_log reads source logs independently. Continuous
 state signals are interpolated onto carControl time; received CAN uses independently timestamped
 verified updates with zero-order hold and sample age. EPS torque remains raw counts, wheel-speed
 spread is m/s. can_long_accel has unqualified scale and reference frame on this Odyssey;
@@ -17,6 +17,7 @@ consumed_atarget/consumed_should_stop match the exact
 plan named by same-cycle controlsState; missing references remain NaN.
 """
 import argparse
+import hashlib
 import os
 import sys
 import numpy as np
@@ -94,8 +95,9 @@ def _segments(route):
 def _source_signature(paths):
   sources = []
   for path in paths:
-    stat = os.stat(path)
-    sources.append((path, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+    with open(path, 'rb') as logfile:
+      digest = hashlib.file_digest(logfile, 'sha256').hexdigest()
+    sources.append((path, digest))
   return np.asarray(sources, dtype=str)
 
 
