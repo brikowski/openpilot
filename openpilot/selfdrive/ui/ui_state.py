@@ -20,6 +20,7 @@ from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
 PARAM_UPDATE_TIME = 1 / 5.0
 OFFROAD_ALERT_POLL_INTERVAL = 1.0
+DISPLAY_FADE_DURATION = 0.5
 
 
 class UIStatus(Enum):
@@ -319,8 +320,8 @@ class Device:
   def update(self):
     self._start_brightness_thread()  # start thread after manager forks ui
 
-    self._update_brightness()
     self._update_wakefulness()
+    self._update_brightness()
 
   def _start_brightness_thread(self):
     if self._brightness_thread is None or not self._brightness_thread.is_alive():
@@ -353,7 +354,10 @@ class Device:
 
       clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [30, 100]))
 
-    brightness = round(self._brightness_filter.update(clipped_brightness))
+    brightness = self._brightness_filter.update(clipped_brightness)
+    if not PC:
+      brightness *= float(np.clip((self._wake_policy.deadline + DISPLAY_FADE_DURATION - time.monotonic()) / DISPLAY_FADE_DURATION, 0, 1))
+    brightness = round(brightness)
     if not self._awake:
       brightness = 0
 
@@ -363,6 +367,7 @@ class Device:
       self._last_brightness = brightness
 
   def _update_wakefulness(self):
+    now = time.monotonic()
     alert = None
     keep_awake = False
     enabled = None
@@ -379,7 +384,6 @@ class Device:
                       (sm['radarState'].leadOne.present or sm['radarState'].leadTwo.present))
       keep_awake = keep_awake and (alert is not None or lead_present)
     else:
-      now = time.monotonic()
       if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:
         self._offroad_alerts = {key for key in OFFROAD_ALERTS if ui_state.params.get(key)}
         if ui_state.params.get_bool('UpdateAvailable'):
@@ -387,14 +391,15 @@ class Device:
         self._offroad_alert_poll_time = now
 
     awake, timeout_edge = self._wake_policy.update(
-      time.monotonic(), self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
+      now, self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
       enabled=enabled, alert=alert, keep_awake=keep_awake,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
     if timeout_edge:
       for callback in self._interactive_timeout_callbacks:
         callback()
-    self._set_awake(awake)
+    # Keep rendering and panel power on until the backlight fade finishes.
+    self._set_awake(awake or now < self._wake_policy.deadline + DISPLAY_FADE_DURATION)
 
   def _set_awake(self, on: bool):
     if on != self._awake:
