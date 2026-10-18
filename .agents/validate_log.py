@@ -205,6 +205,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "4fa53fdd874e", "7a656c446285", "3167c9873773",
   # Gas-feedback retention and factory-ECON descendants keep this brake translation and fallback.
   "dac4f6604220", "53b97cd6a85b", "d1c39963637d", "de10bce71bfb",
+  "a0354a811793", "d51aac97c7b7",
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
