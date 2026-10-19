@@ -95,7 +95,9 @@ def main(argv=None):
     print(git(repo, 'diff', '--stat', parent, public))
     print(f'Public candidate {public} from {source}.')
     if args.publish:
-      git(repo, 'push', 'origin', f'{public}:refs/heads/ody-op')
+      # Model objects stay in upstream's LFS store; publish their existing pointers only.
+      git(repo, 'push', 'origin', f'{public}:refs/heads/ody-op',
+          env={**os.environ, 'GIT_LFS_SKIP_PUSH': '1'})
       print(f'Published {public}.')
     else:
       print('Preview only. Use --publish after reviewing this stable release.')

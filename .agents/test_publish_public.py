@@ -126,6 +126,43 @@ class TestPublicRelease(unittest.TestCase):
     self.assertEqual(self.git('rev-parse', f'{updated}^'), public)
     self.assertEqual(self.git('show', f'{updated}:car.py'), 'next vehicle change')
 
+  def test_publication_preserves_upstream_lfs_pointers_without_uploading(self):
+    pointer = ('version https://git-lfs.github.com/spec/v1\n'
+               'oid sha256:' + 'a' * 64 + '\nsize 12345\n')
+    self.write('models/driving.pkl', pointer)
+    self.git('add', 'models/driving.pkl')
+    self.git('commit', '-qm', 'upstream model pointer')
+    source = self.git('rev-parse', 'HEAD')
+    with tempfile.TemporaryDirectory() as remote:
+      subprocess.run(['git', 'init', '--bare', '-q', remote], check=True)
+      self.git('remote', 'add', 'origin', remote)
+      self.git('push', '-q', 'origin', f'{source}:refs/heads/ody-op-test', f'{self.parent}:refs/heads/ody-op')
+      self.git('config', 'core.hooksPath', '.git/hooks')
+      hook = self.repo / '.git/hooks/pre-push'
+      hook.write_text('#!/bin/sh\n'
+                      'echo visited >> .git/publish-hook-visits\n'
+                      'test "$GIT_LFS_SKIP_PUSH" = 1 || { echo "upstream LFS upload needs credentials" >&2; exit 1; }\n')
+      hook.chmod(0o755)
+      actual_git = mirror.git
+
+      def local_git(repo, *args, **kwargs):
+        if args[:2] == ('remote', 'get-url'):
+          return 'https://github.com/brikowski/openpilot.git'
+        return actual_git(repo, *args, **kwargs)
+
+      with patch.object(mirror, '__file__', str(self.repo / '.agents/publish_public.py')), \
+           patch.object(mirror, 'git', side_effect=local_git), \
+           patch.dict(mirror.os.environ, {'GIT_LFS_SKIP_PUSH': '0'}):
+        mirror.main(['--publish'])
+        self.assertEqual(mirror.os.environ['GIT_LFS_SKIP_PUSH'], '0')
+      public = self.git('ls-remote', 'origin', 'refs/heads/ody-op').split()[0]
+      self.assertNotEqual(public, self.parent)
+      self.assertEqual((self.repo / '.git/publish-hook-visits').read_text(), 'visited\n')
+      self.assertEqual(self.git('show', f'{public}:models/driving.pkl') + '\n', pointer)
+      self.assertEqual(self.git('rev-parse', f'{public}:opendbc_repo'), self.parent)
+      self.assertEqual(self.git('rev-parse', 'HEAD'), source)
+      self.assertEqual(self.git('status', '--porcelain'), '')
+
   def test_unpublished_development_source_cannot_release(self):
     with tempfile.TemporaryDirectory() as remote:
       subprocess.run(['git', 'init', '--bare', '-q', remote], check=True)
