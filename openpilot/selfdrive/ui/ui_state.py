@@ -20,6 +20,7 @@ from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
 PARAM_UPDATE_TIME = 1 / 5.0
 OFFROAD_ALERT_POLL_INTERVAL = 1.0
+DISPLAY_FADE_DURATION = 0.5
 
 
 class UIStatus(Enum):
@@ -67,6 +68,8 @@ class UIState:
         "selfdriveState",
         "longitudinalPlan",
         "gpsLocationExternal",
+        "gpsLocation",
+        "navInstruction",
         "carOutput",
         "carControl",
         "vehicleParameters",
@@ -88,7 +91,8 @@ class UIState:
     self.is_metric: bool = self.params.get_bool("IsMetric")
     self.is_release = self.params.get_bool("IsReleaseBranch")
     self.always_on_dm: bool = self.params.get_bool("AlwaysOnDM")
-    self.experimental_mode: bool = self.params.get_bool("ExperimentalMode")
+    self.navigation_enabled: bool = self.params.get_bool("NavigationEnabled")
+    self.nav_destination_set: bool = self.params.get("NavDestination") is not None
     self.chestnut_present: bool = False
     self.chestnut_compiled: bool = chestnut_compiled()
     self.chestnut_active: bool | None = None
@@ -106,7 +110,6 @@ class UIState:
     self.personality: log.LongitudinalPersonality = log.LongitudinalPersonality.standard
     self.has_longitudinal_control: bool = False
     self.alpha_long_enabled: bool = self.params.get_bool("AlphaLongitudinalEnabled")
-    self.screen_timeout_enabled: bool = self.params.get("ScreenTimeoutEnabled", return_default=True)
     self.is_body: bool | None = False
     self.CP: car.CarParams | None = None
     self.light_sensor: float = -1.0
@@ -241,7 +244,6 @@ class UIState:
     # For slower operations
     # Update longitudinal control state
     self.alpha_long_enabled = self.params.get_bool("AlphaLongitudinalEnabled")
-    self.screen_timeout_enabled = self.params.get("ScreenTimeoutEnabled", return_default=True)
     CP_bytes = self.params.get("CarParamsPersistent")
     if CP_bytes is not None:
       self.CP = messaging.log_from_bytes(CP_bytes, car.CarParams)
@@ -253,7 +255,8 @@ class UIState:
     self.recording_audio = self.params.get_bool("RecordAudio") and self.started
     self.is_metric = self.params.get_bool("IsMetric")
     self.always_on_dm = self.params.get_bool("AlwaysOnDM")
-    self.experimental_mode = self.params.get_bool("ExperimentalMode")
+    self.navigation_enabled = self.params.get_bool("NavigationEnabled")
+    self.nav_destination_set = self.params.get("NavDestination") is not None
     self.chestnut_active = self.params.get("ChestnutActive")
     self.chestnut_loading = self.params.get_bool("ChestnutLoading")
     self.chestnut_alert = any(self.params.get(k) is not None for k, a in OFFROAD_ALERTS.items() if k.startswith("Offroad_Chestnut") and a["severity"] >= 0)
@@ -317,8 +320,8 @@ class Device:
   def update(self):
     self._start_brightness_thread()  # start thread after manager forks ui
 
-    self._update_brightness()
     self._update_wakefulness()
+    self._update_brightness()
 
   def _start_brightness_thread(self):
     if self._brightness_thread is None or not self._brightness_thread.is_alive():
@@ -351,7 +354,10 @@ class Device:
 
       clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [30, 100]))
 
-    brightness = round(self._brightness_filter.update(clipped_brightness))
+    brightness = self._brightness_filter.update(clipped_brightness)
+    if not PC:
+      brightness *= float(np.clip((self._wake_policy.deadline + DISPLAY_FADE_DURATION - time.monotonic()) / DISPLAY_FADE_DURATION, 0, 1))
+    brightness = round(brightness)
     if not self._awake:
       brightness = 0
 
@@ -361,6 +367,7 @@ class Device:
       self._last_brightness = brightness
 
   def _update_wakefulness(self):
+    now = time.monotonic()
     alert = None
     keep_awake = False
     enabled = None
@@ -372,8 +379,11 @@ class Device:
         ss = sm['selfdriveState']
         alert = (ss.alertSize.raw, ss.alertStatus.raw, ss.alertText1, ss.alertText2) if ss.alertSize.raw else None
         enabled = ss.enabled
+      lead_present = (sm.alive['radarState'] and sm.valid['radarState'] and
+                      sm.recv_frame['radarState'] >= ui_state.started_frame and
+                      (sm['radarState'].leadOne.present or sm['radarState'].leadTwo.present))
+      keep_awake = keep_awake and (alert is not None or lead_present)
     else:
-      now = time.monotonic()
       if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:
         self._offroad_alerts = {key for key in OFFROAD_ALERTS if ui_state.params.get(key)}
         if ui_state.params.get_bool('UpdateAvailable'):
@@ -381,15 +391,15 @@ class Device:
         self._offroad_alert_poll_time = now
 
     awake, timeout_edge = self._wake_policy.update(
-      time.monotonic(), self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
+      now, self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
       enabled=enabled, alert=alert, keep_awake=keep_awake,
-      timeout_enabled=ui_state.screen_timeout_enabled,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
     if timeout_edge:
       for callback in self._interactive_timeout_callbacks:
         callback()
-    self._set_awake(awake)
+    # Keep rendering and panel power on until the backlight fade finishes.
+    self._set_awake(awake or now < self._wake_policy.deadline + DISPLAY_FADE_DURATION)
 
   def _set_awake(self, on: bool):
     if on != self._awake:

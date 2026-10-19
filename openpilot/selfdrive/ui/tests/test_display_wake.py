@@ -6,9 +6,9 @@ from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePoli
 
 
 def step(policy, now, *, ignition=True, started=True, enabled=False, alert=None, keep_awake=False,
-         timeout_enabled=True, touch=False, offroad_alerts=None):
+         touch=False, offroad_alerts=None):
   return policy.update(now, DISPLAY_TIMEOUT, ignition=ignition, started=started, enabled=enabled, alert=alert,
-                       keep_awake=keep_awake, timeout_enabled=timeout_enabled, touch=touch,
+                       keep_awake=keep_awake, touch=touch,
                        offroad_alerts=offroad_alerts, pc=False)
 
 
@@ -27,7 +27,7 @@ def test_onroad_timeout_touch_and_alert_wake():
   assert step(policy, 48.1, alert=notification) == (False, True)
 
 
-def test_continuous_cruise_hold_and_full_timeout_after_release():
+def test_continuous_activity_hold_and_full_timeout_after_release():
   policy = DisplayWakePolicy()
   for now in (0, 15, 31, 100):
     assert step(policy, now, keep_awake=True) == (True, False)
@@ -74,37 +74,100 @@ def display(monkeypatch, tmp_path):
   from openpilot.selfdrive.ui import ui_state as module
 
   class SubMaster(dict):
-    alive = {'carState': True, 'selfdriveState': True}
-    valid = {'carState': True, 'selfdriveState': True}
-    recv_frame = {'carState': 100, 'selfdriveState': 100}
+    alive = {'carState': True, 'selfdriveState': True, 'radarState': True}
+    valid = {'carState': True, 'selfdriveState': True, 'radarState': True}
+    recv_frame = {'carState': 100, 'selfdriveState': 100, 'radarState': 100}
 
   sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False)),
-                selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0)))
-  state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, experimental_mode=False,
-                          screen_timeout_enabled=True, started_frame=100, sm=sm)
+                selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0)),
+                radarState=SimpleNamespace(leadOne=SimpleNamespace(present=False), leadTwo=SimpleNamespace(present=False)))
+  state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, sm=sm,
+                          light_sensor=-1, params=SimpleNamespace(get=lambda _: None, get_bool=lambda _: False))
   monkeypatch.setattr(module, 'ui_state', state)
-  monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[]))
+  monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[], set_should_render=lambda _: None))
   monkeypatch.setattr(module, 'PC', False)
   device = module.Device()
-  monkeypatch.setattr(device, '_set_awake', lambda awake: setattr(device, '_awake', awake))
+  monkeypatch.setattr(module.HARDWARE, 'set_display_power', lambda _: None)
   now = [0.0]
   monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
   return state, device, now
 
 
-@pytest.mark.parametrize('cruise,alpha,experimental,engaged',
-                         [(c, a, x, e) for c in (False, True) for a in (False, True)
-                          for x in (False, True) for e in (False, True)])
-def test_display_uses_cruise_and_alpha_long(display, cruise, alpha, experimental, engaged):
+@pytest.mark.parametrize('cruise,alpha,engaged',
+                         [(c, a, e) for c in (False, True) for a in (False, True) for e in (False, True)])
+def test_cruise_without_lead_or_popup_still_times_out(display, cruise, alpha, engaged):
   state, device, now = display
   state.sm['carState'].cruiseState.enabled = cruise
   state.sm['selfdriveState'].enabled = engaged
   state.alpha_long_enabled = alpha
-  state.experimental_mode = experimental
   device._update_wakefulness()
-  now[0] = 15.1
+  now[0] = 15.6
+  device._update_wakefulness()
+  assert not device.awake
+
+
+@pytest.mark.parametrize('lead', ['leadOne', 'leadTwo'])
+@pytest.mark.parametrize('cruise,alpha', [(c, a) for c in (False, True) for a in (False, True)])
+def test_lead_holds_alpha_cruise_display_and_restarts_timeout_after_loss(display, lead, cruise, alpha):
+  state, device, now = display
+  state.sm['carState'].cruiseState.enabled = cruise
+  state.alpha_long_enabled = alpha
+  selected = getattr(state.sm['radarState'], lead)
+  selected.present = True
+  device._update_wakefulness()
+  now[0] = 30
   device._update_wakefulness()
   assert device.awake == (cruise and alpha)
+  if not (cruise and alpha):
+    return
+  selected.present = False
+  now[0] = 31
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 46
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 46.6
+  device._update_wakefulness()
+  assert not device.awake
+  selected.present = True
+  now[0] = 47
+  device._update_wakefulness()
+  assert device.awake
+
+
+def test_popup_and_lead_must_both_clear_before_alpha_cruise_timeout(display):
+  state, device, now = display
+  state.sm['carState'].cruiseState.enabled = True
+  state.alpha_long_enabled = True
+  state.sm['radarState'].leadOne.present = True
+  ss = state.sm['selfdriveState']
+  ss.alertSize.raw = 1
+  ss.alertStatus = SimpleNamespace(raw=0)
+  ss.alertText1, ss.alertText2 = 'Notification', ''
+  for timestamp in (0, 15, 60):
+    now[0] = timestamp
+    device._update_wakefulness()
+    assert device.awake
+  state.sm['radarState'].leadOne.present = False
+  now[0] = 61
+  device._update_wakefulness()
+  now[0] = 90
+  device._update_wakefulness()
+  assert device.awake
+  ss.alertSize.raw = 0
+  now[0] = 91
+  device._update_wakefulness()
+  now[0] = 106
+  device._update_wakefulness()
+  assert device.awake
+  now[0] = 106.6
+  device._update_wakefulness()
+  assert not device.awake
+  ss.alertSize.raw = 1
+  now[0] = 107
+  device._update_wakefulness()
+  assert device.awake
 
 
 @pytest.mark.parametrize('unreliable', ['stale', 'invalid', 'previous_drive'])
@@ -112,6 +175,7 @@ def test_unreliable_cruise_state_releases_display_hold(display, unreliable):
   state, device, now = display
   state.sm['carState'].cruiseState.enabled = True
   state.alpha_long_enabled = True
+  state.sm['radarState'].leadOne.present = True
   device._update_wakefulness()
   now[0] = 30
   device._update_wakefulness()
@@ -124,49 +188,166 @@ def test_unreliable_cruise_state_releases_display_hold(display, unreliable):
     state.sm.recv_frame['carState'] = state.started_frame - 1
   now[0] = 31
   device._update_wakefulness()
-  now[0] = 46.1
+  now[0] = 46.6
+  device._update_wakefulness()
+  assert not device.awake
+
+
+@pytest.mark.parametrize('unreliable', ['stale', 'invalid', 'previous_drive'])
+def test_unreliable_lead_cannot_hold_alpha_cruise_display(display, unreliable):
+  state, device, now = display
+  state.sm['carState'].cruiseState.enabled = True
+  state.alpha_long_enabled = True
+  state.sm['radarState'].leadOne.present = True
+  device._update_wakefulness()
+  now[0] = 30
+  device._update_wakefulness()
+  assert device.awake
+  if unreliable == 'stale':
+    state.sm.alive['radarState'] = False
+  elif unreliable == 'invalid':
+    state.sm.valid['radarState'] = False
+  else:
+    state.sm.recv_frame['radarState'] = state.started_frame - 1
+  now[0] = 31
+  device._update_wakefulness()
+  now[0] = 46.6
   device._update_wakefulness()
   assert not device.awake
 
 
 @pytest.mark.parametrize('onroad', [False, True])
-def test_timeout_switch_applies_live_and_restarts_full_timeout(display, onroad):
+def test_timeout_applies_onroad_and_offroad_and_touch_restarts_it(display, onroad):
+  from openpilot.selfdrive.ui import ui_state as module
+
   state, device, now = display
   state.started = onroad
   state.ignition = onroad
   state.params = SimpleNamespace(get=lambda _: None, get_bool=lambda _: False)
   device._update_wakefulness()
-  now[0] = 15.1
+  now[0] = 15.6
   device._update_wakefulness()
   assert not device.awake
-  state.screen_timeout_enabled = False
+  module.gui_app.mouse_events = [SimpleNamespace(left_down=True)]
   now[0] = 16
   device._update_wakefulness()
   assert device.awake
-  now[0] = 100
+  module.gui_app.mouse_events = []
+  now[0] = 31
   device._update_wakefulness()
   assert device.awake
-  state.screen_timeout_enabled = True
-  now[0] = 101
-  device._update_wakefulness()
-  now[0] = 116
-  device._update_wakefulness()
-  assert device.awake
-  now[0] = 116.1
+  now[0] = 31.6
   device._update_wakefulness()
   assert not device.awake
 
 
+@pytest.fixture
+def backlight(display, monkeypatch):
+  from openpilot.selfdrive.ui import ui_state as module
+
+  _, device, now = display
+  power, render = [], []
+  monkeypatch.setattr(device, '_start_brightness_thread', lambda: None)
+  monkeypatch.setattr(module.HARDWARE, 'set_display_power', lambda on: power.append((now[0], on)))
+  monkeypatch.setattr(module.gui_app, 'set_should_render', lambda on: render.append((now[0], on)))
+  return power, render
+
+
+@pytest.mark.parametrize('onroad', [False, True])
+@pytest.mark.parametrize('brightness', [30, 100])
+def test_idle_backlight_fades_before_panel_and_rendering_stop(display, backlight, onroad, brightness):
+  state, device, now = display
+  power, render = backlight
+  state.started = state.ignition = onroad
+  device.set_offroad_brightness(brightness)
+  device._brightness_filter.x = brightness
+  callbacks = []
+  device.add_interactive_timeout_callback(lambda: callbacks.append(now[0]))
+  device.update()
+
+  levels = []
+  for timestamp in (15, 15.1, 15.25, 15.4, 15.5, 16):
+    now[0] = timestamp
+    device.update()
+    levels.append(device._brightness_target)
+    assert device.awake == (timestamp < 15.5)
+  assert levels == [brightness, round(brightness * 0.8), round(brightness * 0.5), round(brightness * 0.2), 0, 0]
+  assert power == render == [(15.5, False)]
+  assert callbacks == [15.1]
+
+
+@pytest.mark.parametrize('wake', ['touch', 'popup', 'lead'])
+@pytest.mark.parametrize('timestamp', [15.25, 16])
+def test_activity_restores_backlight_in_same_update_during_fade_or_sleep(display, backlight, wake, timestamp):
+  from openpilot.selfdrive.ui import ui_state as module
+
+  state, device, now = display
+  power, render = backlight
+  state.alpha_long_enabled = state.sm['carState'].cruiseState.enabled = True
+  device.set_offroad_brightness(80)
+  device._brightness_filter.x = 80
+  device.update()
+  now[0] = timestamp
+  device.update()
+  assert device._brightness_target < 80
+  was_awake = device.awake
+  power.clear()
+  render.clear()
+
+  if wake == 'touch':
+    module.gui_app.mouse_events = [SimpleNamespace(left_down=True)]
+  elif wake == 'popup':
+    ss = state.sm['selfdriveState']
+    ss.alertSize.raw = 1
+    ss.alertStatus = SimpleNamespace(raw=0)
+    ss.alertText1, ss.alertText2 = 'Take control', ''
+  else:
+    state.sm['radarState'].leadOne.present = True
+  now[0] += 0.05
+  device.update()
+  assert device.awake
+  assert device._brightness_target == 80
+  assert power == render == ([] if was_awake else [(now[0], True)])
+  assert device._wake_policy.deadline == now[0] + DISPLAY_TIMEOUT
+
+
+def test_delayed_ui_update_finishes_fade_without_extending_idle_time(display, backlight):
+  _, device, now = display
+  device.update()
+  now[0] = 30
+  device.update()
+  assert not device.awake
+  assert device._brightness_target == 0
+  assert backlight[0] == backlight[1] == [(30, False)]
+
+
+def test_pc_display_remains_bright_after_idle_timeout(display, backlight, monkeypatch):
+  from openpilot.selfdrive.ui import ui_state as module
+
+  _, device, now = display
+  monkeypatch.setattr(module, 'PC', True)
+  device.set_offroad_brightness(80)
+  device._brightness_filter.x = 80
+  device.update()
+  now[0] = 30
+  device.update()
+  assert device.awake
+  assert device._brightness_target == 80
+  assert backlight == ([], [])
+
+
 @pytest.mark.parametrize('variant', ['tizi', 'mici'])
-def test_screen_timeout_setting_persists_and_refreshes_live(display, monkeypatch, variant):
+def test_screen_timeout_has_no_setting_and_ignores_legacy_value(display, monkeypatch, variant):
   import pyray as rl
-  from openpilot.common.params import Params
+  from pathlib import Path
+  from openpilot.common.params import Params, UnknownKeyName
   from openpilot.selfdrive.ui import ui_state as module
   from openpilot.system.ui.lib.application import gui_app
 
   params = Params()
-  assert params.get('ScreenTimeoutEnabled', return_default=True) is True
-  params.put_bool('ScreenTimeoutEnabled', True, block=True)
+  with pytest.raises(UnknownKeyName):
+    params.get('ScreenTimeoutEnabled')
+  Path(params.get_param_path('ScreenTimeoutEnabled')).write_text('0')
   state = object.__new__(module.UIState)
   state._initialize()
   monkeypatch.setattr(state, 'usb_connected', False)
@@ -178,23 +359,13 @@ def test_screen_timeout_setting_persists_and_refreshes_live(display, monkeypatch
     from openpilot.selfdrive.ui.layouts.settings import toggles
     monkeypatch.setattr(toggles, 'ui_state', state)
     layout = toggles.TogglesLayout()
-    toggle = layout._toggles['ScreenTimeoutEnabled'].action_item.toggle
-    checked = toggle.get_state
+    assert 'ScreenTimeoutEnabled' not in layout._toggles
   else:
     from openpilot.selfdrive.ui.mici.layouts.settings import toggles as mici_toggles
     monkeypatch.setattr(mici_toggles, 'ui_state', state)
     layout = mici_toggles.TogglesLayoutMici()
-    toggle = next(item for key, item in layout._refresh_toggles if key == 'ScreenTimeoutEnabled')
-
-    def checked():
-      return toggle._checked
-  assert checked()
-  for enabled in (False, True):
-    toggle._handle_mouse_release(None)
-    assert Params().get_bool('ScreenTimeoutEnabled') is enabled
-    state.update_params()
-    assert state.screen_timeout_enabled is enabled
-    assert params.get('OnroadCycleRequested') is None
-  params.put_bool('ScreenTimeoutEnabled', False, block=True)
+    assert 'ScreenTimeoutEnabled' not in dict(layout._refresh_toggles)
+  state.update_params()
   layout._update_toggles()
-  assert not checked()
+  assert not hasattr(state, 'screen_timeout_enabled')
+  assert params.get('OnroadCycleRequested') is None

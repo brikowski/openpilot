@@ -824,6 +824,7 @@ struct SelfdriveState {
   # configurable driving settings
   experimentalMode @10 :Bool;
   personality @11 :LongitudinalPersonality;
+  ecoMode @14 :Bool;
 
   enum AudibleAlert {
     none @0;
@@ -2710,8 +2711,8 @@ struct Event {
     driverMonitoringStateDEPRECATED @71 :DriverMonitoringStateDEPRECATED;
     gpsNMEADEPRECATED @3 :GPSNMEAData;
     uploaderStateDEPRECATED @79 :UploaderState;
-    navInstructionDEPRECATED @82 :NavInstruction;
-    navRouteDEPRECATED @83 :NavRoute;
+    navInstruction @82 :NavInstruction;
+    navRoute @83 :NavRoute;
     navThumbnailDEPRECATED @84 :Thumbnail;
     gnssMeasurementsDEPRECATED @91 :GnssMeasurements;
     mapRenderStateDEPRECATED @105: MapRenderState;
