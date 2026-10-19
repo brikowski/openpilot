@@ -8,7 +8,7 @@ import inspect_trip as trip
 
 def data():
   t = np.arange(101) / 100
-  return {'state': np.column_stack((t, np.full(len(t), trip.MILE), np.ones(len(t)), np.zeros((len(t), 3)))),
+  return {'state': np.column_stack((t, np.full(len(t), trip.MILE), np.ones(len(t)), np.zeros((len(t), 4)))),
           'control': np.column_stack((t, np.ones((len(t), 2)))),
           'mode': np.column_stack((t, np.zeros(len(t)))),
           'buttons': np.empty((0, 2)),
@@ -195,3 +195,107 @@ def test_validator_automatically_retains_passive_trip_stats(monkeypatch):
   assert r['trip_summary']['modes']['Standard']['estimated_mpg'] is None
   monkeypatch.setattr(trip, 'fuel_source_matches', lambda _: False)
   assert 'trip_summary' not in validate_log.analyze(messages, validate_log.ODYSSEY, alpha_longitudinal=True)
+
+
+def maneuver(d, direction=1, confirmed=True):
+  t = np.arange(21) / 20
+  phase = np.where((t >= .1) & (t < .2), 1, 0)
+  if confirmed:
+    phase[(t >= .2) & (t < .35)] = 2
+  d['lane_change'] = np.column_stack((t, phase, np.where(phase > 0, direction, 0), np.ones(len(t))))
+  d['state'][15:30, 5] = 1
+  d['state'][:, 6] = 1 if direction == 1 else -1
+  return d
+
+
+def test_confirmed_lane_change_retains_miles_and_fuel_but_excludes_its_steering():
+  d = maneuver(data())
+  strict = trip.summarize(d, exclude_lane_change_steering=False)
+  adjusted = trip.summarize(d)
+  assert adjusted['recorded_miles'] == strict['recorded_miles'] == pytest.approx(1.)
+  assert adjusted['modes']['Standard']['fuel_counter_ticks'] == strict['modes']['Standard']['fuel_counter_ticks']
+  assert strict['assisted_miles_without_detected_override'] == pytest.approx(.85)
+  assert adjusted['assisted_miles_without_detected_override'] == pytest.approx(1.)
+  assert adjusted['longest_without_detected_input_miles'] == pytest.approx(1.)
+  assert adjusted['confirmed_lane_changes'] == 1
+  assert adjusted['driver_inputs']['steering_override'] == {
+    'recorded_rising_edges': 1, 'lane_change_edges_excluded': 1, 'while_both_axes_active': 0,
+  }
+  assert 'lane changes excluded' in adjusted['shareable_text']
+
+
+def test_canceled_preparation_does_not_excuse_steering():
+  r = trip.summarize(maneuver(data(), confirmed=False))
+  assert r['confirmed_lane_changes'] == 0
+  assert r['assisted_miles_without_detected_override'] == pytest.approx(.85)
+  assert r['driver_inputs']['steering_override']['while_both_axes_active'] == 1
+
+
+@pytest.mark.parametrize('direction,torque,excluded', [(1, 1., True), (1, -1., False), (2, -1., True), (2, 0., False)])
+def test_lane_change_direction_must_match_steering(direction, torque, excluded):
+  d = maneuver(data(), direction)
+  d['state'][:, 6] = torque
+  r = trip.summarize(d)
+  assert r['driver_inputs']['steering_override']['while_both_axes_active'] == (0 if excluded else 1)
+  assert r['assisted_miles_without_detected_override'] == pytest.approx(1. if excluded else .85)
+
+
+def test_opposite_steering_and_inputs_continuing_after_the_maneuver_still_count():
+  d = maneuver(data())
+  d['state'][25:45, 5] = 1
+  d['state'][25:30, 6] = -1
+  r = trip.summarize(d)
+  assert r['driver_inputs']['steering_override']['while_both_axes_active'] == 2
+  assert r['assisted_miles_without_detected_override'] == pytest.approx(.85)  # Opposite .05s + continued .10s.
+
+
+def test_lane_change_does_not_excuse_pedals_buttons_or_disengagements():
+  d = maneuver(data())
+  d['state'][22:25, 4] = 1
+  d['buttons'] = np.array([[.24, 1.]])
+  d['control'][26:30, 1] = 0
+  r = trip.summarize(d)
+  assert r['driver_inputs']['brake']['while_both_axes_active'] == 1
+  assert r['cruise_button_presses_while_assisted'] == 1
+  assert r['both_axes_disengagements'] == 1
+  assert r['assisted_miles_without_detected_override'] == pytest.approx(.93)
+  assert r['longest_without_detected_input_miles'] == pytest.approx(.7)
+
+
+@pytest.mark.parametrize('fault', ['gap', 'invalid', 'direction'])
+def test_confirmation_cannot_bridge_missing_invalid_or_different_direction_preparation(fault):
+  d = maneuver(data())
+  if fault == 'gap':
+    d['lane_change'] = d['lane_change'][d['lane_change'][:, 0] != .15]
+    d['lane_change'] = d['lane_change'][d['lane_change'][:, 0] != .2]
+  elif fault == 'invalid':
+    d['lane_change'][d['lane_change'][:, 0] == .2, 3] = 0
+  else:
+    d['lane_change'][d['lane_change'][:, 0] >= .2, 2] = 2
+    d['state'][:, 6] = -1  # Opposite the old preparation, matching the new maneuver.
+  r = trip.summarize(d)
+  assert r['assisted_miles_without_detected_override'] < 1.
+  assert r['driver_inputs']['steering_override']['while_both_axes_active'] >= 1
+
+
+def test_lane_change_decoder_retains_native_state_direction_and_validity():
+  from openpilot.cereal import log
+  messages = []
+  for t, phase, direction, valid in [(1., 'preLaneChange', 'left', True), (1.05, 'laneChangeStarting', 'left', True),
+                                     (1.1, 'laneChangeFinishing', 'right', False)]:
+    m = log.Event.new_message(logMonoTime=int(t * 1e9), valid=valid)
+    meta = m.init('modelV2').meta
+    meta.laneChangeState, meta.laneChangeDirection = phase, direction
+    messages.append(m)
+  np.testing.assert_array_equal(trip.decode(messages)['lane_change'], [[1., 1, 1, 1], [1.05, 2, 1, 1], [1.1, 3, 2, 0]])
+
+
+def test_different_lane_change_policies_are_not_combined_silently():
+  d = maneuver(data())
+  legacy = trip.summarize(d, exclude_lane_change_steering=False)
+  legacy.pop('lane_change_steering_excluded')
+  for fields in legacy['driver_inputs'].values():
+    fields.pop('lane_change_edges_excluded')
+  assert trip.combined([legacy])['lane_change_steering_events_excluded'] == 0
+  with pytest.raises(ValueError, match='different lane-change'):
+    trip.combined([trip.summarize(d), legacy])

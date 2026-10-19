@@ -27,15 +27,18 @@ def decode(messages):
   """Keep native publications; CAN is ordered globally before checksum/counter parsing."""
   from opendbc.can import CANParser
 
-  state, control, mode, buttons, can = [], [], [], [], []
+  state, control, mode, buttons, can, lane_change = [], [], [], [], [], []
   for m in messages:
     t, kind = m.logMonoTime / 1e9, m.which()
     if kind == 'carState':
       s = m.carState
-      state.append((t, s.vEgoRaw, s.canValid, s.gasPressed, s.brakePressed, s.steeringPressed))
+      state.append((t, s.vEgoRaw, s.canValid, s.gasPressed, s.brakePressed, s.steeringPressed, s.steeringTorque))
       if s.canValid and s.ecoModeValid:
         mode.append((t, s.ecoMode))
       buttons.extend((t, int(b.type.raw)) for b in s.buttonEvents if b.pressed)
+    elif kind == 'modelV2':
+      meta = m.modelV2.meta
+      lane_change.append((t, int(meta.laneChangeState.raw), int(meta.laneChangeDirection.raw), m.valid))
     elif kind == 'carControl':
       control.append((t, m.carControl.latActive, m.carControl.longActive))
     elif kind == 'can':
@@ -46,8 +49,54 @@ def decode(messages):
     if address in parser.update([(now, [(address, data, 1)])]):
       fuel.append((now / 1e9, parser.vl['CRUISE']['TRIP_FUEL_CONSUMED']))
   return {name: np.asarray(sorted(rows), dtype=float).reshape(-1, width)
-          for name, rows, width in (('state', state, 6), ('control', control, 3), ('mode', mode, 2),
-                                    ('buttons', buttons, 2), ('fuel', fuel, 2))}
+          for name, rows, width in (('state', state, 7), ('control', control, 3), ('mode', mode, 2),
+                                    ('buttons', buttons, 2), ('fuel', fuel, 2), ('lane_change', lane_change, 4))}
+
+
+def confirmed_lane_changes(samples):
+  """Observed starting/finishing phases confirm contiguous same-direction preparation.
+
+  A blinker/preparation alone never qualifies. Invalid or missing model publications
+  end coverage; no time padding extends the maneuver. Directions match DesireHelper.
+  """
+  windows = []
+  preparation = active = None
+  previous_t = previous_direction = None
+  for t, phase, direction, valid in samples:
+    gap = previous_t is not None and t - previous_t > STATE_GAP + 1e-9
+    changed = previous_direction is not None and direction != previous_direction
+    supported = bool(valid) and phase in (0, 1, 2, 3) and (direction in (1, 2) or phase == 0)
+    if gap or changed or not supported:
+      if active is not None:
+        windows.append((active, t if supported and not gap else previous_t, previous_direction))
+      preparation = active = None
+    if supported:
+      if phase == 1:  # preLaneChange
+        if active is not None:
+          windows.append((active, t, direction))
+          active = None
+        if preparation is None:
+          preparation = t
+      elif phase in (2, 3):  # laneChangeStarting / laneChangeFinishing
+        if active is None:
+          active = preparation if preparation is not None else t
+        preparation = None
+      else:
+        if active is not None:
+          windows.append((active, t, direction))
+        preparation = active = None
+    previous_t, previous_direction = t, direction
+  if active is not None:
+    windows.append((active, previous_t, previous_direction))
+  return [w for w in windows if w[1] > w[0]]
+
+
+def steering_for_lane_change(times, torque, windows):
+  excluded = np.zeros(len(times), dtype=bool)
+  for start, end, direction in windows:
+    sign = 1 if direction == 1 else -1
+    excluded |= (times >= start) & (times < end) & (torque * sign > 0)
+  return excluded
 
 
 def longest_distance(distance, eligible, breaks):
@@ -61,7 +110,7 @@ def longest_distance(distance, eligible, breaks):
   return float(longest)
 
 
-def summarize(data, fuel_ticks_per_liter=None):
+def summarize(data, fuel_ticks_per_liter=None, *, exclude_lane_change_steering=True):
   """Integrate supported native intervals; never infer a fuel wrap or driver-caused disengagement."""
   if fuel_ticks_per_liter is not None and (not np.isfinite(fuel_ticks_per_liter) or fuel_ticks_per_liter <= 0):
     raise ValueError('fuel ticks per liter must be finite and positive')
@@ -86,18 +135,27 @@ def summarize(data, fuel_ticks_per_liter=None):
   lat, control_fresh = held(control, 1, STATE_GAP)
   long, _ = held(control, 2, STATE_GAP)
   both = valid & control_fresh & (lat > .5) & (long > .5)
+  maneuvers = confirmed_lane_changes(data.get('lane_change', np.empty((0, 4))))
+  steering_torque, _ = held(state, 6, STATE_GAP)
+  selected = maneuvers if exclude_lane_change_steering else []
+  lane_steering = steering_for_lane_change(t, steering_torque, selected)
+  native_lane_steering = steering_for_lane_change(state[:, 0], state[:, 6], selected)
   override = np.zeros(len(t), dtype=bool)
   inputs = {}
   for column, name in ((3, 'accelerator'), (4, 'brake'), (5, 'steering_override')):
     value, _ = held(state, column, STATE_GAP)
-    override |= value > .5
-    edges = np.flatnonzero((state[1:, column] > .5) & (state[:-1, column] <= .5)) + 1
+    override |= (value > .5) & (~lane_steering if column == 5 else True)
+    raw_edges = np.flatnonzero((state[1:, column] > .5) & (state[:-1, column] <= .5)) + 1
+    counted = (state[:, column] > .5) & (~native_lane_steering if column == 5 else True)
+    edges = np.flatnonzero(counted[1:] & ~counted[:-1]) + 1
     times = state[edges, 0]
     prior = np.searchsorted(control[:, 0], times, side='right') - 1
     safe = np.maximum(prior, 0)
     assisted = ((prior >= 0) & (times - control[safe, 0] <= STATE_GAP) &
                 (control[safe, 1] > .5) & (control[safe, 2] > .5)) if len(control) else np.zeros(len(times), bool)
-    inputs[name] = {'recorded_rising_edges': int(len(edges)), 'while_both_axes_active': int(assisted.sum())}
+    inputs[name] = {'recorded_rising_edges': int(len(raw_edges)),
+                    'lane_change_edges_excluded': int(native_lane_steering[raw_edges].sum()) if column == 5 else 0,
+                    'while_both_axes_active': int(assisted.sum())}
   clean = both & ~override
   button_breaks = np.isin(t, buttons[:, 0])
   button_indices = np.searchsorted(t, buttons[:, 0])
@@ -110,6 +168,8 @@ def summarize(data, fuel_ticks_per_liter=None):
   out = {
     'scope': 'Available recorded coverage; assistance requires both steering and longitudinal control active.',
     'recorded_miles': total,
+    'lane_change_steering_excluded': exclude_lane_change_steering,
+    'confirmed_lane_changes': len(maneuvers),
     'supported_seconds': float(dt[valid].sum()),
     'unsupported_seconds': float(dt[~valid].sum()),
     'assisted_miles_without_detected_override': assisted,
@@ -120,8 +180,11 @@ def summarize(data, fuel_ticks_per_liter=None):
     'driver_inputs': inputs,
     'both_axes_disengagements': disengagements,
     'definitions': {
-      'inputs': 'Logged pedal/steering-override rising edges; an input already held at capture start is not a new event.',
-      'longest': 'Both axes active, no detected pedal/steering override; button presses, disengagements and coverage gaps break the stretch.',
+      'inputs': ('Raw rising edges are retained. Counted steering filters lane-change inputs first; opposite or continuing inputs outside the maneuver count. '
+                 'An input held at capture start is not a new raw event.'),
+      'longest': 'Both axes active without counted pedal/steering override; button presses, disengagements and coverage gaps break the stretch.',
+      'lane_changes': ('Exclude same-direction steering in a recorded starting/finishing maneuver and its contiguous confirmed preparation. '
+                       'Canceled preparation, opposite steering and pedals count; mileage and fuel are retained.'),
       'disengagements': 'Observed loss of both-axis assistance with supported state/control; cause is not inferred.',
       'mileage': 'Integrates published vEgoRaw over supported intervals; no GPS or dashboard distance substitution.',
       'fuel': 'Checksum/counter-accepted CRUISE.TRIP_FUEL_CONSUMED increments; gaps and counter decreases are excluded, not unwrapped.',
@@ -181,15 +244,23 @@ def fuel_source_matches(child):
 
 def combined(reports):
   """Sum distances, never percentages; route boundaries never join uninterrupted stretches."""
+  policies = {r.get('lane_change_steering_excluded', False) for r in reports}
+  if len(policies) > 1:
+    raise ValueError('cannot combine different lane-change input policies')
+  exclusion = policies == {True}
   total = sum(r['recorded_miles'] for r in reports)
   assisted = sum(r['assisted_miles_without_detected_override'] for r in reports)
   longest = max((r['longest_without_detected_input_miles'] for r in reports), default=0.)
   percent = 100. * assisted / total if total else None
+  note = ' Same-direction steering inputs during confirmed lane changes excluded.' if exclusion else ''
   return {'recordings': len(reports), 'recorded_miles': total,
+          'lane_change_steering_excluded': exclusion,
+          'confirmed_lane_changes': sum(r.get('confirmed_lane_changes', 0) for r in reports),
+          'lane_change_steering_events_excluded': sum(r['driver_inputs']['steering_override'].get('lane_change_edges_excluded', 0) for r in reports),
           'assisted_miles_without_detected_override': assisted, 'assisted_share_percent': percent,
           'longest_without_detected_input_miles': longest,
           'shareable_text': (f'{assisted:.1f} supervised assisted miles out of {total:.1f} recorded miles ({percent:.1f}%). '
-                             f'Longest stretch without a detected steering, pedal or cruise-button input: {longest:.1f} miles.')
+                             f'Longest stretch without a counted steering, pedal or cruise-button input: {longest:.1f} miles.{note}')
                             if total else 'No supported driving distance in these recordings.'}
 
 
