@@ -58,6 +58,8 @@ testing = [
   "ty",         # type checking
   "ruff",       # linting
   "codespell",  # spellcheck
+  "pytest",     # Odyssey diagnostic tests in lefthook and preflash
+  "lefthook",   # local software-check gate
 ]
 
 tools = [

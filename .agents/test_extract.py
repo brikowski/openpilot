@@ -1,0 +1,388 @@
+import os
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+import extract
+from extract import plan_to_control, select_lead_field
+
+
+def test_plan_to_control_holds_published_target_until_next_plan():
+  grid = np.array([-0.01, 0.01, 0.02, 0.03, 0.04])
+  plan_t = np.array([0.00, 0.03])
+  a_target = np.array([-0.40, 0.80])
+
+  np.testing.assert_array_equal(plan_to_control(grid, plan_t, a_target), [np.nan, -0.40, -0.40, 0.80, 0.80])
+  assert np.isnan(plan_to_control(grid, [], [])).all()
+
+
+def test_model_commands_and_learned_boost_follow_publication_without_blending(monkeypatch):
+  from openpilot.cereal import log
+
+  messages = []
+  for i in range(100):
+    control_time = 1_000_000_000 + i * 10_000_000 - 100_000
+    state = log.Event.new_message(logMonoTime=control_time)
+    state.init('controlsState').longitudinalPlanMonoTime = max(
+      (t for t in (1_020_000_000, 1_070_000_000, 1_120_000_000) if t < control_time), default=0)
+    messages.append(state)
+    m = log.Event.new_message(logMonoTime=1_000_000_000 + i * 10_000_000)
+    m.init('carControl')
+    messages.append(m)
+  for timestamp, accel, curvature in ((1_010_000_000, -.4, .001), (1_060_000_000, .8, .003)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    action = m.init('modelV2').action
+    action.desiredAcceleration, action.desiredCurvature = accel, curvature
+    messages.append(m)
+  for timestamp, boost in ((1_020_000_000, .00125), (1_070_000_000, .0025), (1_120_000_000, None)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    plan = m.init('longitudinalPlan')
+    plan.aTarget = -.2
+    plan.shouldStop = timestamp == 1_070_000_000
+    plan.hasLead = plan.shouldStop
+    plan.longitudinalPlanSource = "e2e" if plan.shouldStop else "cruise"
+    if boost is not None:
+      plan.accelBoost = boost
+    messages.append(m)
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  assert np.isnan(out['e2e_accel'][0]) and np.isnan(out['des_curvature'][0])
+  np.testing.assert_allclose(out['e2e_accel'][1:8], [-.4] * 5 + [.8] * 2)
+  np.testing.assert_allclose(out['des_curvature'][1:8], [.001] * 5 + [.003] * 2)
+  assert np.isnan(out['accel_boost'][:2]).all() and np.isnan(out['atarget'][:2]).all()
+  np.testing.assert_allclose(out['accel_boost'][2:12], [.00125] * 5 + [.0025] * 5)
+  assert np.all(out['accel_boost'][12:] == 0.)  # Older messages default this schema field to zero.
+  np.testing.assert_allclose(out['atarget'][2:], -.2)
+  np.testing.assert_array_equal(out['plan_source'][:2], [-1, -1])
+  assert np.isnan(out["consumed_atarget"][:3]).all()
+  np.testing.assert_allclose(out["consumed_atarget"][3:], -.2)
+  assert np.isnan(out["consumed_should_stop"][:3]).all()
+  np.testing.assert_array_equal(out["consumed_should_stop"][3:14], [0.] * 5 + [1.] * 5 + [0.])
+  np.testing.assert_array_equal(out["consumed_has_lead"], out["consumed_should_stop"])
+  np.testing.assert_array_equal(out["consumed_plan_source"][:14], [-1] * 3 + [0] * 5 + [4] * 5 + [0])
+  assert not np.any(out['request'])
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(m for m in messages if m.which() != 'longitudinalPlan'))
+  missing = extract._build('synthetic')
+  assert np.isnan(missing['atarget']).all() and np.isnan(missing['consumed_atarget']).all()
+
+
+def test_select_lead_field_follows_published_mpc_source():
+  source = np.array([1, 2, 0, 4, 2])
+  lead_one = np.array([10., 11., 12., 13., 14.])
+  lead_two = np.array([20., 21., 22., 23., 24.])
+
+  selected = select_lead_field(source, lead_one, lead_two)
+
+  np.testing.assert_array_equal(selected[:2], [10., 21.])
+  assert np.isnan(selected[2])
+  assert np.isnan(selected[3])
+  assert selected[4] == 24.
+
+
+def test_select_lead_field_does_not_substitute_lead_one_for_non_lead_plan():
+  selected = select_lead_field(np.array([0]), np.array([10.]), np.array([20.]))
+
+  assert np.isnan(selected[0])
+
+
+def test_extract_acc_parser_sees_only_bus_one_acc_control(monkeypatch):
+  updates = []
+
+  class FakeParser:
+    def __init__(self, *_args):
+      self.vl = {"ACC_CONTROL": {"GAS_COMMAND": 123, "ACCEL_COMMAND": 0.5, "BRAKE_REQUEST": 0}}
+
+    def update(self, batches):
+      updates.extend(batches)
+      return {extract.ACC_CONTROL_ADDR}
+
+  def msg(t, address, src):
+    frame = SimpleNamespace(address=address, dat=b"\x00" * 8, src=src)
+    return SimpleNamespace(logMonoTime=t, which=lambda: "sendcan", sendcan=[frame])
+
+  monkeypatch.setattr("opendbc.can.parser.CANParser", FakeParser)
+  monkeypatch.setattr(extract, "LogReader", lambda _paths: iter([
+    msg(1, 0xE4, 0), msg(2, 0xE4, 1),
+    msg(3, extract.ACC_CONTROL_ADDR, 0), msg(4, extract.ACC_CONTROL_ADDR, 1),
+  ]))
+
+  _, _, _, _, _, sc, _, _, _, _ = extract._decode(["synthetic-rlog"])
+
+  assert len(updates) == 1
+  assert updates[0][0] == 4
+  assert updates[0][1][0][:3] == (extract.ACC_CONTROL_ADDR, b"\x00" * 8, 1)
+  assert sc["t"] == [4e-9]
+  assert sc["gas"] == [123.]
+
+
+def test_received_can_keeps_independent_verified_updates_and_missing_signals(monkeypatch):
+  from opendbc.can import CANPacker
+  packer = CANPacker(extract.ODYSSEY_PT_DBC)
+
+  def event(t, frames):
+    return SimpleNamespace(logMonoTime=t, which=lambda: "can",
+                           can=[SimpleNamespace(address=a, dat=d, src=b) for a, d, b in frames])
+
+  gear = packer.make_can_msg('GEARBOX_AUTO', 1, {'TRANS_TARGET_GEAR': 7, 'TRANS_SHIFT_ACTIVITY': 119, 'COUNTER': 1})
+  torque = packer.make_can_msg('GAS_PEDAL_2', 1, {'ENGINE_TORQUE_ESTIMATE': 90, 'ENGINE_TORQUE_REQUEST': 110, 'COUNTER': 1})
+  bad_gear = (gear[0], gear[1][:-1] + bytes([gear[1][-1] ^ 1]), 1)
+  messages = [event(1_000_000_000, [gear]), event(1_010_000_000, [torque]),
+              event(1_020_000_000, [(gear[0], gear[1], 0)]), event(1_030_000_000, [bad_gear])]
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(messages))
+  rx = extract._decode(['synthetic-rlog'])[6]
+  assert rx['gear'] == {'t': [1.], 'value': [7.]}
+  assert rx['shift_activity'] == {'t': [1.], 'value': [119.]}
+  assert rx['engine_torque_request'] == {'t': [1.01], 'value': [110.]}
+  assert rx['eps_output_disabled'] == {'t': [], 'value': []}
+
+
+def test_received_can_cache_holds_samples_and_reports_age_without_future_values(monkeypatch):
+  def control(t):
+    a = SimpleNamespace(accel=0., longControlState='pid', torque=0.)
+    c = SimpleNamespace(actuators=a, orientationNED=[], longActive=True, latActive=False)
+    return SimpleNamespace(logMonoTime=t, which=lambda: 'carControl', carControl=c)
+
+  from opendbc.can import CANPacker
+  packer = CANPacker(extract.ODYSSEY_PT_DBC)
+  messages = [control(1_000_000_000 + i * 10_000_000) for i in range(100)]
+  for t, activity, counter in ((1_020_000_000, 110, 1), (1_040_000_000, 102, 2)):
+    a, d, b = packer.make_can_msg('GEARBOX_AUTO', 1, {'TRANS_TARGET_GEAR': 6, 'TRANS_SHIFT_ACTIVITY': activity, 'COUNTER': counter})
+    messages.append(SimpleNamespace(logMonoTime=t, which=lambda: 'can', can=[SimpleNamespace(address=a, dat=d, src=b)]))
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  assert np.isnan(out['shift_activity'][0])
+  np.testing.assert_array_equal(out['shift_activity'][2:5], [110., 110., 102.])
+  np.testing.assert_allclose(out['shift_activity_age'][2:5], [0., .01, 0.], atol=1e-8)
+  assert out['shift_activity_age'][-1] > .9
+  assert np.isnan(out['eps_motor_torque']).all()
+  assert np.isnan(out['eps_motor_torque_age']).all()
+
+
+def test_cruise_setpoint_changes_do_not_invent_overspeed_before_publication(monkeypatch):
+  from opendbc.car.structs import car
+
+  messages = [SimpleNamespace(logMonoTime=1_000_000_000 + i * 10_000_000,
+                             which=lambda: 'carControl', carControl=car.CarControl.new_message())
+              for i in range(100)]
+  for timestamp, setpoint in ((1_010_000_000, 80.), (1_050_000_000, 60.)):
+    messages.append(SimpleNamespace(logMonoTime=timestamp, which=lambda: 'carState',
+                                   carState=car.CarState.new_message(vCruise=setpoint, vEgo=20.)))
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  assert np.isnan(out['vcruise'][0])
+  np.testing.assert_array_equal(out['vcruise'][1:6], [80., 80., 80., 80., 60.])
+  assert np.all(out['vego'][1:5] < out['vcruise'][1:5] / 3.6)
+  assert out['vego'][5] > out['vcruise'][5] / 3.6
+
+
+def test_resampling_changes_ignore_previous_extraction_cache(monkeypatch, tmp_path):
+  np.savez(tmp_path / "synthetic.v10.npz", t0=0., request=[0.])
+  np.savez(tmp_path / "synthetic.v11.npz", t0=0., consumed_atarget=[0.])
+  np.savez(tmp_path / "synthetic.v12.npz", t0=0., consumed_atarget=[0.], lat_output_torque_can=[1000.])
+  np.savez(tmp_path / "synthetic.v13.npz", t0=0., consumed_atarget=[0.], steering_pressed=[False])
+  np.savez(tmp_path / "synthetic.v14.npz", t0=0., consumed_atarget=[0.], gas_output=[.5])
+  np.savez(tmp_path / "synthetic.v15.npz", t0=0., experimental=[1.])
+  monkeypatch.setattr(extract, "CACHE", str(tmp_path))
+  monkeypatch.setattr(extract, "_segments", lambda _: ("synthetic", []))
+  monkeypatch.setattr(extract, "_build", lambda _: {"route": "synthetic", "t0": 0., "consumed_atarget": np.array([-.2]), "consumed_plan_source": np.array([4])})
+  out = extract.load("synthetic")
+  assert "consumed_atarget" in out and "consumed_plan_source" in out
+  np.testing.assert_array_equal(out["consumed_atarget"], [-.2])
+
+
+@pytest.fixture
+def cached_route(monkeypatch, tmp_path):
+  root = tmp_path / 'rlogs'
+  root.mkdir()
+  route = '00000001--abc'
+  for segment in (0, 1):
+    path = root / f'{route}--{segment}'
+    path.mkdir()
+    (path / 'rlog.zst').write_text(str(segment))
+  monkeypatch.setattr(extract, 'rlog_root', lambda: root)
+  monkeypatch.setattr(extract, 'CACHE', str(tmp_path / 'cache'))
+  builds = []
+
+  def build(full):
+    _, paths = extract._segments(full)
+    values = [int(Path(path).read_text()) for path in paths]
+    builds.append(values)
+    return {'route': full, 't0': 0., 'request': np.asarray(values, dtype=float)}
+
+  monkeypatch.setattr(extract, '_build', build)
+  return root, route, builds
+
+
+def test_extraction_cache_reuses_unchanged_logs_and_hides_metadata(cached_route):
+  _, route, builds = cached_route
+  first = extract.load(route)
+  again = extract.load(route[:8])
+  assert set(first) == set(again) == {'route', 't0', 'request'}
+  np.testing.assert_array_equal(again['request'], [0., 1.])
+  assert builds == [[0, 1]]
+  extract.load(route, refresh=True)
+  assert builds == [[0, 1], [0, 1]]
+
+
+@pytest.mark.parametrize('during_build', [False, True])
+def test_extraction_accepts_unchanged_content_after_metadata_updates(cached_route, monkeypatch, during_build):
+  root, route, builds = cached_route
+  path = root / f'{route}--1' / 'rlog.zst'
+
+  def metadata_update():
+    before = path.stat()
+    path.chmod(before.st_mode ^ 0o040)  # Metadata-only change; source bytes and modification time stay intact.
+    assert path.stat().st_mtime_ns == before.st_mtime_ns
+    assert path.read_text() == '1'
+
+  if during_build:
+    original = extract._build
+
+    def build(full):
+      result = original(full)
+      metadata_update()
+      return result
+
+    monkeypatch.setattr(extract, '_build', build)
+  else:
+    extract.load(route)
+    metadata_update()
+
+  np.testing.assert_array_equal(extract.load(route)['request'], [0., 1.])
+  assert builds == [[0, 1]]
+
+
+@pytest.mark.parametrize('change', ['append', 'remove', 'rename', 'replace_preserving_mtime'])
+def test_extraction_cache_rebuilds_when_route_logs_change(cached_route, change):
+  root, route, builds = cached_route
+  extract.load(route)
+  if change == 'append':
+    path = root / f'{route}--10'
+    path.mkdir()
+    (path / 'rlog.zst').write_text('10')
+    expected = [0., 1., 10.]
+  elif change == 'remove':
+    (root / f'{route}--1' / 'rlog.zst').unlink()
+    expected = [0.]
+  elif change == 'rename':
+    (root / f'{route}--1').rename(root / f'{route}--10')
+    expected = [0., 1.]
+  else:
+    path = root / f'{route}--1' / 'rlog.zst'
+    before = path.stat()
+    path.write_text('9')  # Same length; a transfer may preserve modification time.
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    expected = [0., 9.]
+  np.testing.assert_array_equal(extract.load(route)['request'], expected)
+  assert len(builds) == 2
+
+
+def test_extraction_cache_without_source_metadata_is_rebuilt(cached_route):
+  _, route, builds = cached_route
+  os.makedirs(extract.CACHE)
+  np.savez(os.path.join(extract.CACHE, f'{route}.v{extract.SCHEMA}.npz'), t0=0., request=[9.])
+  np.testing.assert_array_equal(extract.load(route)['request'], [0., 1.])
+  assert builds == [[0, 1]]
+
+
+def test_extraction_refuses_logs_changed_while_decoding(cached_route, monkeypatch):
+  root, route, _ = cached_route
+  original = extract._build
+
+  def growing(full):
+    result = original(full)
+    path = root / f'{route}--2'
+    path.mkdir()
+    (path / 'rlog.zst').write_text('2')
+    return result
+
+  monkeypatch.setattr(extract, '_build', growing)
+  with pytest.raises(RuntimeError, match='logs changed during extraction'):
+    extract.load(route)
+  assert not os.path.exists(os.path.join(extract.CACHE, f'{route}.v{extract.SCHEMA}.npz'))
+
+
+def test_extraction_refuses_replaced_content_while_decoding(cached_route, monkeypatch):
+  root, route, _ = cached_route
+  original = extract._build
+
+  def replacing(full):
+    result = original(full)
+    path = root / f'{route}--1' / 'rlog.zst'
+    before = path.stat()
+    path.write_text('9')
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    return result
+
+  monkeypatch.setattr(extract, '_build', replacing)
+  with pytest.raises(RuntimeError, match='logs changed during extraction'):
+    extract.load(route)
+  assert not os.path.exists(os.path.join(extract.CACHE, f'{route}.v{extract.SCHEMA}.npz'))
+
+
+def test_steering_output_authority_changes_follow_publication_without_blending(monkeypatch):
+  from openpilot.cereal import log
+
+  messages = []
+  for i in range(100):
+    m = log.Event.new_message(logMonoTime=1_000_000_000 + i * 10_000_000)
+    m.init('carControl')
+    messages.append(m)
+  for timestamp, count in ((1_010_000_000, 0.), (1_030_000_000, -2560.), (1_060_000_000, -3840.)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    a = m.init('carOutput').actuatorsOutput
+    a.torqueOutputCan, a.torque = count, count / 3840.
+    a.accel = .25 if count == -2560. else -.5 if count == -3840. else 0.
+    a.gas = .25 if count == -2560. else 0.
+    a.brake = .2 if count == -3840. else 0.
+    messages.append(m)
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  assert np.isnan(out['lat_output_torque_can'][0])
+  np.testing.assert_array_equal(out['lat_output_torque_can'][1:8], [0., 0., -2560., -2560., -2560., -3840., -3840.])
+  for key, middle, last in [('wire', .25, -.5), ('gas_output', .25, 0.), ('brake_output', 0., .2),
+                             ('lat_output_torque', -2. / 3., -1.)]:
+    assert np.isnan(out[key][0])
+    np.testing.assert_allclose(out[key][1:8], [0., 0., middle, middle, middle, last, last])
+
+
+def test_pedals_overrides_and_faults_follow_state_publication(monkeypatch):
+  from openpilot.cereal import log
+
+  messages = []
+  for i in range(100):
+    m = log.Event.new_message(logMonoTime=1_000_000_000 + i * 10_000_000)
+    m.init('carControl')
+    messages.append(m)
+  for timestamp, active in ((1_010_000_000, True), (1_040_000_000, False), (1_070_000_000, True)):
+    m = log.Event.new_message(logMonoTime=timestamp)
+    state = m.init('carState')
+    state.gasPressed = state.brakePressed = state.steeringPressed = active
+    state.steerFaultTemporary = state.steerFaultPermanent = active
+    messages.append(m)
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
+  monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))
+  out = extract._build('synthetic')
+  for key in ('gas_pressed', 'brake_pressed', 'steering_pressed', 'steer_fault_temp', 'steer_fault_perm'):
+    np.testing.assert_array_equal(out[key][1:9], [True, True, True, False, False, False, True, True])
+
+
+def test_historical_experimental_flag_reads_deprecated_schema_slot(monkeypatch):
+  from openpilot.cereal import log
+
+  messages = []
+  for i, selected in enumerate((True, False)):
+    message = log.Event.new_message(logMonoTime=(i + 1) * 1_000_000_000)
+    message.init('selfdriveState').deprecated.experimentalMode = selected
+    messages.append(message.as_reader())
+  monkeypatch.setattr(extract, 'LogReader', lambda _: iter(messages))
+
+  state = extract._decode(['historical-rlog'])[-1]
+
+  assert state['experimental'] == [1., 0.]

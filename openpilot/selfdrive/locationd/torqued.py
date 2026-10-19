@@ -6,6 +6,7 @@ from collections import deque, defaultdict
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import log
 from opendbc.car.structs import car
+from opendbc.car.honda.hondacan import CanBus as HondaCanBus
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, DT_MDL
@@ -117,9 +118,14 @@ class TorqueEstimator(ParameterEstimator):
           self.decay = cache_ltp.decay
           self.filtered_points.load_points(cached_points)
           cloudlog.info("restored torque params from cache")
+        else:
+          # CarParams can advance before a short route writes a replacement torque cache.
+          params.remove("LiveTorqueParameters")
       except Exception:
         cloudlog.exception("failed to restore cached torque params")
         params.remove("LiveTorqueParameters")
+    elif torque_cache is not None:
+      params.remove("LiveTorqueParameters")
 
     self.filtered_params = {}
     for param in initial_params:
@@ -131,7 +137,9 @@ class TorqueEstimator(ParameterEstimator):
     if CP.lateralTuning.which() == 'torque':
       a = CP.lateralTuning.torque.friction
       b = CP.lateralTuning.torque.latAccelFactor
-    return (CP.carFingerprint, CP.lateralTuning.which(), a, b, version)
+    # Honda's steering route can change with longitudinal mode.
+    steering_bus = HondaCanBus(CP).lkas if CP.brand == 'honda' else None
+    return (CP.carFingerprint, CP.lateralTuning.which(), a, b, steering_bus, version)
 
   def reset(self):
     self.resets += 1.0
