@@ -1323,6 +1323,11 @@ def analyze(msgs, platform, alpha_longitudinal=None):
     if not following.get("domain_model_valid"):
       r["notes"].append(f"DOMAIN MODEL SUPPRESSED: {following.get('domain_model_note')}")
 
+  if platform == ODYSSEY and not r['qlog_fallback'] and r['provenance_exact']:
+    from inspect_trip import decode, fuel_source_matches, summarize
+    if fuel_source_matches(r['opendbc_commit_full']):
+      r['trip_summary'] = summarize(decode(msgs))
+
   # device thermal - platform-independent, and survives qlog (deviceState is undecimated)
   r.update(_thermal(msgs))
   # real wall-clock start, so the cross-drive advisory can tell a park from a pit stop
@@ -2521,6 +2526,8 @@ def main():
   print(f"  coverage: {r['engaged_min']:.1f} min engaged / {r['log_min']:.1f} min logged "
         f"({r['engaged_frac']*100:.0f}%), {r['engaged_mi']:.1f} mi engaged, "
         f"max {r['vego_max']*2.237:.0f} mph")
+  if 'trip_summary' in r:
+    print(f"  trip:     {r['trip_summary']['shareable_text']}")
   print(f"  code:     {r.get('git_branch') or '?'} @ {r.get('git_commit') or '?'}"
         f"{' (DIRTY)' if r.get('git_dirty') else ''}")
   print(f"  source:   parent {r.get('git_commit_full') or '?'} / opendbc "
