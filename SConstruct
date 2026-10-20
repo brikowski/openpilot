@@ -309,9 +309,11 @@ def count_scons_nodes(nodes):
     if node in seen:
       continue
     seen.add(node)
-    executor = node.get_executor()
-    if executor is not None:
-      stack += executor.get_all_prerequisites() + executor.get_all_children()
+    # Progress must not scan generated sources before their builders run.
+    if isinstance(node, SCons.Node.FS.Dir):
+        stack += node.glob('*', ondisk=False)
+    stack += node.all_children(scan=False)
+    stack += node.prerequisites or []
 
   return len(seen)
 
