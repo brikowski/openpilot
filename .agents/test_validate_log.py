@@ -829,7 +829,7 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
   "4fa53fdd874e", "7a656c446285", "3167c9873773",
   "dac4f6604220", "53b97cd6a85b", "d1c39963637d", "de10bce71bfb",
   "a0354a811793", "d51aac97c7b7", "3afb27fa1782",
-  "6821a6494f28",
+  "6821a6494f28", "5c1b3df91069",
 }))
 def test_raw_road_brake_revision_keeps_fallback_and_creep_translation(revision):
   request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3, -.15, -.1, -.05])
@@ -845,7 +845,7 @@ def test_raw_road_brake_revision_keeps_fallback_and_creep_translation(revision):
                                                                         "20d94ad68231", "ad0758964f2e", "9c7a2ed886b2", "22a330576690",
                                                                         "4fa53fdd874e", "7a656c446285", "3167c9873773",
                                                                         "dac4f6604220", "53b97cd6a85b", "d1c39963637d", "de10bce71bfb",
-                                                                        "a0354a811793", "d51aac97c7b7", "3afb27fa1782", "6821a6494f28")
+                                                                        "a0354a811793", "d51aac97c7b7", "3afb27fa1782", "6821a6494f28", "5c1b3df91069")
                       else [-.275, -.1416666667, -.0916666667])
     np.testing.assert_allclose(expected, [-3.5, -.5, -.15, -.05, 0., .1, 2., -.55, -.3, *creep_expected])
     np.testing.assert_array_equal(eligible, [False] * 7 + [True, False, True, True, True])
