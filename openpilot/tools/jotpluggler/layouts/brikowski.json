@@ -1,0 +1,390 @@
+{
+  "current_tab_index": 2,
+  "tabs": [
+    {
+      "name": "Lateral - Command & Response",
+      "root": {
+        "split": "vertical",
+        "sizes": [0.2, 0.2, 0.2, 0.2, 0.2],
+        "children": [
+          {
+            "title": "Lateral | response [m/s^2] - desired (green) vs actual controller estimate (orange)",
+            "curves": [
+              {"name": "/controlsState/lateralControlState/torqueState/desiredLateralAccel", "color": "#0ab027"},
+              {"name": "/controlsState/lateralControlState/torqueState/actualLateralAccel", "color": "#f39c12"}
+            ]
+          },
+          {
+            "title": "Lateral | error [m/s^2] - actual minus desired; zero means command following",
+            "y_limits": {"min": -1.5, "max": 1.5},
+            "curves": [
+              {
+                "name": "actual - desired lateral accel",
+                "color": "#d62728",
+                "custom_python": {
+                  "linked_source": "/controlsState/lateralControlState/torqueState/actualLateralAccel",
+                  "additional_sources": ["/controlsState/lateralControlState/torqueState/desiredLateralAccel"],
+                  "globals_code": "",
+                  "function_code": "return value - v1"
+                }
+              },
+              {
+                "name": "zero",
+                "color": "#777777",
+                "custom_python": {
+                  "linked_source": "/carState/canValid",
+                  "additional_sources": [],
+                  "globals_code": "",
+                  "function_code": "return value * 0.0"
+                }
+              }
+            ]
+          },
+          {
+            "title": "Lateral | command path - carControl input (purple) vs carOutput actuator (blue)",
+            "y_limits": {"min": -1.05, "max": 1.05},
+            "curves": [
+              {"name": "/carControl/actuators/torque", "color": "#7b61ff"},
+              {"name": "/carOutput/actuatorsOutput/torque", "color": "#236bb4"}
+            ]
+          },
+          {
+            "title": "Lateral | CAN path - torqueOutputCan (blue) vs STEER_TORQUE (teal); stock cap +/-2560",
+            "y_limits": {"min": -2700.0, "max": 2700.0},
+            "curves": [
+              {"name": "/carOutput/actuatorsOutput/torqueOutputCan", "color": "#236bb4"},
+              {"name": "/sendcan/1/STEERING_CONTROL/STEER_TORQUE", "color": "#00a6a6"},
+              {
+                "name": "stock LKA cap +2560",
+                "color": "#d62728",
+                "custom_python": {
+                  "linked_source": "/carState/canValid",
+                  "additional_sources": [],
+                  "globals_code": "",
+                  "function_code": "return value * 0.0 + 2560.0"
+                }
+              },
+              {
+                "name": "stock LKA cap -2560",
+                "color": "#d62728",
+                "custom_python": {
+                  "linked_source": "/carState/canValid",
+                  "additional_sources": [],
+                  "globals_code": "",
+                  "function_code": "return value * 0.0 - 2560.0"
+                }
+              }
+            ]
+          },
+          {
+            "title": "Lateral | authority state [0/1] - active (green) saturated (red) driver torque (orange) faults (purple)",
+            "y_limits": {"min": 0.0, "max": 1.05},
+            "curves": [
+              {"name": "/carControl/latActive", "color": "#0ab027"},
+              {"name": "/controlsState/lateralControlState/torqueState/saturated", "color": "#d62728"},
+              {"name": "/carState/steeringPressed", "color": "#f39c12"},
+              {"name": "/carState/steerFaultTemporary", "color": "#7b61ff"},
+              {"name": "/carState/steerFaultPermanent", "color": "#9467bd"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Lateral - Tuning Context",
+      "root": {
+        "split": "vertical",
+        "sizes": [0.2, 0.2, 0.2, 0.2, 0.2],
+        "children": [
+          {
+            "title": "Lateral | controller terms [torque] - P (red) I (orange) D (blue) F (green)",
+            "curves": [
+              {"name": "/controlsState/lateralControlState/torqueState/p", "color": "#d62728"},
+              {"name": "/controlsState/lateralControlState/torqueState/i", "color": "#f39c12"},
+              {"name": "/controlsState/lateralControlState/torqueState/d", "color": "#236bb4"},
+              {"name": "/controlsState/lateralControlState/torqueState/f", "color": "#0ab027"}
+            ]
+          },
+          {
+            "title": "Lateral | learned torque parameters - filtered (blue) raw (red) configured (green)",
+            "curves": [
+              {"name": "/lateralTorqueParameters/latAccelFactorFiltered", "color": "#236bb4"},
+              {"name": "/lateralTorqueParameters/latAccelFactorRaw", "color": "#d62728"},
+              {"name": "/carParams/lateralTuning/torque/latAccelFactor", "color": "#0ab027"}
+            ]
+          },
+          {
+            "title": "Lateral | learned offset and friction - offset filtered (blue) raw (red) friction (orange)",
+            "curves": [
+              {"name": "/lateralTorqueParameters/latAccelOffsetFiltered", "color": "#236bb4"},
+              {"name": "/lateralTorqueParameters/latAccelOffsetRaw", "color": "#d62728"},
+              {"name": "/lateralTorqueParameters/frictionCoefficientFiltered", "color": "#f39c12"},
+              {"name": "/lateralTorqueParameters/frictionCoefficientRaw", "color": "#9467bd"}
+            ]
+          },
+          {
+            "title": "Lateral | delay [s] - configured (blue) estimate (red) estimate std (pink)",
+            "y_limits": {"min": 0.0, "max": 0.6},
+            "curves": [
+              {"name": "/lateralDelay/lateralDelay", "color": "#236bb4"},
+              {"name": "/lateralDelay/lateralDelayEstimate", "color": "#d62728"},
+              {"name": "/lateralDelay/lateralDelayEstimateStd", "color": "#f14cc1"}
+            ]
+          },
+          {
+            "title": "Lateral | vehicle model - steerRatio (green) stiffnessFactor (blue) angleOffsetDeg (purple)",
+            "curves": [
+              {"name": "/vehicleParameters/steerRatio", "color": "#0ab027"},
+              {"name": "/vehicleParameters/stiffnessFactor", "color": "#236bb4"},
+              {"name": "/vehicleParameters/angleOffsetDeg", "color": "#7b61ff"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Longitudinal - Command Chain",
+      "root": {
+        "split": "vertical",
+        "sizes": [0.18, 0.18, 0.16, 0.16, 0.16, 0.16],
+        "children": [
+          {
+            "title": "Long | command chain [m/s^2] - PLAN (green) -> CMD carControl (purple) -> WIRE ACCEL_COMMAND (blue) -> ACTUAL aEgo (orange)",
+            "curves": [
+              {"name": "/longitudinalPlan/aTarget", "color": "#0ab027"},
+              {"name": "/carControl/actuators/accel", "color": "#7b61ff"},
+              {"name": "/sendcan/1/ACC_CONTROL/ACCEL_COMMAND", "color": "#236bb4"},
+              {"name": "/carState/aEgo", "color": "#f39c12"}
+            ]
+          },
+          {
+            "title": "Long | attribution residuals [m/s^2] - CMD-PLAN (green) WIRE-CMD (blue) ACTUAL-CMD (orange)",
+            "y_limits": {"min": -1.5, "max": 1.5},
+            "curves": [
+              {
+                "name": "controller command - planner target",
+                "color": "#0ab027",
+                "custom_python": {
+                  "linked_source": "/carControl/actuators/accel",
+                  "additional_sources": ["/longitudinalPlan/aTarget"],
+                  "globals_code": "",
+                  "function_code": "return value - v1"
+                }
+              },
+              {
+                "name": "wire ACCEL_COMMAND - controller command",
+                "color": "#236bb4",
+                "custom_python": {
+                  "linked_source": "/sendcan/1/ACC_CONTROL/ACCEL_COMMAND",
+                  "additional_sources": ["/carControl/actuators/accel"],
+                  "globals_code": "",
+                  "function_code": "return value - v1"
+                }
+              },
+              {
+                "name": "aEgo - controller command",
+                "color": "#f39c12",
+                "custom_python": {
+                  "linked_source": "/carState/aEgo",
+                  "additional_sources": ["/carControl/actuators/accel"],
+                  "globals_code": "",
+                  "function_code": "return value - v1"
+                }
+              },
+              {
+                "name": "zero",
+                "color": "#777777",
+                "custom_python": {
+                  "linked_source": "/carState/canValid",
+                  "additional_sources": [],
+                  "globals_code": "",
+                  "function_code": "return value * 0.0"
+                }
+              }
+            ]
+          },
+          {
+            "title": "Long | speed [m/s] - vEgo (blue) vCruise (gray) planner speed (green)",
+            "curves": [
+              {"name": "/carState/vEgo", "color": "#236bb4"},
+              {"name": "/carState/vCruise", "color": "#777777"},
+              {"name": "/longitudinalPlan/speeds/0", "color": "#0ab027"}
+            ]
+          },
+          {
+            "title": "Long | planner intent [0/1] - longActive (green) shouldStop (red) allowThrottle (blue) allowBrake (orange)",
+            "y_limits": {"min": 0.0, "max": 1.05},
+            "curves": [
+              {"name": "/carControl/longActive", "color": "#0ab027"},
+              {"name": "/longitudinalPlan/shouldStop", "color": "#d62728"},
+              {"name": "/longitudinalPlan/allowThrottle", "color": "#236bb4"},
+              {"name": "/longitudinalPlan/allowBrake", "color": "#f39c12"}
+            ]
+          },
+          {
+            "title": "Long | state [enum] - longControlState off=0 pid=1 stopping=2; plan source cruise=0 lead=1..3 e2e=4",
+            "y_limits": {"min": -0.1, "max": 4.2},
+            "curves": [
+              {"name": "/carControl/actuators/longControlState", "color": "#7b61ff"},
+              {"name": "/longitudinalPlan/longitudinalPlanSource", "color": "#0ab027"}
+            ]
+          },
+          {
+            "title": "Long | controller terms [m/s^2] - P (red) I (orange) feedforward (green)",
+            "curves": [
+              {"name": "/controlsState/upAccelCmd", "color": "#d62728"},
+              {"name": "/controlsState/uiAccelCmd", "color": "#f39c12"},
+              {"name": "/controlsState/ufAccelCmd", "color": "#0ab027"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Longitudinal - Honda Wire & Domains",
+      "root": {
+        "split": "vertical",
+        "sizes": [0.2, 0.2, 0.2, 0.2, 0.2],
+        "children": [
+          {
+            "title": "Long | port output [m/s^2] - CMD carControl (purple) OUTPUT carOutput (orange) WIRE ACCEL_COMMAND (blue)",
+            "curves": [
+              {"name": "/carControl/actuators/accel", "color": "#7b61ff"},
+              {"name": "/carOutput/actuatorsOutput/accel", "color": "#f39c12"},
+              {"name": "/sendcan/1/ACC_CONTROL/ACCEL_COMMAND", "color": "#236bb4"}
+            ]
+          },
+          {
+            "title": "Long | Honda domain [0/1] - longActive (green) BRAKE_REQUEST (red) GAS_ACTIVE (purple) STANDSTILL (orange)",
+            "y_limits": {"min": 0.0, "max": 1.05},
+            "curves": [
+              {"name": "/carControl/longActive", "color": "#0ab027"},
+              {"name": "/sendcan/1/ACC_CONTROL/BRAKE_REQUEST", "color": "#d62728"},
+              {
+                "name": "GAS_COMMAND active",
+                "color": "#7b61ff",
+                "custom_python": {
+                  "linked_source": "/sendcan/1/ACC_CONTROL/GAS_COMMAND",
+                  "additional_sources": [],
+                  "globals_code": "",
+                  "function_code": "return (value > -29999.0).astype(float)"
+                }
+              },
+              {"name": "/sendcan/1/ACC_CONTROL/STANDSTILL", "color": "#f39c12"}
+            ]
+          },
+          {
+            "title": "Long | gas [normalized] - carOutput gas (orange) vs GAS_COMMAND / 2000 (purple); inactive gas is zero",
+            "y_limits": {"min": 0.0, "max": 1.05},
+            "curves": [
+              {"name": "/carOutput/actuatorsOutput/gas", "color": "#f39c12"},
+              {
+                "name": "GAS_COMMAND normalized",
+                "color": "#7b61ff",
+                "custom_python": {
+                  "linked_source": "/sendcan/1/ACC_CONTROL/GAS_COMMAND",
+                  "additional_sources": [],
+                  "globals_code": "",
+                  "function_code": "return np.where(value > -29999.0, np.clip(value / 2000.0, 0.0, 1.0), 0.0)"
+                }
+              }
+            ]
+          },
+          {
+            "title": "Long | brake domains [0/1] - BRAKE_REQUEST (red) COMPUTER_BRAKING (orange) USER_BRAKE (gray) brakePressed (purple)",
+            "y_limits": {"min": 0.0, "max": 1.05},
+            "curves": [
+              {"name": "/sendcan/1/ACC_CONTROL/BRAKE_REQUEST", "color": "#d62728"},
+              {"name": "/can/1/VSA_STATUS/COMPUTER_BRAKING", "color": "#f39c12"},
+              {"name": "/can/1/VSA_STATUS/USER_BRAKE", "color": "#777777"},
+              {"name": "/carState/brakePressed", "color": "#7b61ff"}
+            ]
+          },
+          {
+            "title": "Long | wire-to-output residual [m/s^2] - ACCEL_COMMAND minus carOutput accel; zero means no port alteration",
+            "y_limits": {"min": -1.5, "max": 1.5},
+            "curves": [
+              {
+                "name": "wire ACCEL_COMMAND - carOutput accel",
+                "color": "#236bb4",
+                "custom_python": {
+                  "linked_source": "/sendcan/1/ACC_CONTROL/ACCEL_COMMAND",
+                  "additional_sources": ["/carOutput/actuatorsOutput/accel"],
+                  "globals_code": "",
+                  "function_code": "return value - v1"
+                }
+              },
+              {
+                "name": "zero",
+                "color": "#777777",
+                "custom_python": {
+                  "linked_source": "/carState/canValid",
+                  "additional_sources": [],
+                  "globals_code": "",
+                  "function_code": "return value * 0.0"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Context - Planner, Lead & Plant",
+      "root": {
+        "split": "vertical",
+        "sizes": [0.17, 0.17, 0.17, 0.17, 0.16, 0.16],
+        "children": [
+          {
+            "title": "Context | lead distance [m] - dRel (blue) dPath (purple)",
+            "curves": [
+              {"name": "/radarState/leadOne/dRel", "color": "#236bb4"},
+              {"name": "/radarState/leadOne/dPath", "color": "#9467bd"}
+            ]
+          },
+          {
+            "title": "Context | lead speed [m/s] - vEgo (orange) vLead (blue) vRel (red)",
+            "curves": [
+              {"name": "/carState/vEgo", "color": "#f39c12"},
+              {"name": "/radarState/leadOne/vLead", "color": "#236bb4"},
+              {"name": "/radarState/leadOne/vRel", "color": "#d62728"}
+            ]
+          },
+          {
+            "title": "Context | acceleration [m/s^2] - plan aTarget (green) aEgo (orange) lead aLeadK (purple)",
+            "curves": [
+              {"name": "/longitudinalPlan/aTarget", "color": "#0ab027"},
+              {"name": "/carState/aEgo", "color": "#f39c12"},
+              {"name": "/radarState/leadOne/aLeadK", "color": "#9467bd"}
+            ]
+          },
+          {
+            "title": "Context | grade and planner gates - pitch (blue) ufAccelCmd (green) shouldStop (red) allowThrottle (orange)",
+            "curves": [
+              {"name": "/carControl/orientationNED/1", "color": "#236bb4"},
+              {"name": "/controlsState/ufAccelCmd", "color": "#0ab027"},
+              {"name": "/longitudinalPlan/shouldStop", "color": "#d62728"},
+              {"name": "/longitudinalPlan/allowThrottle", "color": "#f39c12"}
+            ]
+          },
+          {
+            "title": "Context | powertrain torque - request (blue) estimate (orange)",
+            "curves": [
+              {"name": "/can/1/GAS_PEDAL_2/ENGINE_TORQUE_REQUEST", "color": "#236bb4"},
+              {"name": "/can/1/GAS_PEDAL_2/ENGINE_TORQUE_ESTIMATE", "color": "#f39c12"}
+            ]
+          },
+          {
+            "title": "Context | engine and gearbox - RPM (green) CAR_GAS (purple) target gear (blue) shift activity (orange)",
+            "curves": [
+              {"name": "/can/1/ENGINE_DATA/ENGINE_RPM", "color": "#0ab027"},
+              {"name": "/can/1/GAS_PEDAL_2/CAR_GAS", "color": "#7b61ff"},
+              {"name": "/can/1/GEARBOX_AUTO/TRANS_TARGET_GEAR", "color": "#236bb4"},
+              {"name": "/can/1/GEARBOX_AUTO/TRANS_SHIFT_ACTIVITY", "color": "#f39c12"}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

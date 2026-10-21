@@ -6,6 +6,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.layouts.settings.initial_cruise_speed import InitialCruiseSpeedControl
+from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -89,7 +90,7 @@ class TogglesLayout(Widget):
       buttons=[lambda: tr("Aggressive"), lambda: tr("Standard"), lambda: tr("Relaxed")],
       button_width=255,
       callback=self._set_longitudinal_personality,
-      selected_index=self._params.get("LongitudinalPersonality", return_default=True),
+      selected_index=self._params.get(get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode), return_default=True),
       icon="speed_limit.png"
     )
 
@@ -129,7 +130,6 @@ class TogglesLayout(Widget):
         self._locked_toggles.add(param)
 
       self._toggles[param] = toggle
-
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
         self._toggles["LongitudinalPersonality"] = self._long_personality_setting
@@ -154,6 +154,7 @@ class TogglesLayout(Widget):
   def _update_toggles(self):
     ui_state.update_params()
     self._initial_cruise_speed.action_item.refresh()
+    self._refresh_personality()
 
     if ui_state.CP is not None:
       self._long_personality_setting.action_item.set_enabled(ui_state.has_longitudinal_control)
@@ -180,4 +181,9 @@ class TogglesLayout(Widget):
       self._params.put_bool("OnroadCycleRequested", True, block=True)
 
   def _set_longitudinal_personality(self, button_index: int):
-    self._params.put("LongitudinalPersonality", button_index, block=True)
+    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
+    self._params.put(key, button_index, block=True)
+
+  def _refresh_personality(self):
+    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
+    self._long_personality_setting.action_item.set_selected_button(self._params.get(key, return_default=True))

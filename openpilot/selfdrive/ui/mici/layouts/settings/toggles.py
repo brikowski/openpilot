@@ -6,6 +6,7 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.mici.layouts.settings.initial_cruise_speed import InitialCruiseSpeedButton
+from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -19,6 +20,7 @@ class TogglesLayoutMici(NavScroller):
                                                                "Aggressive follows closer, with firmer gas and braking.\n" +
                                                                "Relaxed leaves more space.\n" +
                                                                "Use the steering wheel distance button on supported cars.")
+    self._refresh_personality()
     self._initial_cruise_speed = InitialCruiseSpeedButton()
     self._initial_cruise_speed.set_visible(lambda: ui_state.CP is not None and ui_state.has_longitudinal_control and not ui_state.CP.pcmCruise)
     is_metric_toggle = BigToggle("use metric units", initial_state=ui_state.params.get_bool("IsMetric"), toggle_callback=self._on_metric_toggle)
@@ -71,6 +73,10 @@ class TogglesLayoutMici(NavScroller):
   def _update_state(self):
     super()._update_state()
 
+    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
+    if self._personality_toggle._param != key:
+      self._refresh_personality()
+
     if ui_state.sm.updated["selfdriveState"]:
       personality = PERSONALITY_TO_INT[ui_state.sm["selfdriveState"].personality]
       if personality != ui_state.personality and ui_state.started:
@@ -88,6 +94,7 @@ class TogglesLayoutMici(NavScroller):
   def _update_toggles(self):
     ui_state.update_params()
     self._initial_cruise_speed.refresh()
+    self._refresh_personality()
 
     if ui_state.CP is not None:
       self._personality_toggle.set_visible(ui_state.has_longitudinal_control)
@@ -95,3 +102,9 @@ class TogglesLayoutMici(NavScroller):
     # Refresh toggles from params to mirror external changes
     for key, item in self._refresh_toggles:
       item.set_checked(ui_state.params.get_bool(key))
+
+  def _refresh_personality(self):
+    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
+    self._personality_toggle._param = key
+    value = ui_state.params.get(key, return_default=True)
+    self._personality_toggle.set_value(self._personality_toggle._options[value])

@@ -1,0 +1,39 @@
+name: Odyssey weekly release
+
+on:
+  schedule:
+    - cron: '15 6 * * 1'
+      timezone: America/Chicago
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: odyssey-public-release
+  cancel-in-progress: false
+
+jobs:
+  software:
+    if: github.repository == 'brikowski/openpilot'
+    uses: brikowski/openpilot/.github/workflows/odyssey.yaml@ody-op-test
+    with:
+      ref: ody-op-test
+
+  publish:
+    needs: software
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.software.outputs.source }}
+          fetch-depth: 0
+          lfs: false
+      - name: Publish validated vehicle source
+        run: |
+          git switch -C ody-op-test
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 .agents/publish_public.py --publish

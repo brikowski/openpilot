@@ -1,0 +1,331 @@
+import numpy as np
+import pytest
+
+from inspect_response import brake_entry_summary, inspect, print_brake_entry_summary, received_context
+from tuning_metrics import brake_entry_tracking_profile, response_jerk_events
+
+
+def test_received_context_detects_activity_without_a_target_gear_edge_and_excludes_stale_updates():
+  t = np.arange(0., 2., .01)
+  data = {'t': t, 'gear': np.full_like(t, 7.)}
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake',
+              'rpm', 'wheel_rl', 'wheel_rr'):
+    value = {'rpm': 1800., 'wheel_rl': 72., 'wheel_rr': 72.}.get(key, .1)
+    data[key] = np.where(t < 1., 110., 119.) if key == 'shift_activity' else np.full_like(t, value)
+    data[key + '_age'] = np.full_like(t, .01)
+  data['user_brake'] = np.where(t <= 1.1, .0625, .25)
+  result = received_context(data, 1.1)
+  assert result['shift_edges_in_history'] == 1
+  assert result['shift_activity'] == 119.
+  assert not np.any(np.diff(data['gear']))
+  assert result['can_long_accel'] == .1
+  assert result.get('user_brake') == .0625
+  data['shift_activity_age'][100] = .06
+  assert received_context(data, 1.1)['shift_edges_in_history'] == 0
+  data['can_long_accel_age'][:] = .06
+  data['engine_torque_request'][:] = np.nan
+  result = received_context(data, 1.1)
+  assert result['can_long_accel'] is None
+  assert result['engine_torque_request'] is None
+  for age in (.06, -.01, np.nan):
+    data['user_brake_age'][:] = age
+    assert received_context(data, 1.1)['user_brake'] is None
+  data['user_brake_age'][:] = .01
+  data['user_brake'][:] = np.nan
+  assert received_context(data, 1.1)['user_brake'] is None
+  assert received_context(data, -.01)['user_brake'] is None
+
+
+def test_received_brake_buildup_uses_fresh_history_and_never_future_samples():
+  t = np.arange(0., 2., .01)
+  data = {'t': t}
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake',
+              'rpm', 'wheel_rl', 'wheel_rr'):
+    data[key] = np.full_like(t, {'rpm': 1800., 'wheel_rl': 72., 'wheel_rr': 72.}.get(key, 0.))
+    data[key + '_age'] = np.full_like(t, .01)
+  data['user_brake'] = np.where(t < 1.27, .015625, .125)
+  early = received_context(data, 1.1, brake_edge_time=1.)
+  assert early['user_brake_at_entry'] == .015625
+  assert early['request_to_user_brake_s'] is None
+  assert received_context(data, 1.5, brake_edge_time=1.)['request_to_user_brake_s'] == pytest.approx(.27)
+  assert received_context(data, 1.5, brake_edge_time=np.nextafter(1., 2.))['request_to_user_brake_s'] == pytest.approx(.27)
+  assert received_context(data, 1.5)['request_to_user_brake_s'] is None
+  assert received_context(data, -.01, brake_edge_time=1.)['request_to_user_brake_s'] is None
+  assert received_context(data, 1.5, brake_edge_time=-.01)['user_brake_at_entry'] is None
+  keep = (t < 1.12) | (t > 1.26)
+  gapped = {key: values[keep] for key, values in data.items()}
+  assert received_context(gapped, 1.5, brake_edge_time=1.)['request_to_user_brake_s'] is None
+  for age in (.06, -.01, np.nan):
+    data['user_brake_age'][120] = age
+    missing = received_context(data, 1.5, brake_edge_time=1.)
+    assert missing['user_brake'] == .125  # Fresh at the peak does not repair missing onset history.
+    assert missing['request_to_user_brake_s'] is None
+  data['user_brake_age'][120] = .01
+  data['user_brake'][120] = np.nan
+  assert received_context(data, 1.5, brake_edge_time=1.)['request_to_user_brake_s'] is None
+  data['user_brake'][:] = .125
+  active = received_context(data, 1.5, brake_edge_time=1.)
+  assert active['user_brake_at_entry'] == .125
+  assert active['request_to_user_brake_s'] is None
+  data['user_brake_age'][100] = .06
+  assert received_context(data, 1.5, brake_edge_time=1.)['user_brake_at_entry'] is None
+
+
+def test_received_rpm_speed_variation_needs_fresh_complete_causal_history():
+  t = np.arange(0., 3., .01)
+  data = {'t': t, 'vego': np.ones_like(t), 'gear': np.full_like(t, 6.)}
+  for key, value in {'shift_activity': 102., 'engine_torque_request': 0., 'can_long_accel': 0.,
+                     'wheel_speed_spread': 0., 'user_brake': 0., 'rpm': 1800.,
+                     'wheel_rl': 70., 'wheel_rr': 74.}.items():
+    data[key] = np.full_like(t, value)
+    data[key + '_age'] = np.full_like(t, .01)
+  data['rpm'][t >= 1.5] = 1980.
+  data['rpm'][t > 2.] = 9000.
+  result = received_context(data, 2.)
+  assert result['rpm_per_mps'] == 99.
+  assert result['rpm_per_mps_span_pct'] == pytest.approx(100. * 9. / ((100 * 90. + 51 * 99.) / 151))
+  assert result['shift_edges_in_history'] == 0 and not np.any(np.diff(data['gear']))
+  assert received_context(data, .4)['rpm_per_mps'] == 90.
+  assert received_context(data, .4)['rpm_per_mps_span_pct'] is None
+  assert received_context(data, -.01)['rpm_per_mps'] is None
+  for key in ('rpm', 'wheel_rl', 'wheel_rr'):
+    for age in (.06, -.01, np.nan):
+      data[key + '_age'][200] = age
+      assert received_context(data, 2.)['rpm_per_mps'] is None
+      assert received_context(data, 2.)['rpm_per_mps_span_pct'] is None
+      data[key + '_age'][200] = .01
+      data[key + '_age'][120] = age
+      missing = received_context(data, 2.)
+      assert missing['rpm_per_mps'] == 99.
+      assert missing['rpm_per_mps_span_pct'] is None
+      data[key + '_age'][120] = .01
+    keep = data[key][200]
+    for value in (np.nan, -1.) if key == 'rpm' else (np.nan, 0., -1.):
+      data[key][200] = value
+      assert received_context(data, 2.)['rpm_per_mps'] is None
+      data[key][200] = keep
+  keep = (t < 1.1) | (t > 1.2)
+  gapped = {key: values[keep] for key, values in data.items()}
+  assert received_context(gapped, 2.)['rpm_per_mps'] == 99.
+  assert received_context(gapped, 2.)['rpm_per_mps_span_pct'] is None
+  data['rpm'][:] = 0.
+  assert received_context(data, 2.)['rpm_per_mps'] == 0.
+  assert received_context(data, 2.)['rpm_per_mps_span_pct'] is None
+
+
+def test_brake_profile_separates_raw_request_from_grade_translated_wire():
+  t = np.arange(0.0, 3.0, 0.01)
+  brake = t >= 1.0
+  request = np.full_like(t, -0.4)
+  wire = request + 0.1
+  actual = np.full_like(t, -0.45)
+  args = (t, actual, wire, brake, np.full_like(t, -30000),
+          np.ones_like(t, dtype=bool), np.full_like(t, 20), np.full_like(t, 6))
+  baseline = brake_entry_tracking_profile(*args, filter_tau=0.0)
+  rows = brake_entry_tracking_profile(*args, filter_tau=0.0, requested_accel=request)
+  assert len(rows) == len(baseline) == 1
+  assert rows[0]["time"] == baseline[0]["time"]
+  np.testing.assert_allclose(rows[0]["errors"], baseline[0]["errors"])
+  np.testing.assert_allclose(rows[0]["errors"], -0.15)
+  np.testing.assert_allclose(rows[0]["request_errors"], -0.05)
+  request[150] = np.nan
+  assert not brake_entry_tracking_profile(*args, filter_tau=0.0, requested_accel=request)
+
+
+def test_brake_entry_tracking_profile_captures_early_lag_and_late_overresponse():
+  t = np.arange(0.0, 3.0, 0.01)
+  brake = t >= 1.0
+  wire = np.where(brake, -0.3, -0.1)
+  actual = np.where(brake, np.interp(t - 1.0, [0.0, 0.5, 1.0], [0.0, -0.1, -0.5]), 0.0)
+  gas = np.full_like(t, -30000.0)
+  clean = np.ones_like(t, dtype=bool)
+  speed = np.full_like(t, 20.0)
+  gear = np.full_like(t, 6.0)
+
+  rows = brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
+  assert len(rows) == 1
+  assert rows[0]["time"] == pytest.approx(1.0)
+  assert rows[0]["speed"] == pytest.approx(20.0)
+  assert rows[0]["wire_at_half"] == pytest.approx(-0.3)
+  assert rows[0]["errors"][0] > 0.20
+  assert rows[0]["errors"][1] > 0.15
+  assert rows[0]["errors"][2] < 0.0
+  assert rows[0]["errors"][3] < -0.15
+
+  gas[99] = -60.0
+  assert not brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
+  gas[99] = -30000.0
+  gear[150] = 5.0
+  assert not brake_entry_tracking_profile(t, actual, wire, brake, gas, clean, speed, gear, filter_tau=0.0)
+
+
+@pytest.mark.parametrize("missing", [None, slice(0, 20), slice(50, 70)])
+def test_response_jerk_event_preserves_first_divergence_and_domain_context(monkeypatch, capsys, missing):
+  t = np.arange(0.0, 8.0, 0.01)
+  requested = np.zeros_like(t)
+  command_ramp = (t >= 2.0) & (t < 2.5)
+  requested[command_ramp] = -0.8 * (t[command_ramp] - 2.0)
+  requested[t >= 2.5] = -0.4
+  actual = np.zeros_like(t)
+  response_ramp = (t >= 2.6) & (t < 2.9)
+  actual[response_ramp] = -2.0 * (t[response_ramp] - 2.6)
+  actual[t >= 2.9] = -0.6
+  wire = requested.copy()
+  if missing is not None:
+    wire[missing] = np.nan
+    actual[missing] = np.nan
+  brake = t >= 2.0
+  computer_braking = t >= 2.08
+  gas = np.where(brake, -30000.0, 100.0)
+
+  rows = response_jerk_events(
+    t, requested, requested, wire, actual, np.ones_like(t, dtype=bool), brake,
+    computer_braking, gas,
+    np.full_like(t, 20.0), np.zeros_like(t), np.zeros_like(t, dtype=bool),
+    np.zeros_like(t, dtype=int), np.full_like(t, 6.0), np.full_like(t, -100.0),
+    np.full_like(t, 1800.0), gas_inactive=-30000, threshold=0.5, limit=1,
+  )
+
+  assert len(rows) == 1
+  event = rows[0]
+  assert event["domain"] == "brake"
+  assert event["domain_from"] == "gas"
+  assert 0.5 < event["domain_edge_age"] < 1.2
+  assert event["domain_edges_in_history"] == 1
+  assert event["computer_braking_before_entry"] is False
+  assert event["computer_braking_at_peak"] is True
+  assert event["request_to_computer_brake_s"] == pytest.approx(0.08)
+  assert event["computer_brake_to_peak_s"] == pytest.approx(
+    event["domain_edge_age"] - event["request_to_computer_brake_s"])
+  assert event["response_jerk"] < -1.0
+  assert event["command_jerk_peak"] < -0.5
+  assert event["amplification"] > 1.5
+  assert event["plan_request_rms"] == 0.0
+  assert event["request_wire_rms"] == 0.0
+  assert event["gear_edges_in_history"] == 0
+  assert event["gear"] == 6.0
+
+  data = {'route': 'synthetic', 't': t, 'request': requested, 'atarget': requested + 1., 'consumed_atarget': requested, 'accel_command': wire,
+          'aego': actual, 'active': np.ones_like(t, dtype=bool), 'pid': np.ones_like(t, dtype=bool),
+          'gas_pressed': np.zeros_like(t, dtype=bool), 'brake_pressed': np.zeros_like(t, dtype=bool),
+          'brake_request': brake, 'computer_braking': computer_braking, 'computer_braking_age': np.full_like(t, .01),
+          'gas_command': gas, 'vego': np.full_like(t, 20.), 'pitch': np.zeros_like(t),
+          'has_lead': np.ones_like(t, dtype=bool), 'plan_source': np.full_like(t, 4, dtype=int),
+          'consumed_has_lead': np.zeros_like(t), 'consumed_plan_source': np.zeros_like(t, dtype=int),
+          'accel_boost': np.where(t <= event['time'], .05, .15),
+          'gear': np.full_like(t, 6.), 'engine_torque': np.full_like(t, -100.), 'rpm': np.full_like(t, 1800.)}
+  for key in ('shift_activity', 'engine_torque_request', 'can_long_accel', 'wheel_speed_spread', 'user_brake', 'wheel_rl', 'wheel_rr'):
+    data[key] = np.full_like(t, 72. if key.startswith('wheel_') and key != 'wheel_speed_spread' else 0.)
+    data[key + '_age'] = np.full_like(t, .01)
+  data['rpm_age'] = np.full_like(t, .01)
+  data['user_brake'] = np.where(t < 2.26, .015625, .125)
+  monkeypatch.setattr('inspect_response.load', lambda _: data)
+  fresh = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
+  assert fresh[0]['computer_braking_at_peak'] is True
+  assert fresh[0]['plan_request_rms'] == 0. and fresh[0]['plan_source'] == 0 and not fresh[0]['has_lead']
+  assert fresh[0].get('user_brake_at_entry') == .015625
+  assert fresh[0].get('request_to_user_brake_s') == pytest.approx(.26)
+  assert fresh[0].get('accel_boost') == .05
+  assert fresh[0]['request'] == event['request'] and fresh[0]['wire'] == event['wire']
+  printed = capsys.readouterr().out
+  assert 'source=cruise boost-state=0.0500' in printed
+  assert 'request_to_user_brake_s=' in printed
+  assert 'rpm_per_mps=90.0, rpm_per_mps_span_pct=0.0' in printed
+  data['accel_boost'][:] = np.nan
+  missing = inspect('synthetic', threshold=.5, limit=1, summary_only=False)
+  assert [row['time'] for row in missing] == [row['time'] for row in fresh]
+  assert missing[0]['accel_boost'] is None
+  assert 'boost-state=unavailable' in capsys.readouterr().out
+  for age in (.06, -.01, np.nan):
+    data['computer_braking_age'][:] = age
+    stale = inspect('synthetic', threshold=.5, limit=1, summary_only=True)
+    assert [row['time'] for row in stale] == [row['time'] for row in fresh]
+    assert stale[0]['computer_braking_at_peak'] is None
+    assert stale[0]['request_to_computer_brake_s'] is None
+
+  summary = brake_entry_summary(rows, max_edge_age=1.0)
+  assert summary == {
+    "count": 1,
+    "edge_age_min": event["domain_edge_age"],
+    "edge_age_max": event["domain_edge_age"],
+    "response_jerk_median": event["response_jerk"],
+    "command_jerk_abs_median": abs(event["command_jerk_peak"]),
+    "amplification_median": event["amplification"],
+    "jerk_magnitude_correlation": None,
+    "domain_from_counts": {"gas": 1, "coast": 0, "brake": 0},
+    "computer_brake_edges": 1,
+    "computer_braking_at_peak": 1,
+    "computer_braking_peak_samples": 1,
+    "request_to_computer_brake_median": event["request_to_computer_brake_s"],
+    "computer_brake_to_peak_median": event["computer_brake_to_peak_s"],
+    "without_gear_edge": 1,
+    "plan_request_rms_max": 0.0,
+    "request_wire_rms_max": 0.0,
+  }
+
+
+def test_brake_entry_summary_uses_every_qualifying_event():
+  base = {
+    "domain": "brake",
+    "domain_edge_age": 0.5,
+    "gear_edges_in_history": 0,
+    "plan_request_rms": 0.01,
+    "request_wire_rms": 0.02,
+    "domain_from": "coast",
+    "computer_braking_at_peak": True,
+    "request_to_computer_brake_s": 0.06,
+    "computer_brake_to_peak_s": 0.44,
+  }
+  rows = [
+    {**base, "response_jerk": -1.0, "command_jerk_peak": -0.5, "amplification": 2.0},
+    {**base, "domain_edge_age": 0.6, "gear_edges_in_history": 1,
+     "plan_request_rms": 0.03, "request_wire_rms": 0.04,
+     "response_jerk": -2.0, "command_jerk_peak": -1.0, "amplification": 2.0},
+    {**base, "response_jerk": +3.0, "command_jerk_peak": +1.0, "amplification": 3.0},
+    {**base, "domain_edge_age": 0.8,
+     "response_jerk": -4.0, "command_jerk_peak": -2.0, "amplification": 2.0},
+  ]
+
+  assert brake_entry_summary(rows) == {
+    "count": 2,
+    "edge_age_min": 0.5,
+    "edge_age_max": 0.6,
+    "response_jerk_median": -1.5,
+    "command_jerk_abs_median": 0.75,
+    "amplification_median": 2.0,
+    "jerk_magnitude_correlation": pytest.approx(1.0),
+    "domain_from_counts": {"gas": 0, "coast": 2, "brake": 0},
+    "computer_brake_edges": 2,
+    "computer_braking_at_peak": 2,
+    "computer_braking_peak_samples": 2,
+    "request_to_computer_brake_median": 0.06,
+    "computer_brake_to_peak_median": 0.44,
+    "without_gear_edge": 1,
+    "plan_request_rms_max": 0.03,
+    "request_wire_rms_max": 0.04,
+  }
+
+
+def test_brake_entry_summary_keeps_missing_computer_brake_state_explicit(capsys):
+  rows = [{
+    "domain": "brake",
+    "domain_edge_age": 0.5,
+    "gear_edges_in_history": 0,
+    "plan_request_rms": 0.01,
+    "request_wire_rms": 0.02,
+    "domain_from": "coast",
+    "computer_braking_at_peak": None,
+    "request_to_computer_brake_s": None,
+    "computer_brake_to_peak_s": None,
+    "response_jerk": -1.0,
+    "command_jerk_peak": -0.5,
+    "amplification": 2.0,
+  }]
+
+  summary = brake_entry_summary(rows)
+  assert summary["computer_brake_edges"] == 0
+  assert summary["computer_braking_peak_samples"] == 0
+  assert summary["request_to_computer_brake_median"] is None
+  assert summary["computer_brake_to_peak_median"] is None
+  print_brake_entry_summary(rows)
+  assert "request->state median n/a, state->peak median n/a" in capsys.readouterr().out
