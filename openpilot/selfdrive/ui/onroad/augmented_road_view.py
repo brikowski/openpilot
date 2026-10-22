@@ -107,7 +107,8 @@ class AugmentedRoadView(CameraView):
     border_color = BORDER_COLORS.get(ui_state.status, BORDER_COLORS[UIStatus.DISENGAGED])
     border_rect = rl.Rectangle(rect.x + UI_BORDER_SIZE, rect.y + UI_BORDER_SIZE,
                                rect.width - 2 * UI_BORDER_SIZE, rect.height - 2 * UI_BORDER_SIZE)
-    rl.draw_rectangle_rounded_lines_ex(border_rect, border_roundness, 10, UI_BORDER_SIZE, border_color)
+    rl.draw_rectangle_rounded_lines_ex(border_rect, border_roundness, 10, UI_BORDER_SIZE, rl.BLACK)
+    rl.draw_rectangle_rounded_lines_ex(border_rect, border_roundness, 10, 10, border_color)
 
   def _switch_stream_if_needed(self, sm):
     if sm['carParams'].openpilotLongitudinalControl and WIDE_CAM in self.available_streams:
