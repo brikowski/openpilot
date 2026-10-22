@@ -52,38 +52,51 @@ def _ssh(cmd):
 
 
 def remote_routes():
-  """[(logid, newest_mtime, n_segments)] on the device, newest first."""
-  # Group locally rather than with awk over ssh - far less quoting to get wrong.
-  r = _ssh(f"find {REMOTE_ROOT} -maxdepth 1 -mindepth 1 -type d -printf '%T@ %f\\n'")
+  """Retained full-rate route summaries and exact segment indices."""
+  r = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -name rlog.zst -printf '%T@ %h\\n'")
   if r.returncode != 0:
     sys.exit(f"cannot reach {DEVICE}: {r.stderr.strip() or 'ssh failed'}\n" +
              "Is the device powered and on wifi? Override with COMMA_SSH=user@ip")
-  newest, count = {}, {}
+  newest, retained = {}, {}
   for line in r.stdout.splitlines():
     parts = line.split()
     if len(parts) != 2:
       continue
-    ts, name = float(parts[0]), parts[1]
+    ts, name = float(parts[0]), Path(parts[1]).name
     m = LOGID_RE.match(name)
     if not m:
-      continue   # 'boot', 'crash', etc
+      continue
+    try:
+      index = int(name.rsplit("--", 1)[-1])
+    except ValueError:
+      continue
     rid = m.group(0)
     newest[rid] = max(newest.get(rid, 0), ts)
-    count[rid] = count.get(rid, 0) + 1
-  return sorted(((r, newest[r], count[r]) for r in newest), key=lambda x: -x[1])
+    retained.setdefault(rid, set()).add(index)
+  routes = sorted(((rid, newest[rid], len(indices)) for rid, indices in retained.items()), key=lambda x: -x[1])
+  return routes, retained
 
 
-def ledger_routes():
-  """Log ids already validated, keyed the same way validate_log dedups them."""
+def ledger_routes(retained=None):
+  """Validated route ids, optionally requiring coverage of every currently retained segment."""
   if not LEDGER.exists():
     return set()
   out = set()
   for line in LEDGER.read_text().splitlines():
     if not line.strip():
       continue
-    m = LOGID_RE.search(json.loads(line).get("route", ""))
+    row = json.loads(line)
+    m = LOGID_RE.search(row.get("route", ""))
     if m:
-      out.add(m.group(0))
+      rid = m.group(0)
+      if retained is not None and rid in retained:
+        coverage = row.get("local_segment_coverage")
+        if not coverage:
+          continue
+        validated = set(range(coverage["first"], coverage["last"] + 1)) - set(coverage["missing_between"])
+        if not retained[rid] <= validated:
+          continue
+      out.add(rid)
   return out
 
 
@@ -164,6 +177,7 @@ def _select_routes(routes, done, *, since_hours=None, all_new=False):
     skipped = [rid for rid, _, _ in routes if rid in done]
     return targets, skipped, "retained"
 
+  assert since_hours is not None
   cutoff = datetime.now().timestamp() - since_hours * 3600
   targets = [(rid, timestamp, segments) for rid, timestamp, segments in routes
              if timestamp >= cutoff and rid not in done]
@@ -309,8 +323,8 @@ def main():
       sys.exit(f"could not parse a log id out of '{args.route}'")
     targets = [(m.group(0), None, None)]
   else:
-    done = set() if args.redo else ledger_routes()
-    routes = remote_routes()
+    routes, retained = remote_routes()
+    done = set() if args.redo else ledger_routes(retained)
     targets, skipped, scope = _select_routes(routes, done, since_hours=args.since_hours, all_new=args.all_new)
     recent = len(targets) + len(skipped)
     print(_selection_summary(len(routes), recent, scope, targets, skipped, redo=args.redo))

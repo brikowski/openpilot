@@ -174,3 +174,47 @@ def test_validate_uses_current_interpreter_without_refreshing_lock(monkeypatch):
   assert pull_logs.validate("0000002b--cccccccccc", "diagnostic") == 0
   assert calls == [([sys.executable, ".agents/validate_log.py", "0000002b--cccccccccc", "diagnostic"],
                    {"cwd": pull_logs.REPO})]
+
+
+@pytest.mark.parametrize("selection", [["--all-new"], ["--since-hours", "24"]])
+@pytest.mark.parametrize("coverage,retained,complete", [
+  ({"first": 0, "last": 2, "missing_between": [1]}, [0, 1, 2], False),
+  ({"first": 0, "last": 1, "missing_between": []}, [0, 1, 2], False),
+  ({"first": 0, "last": 2, "missing_between": []}, [1, 2, 3], False),
+  ({"first": 4, "last": 6, "missing_between": []}, [4, 5, 6], True),
+  ({"first": 0, "last": 6, "missing_between": []}, [4, 5, 6], True),
+  ({"first": 0, "last": 2, "missing_between": [1]}, [0, 2], True),
+  (None, [0, 1], False),
+])
+def test_partial_validation_does_not_hide_missing_retained_segments(monkeypatch, tmp_path, capsys,
+                                                                  coverage, retained, complete, selection):
+  route = "0000004c--bbbbbbbbbb"
+  ledger = tmp_path / "log-validation-ledger.jsonl"
+  ledger.write_text(json.dumps({"route": route, "local_segment_coverage": coverage}) + "\n")
+  monkeypatch.setattr(pull_logs, "LEDGER", ledger)
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+
+  monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
+  monkeypatch.setattr(pull_logs, "rlog_root", lambda: tmp_path)
+  monkeypatch.setattr(pull_logs, "remote_routes", lambda: ([(route, pull_logs.datetime.now().timestamp(), len(retained))], {route: set(retained)}))
+  monkeypatch.setattr(sys, "argv", ["pull_logs.py", *selection, "--list"])
+  pull_logs.main()
+  assert f"{int(not complete)} not yet validated" in capsys.readouterr().out
+  # Pruning still uses the explicit validation ledger, independently of device retention.
+  assert pull_logs.ledger_routes() == {route}
+
+
+def test_remote_inventory_counts_rlogs_and_retains_exact_indices(monkeypatch):
+  route = "0000004c--bbbbbbbbbb"
+  commands = []
+
+  def ssh(command):
+    commands.append(command)
+    return subprocess.CompletedProcess([], 0, "\n".join(
+      f"{i}.0 {pull_logs.REMOTE_ROOT}/{route}--{i}" for i in (4, 5, 6)), "")
+
+  monkeypatch.setattr(pull_logs, "_ssh", ssh)
+  routes, retained = pull_logs.remote_routes()
+  assert routes == [(route, 6., 3)]
+  assert retained == {route: {4, 5, 6}}
+  assert "-name rlog.zst" in commands[0]
