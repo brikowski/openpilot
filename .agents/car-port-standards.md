@@ -139,9 +139,14 @@ active safety rails.
   established estimates retain their 100 ms update cadence. It selects or retains coast when
   measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
   signs and fresh valid received state. Gas resumes when measured or predicted coast no longer
-  exceeds the request. Without a learned estimate, release still requires falling mild negative
-  demand and an already-issued zero gas command; request trend uses elapsed control time. No new
-  learner or gas-map gain is added. This selection does not activate friction braking, alter
+  exceeds the request. The downhill fallback without learned response retains its falling-demand
+  and zero-gas gates. At any grade, an already-active gas domain can release a negative request
+  after the existing same-drivetrain delayed observer and current response both show excess
+  acceleration beyond the response margin, with an issued zero gas command and fresh idle gas/brake
+  feedback. That release remains in coast while excess persists, without treating active gas as a
+  passive observation. Fresh valid CAN, pose and received drivetrain/braking state qualify it;
+  mode changes clear its history. Stronger requests and low-speed fallbacks retain their authority.
+  No new learner or gas-map gain is added. This selection does not activate friction braking, alter
   `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
 - The fixed Odyssey trial uses 3840 steering counts, seed factor 1.35 and
