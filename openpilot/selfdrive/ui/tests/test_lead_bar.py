@@ -1,4 +1,4 @@
-"""Stock C3X chevrons and C4 lead bars."""
+"""Shared C3X and C4 white lead bars."""
 import importlib
 from types import SimpleNamespace
 
@@ -15,7 +15,7 @@ def renderer(request, monkeypatch, tmp_path):
   widget = module.ModelRenderer()
   x = np.linspace(0, 100, 33)
   widget._path.raw_points = np.column_stack((x, x * 0, x * 0))
-  widget.set_transform(np.array([[1080, -1000, 0], [540, 0, 1000], [1, 0, 0]]))
+  widget.set_transform(np.array([[1080, 1000, 0], [540, 0, 1000], [1, 0, 0]]))
   widget._rect = module.rl.Rectangle(0, 0, 2160, 1080)
   widget._clip_region = widget._rect
   radar = SimpleNamespace(leadOne=SimpleNamespace(present=True, dRel=20., yRel=1., vRel=-2.),
@@ -44,16 +44,16 @@ def renderer(request, monkeypatch, tmp_path):
 
 
 def test_stock_lead_shape_and_disappearance(renderer, monkeypatch):
-  variant, module, widget, sm, update = renderer
+  from openpilot.selfdrive.ui.onroad import lead_bar
+
+  _, _, widget, sm, update = renderer
   update()
   draws = []
-  if variant == 'c3x':
-    monkeypatch.setattr(module.rl, 'draw_triangle_fan', lambda points, count, color: draws.append((points, color)))
-  else:
-    monkeypatch.setattr(module, 'draw_polygon', lambda rect, points, color: draws.append((points, color)) if len(points) else None)
+  monkeypatch.setattr(lead_bar, 'draw_polygon', lambda rect, points, color: draws.append((points, color)))
   widget._draw_lead_indicator()
-  assert len(draws) == (2 if variant == 'c3x' else 1)
-  assert all(len(points) == (3 if variant == 'c3x' else 4) for points, _ in draws)
+  assert len(draws) == 2
+  assert all(len(points) == 4 and np.isfinite(points).all() for points, _ in draws)
+  assert (draws[-1][1].r, draws[-1][1].g, draws[-1][1].b) == (255, 255, 255)
   assert draws[-1][1].a > 0
   sm['radarState'].leadOne.present = False
   for _ in range(60):

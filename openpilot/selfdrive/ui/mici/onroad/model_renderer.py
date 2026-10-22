@@ -5,6 +5,7 @@ from openpilot.cereal import log, messaging
 from opendbc.car.structs import car
 from dataclasses import dataclass, field
 from openpilot.common.params import Params
+from openpilot.selfdrive.ui.onroad.lead_bar import LeadBar
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.radard import RADAR_TO_CAMERA
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
@@ -17,8 +18,6 @@ from openpilot.system.ui.widgets import Widget
 CLIP_MARGIN = 500
 MIN_DRAW_DISTANCE = 10.0
 MAX_DRAW_DISTANCE = 100.0
-LEAD_BAR_LENGTH = 12.0  # px
-LEAD_BAR_WIDTH = 1.8  # m
 
 STOCK_PATH_GRADIENT = Gradient(
   start=(0.0, 1.0),
@@ -40,21 +39,13 @@ class ModelPoints:
   projected_points: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float32))
 
 
-class LeadVehicle:
-  def __init__(self):
-    self.bar = np.empty((0, 2), dtype=np.float32)
-    self.d_filter = FirstOrderFilter(0.0, 0.2, 1 / gui_app.target_fps, initialized=False)
-    self.y_filter = FirstOrderFilter(0.0, 0.2, 1 / gui_app.target_fps, initialized=False)
-    self.fade_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
-
-
 class ModelRenderer(Widget):
   def __init__(self):
     super().__init__()
     self._longitudinal_control = False
     self._lane_line_probs = np.zeros(4, dtype=np.float32)
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
-    self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
+    self._lead_vehicles = [LeadBar(), LeadBar()]
     self._path_offset_z = HEIGHT_INIT[0]
 
     # Initialize ModelPoints objects
@@ -135,7 +126,7 @@ class ModelRenderer(Widget):
       self._update_leads(sm)
       self._draw_lead_indicator()
     else:
-      self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
+      self._lead_vehicles = [LeadBar(), LeadBar()]
 
   def _update_raw_points(self, model):
     """Update raw 3D points from model data"""
@@ -175,21 +166,8 @@ class ModelRenderer(Widget):
         lead.d_filter.initialized = lead.y_filter.initialized = False
       lead.fade_filter.update(opacity if visible else 0.0)
       if visible:
-        lead.bar = self._get_lead_bar(lane, lead.d_filter.update(d_rel), lead.y_filter.update(y_rel))
-
-  def _get_lead_bar(self, lane, d_rel, y_rel):
-    # bar on the road behind the lead, following the lane
-    x = np.array([d_rel, d_rel - min(6.0, 0.25 * d_rel)])
-    y = np.interp(x, lane[:, 0], lane[:, 1]) - np.interp(d_rel, lane[:, 0], lane[:, 1]) - y_rel
-    z = np.interp(x, self._path.raw_points[:, 0], self._path.raw_points[:, 2]) + self._path_offset_z
-    corners = np.vstack((np.column_stack((x, y + LEAD_BAR_WIDTH / 2, z)), np.column_stack((x, y - LEAD_BAR_WIDTH / 2, z))[::-1]))
-    pts = self._car_space_transform @ corners.T
-    bar = (pts[:2] / pts[2]).T
-
-    far, near = bar[[0, 3]], bar[[1, 2]]
-    length = np.linalg.norm(near.mean(axis=0) - far.mean(axis=0))
-    bar[[1, 2]] = far + (near - far) * np.clip(length, 3.0, LEAD_BAR_LENGTH) / length
-    return bar.astype(np.float32)
+        lead.bar = lead.project(self._car_space_transform, lane, self._path_offset_z,
+                                lead.d_filter.update(d_rel), lead.y_filter.update(y_rel))
 
   def _update_model(self, lead, path_x_array):
     """Update model visualization data based on model message"""
@@ -322,7 +300,7 @@ class ModelRenderer(Widget):
   def _draw_lead_indicator(self):
     offset = np.array([self._rect.x, self._rect.y], dtype=np.float32)
     for lead in self._lead_vehicles:
-      draw_polygon(self._rect, lead.bar + offset, rl.Color(255, 255, 255, int(255 * lead.fade_filter.x)))
+      lead.draw(self._rect, offset)
 
   @staticmethod
   def _get_path_length_idx(pos_x_array: np.ndarray, path_height: float) -> int:

@@ -5,6 +5,8 @@ from openpilot.cereal import messaging
 from opendbc.car.structs import car
 from dataclasses import dataclass, field
 from openpilot.common.params import Params
+from openpilot.selfdrive.ui.onroad.lead_bar import LeadBar
+from openpilot.selfdrive.controls.radard import RADAR_TO_CAMERA
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
@@ -28,20 +30,13 @@ class ModelPoints:
   projected_points: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.float32))
 
 
-@dataclass
-class LeadVehicle:
-  glow: list[tuple[float, float]] = field(default_factory=list)
-  chevron: list[tuple[float, float]] = field(default_factory=list)
-  fill_alpha: int = 0
-
-
 class ModelRenderer(Widget):
   def __init__(self):
     super().__init__()
     self._longitudinal_control = False
     self._lane_line_probs = np.zeros(4, dtype=np.float32)
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
-    self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
+    self._lead_vehicles = [LeadBar(), LeadBar()]
     self._path_offset_z = HEIGHT_INIT[0]
 
     # Initialize ModelPoints objects
@@ -107,8 +102,6 @@ class ModelRenderer(Widget):
         return
 
       self._update_model(lead_one, path_x_array)
-      if render_lead_indicator:
-        self._update_leads(radar_state, path_x_array)
       self._transform_dirty = False
 
     # Draw elements
@@ -116,7 +109,10 @@ class ModelRenderer(Widget):
     self._draw_path()
 
     if render_lead_indicator and radar_state:
+      self._update_leads(radar_state, self._path.raw_points[:, 0])
       self._draw_lead_indicator()
+    else:
+      self._lead_vehicles = [LeadBar(), LeadBar()]
 
   def _update_raw_points(self, model):
     """Update raw 3D points from model data"""
@@ -133,20 +129,15 @@ class ModelRenderer(Widget):
     self._acceleration_x = np.array(model.acceleration.x, dtype=np.float32)
 
   def _update_leads(self, radar_state, path_x_array):
-    """Update positions of lead vehicles"""
-    self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
-    leads = [radar_state.leadOne, radar_state.leadTwo]
-
-    for i, lead_data in enumerate(leads):
-      if lead_data and lead_data.present:
-        d_rel, y_rel, v_rel = lead_data.dRel, lead_data.yRel, lead_data.vRel
-        idx = self._get_path_length_idx(path_x_array, d_rel)
-
-        # Get z-coordinate from path at the lead vehicle position
-        z = self._path.raw_points[idx, 2] if idx < len(self._path.raw_points) else 0.0
-        point = self._map_to_screen(d_rel, -y_rel, z + self._path_offset_z)
-        if point:
-          self._lead_vehicles[i] = self._update_lead_vehicle(d_rel, v_rel, point, self._rect)
+    for lead, data in zip(self._lead_vehicles, (radar_state.leadOne, radar_state.leadTwo), strict=True):
+      visible = data.present and 0 < data.dRel < MAX_DRAW_DISTANCE and len(path_x_array) > 0
+      if not visible or abs(data.yRel - lead.y_filter.x) > 3.0:
+        lead.d_filter.initialized = lead.y_filter.initialized = False
+      lead.fade_filter.update(.8 if visible else 0.)
+      if visible:
+        lead.bar = lead.project(self._car_space_transform, self._path.raw_points, self._path_offset_z,
+                                lead.d_filter.update(data.dRel + RADAR_TO_CAMERA), lead.y_filter.update(data.yRel),
+                                max_length=12 * self._rect.height / 240)
 
   def _update_model(self, lead, path_x_array):
     """Update model visualization data based on model message"""
@@ -219,30 +210,6 @@ class ModelRenderer(Widget):
       stops=gradient_stops,
     )
 
-  def _update_lead_vehicle(self, d_rel, v_rel, point, rect):
-    speed_buff, lead_buff = 10.0, 40.0
-
-    # Calculate fill alpha
-    fill_alpha = 0
-    if d_rel < lead_buff:
-      fill_alpha = 255 * (1.0 - (d_rel / lead_buff))
-      if v_rel < 0:
-        fill_alpha += 255 * (-1 * (v_rel / speed_buff))
-      fill_alpha = min(fill_alpha, 255)
-
-    # Calculate size and position
-    sz = np.clip((25 * 30) / (d_rel / 3 + 30), 15.0, 30.0) * 2.35
-    x = np.clip(point[0], 0.0, rect.width - sz / 2)
-    y = min(point[1], rect.height - sz * 0.6)
-
-    g_xo = sz / 5
-    g_yo = sz / 10
-
-    glow = [(x + (sz * 1.35) + g_xo, y + sz + g_yo), (x, y - g_yo), (x - (sz * 1.35) - g_xo, y + sz + g_yo)]
-    chevron = [(x + (sz * 1.25), y + sz), (x, y), (x - (sz * 1.25), y + sz)]
-
-    return LeadVehicle(glow=glow, chevron=chevron, fill_alpha=int(fill_alpha))
-
   def _draw_lane_lines(self):
     """Draw lane lines and road edges"""
     for i, lane_line in enumerate(self._lane_lines):
@@ -273,13 +240,8 @@ class ModelRenderer(Widget):
       draw_polygon(self._rect, self._path.projected_points, rl.Color(255, 255, 255, 30))
 
   def _draw_lead_indicator(self):
-    # Draw lead vehicles if available
     for lead in self._lead_vehicles:
-      if not lead.glow or not lead.chevron:
-        continue
-
-      rl.draw_triangle_fan(lead.glow, len(lead.glow), rl.Color(218, 202, 37, 255))
-      rl.draw_triangle_fan(lead.chevron, len(lead.chevron), rl.Color(201, 34, 49, lead.fill_alpha))
+      lead.draw(self._rect)
 
   @staticmethod
   def _get_path_length_idx(pos_x_array: np.ndarray, path_distance: float) -> int:
@@ -288,22 +250,6 @@ class ModelRenderer(Widget):
       return 0
     indices = np.where(pos_x_array <= path_distance)[0]
     return indices[-1] if indices.size > 0 else 0
-
-  def _map_to_screen(self, in_x, in_y, in_z):
-    """Project a point in car space to screen space"""
-    input_pt = np.array([in_x, in_y, in_z])
-    pt = self._car_space_transform @ input_pt
-
-    if abs(pt[2]) < 1e-6:
-      return None
-
-    x, y = pt[0] / pt[2], pt[1] / pt[2]
-
-    clip = self._clip_region
-    if not (clip.x <= x <= clip.x + clip.width and clip.y <= y <= clip.y + clip.height):
-      return None
-
-    return (x, y)
 
   def _map_line_to_polygon(self, line: np.ndarray, y_off: float, z_off: float, max_idx: int, max_distance: float, allow_invert: bool = True) -> np.ndarray:
     """Convert 3D line to 2D polygon for rendering."""
