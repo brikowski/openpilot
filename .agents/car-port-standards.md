@@ -142,7 +142,7 @@ active safety rails.
   exceeds the request. The downhill fallback without learned response retains its falling-demand
   and zero-gas gates. At any grade, an already-active gas domain can release a negative request
   after the existing same-drivetrain delayed observer and current response both show excess
-  acceleration beyond the response margin, with an issued zero gas command and fresh idle gas/brake
+  acceleration beyond the response margin, with an issued gas command that encodes as zero and fresh idle gas/brake
   feedback. That release remains in coast while excess persists, without treating active gas as a
   passive observation. Fresh valid CAN, pose and received drivetrain/braking state qualify it;
   mode changes clear its history. Stronger requests and low-speed fallbacks retain their authority.
