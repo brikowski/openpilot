@@ -369,6 +369,8 @@ class Device:
       self._last_brightness = brightness
 
   def _update_wakefulness(self):
+    from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
+
     now = time.monotonic()
     alert = None
     keep_awake = False
@@ -379,12 +381,14 @@ class Device:
                     sm.recv_frame['carState'] >= ui_state.started_frame and sm['carState'].cruiseState.enabled)
       if sm.recv_frame['selfdriveState'] >= ui_state.started_frame and sm.alive['selfdriveState']:
         ss = sm['selfdriveState']
-        alert = (ss.alertSize.raw, ss.alertStatus.raw, ss.alertText1, ss.alertText2) if ss.alertSize.raw else None
         enabled = ss.enabled
+      visible_alert = AlertRenderer.get_alert(sm)
+      if visible_alert is not None:
+        alert = (visible_alert.size, visible_alert.status, visible_alert.text1, visible_alert.text2)
       lead_present = (sm.alive['radarState'] and sm.valid['radarState'] and
                       sm.recv_frame['radarState'] >= ui_state.started_frame and
                       (sm['radarState'].leadOne.present or sm['radarState'].leadTwo.present))
-      keep_awake = keep_awake and (alert is not None or lead_present)
+      keep_awake = keep_awake and lead_present
     else:
       if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:
         self._offroad_alerts = {key for key in OFFROAD_ALERTS if ui_state.params.get(key)}

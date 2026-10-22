@@ -21,7 +21,7 @@ class DisplayWakePolicy:
   def update(self, now: float, timeout: int, *, ignition: bool, started: bool, enabled: bool | None,
              alert: tuple | None, keep_awake: bool, touch: bool,
              offroad_alerts: set[str] | None, pc: bool) -> tuple[bool, bool]:
-    keep_awake = started and keep_awake
+    keep_awake = started and (keep_awake or alert is not None)
     reset = (touch or keep_awake or keep_awake != self.keep_awake or
              ignition != self.ignition or started != self.started or self.deadline < 0)
     self.ignition = ignition

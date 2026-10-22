@@ -24,7 +24,9 @@ def test_onroad_timeout_touch_and_alert_wake():
 
   notification = (1, 0, 'Notification', '')
   assert step(policy, 33, alert=notification) == (True, False)
-  assert step(policy, 48.1, alert=notification) == (False, True)
+  assert step(policy, 48.1, alert=notification) == (True, False)
+  assert step(policy, 49) == (True, False)
+  assert step(policy, 64.1) == (False, True)
 
 
 def test_continuous_activity_hold_and_full_timeout_after_release():
@@ -37,13 +39,15 @@ def test_continuous_activity_hold_and_full_timeout_after_release():
   assert step(policy, 117, keep_awake=True) == (True, False)
 
 
-def test_hold_does_not_apply_offroad_or_replace_alert_timeout():
+def test_hold_does_not_apply_offroad_and_onroad_alert_holds_until_cleared():
   policy = DisplayWakePolicy()
   step(policy, 0, started=False, keep_awake=True)
   assert not step(policy, 15.1, started=False, keep_awake=True)[0]
   warning = (2, 2, 'Take control', '')
   assert step(policy, 16, alert=warning)[0]
-  assert not step(policy, 31.1, alert=warning)[0]
+  assert step(policy, 31.1, alert=warning)[0]
+  assert step(policy, 32)[0]
+  assert not step(policy, 47.1)[0]
 
 
 def test_engagement_disengagement_and_ignition_transitions_wake():
@@ -77,20 +81,72 @@ def display(monkeypatch, tmp_path):
     alive = {'carState': True, 'selfdriveState': True, 'radarState': True}
     valid = {'carState': True, 'selfdriveState': True, 'radarState': True}
     recv_frame = {'carState': 100, 'selfdriveState': 100, 'radarState': 100}
+    updated = {'selfdriveState': True}
+    recv_time = {'selfdriveState': 0.0}
 
   sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False)),
-                selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0)),
+                selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0),
+                                               alertStatus=SimpleNamespace(raw=0), alertText1='', alertText2=''),
                 radarState=SimpleNamespace(leadOne=SimpleNamespace(present=False), leadTwo=SimpleNamespace(present=False)))
-  state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, sm=sm,
+  state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, started_time=0., sm=sm,
                           light_sensor=-1, params=SimpleNamespace(get=lambda _: None, get_bool=lambda _: False))
   monkeypatch.setattr(module, 'ui_state', state)
   monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[], set_should_render=lambda _: None))
   monkeypatch.setattr(module, 'PC', False)
+  from openpilot.selfdrive.ui.onroad import alert_renderer
+  monkeypatch.setattr(alert_renderer, 'ui_state', state)
+  monkeypatch.setattr(alert_renderer, 'COMMA_HARDWARE', False)
   device = module.Device()
   monkeypatch.setattr(module.HARDWARE, 'set_display_power', lambda _: None)
   now = [0.0]
   monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
   return state, device, now
+
+
+@pytest.mark.parametrize('cruise,alpha', [(c, a) for c in (False, True) for a in (False, True)])
+@pytest.mark.parametrize('status', [0, 1, 2])
+def test_active_onroad_alert_cannot_fade_or_sleep(display, backlight, cruise, alpha, status):
+  state, device, now = display
+  state.sm['carState'].cruiseState.enabled = cruise
+  state.alpha_long_enabled = alpha
+  ss = state.sm['selfdriveState']
+  device.set_offroad_brightness(80)
+  device._brightness_filter.x = 80
+  device.update()
+  now[0] = 18
+  device.update()
+  assert not device.awake
+  ss.alertSize.raw, ss.alertStatus.raw, ss.alertText1 = 1, status, 'Attention required'
+  for timestamp in (19, 40, 100):
+    now[0] = timestamp
+    device.update()
+    assert device.awake and device._brightness_target == 80
+  ss.alertSize.raw = 0
+  now[0] = 101
+  device.update()
+  now[0] = 119
+  device.update()
+  assert not device.awake
+
+
+@pytest.mark.parametrize('startup', [False, True])
+def test_generated_system_alert_wakes_and_holds_display(display, backlight, monkeypatch, startup):
+  from openpilot.selfdrive.ui.onroad import alert_renderer
+
+  state, device, now = display
+  monkeypatch.setattr(alert_renderer, 'COMMA_HARDWARE', True)
+  state.sm['selfdriveState'].enabled = not startup
+  device.update()
+  now[0] = 18
+  device.update()
+  assert not device.awake
+  state.sm.updated['selfdriveState'] = state.sm.alive['selfdriveState'] = False
+  if startup:
+    state.sm.recv_frame['selfdriveState'] = state.started_frame - 1
+  for timestamp in (19, 40, 100):
+    now[0] = timestamp
+    device.update()
+    assert device.awake and device._brightness_target > 0
 
 
 @pytest.mark.parametrize('cruise,alpha,engaged',
