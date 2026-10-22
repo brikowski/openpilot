@@ -153,6 +153,23 @@ active safety rails.
 - Read `values.py`, `hondacan.py`, the DBC, and `safety/modes/honda.h` together before changing a
   rail or signal. Numeric command fidelity is incomplete if the active domain bits disagree.
 
+## Steering-authority assessment
+
+`validate_log.py` automatically saves native Odyssey Alpha Long steering reports under private
+`evidence/steering-authority/`. Compare explicit recorded configurations with
+`.venv/bin/python .agents/compare_lateral_response.py CANDIDATE.json --baseline STOCK.json --output COMPARISON.json`.
+Use exact parent/child groups separately. Reports retain body yaw response and its uncertainty,
+controller tracking, driver history, lane changes, command/output agreement, exclusions and later
+faults/overrides. Matching uses unique turn donors, with window, driver and tolerance sensitivities.
+The reports are observations for review; no overlap means inconclusive, not equal authority.
+
+A torque decision needs repeatable stock-cap undertracking and a source-qualified comparison that
+improves physical tracking without unacceptable ordinary-turn, fault or override regression.
+Use fixed configurations for an attributable ceiling comparison; the historical feedback-gated
+boost changes authority in response to error and cannot establish that effect from pre/post recovery.
+Qualify normalization, live learning and actual command delivery separately before interpreting it.
+No additional runtime logging or automatic torque adjustment is required.
+
 ## Attribute before changing
 
 Trace longitudinal behavior as:

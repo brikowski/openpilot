@@ -2516,6 +2516,16 @@ def main():
   if segment_coverage and (not segment_coverage["starts_at_zero"] or segment_coverage["missing_between"]):
     r["notes"].append(f"PARTIAL route: segments {segment_coverage['first']}–{segment_coverage['last']}, "
                       f"{segment_coverage['count']} available; metrics cover only recorded data.")
+  if platform == ODYSSEY and alpha_longitudinal:
+    from compare_lateral_response import route_report, save_report
+    authority = route_report(msgs, _base_route(args.route), provenance=_provenance(msgs))
+    authority["segment_coverage"] = segment_coverage
+    if not args.no_ledger and re.fullmatch(r"[0-9a-f]{8}--[0-9a-f]+", authority["route"]):
+      if segment_coverage:
+        from extract import _source_signature
+        authority["sources"] = _source_signature([str(rlog_root()/s/"rlog.zst") for s in segs]).tolist()
+      save_report(authority)
+    r["steering_authority"] = {k: authority[k] for k in ("version", "tool_sha256", "wire", "exposure")}
   v = verdicts(r)
 
   print(f"\n=== validate_log: {args.route}  [{platform}] ===")
@@ -2576,6 +2586,13 @@ def main():
   if any(c["check"] in lateral for c in v):
     print("\n  LATERAL TELEMETRY (diagnostic, not lane-tracking proof)")
     show(lateral)
+    if "steering_authority" in r:
+      authority = r["steering_authority"]
+      for exposure in authority["exposure"]:
+        if exposure["width"] == 1 and exposure["driver_limit"] == 300:
+          print(f"    steering authority: {exposure.get('blocks', 0)} supported one-second windows "
+                f"on {exposure.get('turns', 0)} turns {exposure.get('by_authority', {})}; "
+                f"{authority['wire']['extra_frames']} above-stock commands (diagnostic)")
 
   if not args.no_ledger:
     append_ledger(args.route, args.description, r, v)
