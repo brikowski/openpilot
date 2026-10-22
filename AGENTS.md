@@ -85,10 +85,14 @@ This is independent of the Panda `alternativeExperience` AEB-forwarding flag and
 guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the radar ECU is
 disabled.
 
-The Odyssey uses the stock `[0, 2560]` LKA map, `latAccelFactor 0.9`, `friction 0.2`, and
-`steerActuatorDelay 0.15`, with Honda's ordinary steering rate limiter. `carOutput` reports the
-emitted counts normalized by 2560, including zero while inactive. The torque learner's fit and
-physical bucket coverage depend on normalization; incompatible torque-configuration or steering-route
+The Odyssey supervised trial uses a fixed `[0, 3840]` LKA map with
+`latAccelFactor 1.35` and `friction 0.2 / 1.5` in both stock ACC and Alpha Long. Both retain
+`steerActuatorDelay 0.15` and the stock slew of 7680 CAN counts/s
+through Honda's ordinary rate limiter. The seed conversion preserves ordinary acceleration and
+friction commands in counts. `carOutput` reports the emitted counts normalized by the active
+range, including zero while inactive. Extra-count physical benefit remains unmeasured. The torque learner
+retains its stock physical sample buckets and fit coordinates, converting its published parameters
+to the active normalization. Its Odyssey cache version rejects prior fits; incompatible torque-configuration or steering-route
 caches must not be restored. See [`.agents/car-port-standards.md`](.agents/car-port-standards.md).
 
 `extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,

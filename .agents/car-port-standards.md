@@ -144,9 +144,14 @@ active safety rails.
   learner or gas-map gain is added. This selection does not activate friction braking, alter
   `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
-- The Odyssey uses the stock 2560-count steering range, seed factor 0.9, friction 0.2 and
-  Honda's ordinary steering rate limiter. `carOutput` reports actual emitted counts and their
-  normalized value; inactive output is zero. Torque-cache identity includes the seed configuration
+- The fixed Odyssey trial uses 3840 steering counts, seed factor 1.35 and
+  friction 0.2 / 1.5 in stock ACC and Alpha Long. Both use the ordinary Honda
+  limiter with 7680 CAN counts/s and delay 0.15. Seed scaling preserves acceleration and
+  friction commands in counts. `carOutput` reports actual emitted counts normalized by
+  the active range; inactive output is zero. Higher-count physical benefit is unmeasured.
+  The torque learner retains its stock physical sample range and fit metric, with points and
+  fitted parameters published in the active normalization. Its Odyssey cache version rejects prior
+  fits. Torque-cache identity also includes the seed configuration
   and Honda's steering route. Discard incompatible or unassociated caches so they cannot return
   after the previous-route metadata advances. Output fidelity does not prove EPS acceptance or
   closed-loop tracking benefit.

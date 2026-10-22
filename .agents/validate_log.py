@@ -210,6 +210,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "5c1b3df91069",  # same source tree after the upstream squash
   "809e76cdd791",  # brake-response filtering retains numeric brake translation
   "9d7186906fca",  # identical source after the upstream squash
+  "cef930200e10",  # fixed steering range retains longitudinal translation
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",

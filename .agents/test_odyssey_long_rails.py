@@ -617,13 +617,13 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert gas != GAS_INACTIVE, "positive low-speed start request left GAS_COMMAND inactive"
       assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive start request"
 
-  def test_odyssey_uses_stock_lateral_map(self):
-    """The Odyssey uses the stock count normalization, seed and slew."""
+  def test_odyssey_expands_range_without_changing_count_gain_or_slew(self):
+    """The Odyssey adds headroom with the same physical seed and count slew."""
     CP = _car_params()
     params = CarControllerParams(CP)
-    self.assertEqual(params.STEER_MAX, 2560)
-    self.assertEqual(params.STEER_DELTA_UP, 3)
-    self.assertEqual(params.STEER_DELTA_DOWN, 3)
-    self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, .9, places=6)
-    self.assertAlmostEqual(CP.lateralTuning.torque.friction, .2, places=6)
+    self.assertEqual(params.STEER_MAX, 3840)
+    self.assertEqual(params.STEER_DELTA_UP * params.STEER_MAX, 7680)
+    self.assertEqual(params.STEER_DELTA_DOWN * params.STEER_MAX, 7680)
+    self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, 1.35, places=6)
+    self.assertAlmostEqual(CP.lateralTuning.torque.friction, .2 / 1.5, places=6)
     self.assertAlmostEqual(CP.steerActuatorDelay, 0.15)
