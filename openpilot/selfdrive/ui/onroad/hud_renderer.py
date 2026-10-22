@@ -1,6 +1,5 @@
 import pyray as rl
 from dataclasses import dataclass
-from openpilot.cereal import log
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -25,17 +24,16 @@ class UIConfig:
 @dataclass(frozen=True)
 class FontSizes:
   current_speed: int = 176
-  speed_unit: int = 54
-  max_speed: int = 36
+  speed_unit: int = 66
+  max_speed: int = 40
   set_speed: int = 90
-  status: int = 40
 
 
 @dataclass(frozen=True)
 class Colors:
   WHITE = rl.WHITE
   DISENGAGED = rl.Color(145, 155, 149, 255)
-  OVERRIDE = rl.Color(145, 155, 149, 255)
+  OVERRIDE = rl.Color(145, 155, 149, 255)  # Added
   ENGAGED = rl.Color(128, 216, 166, 255)
   DISENGAGED_BG = rl.Color(0, 0, 0, 153)
   OVERRIDE_BG = rl.Color(145, 155, 149, 204)
@@ -44,6 +42,7 @@ class Colors:
   DARK_GREY = rl.Color(114, 114, 114, 255)
   BLACK_TRANSLUCENT = rl.Color(0, 0, 0, 166)
   WHITE_TRANSLUCENT = rl.Color(255, 255, 255, 200)
+  BORDER_TRANSLUCENT = rl.Color(255, 255, 255, 75)
   HEADER_GRADIENT_START = rl.Color(0, 0, 0, 114)
   HEADER_GRADIENT_END = rl.BLANK
 
@@ -111,7 +110,6 @@ class HudRenderer(Widget):
       self._draw_set_speed(rect)
 
     self._draw_current_speed(rect)
-    self._draw_status(rect)
 
   def _draw_set_speed(self, rect: rl.Rectangle) -> None:
     """Draw the MAX speed indicator box."""
@@ -121,6 +119,7 @@ class HudRenderer(Widget):
 
     set_speed_rect = rl.Rectangle(x, y, set_speed_width, UI_CONFIG.set_speed_height)
     rl.draw_rectangle_rounded(set_speed_rect, 0.35, 10, COLORS.BLACK_TRANSLUCENT)
+    rl.draw_rectangle_rounded_lines_ex(set_speed_rect, 0.35, 10, 6, COLORS.BORDER_TRANSLUCENT)
 
     max_color = COLORS.GREY
     set_speed_color = COLORS.DARK_GREY
@@ -166,16 +165,3 @@ class HudRenderer(Widget):
     unit_text_size = measure_text_cached(self._font_medium, unit_text, FONT_SIZES.speed_unit)
     unit_pos = rl.Vector2(rect.x + rect.width / 2 - unit_text_size.x / 2, 290 - unit_text_size.y / 2)
     rl.draw_text_ex(self._font_medium, unit_text, unit_pos, FONT_SIZES.speed_unit, 0, COLORS.WHITE_TRANSLUCENT)
-
-  def _draw_status(self, rect: rl.Rectangle) -> None:
-    # Name the state as well as coloring it; pre-enabled is still waiting for control.
-    text = {
-      UIStatus.DISENGAGED: tr("DISENGAGED"),
-      UIStatus.OVERRIDE: tr("OVERRIDE"),
-      UIStatus.ENGAGED: tr("ENGAGED"),
-    }[ui_state.status]
-    if ui_state.sm['selfdriveState'].state == log.SelfdriveState.OpenpilotState.preEnabled:
-      text = tr("WAITING")
-    size = measure_text_cached(self._font_semi_bold, text, FONT_SIZES.status)
-    pos = rl.Vector2(rect.x + rect.width - 60 - size.x, rect.y + 72)
-    rl.draw_text_ex(self._font_semi_bold, text, pos, FONT_SIZES.status, 0, COLORS.WHITE)
