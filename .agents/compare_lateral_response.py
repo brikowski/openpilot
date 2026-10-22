@@ -362,6 +362,35 @@ def save_report(report):
   return path
 
 
+def read_report(value):
+  """Use saved exposure only while its rlog contents and inventory still match."""
+  from extract import _segments, _source_signature
+  if Path(value).is_file():
+    report = json.loads(Path(value).read_text())
+    if report['version'] != VERSION:
+      raise ValueError('unsupported steering report version')
+    if not report.get('sources'):
+      raise ValueError('saved steering report has no source hashes; regenerate from the route ID')
+    route, paths = _segments(report['route'])
+    expected = [(Path(path).parent.name, sha) for path, sha in report['sources']]
+    current = [(Path(path).parent.name, sha) for path, sha in _source_signature(paths)]
+    if current != expected:
+      raise ValueError(f'saved steering report for {route} is stale; regenerate from the route ID')
+    return report
+  from validate_log import _local_segment_coverage, _provenance
+  from openpilot.tools.lib.logreader import LogReader
+  route, paths = _segments(value)
+  sources = _source_signature(paths)
+  messages = list(LogReader(paths))
+  report = route_report(messages, route, _provenance(messages))
+  if not np.array_equal(sources, _source_signature(_segments(route)[1])):
+    raise ValueError('rlog sources changed during steering assessment; retry after the transfer settles')
+  report['sources'] = sources.tolist()
+  report['segment_coverage'] = _local_segment_coverage([Path(p).parent.name for p in paths])
+  print(save_report(report))
+  return report
+
+
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('candidate', nargs='+', help='native route IDs or saved report JSON files')
@@ -369,24 +398,7 @@ def main():
   parser.add_argument('--output', type=Path, help='comparison JSON destination')
   args = parser.parse_args()
 
-  def read(value):
-    if Path(value).is_file():
-      report = json.loads(Path(value).read_text())
-      if report['version'] != VERSION:
-        raise ValueError('unsupported steering report version')
-      return report
-    from extract import _segments, _source_signature
-    from validate_log import _local_segment_coverage, _provenance
-    from openpilot.tools.lib.logreader import LogReader
-    route, paths = _segments(value)
-    messages = list(LogReader(paths))
-    report = route_report(messages, route, _provenance(messages))
-    report['sources'] = _source_signature(paths).tolist()
-    report['segment_coverage'] = _local_segment_coverage([Path(p).parent.name for p in paths])
-    print(save_report(report))
-    return report
-
-  candidate, baseline = [read(v) for v in args.candidate], [read(v) for v in args.baseline]
+  candidate, baseline = [read_report(v) for v in args.candidate], [read_report(v) for v in args.baseline]
   if baseline:
     result = comparison(candidate, baseline)
     result['input_sha256'] = [hashlib.sha256(json.dumps(r, sort_keys=True).encode()).hexdigest() for r in candidate+baseline]

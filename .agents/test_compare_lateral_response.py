@@ -261,3 +261,77 @@ def test_small_low_speed_request_at_the_cap_is_still_authority_exposure():
   rows, _ = authority_blocks(d, width=1., driver_limit=300)
   assert rows and all(r['authority'] == 'stock_limit' for r in rows)
   np.testing.assert_allclose([r['body_under'] for r in rows], .02)
+
+
+@pytest.mark.parametrize('change', ['unchanged', 'mtime_only', 'same_size', 'missing_segment', 'new_segment', 'missing_hashes', 'moved_root'])
+def test_saved_report_requires_current_source_contents_and_inventory(tmp_path, monkeypatch, change):
+  import hashlib
+  import json
+  import os
+  import compare_lateral_response as assessment
+
+  route = 'synthetic-route'
+  source = tmp_path / 'rlogs' / (route+'--0') / 'rlog.zst'
+  source.parent.mkdir(parents=True)
+  source.write_bytes(b'original')
+  paths = [str(source)]
+  sources = [[str(source), hashlib.sha256(source.read_bytes()).hexdigest()]]
+  saved = dict(report(route, 'extra'), version=assessment.VERSION, sources=sources)
+  before = source.stat()
+  if change == 'mtime_only':
+    os.utime(source, (before.st_atime+100, before.st_mtime+100))
+  elif change == 'same_size':
+    source.write_bytes(b'modified')
+    os.utime(source, (before.st_atime, before.st_mtime))
+  elif change == 'missing_segment':
+    paths.clear()
+  elif change == 'new_segment':
+    other = tmp_path / 'rlogs' / (route+'--1') / 'rlog.zst'
+    other.parent.mkdir()
+    other.write_bytes(b'new tail')
+    paths.append(str(other))
+  elif change == 'missing_hashes':
+    saved.pop('sources')
+  elif change == 'moved_root':
+    sources[0][0] = '/another-analysis-host/'+source.parent.name+'/rlog.zst'
+  monkeypatch.setattr('extract._segments', lambda _route: (route, paths))
+  filename = tmp_path / 'report.json'
+  filename.write_text(json.dumps(saved))
+  monkeypatch.setattr('sys.argv', ['compare_lateral_response.py', str(filename)])
+  if change in ('same_size', 'missing_segment', 'new_segment', 'missing_hashes'):
+    with pytest.raises(ValueError, match='stale|source hashes'):
+      assessment.main()
+  else:
+    assessment.main()
+
+
+@pytest.mark.parametrize('change', ['contents', 'inventory'])
+def test_sources_changing_during_assessment_cannot_be_saved(tmp_path, monkeypatch, change):
+  import compare_lateral_response as assessment
+
+  route = 'synthetic-route'
+  source = tmp_path / (route+'--0') / 'rlog.zst'
+  source.parent.mkdir()
+  source.write_bytes(b'original')
+  paths = [str(source)]
+  monkeypatch.setattr('extract._segments', lambda _route: (route, list(paths)))
+  monkeypatch.setattr('openpilot.tools.lib.logreader.LogReader', lambda _paths: [])
+  monkeypatch.setattr('validate_log._provenance', lambda _messages: {})
+
+  def changing_report(*_args):
+    if change == 'contents':
+      source.write_bytes(b'modified')
+    else:
+      other = tmp_path / (route+'--1') / 'rlog.zst'
+      other.parent.mkdir()
+      other.write_bytes(b'new tail')
+      paths.append(str(other))
+    return report(route, 'extra')
+
+  saved = []
+  monkeypatch.setattr(assessment, 'route_report', changing_report)
+  monkeypatch.setattr(assessment, 'save_report', lambda value: saved.append(value))
+  monkeypatch.setattr('sys.argv', ['compare_lateral_response.py', route])
+  with pytest.raises(ValueError, match='changed during'):
+    assessment.main()
+  assert not saved
