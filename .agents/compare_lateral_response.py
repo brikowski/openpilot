@@ -363,12 +363,14 @@ def save_report(report):
 
 
 def read_report(value):
-  """Use saved exposure only while its rlog contents and inventory still match."""
+  """Use saved exposure only while its assessment code and rlog sources still match."""
   from extract import _segments, _source_signature
   if Path(value).is_file():
     report = json.loads(Path(value).read_text())
     if report['version'] != VERSION:
       raise ValueError('unsupported steering report version')
+    if report.get('tool_sha256') != TOOL_SHA256:
+      raise ValueError('saved steering report uses different assessment code; regenerate from the route ID')
     if not report.get('sources'):
       raise ValueError('saved steering report has no source hashes; regenerate from the route ID')
     route, paths = _segments(report['route'])

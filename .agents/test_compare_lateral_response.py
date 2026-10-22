@@ -263,8 +263,9 @@ def test_small_low_speed_request_at_the_cap_is_still_authority_exposure():
   np.testing.assert_allclose([r['body_under'] for r in rows], .02)
 
 
-@pytest.mark.parametrize('change', ['unchanged', 'mtime_only', 'same_size', 'missing_segment', 'new_segment', 'missing_hashes', 'moved_root'])
-def test_saved_report_requires_current_source_contents_and_inventory(tmp_path, monkeypatch, change):
+@pytest.mark.parametrize('change', ['unchanged', 'mtime_only', 'same_size', 'missing_segment', 'new_segment',
+                                  'missing_hashes', 'moved_root', 'missing_assessment', 'changed_assessment'])
+def test_saved_report_requires_current_sources_and_assessment(tmp_path, monkeypatch, change):
   import hashlib
   import json
   import os
@@ -276,7 +277,7 @@ def test_saved_report_requires_current_source_contents_and_inventory(tmp_path, m
   source.write_bytes(b'original')
   paths = [str(source)]
   sources = [[str(source), hashlib.sha256(source.read_bytes()).hexdigest()]]
-  saved = dict(report(route, 'extra'), version=assessment.VERSION, sources=sources)
+  saved = dict(report(route, 'extra'), version=assessment.VERSION, sources=sources, tool_sha256=assessment.TOOL_SHA256)
   before = source.stat()
   if change == 'mtime_only':
     os.utime(source, (before.st_atime+100, before.st_mtime+100))
@@ -294,12 +295,16 @@ def test_saved_report_requires_current_source_contents_and_inventory(tmp_path, m
     saved.pop('sources')
   elif change == 'moved_root':
     sources[0][0] = '/another-analysis-host/'+source.parent.name+'/rlog.zst'
+  elif change == 'missing_assessment':
+    saved.pop('tool_sha256')
+  elif change == 'changed_assessment':
+    saved['tool_sha256'] = assessment.TOOL_SHA256[:-1] + ('0' if assessment.TOOL_SHA256[-1] != '0' else '1')
   monkeypatch.setattr('extract._segments', lambda _route: (route, paths))
   filename = tmp_path / 'report.json'
   filename.write_text(json.dumps(saved))
   monkeypatch.setattr('sys.argv', ['compare_lateral_response.py', str(filename)])
-  if change in ('same_size', 'missing_segment', 'new_segment', 'missing_hashes'):
-    with pytest.raises(ValueError, match='stale|source hashes'):
+  if change in ('same_size', 'missing_segment', 'new_segment', 'missing_hashes', 'missing_assessment', 'changed_assessment'):
+    with pytest.raises(ValueError, match='stale|source hashes|assessment code'):
       assessment.main()
   else:
     assessment.main()
