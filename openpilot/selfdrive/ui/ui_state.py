@@ -20,7 +20,7 @@ from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
 PARAM_UPDATE_TIME = 1 / 5.0
 OFFROAD_ALERT_POLL_INTERVAL = 1.0
-DISPLAY_FADE_DURATION = 0.5
+DISPLAY_FADE_DURATION = 2.0
 
 
 class UIStatus(Enum):

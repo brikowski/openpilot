@@ -101,7 +101,7 @@ def test_cruise_without_lead_or_popup_still_times_out(display, cruise, alpha, en
   state.sm['selfdriveState'].enabled = engaged
   state.alpha_long_enabled = alpha
   device._update_wakefulness()
-  now[0] = 15.6
+  now[0] = 18
   device._update_wakefulness()
   assert not device.awake
 
@@ -127,11 +127,11 @@ def test_lead_holds_alpha_cruise_display_and_restarts_timeout_after_loss(display
   now[0] = 46
   device._update_wakefulness()
   assert device.awake
-  now[0] = 46.6
+  now[0] = 49
   device._update_wakefulness()
   assert not device.awake
   selected.present = True
-  now[0] = 47
+  now[0] = 50
   device._update_wakefulness()
   assert device.awake
 
@@ -161,11 +161,11 @@ def test_popup_and_lead_must_both_clear_before_alpha_cruise_timeout(display):
   now[0] = 106
   device._update_wakefulness()
   assert device.awake
-  now[0] = 106.6
+  now[0] = 109
   device._update_wakefulness()
   assert not device.awake
   ss.alertSize.raw = 1
-  now[0] = 107
+  now[0] = 110
   device._update_wakefulness()
   assert device.awake
 
@@ -188,7 +188,7 @@ def test_unreliable_cruise_state_releases_display_hold(display, unreliable):
     state.sm.recv_frame['carState'] = state.started_frame - 1
   now[0] = 31
   device._update_wakefulness()
-  now[0] = 46.6
+  now[0] = 49
   device._update_wakefulness()
   assert not device.awake
 
@@ -211,7 +211,7 @@ def test_unreliable_lead_cannot_hold_alpha_cruise_display(display, unreliable):
     state.sm.recv_frame['radarState'] = state.started_frame - 1
   now[0] = 31
   device._update_wakefulness()
-  now[0] = 46.6
+  now[0] = 49
   device._update_wakefulness()
   assert not device.awake
 
@@ -225,18 +225,18 @@ def test_timeout_applies_onroad_and_offroad_and_touch_restarts_it(display, onroa
   state.ignition = onroad
   state.params = SimpleNamespace(get=lambda _: None, get_bool=lambda _: False)
   device._update_wakefulness()
-  now[0] = 15.6
+  now[0] = 18
   device._update_wakefulness()
   assert not device.awake
   module.gui_app.mouse_events = [SimpleNamespace(left_down=True)]
-  now[0] = 16
+  now[0] = 19
   device._update_wakefulness()
   assert device.awake
   module.gui_app.mouse_events = []
-  now[0] = 31
+  now[0] = 34
   device._update_wakefulness()
   assert device.awake
-  now[0] = 31.6
+  now[0] = 37
   device._update_wakefulness()
   assert not device.awake
 
@@ -266,18 +266,18 @@ def test_idle_backlight_fades_before_panel_and_rendering_stop(display, backlight
   device.update()
 
   levels = []
-  for timestamp in (15, 15.1, 15.25, 15.4, 15.5, 16):
+  for timestamp in (15, 15.4, 16, 16.6, 17, 18):
     now[0] = timestamp
     device.update()
     levels.append(device._brightness_target)
-    assert device.awake == (timestamp < 15.5)
+    assert device.awake == (timestamp < 17)
   assert levels == [brightness, round(brightness * 0.8), round(brightness * 0.5), round(brightness * 0.2), 0, 0]
-  assert power == render == [(15.5, False)]
-  assert callbacks == [15.1]
+  assert power == render == [(17, False)]
+  assert callbacks == [15.4]
 
 
 @pytest.mark.parametrize('wake', ['touch', 'popup', 'lead'])
-@pytest.mark.parametrize('timestamp', [15.25, 16])
+@pytest.mark.parametrize('timestamp', [16, 18])
 def test_activity_restores_backlight_in_same_update_during_fade_or_sleep(display, backlight, wake, timestamp):
   from openpilot.selfdrive.ui import ui_state as module
 
