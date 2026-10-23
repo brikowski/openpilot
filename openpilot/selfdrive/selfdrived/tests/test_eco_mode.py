@@ -206,3 +206,104 @@ def test_automatic_personality_requires_odyssey_longitudinal_and_valid_speed(
   daemon.CS_prev = car.CarState.new_message(canValid=can_valid, vEgo=speed * CV.MPH_TO_MS)
   poll_params(daemon, monkeypatch)
   assert daemon.personality == 2
+
+
+@pytest.fixture
+def econ_advisory(daemon, monkeypatch):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  daemon.enabled = True
+  daemon.state_machine.state = selfdrived.State.enabled
+  clock = Mock(return_value=100.)
+  monkeypatch.setattr(selfdrived.time, 'monotonic', clock)
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True, vEgo=55 * CV.MPH_TO_MS)
+  return daemon, CS, clock
+
+
+@pytest.mark.parametrize('longitudinal', [False, True])
+def test_econ_suggestion_waits_for_highway_cruise_and_repeats_after_fifteen_minutes(econ_advisory, longitudinal):
+  daemon, CS, clock = econ_advisory
+  daemon.CP.openpilotLongitudinalControl = longitudinal
+  original = daemon.factory_eco_mode, daemon.eco_mode, daemon.personality
+  for now, expected in ((100., False), (159.99, False), (160., True), (1059.99, False), (1060., True)):
+    clock.return_value = now
+    daemon.events.clear()
+    daemon._update_econ_suggestion(CS)
+    assert (selfdrived.EventName.econSuggestion in daemon.events.names) == expected
+  assert (daemon.factory_eco_mode, daemon.eco_mode, daemon.personality) == original
+
+
+@pytest.mark.parametrize('fault', ['speed', 'nan', 'can', 'eco', 'disabled', 'passive', 'other_car'])
+def test_econ_suggestion_restarts_qualification_after_ineligible_driving(econ_advisory, fault):
+  daemon, CS, clock = econ_advisory
+  daemon._update_econ_suggestion(CS)
+  clock.return_value = 159.
+  if fault == 'speed':
+    CS.vEgo = 54.99 * CV.MPH_TO_MS
+  elif fault == 'nan':
+    CS.vEgo = float('nan')
+  elif fault == 'can':
+    CS.canValid = False
+  elif fault == 'eco':
+    CS.ecoMode = True
+  elif fault == 'disabled':
+    daemon.enabled = False
+  elif fault == 'passive':
+    daemon.CP.passive = True
+  else:
+    daemon.CP.carFingerprint = 'HONDA_CIVIC'
+  daemon._update_econ_suggestion(CS)
+  assert daemon.econ_cruise_start is None
+  assert not daemon.events.names
+
+
+def test_econ_suggestion_accepts_normal_status_spacing_but_resets_on_stale_or_unknown_mode(econ_advisory):
+  daemon, CS, clock = econ_advisory
+  CS.ecoModeValid = False
+  daemon._update_econ_suggestion(CS)
+  assert daemon.econ_cruise_start is None
+  for frame in range(6101):
+    clock.return_value = 100. + frame * .01
+    CS.ecoModeValid = frame % 4 == 0
+    daemon._update_econ_suggestion(CS)
+  assert selfdrived.EventName.econSuggestion in daemon.events.names
+  daemon.events.clear()
+  CS.ecoModeValid = False
+  clock.return_value = 162.
+  daemon._update_econ_suggestion(CS)
+  assert daemon.econ_cruise_start is None
+  assert not daemon.events.names
+
+
+def test_econ_suggestion_defers_for_driving_alerts_and_yields_to_fcw(econ_advisory):
+  from openpilot.selfdrive.selfdrived.events import AlertSize, AlertStatus, AudibleAlert, EVENTS, ET, Priority, VisualAlert
+
+  daemon, CS, clock = econ_advisory
+  daemon._update_econ_suggestion(CS)
+  clock.return_value = 160.
+  daemon.events.add(selfdrived.EventName.laneChange)
+  daemon._update_econ_suggestion(CS)
+  assert selfdrived.EventName.econSuggestion not in daemon.events.names
+  daemon.events.clear()
+  daemon.AM.current_alert = EVENTS[selfdrived.EventName.userBookmark][ET.PERMANENT]
+  daemon._update_econ_suggestion(CS)
+  assert selfdrived.EventName.econSuggestion not in daemon.events.names
+  daemon.AM.current_alert = selfdrived.AlertManager().current_alert
+  daemon._update_econ_suggestion(CS)
+  assert selfdrived.EventName.econSuggestion in daemon.events.names
+  alert = daemon.events.create_alerts([ET.WARNING])[0]
+  assert (alert.alert_size, alert.alert_status, alert.priority) == (AlertSize.small, AlertStatus.normal, Priority.LOWEST)
+  assert alert.audible_alert == AudibleAlert.none and alert.visual_alert == VisualAlert.none
+  assert alert.duration == int(4. / selfdrived.DT_CTRL)
+  daemon.events.add(selfdrived.EventName.fcw)
+  daemon.state_machine.current_alert_types = [ET.PERMANENT, ET.WARNING]
+  daemon.update_alerts(CS)
+  assert daemon.AM.current_alert.alert_type == 'fcw/permanent'
+
+
+def test_econ_suggestion_runs_in_the_normal_step(econ_advisory):
+  daemon, CS, _ = econ_advisory
+  daemon.initialized = True
+  daemon.data_sample = Mock(return_value=CS)
+  daemon.update_events = daemon.update_alerts = daemon.publish_selfdriveState = Mock()
+  daemon.step()
+  assert daemon.econ_cruise_start == 100.

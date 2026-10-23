@@ -1005,6 +1005,10 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.WARNING: personality_changed_alert,
   },
 
+  EventName.econSuggestion: {
+    ET.WARNING: NormalPermanentAlert("Consider turning ECON on", duration=4., priority=Priority.LOWEST),
+  },
+
   EventName.userBookmark: {
     ET.PERMANENT: NormalPermanentAlert("Bookmark Saved", duration=1.5),
   },
