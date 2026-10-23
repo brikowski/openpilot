@@ -212,6 +212,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "9d7186906fca",  # identical source after the upstream squash
   "cef930200e10",  # fixed steering range retains longitudinal translation
   "7a46c8cbbd58",  # qualified gas release retains brake translation and fallback
+  "b67482512df5",  # gas-feedback qualification retains brake translation and fallback
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
