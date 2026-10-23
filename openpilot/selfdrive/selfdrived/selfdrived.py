@@ -108,9 +108,6 @@ class SelfdriveD:
     self.eco_mode = False
     self.factory_eco_mode = False
     self.automatic_personality = None
-    self.econ_status_time = None
-    self.econ_cruise_start = None
-    self.econ_suggestion_time = -math.inf
 
     car_recognized = self.CP.brand != 'mock'
 
@@ -478,25 +475,6 @@ class SelfdriveD:
         self.params.put(get_longitudinal_personality_param(self.eco_mode), self.personality)
         self.events.add(EventName.personalityChanged)
 
-  def _update_econ_suggestion(self, CS):
-    now = time.monotonic()
-    if CS.canValid and CS.ecoModeValid:
-      self.econ_status_time = now
-    # ECON arrives at 25 Hz; a missing update on one control cycle is normal.
-    eligible = (self.CP.carFingerprint == HONDA.HONDA_ODYSSEY_5G_MMR and not self.CP.passive and
-                self.enabled and CS.canValid and self.econ_status_time is not None and
-                now - self.econ_status_time < 1. and not CS.ecoMode and
-                math.isfinite(CS.vEgo) and CS.vEgo >= 55 * CV.MPH_TO_MS)
-    if not eligible:
-      self.econ_cruise_start = None
-    elif self.econ_cruise_start is None:
-      self.econ_cruise_start = now
-    elif (now - self.econ_cruise_start >= 60. and now - self.econ_suggestion_time >= 15 * 60 and
-          self.state_machine.state == State.enabled and self.AM.current_alert.alert_size == log.SelfdriveState.AlertSize.none and
-          not self.events.contains(ET.WARNING) and not self.events.contains(ET.PERMANENT)):
-      self.events.add(EventName.econSuggestion)
-      self.econ_suggestion_time = now
-
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
     CS = _car_state.carState if _car_state else self.CS_prev
@@ -594,7 +572,6 @@ class SelfdriveD:
     self.update_events(CS)
     if not self.CP.passive and self.initialized:
       self.enabled, self.active = self.state_machine.update(self.events)
-    self._update_econ_suggestion(CS)
     self.update_alerts(CS)
 
     self.publish_selfdriveState(CS)

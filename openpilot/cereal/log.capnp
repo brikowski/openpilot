@@ -132,7 +132,6 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     excessiveActuation @96;
     bigModelLoading @100;
     bigModelFailed @102;
-    econSuggestion @105;
 
     lowBatteryDEPRECATED @40;
     soundsUnavailableDEPRECATED @47;
@@ -140,6 +139,7 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     usbErrorDEPRECATED @78;
     audioFeedbackDEPRECATED @97;
     bigModelReadyDEPRECATED @101;
+    econSuggestionDEPRECATED @105;
   }
 }
 
