@@ -56,9 +56,11 @@ active safety rails.
   to settle; learning and gas entry retain their response interval.
   Excess road-speed braking may release when fresh active brake feedback and the qualified coast
   estimate show that coast supplies the current negative request. Qualified coast overrides the fixed
-  fallback entry while measured response remains within the existing response margin. A stronger request
-  than predicted coast, a measured shortfall beyond that margin, or unreliable state restores fallback
-  braking. Release does not require a request trend.
+  fallback entry while measured response remains within the existing response margin. A settled
+  same-gear brake handoff tolerates forecast drift within that margin only while the request is held
+  or easing and measured deceleration still meets it. Stronger requests, measured shortfall, larger
+  forecast deficits or unreliable state restore ordinary selection. Starting a brake release still
+  requires coast to supply the request and does not require a request trend.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
   The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
   request-ramped, bounded pitch load. Its grade-proportional gas term rises
