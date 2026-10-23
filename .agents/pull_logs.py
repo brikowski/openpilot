@@ -15,6 +15,7 @@ Device host comes from $COMMA_SSH or $ODYSSEY_DEVICE. Private rlogs and the
 ledger are found under the active Proton Drive folder in ~/Library/CloudStorage.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -149,6 +150,37 @@ def _remote_segment_indices(rid):
   return indices
 
 
+def _verify_rlog_hashes(rid, retained):
+  """Verify retained source bytes; older local-only segments are not requalified."""
+  pattern = shlex.quote(f"{REMOTE_ROOT}/{rid}--*/rlog.zst")
+  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} -exec sha256sum {{}} +")
+  if result.returncode:
+    raise RuntimeError(result.stderr.strip() or "cannot read retained rlog checksums")
+  verified = set()
+  for line in result.stdout.splitlines():
+    parts = line.split(maxsplit=1)
+    if len(parts) != 2 or not re.fullmatch(r"[0-9a-f]{64}", parts[0]):
+      raise RuntimeError("invalid retained rlog checksum inventory")
+    source = Path(parts[1].strip())
+    if source.name != "rlog.zst" or not re.fullmatch(re.escape(rid) + r"--\d+", source.parent.name):
+      raise RuntimeError("unexpected file in retained rlog checksum inventory")
+    index = int(source.parent.name.rsplit("--", 1)[1])
+    if index in verified:
+      raise RuntimeError("duplicate retained rlog checksum")
+    path = LOCAL_ROOT / source.parent.name / "rlog.zst"
+    try:
+      with path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    except OSError as e:
+      raise RuntimeError(f"cannot checksum local rlog {index}: {e}") from e
+    if digest != parts[0]:
+      return False, f"rlog checksum mismatch in segment {index}"
+    verified.add(index)
+  if verified != set(retained):
+    raise RuntimeError("retained rlog checksum inventory changed or is incomplete")
+  return True, ""
+
+
 def _local_segments_contiguous(rid, expected_segments=None, expected_indices=None):
   """Reject transfer omissions and interior gaps; allow a verified retained suffix."""
   indices = _local_segment_indices(rid)
@@ -193,7 +225,7 @@ def _selection_summary(route_count, recent, scope, targets, skipped, *, redo=Fal
 
 
 def _pull_command(rid):
-  return ["rsync", "-a", "--partial", "--partial-dir=.rsync-partial", "--timeout=60", "--prune-empty-dirs",
+  return ["rsync", "-a", "--checksum", "--partial", "--partial-dir=.rsync-partial", "--timeout=60", "--prune-empty-dirs",
           "--include=*/", "--include=rlog.zst", "--exclude=*",
           "-e", "ssh " + " ".join(SSH_OPTS),
           f"{DEVICE}:{REMOTE_ROOT}/{rid}--*", str(LOCAL_ROOT) + "/"]
@@ -211,6 +243,8 @@ def pull(rid, expected_segments=None):
     try:
       retained = _remote_segment_indices(rid)
       contiguous, completeness_detail = _local_segments_contiguous(rid, expected_segments, retained)
+      if result.returncode == 0 and contiguous:
+        contiguous, completeness_detail = _verify_rlog_hashes(rid, retained)
     except (RuntimeError, subprocess.TimeoutExpired) as e:
       contiguous, completeness_detail = False, str(e)
     enough = contiguous and completed > 0

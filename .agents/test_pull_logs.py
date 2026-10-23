@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -59,10 +60,13 @@ def test_pull_retries_broken_pipe_with_partial_files_and_keepalives(monkeypatch,
     [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/0000004c--bbbbbbbbbb--{i}" for i in range(2)), ""))
   monkeypatch.setattr(pull_logs.time, "sleep", lambda _: None)
 
+  monkeypatch.setattr(pull_logs, "_verify_rlog_hashes", lambda *_: (True, ""))
+
   assert pull_logs.pull("0000004c--bbbbbbbbbb", expected_segments=2)
   assert len(calls) == 2
   command, kwargs = calls[0]
   assert "--partial" in command
+  assert "--checksum" in command
   assert "--partial-dir=.rsync-partial" in command
   assert "--timeout=60" in command
   assert "ServerAliveInterval=10" in command[command.index("-e") + 1]
@@ -110,6 +114,8 @@ def test_pull_accepts_retained_suffix_only_after_matching_remote_files(monkeypat
   monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
     [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/{route}--{i}" for i in (4, 5, 6)), ""))
 
+  monkeypatch.setattr(pull_logs, "_verify_rlog_hashes", lambda *_: (True, ""))
+
   assert pull_logs.pull(route, expected_segments=3)
   assert "partial" in capsys.readouterr().out.lower()
 
@@ -156,6 +162,8 @@ def test_pull_preserves_older_local_prefix_when_device_retains_a_suffix(monkeypa
   monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
   monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
     [], 0, "\n".join(f"{pull_logs.REMOTE_ROOT}/{route}--{i}" for i in (4, 5, 6)), ""))
+
+  monkeypatch.setattr(pull_logs, "_verify_rlog_hashes", lambda *_: (True, ""))
 
   assert pull_logs.pull(route, expected_segments=3)
   assert len(pull_logs._local_segment_indices(route)) == 7
@@ -218,3 +226,60 @@ def test_remote_inventory_counts_rlogs_and_retains_exact_indices(monkeypatch):
   assert routes == [(route, 6., 3)]
   assert retained == {route: {4, 5, 6}}
   assert "-name rlog.zst" in commands[0]
+
+
+@pytest.mark.parametrize("local_bytes", [b"comp", b"corrupt!"])
+def test_pull_rejects_a_local_byte_mismatch_after_successful_rsync(monkeypatch, tmp_path, local_bytes):
+  route = "0000004c--bbbbbbbbbb"
+  path = tmp_path / f"{route}--0"
+  path.mkdir()
+  (path / "rlog.zst").write_bytes(local_bytes)
+  source_hash = hashlib.sha256(b"complete").hexdigest()
+
+  def ssh(command):
+    name = f"{pull_logs.REMOTE_ROOT}/{route}--0"
+    output = f"{source_hash}  {name}/rlog.zst\n" if "sha256sum" in command else name + "\n"
+    return subprocess.CompletedProcess([], 0, output, "")
+
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  monkeypatch.setattr(pull_logs, "_ssh", ssh)
+  monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
+
+  assert not pull_logs.pull(route, expected_segments=1)
+  errors = [json.loads(line) for line in pull_logs._pull_error_log().read_text().splitlines()]
+  assert "checksum" in errors[-1]["detail"]
+
+
+def test_retained_rlog_checksums_preserve_an_older_local_prefix(monkeypatch, tmp_path):
+  route = "0000004c--bbbbbbbbbb"
+  for index in range(7):
+    path = tmp_path / f"{route}--{index}"
+    path.mkdir()
+    (path / "rlog.zst").write_bytes(b"complete")
+  digest = hashlib.sha256(b"complete").hexdigest()
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
+    [], 0, "\n".join(f"{digest}  {pull_logs.REMOTE_ROOT}/{route}--{i}/rlog.zst" for i in (4, 5, 6)), ""))
+
+  assert pull_logs._verify_rlog_hashes(route, [4, 5, 6]) == (True, "")
+  assert pull_logs._local_segment_indices(route) == list(range(7))
+
+
+@pytest.mark.parametrize("output,returncode", [("", 0), ("invalid checksum", 0), ("", 255)])
+def test_pull_cannot_accept_unavailable_source_checksums(monkeypatch, tmp_path, output, returncode):
+  route = "0000004c--bbbbbbbbbb"
+  path = tmp_path / f"{route}--0"
+  path.mkdir()
+  (path / "rlog.zst").write_bytes(b"complete")
+
+  def ssh(command):
+    if "sha256sum" in command:
+      return subprocess.CompletedProcess([], returncode, output, "unreachable" if returncode else "")
+    return subprocess.CompletedProcess([], 0, f"{pull_logs.REMOTE_ROOT}/{route}--0\n", "")
+
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  monkeypatch.setattr(pull_logs, "_ssh", ssh)
+  monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
+  assert not pull_logs.pull(route, expected_segments=1)
