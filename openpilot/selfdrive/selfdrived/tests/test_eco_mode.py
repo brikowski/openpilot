@@ -7,6 +7,8 @@ import pytest
 
 from opendbc.car.structs import car
 from openpilot.common.params import Params, UnknownKeyName
+from openpilot.common.constants import CV
+from opendbc.car.honda.values import CAR as HONDA
 from openpilot.selfdrive.selfdrived import selfdrived
 
 
@@ -151,3 +153,56 @@ def test_mode_switch_waits_for_matching_following_preference(daemon, monkeypatch
   applied = daemon.pm.send.call_args.args[1].selfdriveState
   assert applied.ecoMode == (not previous_eco)
   assert applied.personality == (1 if previous_eco else 2)
+
+
+def test_odyssey_speed_selects_native_profiles_and_preserves_eco(daemon, monkeypatch):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  for eco, mph, expected in ((True, 70, 2), (False, 0, 0), (False, 54.99, 0), (False, 55, 1), (False, 70, 1),
+                             (False, 54.99, 0), (True, 30, 2), (True, 70, 2), (False, 70, 1),
+                             (False, 30, 0)):
+    CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=eco, vEgo=mph * CV.MPH_TO_MS)
+    daemon.CS_prev = CS
+    daemon._update_eco_mode(CS)
+    poll_params(daemon, monkeypatch)
+    daemon.publish_selfdriveState(CS)
+    message = daemon.pm.send.call_args.args[1].selfdriveState
+    assert message.personality == expected
+    assert message.ecoMode == eco
+    assert not daemon.events.contains(selfdrived.ET.WARNING)
+
+
+def test_odyssey_distance_button_lasts_until_next_automatic_selection(daemon, monkeypatch):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  CS = car.CarState.new_message(canValid=True, vEgo=30 * CV.MPH_TO_MS)
+  CS.buttonEvents = [{'type': 'gapAdjustCruise', 'pressed': False}]
+  daemon.CS_prev = CS
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == 0
+  monkeypatch.setattr(daemon.params, 'put', lambda key, value, **kwargs: Params.put(daemon.params, key, value, block=True))
+  daemon._update_personality(CS)
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == 2
+  CS.vEgo = 60 * CV.MPH_TO_MS
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == 1
+  CS.vEgo = 30 * CV.MPH_TO_MS
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == 0
+
+
+@pytest.mark.parametrize('fingerprint,longitudinal,passive,can_valid,speed', [
+  ('HONDA_CIVIC', True, False, True, 30.),
+  (HONDA.HONDA_ODYSSEY_5G_MMR, False, False, True, 30.),
+  (HONDA.HONDA_ODYSSEY_5G_MMR, True, True, True, 30.),
+  (HONDA.HONDA_ODYSSEY_5G_MMR, True, False, False, 30.),
+  (HONDA.HONDA_ODYSSEY_5G_MMR, True, False, True, float('nan')),
+])
+def test_automatic_personality_requires_odyssey_longitudinal_and_valid_speed(
+    daemon, monkeypatch, fingerprint, longitudinal, passive, can_valid, speed):
+  daemon.CP.carFingerprint = fingerprint
+  daemon.CP.openpilotLongitudinalControl = longitudinal
+  daemon.CP.passive = passive
+  daemon.params.put('LongitudinalPersonality', 2, block=True)
+  daemon.CS_prev = car.CarState.new_message(canValid=can_valid, vEgo=speed * CV.MPH_TO_MS)
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == 2
