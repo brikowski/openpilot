@@ -6,6 +6,22 @@ from openpilot.system.ui.lib.application import GL_VERSION, gui_app
 from openpilot.system.ui.widgets import Widget
 
 
+# Both stages need the same GLSL version; raylib's device default vertex shader uses GLES 2.
+WHEEL_VERTEX_SHADER = GL_VERSION + """
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec4 vertexColor;
+uniform mat4 mvp;
+out vec2 fragTexCoord;
+out vec4 fragColor;
+
+void main() {
+  fragTexCoord = vertexTexCoord;
+  fragColor = vertexColor;
+  gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+"""
+
 # Wheel centers and the 120-pixel rim radius refer to the original 1774x887 illustration.
 # Rotate only the rims, preserving the tire and body contours.
 WHEEL_SHADER = GL_VERSION + """
@@ -38,7 +54,7 @@ class OdysseyAnimation(Widget):
     self._texture = gui_app.texture("images/odyssey_sport.png")
     rl.gen_texture_mipmaps(self._texture)
     rl.set_texture_filter(self._texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
-    self._shader = rl.load_shader_from_memory(rl.ffi.NULL, WHEEL_SHADER)
+    self._shader = rl.load_shader_from_memory(WHEEL_VERTEX_SHADER, WHEEL_SHADER)
     self._rotation_loc = rl.get_shader_location(self._shader, "rotation")
     self._rotation = rl.ffi.new("float[1]")
     self._elapsed = 0.0
