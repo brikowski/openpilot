@@ -829,7 +829,8 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
   "4fa53fdd874e", "7a656c446285", "3167c9873773",
   "dac4f6604220", "53b97cd6a85b", "d1c39963637d", "de10bce71bfb",
   "a0354a811793", "d51aac97c7b7", "3afb27fa1782",
-  "6821a6494f28", "5c1b3df91069", "809e76cdd791", "9d7186906fca", "cef930200e10", "7a46c8cbbd58", "b67482512df5", "dc8c6f148c8a", "60829157ffd6",
+  "6821a6494f28", "5c1b3df91069", "809e76cdd791", "9d7186906fca", "cef930200e10",
+  "7a46c8cbbd58", "b67482512df5", "dc8c6f148c8a", "60829157ffd6", "c30238e6f540",
 }))
 def test_raw_road_brake_revision_keeps_fallback_and_creep_translation(revision):
   request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3, -.15, -.1, -.05])
@@ -847,7 +848,7 @@ def test_raw_road_brake_revision_keeps_fallback_and_creep_translation(revision):
                                                                         "dac4f6604220", "53b97cd6a85b", "d1c39963637d", "de10bce71bfb",
                                                                         "a0354a811793", "d51aac97c7b7", "3afb27fa1782",
                                                                         "6821a6494f28", "5c1b3df91069", "809e76cdd791", "9d7186906fca", "cef930200e10",
-                                                                        "7a46c8cbbd58", "b67482512df5", "dc8c6f148c8a", "60829157ffd6")
+                                                                        "7a46c8cbbd58", "b67482512df5", "dc8c6f148c8a", "60829157ffd6", "c30238e6f540")
                       else [-.275, -.1416666667, -.0916666667])
     np.testing.assert_allclose(expected, [-3.5, -.5, -.15, -.05, 0., .1, 2., -.55, -.3, *creep_expected])
     np.testing.assert_array_equal(eligible, [False] * 7 + [True, False, True, True, True])

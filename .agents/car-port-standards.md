@@ -100,9 +100,10 @@ active safety rails.
   restarts settling for coast observations while retaining any prior estimate for the received gear.
   Existing gas continuity and unreliable-state fallbacks remain available.
   Replay does not prove road benefit.
-- The unpromoted Odyssey gas-response candidate replaces the prior fixed steep-climb
-  near-zero lookup term. During startup, measured excess acceleration may reduce gas;
-  positive feedback still waits for the delayed observer. After 0.5 s of continuous active gas, it compares the earlier
+- Odyssey gas calibration and its uphill ceiling run together before response feedback.
+  The unpromoted gas-response observer pairs each request with its gain context. During startup,
+  measured excess uses the ordinary gain; positive feedback and cap-dependent gain wait for the
+  delayed observer. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` within the same received target gear and applies a bounded,
   slewed correction to `GAS_COMMAND` only. Received target-gear or transmission-activity changes
   clear delayed history. During warmup, issued correction remains within mapped headroom unless the
@@ -115,7 +116,7 @@ active safety rails.
   grade changes alone do not restart the observer. A request change does not by itself veto feedback:
   the filtered delayed error is limited to the sign and
   magnitude of the latest acceleration error. Qualified feedback retains a bounded integral offset
-  at zero error; ineligible feedback clears it. Output uses the mapped command's available headroom
+  at zero error; ineligible feedback clears it. Output uses the calibrated command's available headroom
   in both directions, including the low-speed trim. Fresh delayed feedback uses that headroom for
   its integral offset; warmup reconstructs that offset from the issued correction after accounting
   for the current proportional reduction.

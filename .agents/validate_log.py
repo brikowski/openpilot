@@ -203,6 +203,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "b67482512df5",  # gas-feedback qualification retains brake translation and fallback
   "dc8c6f148c8a",  # nonnegative gas exhaustion retains brake translation and fallback
   "60829157ffd6",  # coast observation continuity retains brake translation and fallback
+  "c30238e6f540",  # calibrated gas ordering retains brake translation and fallback
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",

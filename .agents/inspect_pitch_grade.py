@@ -6,7 +6,10 @@ runtime Honda input. This tool does not predict the effect of changing gas or
 brake commands. Keep private rlogs local.
 """
 import argparse
+import hashlib
 import json
+from pathlib import Path
+from types import SimpleNamespace
 from private_paths import evidence_path
 
 import numpy as np
@@ -79,13 +82,14 @@ def odyssey_gas_lookup():
   return tuple(CarControllerParams.BOSCH_GAS_LOOKUP_BP), tuple(CarControllerParams.BOSCH_GAS_LOOKUP_V)
 
 
-def gas_lookup_delta(request, pitch, offset, lookup=None):
-  """Hypothetical feedforward-only count change through Odyssey's initialized lookup."""
-  from opendbc.car.honda.carcontroller import odyssey_uphill_gas_accel_with_cap
+def gas_lookup_delta(request, pitch, offset, speed, lookup=None):
+  """Current-port feedforward sensitivity on frozen inputs, not native recorded output."""
+  from opendbc.car.honda.carcontroller import odyssey_gas_feedforward, odyssey_grade_gas_accel
   bp, values = odyssey_gas_lookup() if lookup is None else lookup
-  original = odyssey_uphill_gas_accel_with_cap(request, pitch)[0]
-  adjusted = odyssey_uphill_gas_accel_with_cap(request, pitch - offset)[0]
-  return float(np.interp(adjusted, bp, values) - np.interp(original, bp, values))
+  params = SimpleNamespace(BOSCH_GAS_LOOKUP_BP=bp, BOSCH_GAS_LOOKUP_V=values)
+  original = odyssey_gas_feedforward(request, odyssey_grade_gas_accel(request, pitch), speed, params)[0]
+  adjusted = odyssey_gas_feedforward(request, odyssey_grade_gas_accel(request, pitch - offset), speed, params)[0]
+  return adjusted - original
 
 
 def positive_gas_sensitivity(data, gps, offset):
@@ -112,7 +116,7 @@ def positive_gas_sensitivity(data, gps, offset):
            np.isfinite(data['aego'][future]))
   ix = np.flatnonzero(valid & (np.arange(len(t)) % 10 == 0))
   lookup = odyssey_gas_lookup()
-  changes = np.array([gas_lookup_delta(float(data['request'][i]), float(filtered[i]), offset, lookup) for i in ix])
+  changes = np.array([gas_lookup_delta(float(data['request'][i]), float(filtered[i]), offset, float(data['vego'][i]), lookup) for i in ix])
   errors = data['aego'][future[ix]] - data['request'][ix]
   spans = int(1 + np.sum(np.diff(t[ix]) > .15)) if len(ix) else 0
   return changes, errors, spans
@@ -182,7 +186,10 @@ def main():
   if not 0. < args.coast_gps_max_age <= 2.:
     parser.error('Coast GPS maximum age must be within (0, 2] seconds')
   if args.feedforward_offset is not None:
+    from opendbc.car.honda import carcontroller
     print('initialized Odyssey Bosch gas lookup BP/V', odyssey_gas_lookup())
+    print('current-port feedforward SHA256', hashlib.sha256(Path(carcontroller.__file__).read_bytes()).hexdigest(),
+          '(frozen sensitivity, not native recorded output)')
   ledger_path = evidence_path('log-validation-ledger.jsonl')
   ledger = {row['route']: row for row in map(json.loads, ledger_path.read_text().splitlines())}
   groups = []
