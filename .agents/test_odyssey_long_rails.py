@@ -11,7 +11,7 @@ import numpy as np
 
 from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.honda.carcontroller import odyssey_low_speed_gas_command
+from opendbc.car.honda.carcontroller import ODYSSEY_RESPONSE_DELAY_FRAMES, odyssey_low_speed_gas_command
 from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -147,21 +147,19 @@ class TestOdysseyLongRails(unittest.TestCase):
     self.assertTrue(all(gas > 0 for _, gas, _ in seen[90:100]))
     self.assertTrue(all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[100:]))
 
-  def test_downhill_coast_follows_gas_floor_with_either_request_rate(self):
-    for slope in (0.19, 0.21):
-      requests = np.r_[np.full(200, 0.1), 0.1 - slope * 0.01 * np.arange(100)]
-      rejects, seen = _run(True, requests, vego=21.0, pitch=-0.04, aegos=0.5, target_gear=7)
+  def test_zero_gas_release_precedes_settled_coast_braking_inside_safety_rails(self):
+    requests = [np.full(240, .05)] + [np.r_[np.full(200, .1), .1 - slope * .01 * np.arange(100)]
+                                    for slope in (.19, .21)]
+    for requested in requests:
+      rejects, seen = _run(True, requested, vego=21., pitch=-.03, aegos=.5, target_gear=7)
       assert not rejects
-      assert any(gas == GAS_INACTIVE and brake == 0 for _, gas, brake in seen)
-      assert all(abs(accel / 100 - requests[i * 2]) <= .01 for i, (accel, _, _) in enumerate(seen))
-      assert all(brake == 0 for _, _, brake in seen)
-
-  def test_downhill_zero_gas_releases_without_coast_history_inside_safety_rails(self):
-    requests = np.r_[np.full(200, .05), np.full(40, -.01)]
-    rejects, seen = _run(True, requests, vego=21., pitch=-.03, aegos=.5, target_gear=7)
-    assert not rejects
-    assert seen[99][1] == 0
-    assert all(command == (-1, GAS_INACTIVE, 0) for command in seen[100:])
+      coast = next((i for i, (_, gas, brake) in enumerate(seen) if gas == GAS_INACTIVE and brake == 0), None)
+      braking = next((i for i, (_, _, brake) in enumerate(seen) if brake), None)
+      assert coast is not None and braking is not None
+      assert coast > 0 and seen[coast - 1][1] == 0
+      assert braking - coast >= ODYSSEY_RESPONSE_DELAY_FRAMES
+      assert all(gas == GAS_INACTIVE for _, gas, _ in seen[coast:])
+      assert all(abs(accel / 100 - requested[i * 2]) <= .01 for i, (accel, _, _) in enumerate(seen))
 
   def test_braking_does_not_weaken_when_a_stronger_request_enters_stopping(self):
     requests = np.repeat([-.15, -.17, -.19, -.21, -.15, 0., .1], 2)
@@ -443,13 +441,15 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert (under_gas[:25] == under_gas[0]).all()
     assert over_gas[0] == under_gas[0]
     assert over_gas[1] < over_gas[0]
-    assert ((0 <= over_gas) & (over_gas <= under_gas[0])).all()
+    active_over_gas = over_gas[over_gas != GAS_INACTIVE]
+    assert ((0 <= active_over_gas) & (active_over_gas <= under_gas[0])).all()
+    assert over_gas[-1] == GAS_INACTIVE
     assert (under_gas[0] - over_gas[:25]).max() > 100
     assert (abs(np.diff(over_gas[:25])) <= 10).all()
     assert under_gas[-1] - under_gas[0] > 100
     assert under_gas.max() <= GAS_MAX
     assert (abs(np.diff(under_gas)) <= 10).all()
-    assert all(accel == 50 and brake == 0 for accel, _, brake in under_response + over_response)
+    assert all(accel == 50 and not (gas > GAS_INACTIVE and brake) for accel, gas, brake in under_response + over_response)
 
   def test_unidentified_windfactor_is_not_production_state(self):
     """Keep unidentified drag learning offline until it has an attributable command benefit."""

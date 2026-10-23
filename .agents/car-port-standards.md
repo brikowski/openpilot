@@ -141,7 +141,7 @@ active safety rails.
   measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
   signs and fresh valid received state. Gas resumes when measured or predicted coast no longer
   exceeds the request. The downhill fallback without learned response retains its falling-demand
-  and zero-gas gates. At any grade, an already-active gas domain can release a negative request
+  and zero-gas gates. At any grade, an already-active gas domain can release
   after the existing same-drivetrain delayed observer and current response both show excess
   acceleration beyond the response margin, with an issued gas command that encodes as zero and fresh idle gas/brake
   feedback. That release remains in coast while excess persists, without treating active gas as a
