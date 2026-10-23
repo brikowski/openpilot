@@ -16,6 +16,12 @@ Quick start:
 * https://www.raylib.com/cheatsheet/cheatsheet.html
 * https://electronstudio.github.io/raylib-python-cffi/README.html#quickstart
 
+The startup spinner uses a white fifth-generation Odyssey with black Sport-style wheels,
+animated rims, and a scrolling road. Preview it with `BIG=1 python -m openpilot.system.ui.spinner`.
+The existing stdin protocol still accepts numeric progress or startup messages. The illustration
+is `openpilot/selfdrive/assets/images/odyssey_sport.png`; its wheel coordinates are in
+`openpilot/system/ui/widgets/odyssey.py`.
+
 Style guide:
 * All graphical elements should subclass [`Widget`](/openpilot/system/ui/widgets/__init__.py).
   * Prefer a stateful widget over a function for easy migration from QT
