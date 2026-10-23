@@ -137,7 +137,9 @@ active safety rails.
   Manual observations also require idle received gas/braking and pressure within one DBC step of zero;
   physical-state qualification owns resets, while active control keeps its existing PID gates.
   The first five settled observations use consecutive ACC cycles;
-  established estimates retain their 100 ms update cadence. It selects or retains coast when
+  established estimates retain their 100 ms update cadence. Each new coast starts a fresh sample
+  buffer; a learned same-gear forecast remains available while the fresh observations settle.
+  It selects or retains coast when
   measured and learned passive acceleration exceed the request, including positive requests, with agreeing downhill pitch
   signs and fresh valid received state. Gas resumes when measured or predicted coast no longer
   exceeds the request. The downhill fallback without learned response retains its falling-demand
