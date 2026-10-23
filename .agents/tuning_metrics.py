@@ -1616,14 +1616,12 @@ def shadow_windfactor_metrics(grid, requested, actual_accel, speed, pitch, activ
 
 def stop_lurch_metrics(requested, wire_accel, actual_accel, speed, engaged, stop_state, *,
                        min_speed, max_speed):
-  """Attribute low-speed excess deceleration at the worst achieved-vs-request event."""
+  """Report a simultaneous low-speed snapshot; timing and actuator response are unqualified."""
   stopping = engaged & (speed > min_speed) & (speed < max_speed) & (actual_accel < 0.0)
   if np.sum(stopping) == 0:
     return {
       "stop_lurch_worst": None,
       "stop_lurch_excess": None,
-      "stop_lurch_wire_extra": None,
-      "stop_lurch_actuator_extra": None,
       "stop_lurch_request": None,
       "stop_lurch_wire": None,
       "stop_lurch_speed": None,
@@ -1635,8 +1633,6 @@ def stop_lurch_metrics(requested, wire_accel, actual_accel, speed, engaged, stop
   return {
     "stop_lurch_worst": float(-actual_accel[worst_i]),
     "stop_lurch_excess": float(excess[worst_i]),
-    "stop_lurch_wire_extra": float(requested[worst_i] - wire_accel[worst_i]),
-    "stop_lurch_actuator_extra": float(wire_accel[worst_i] - actual_accel[worst_i]),
     "stop_lurch_request": float(requested[worst_i]),
     "stop_lurch_wire": float(wire_accel[worst_i]),
     "stop_lurch_speed": float(speed[worst_i]),

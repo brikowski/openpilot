@@ -1902,7 +1902,7 @@ def test_cruise_input_metrics_preserves_edges_and_set_speed_changes():
   assert unset["cruise_set_speed_change_events"] == 0
 
 
-def test_stop_lurch_attributes_request_to_wire_to_actuator():
+def test_stop_lurch_reports_a_snapshot_without_assigning_a_cause():
   requested = np.array([0.2, 0.5, -0.4, -0.6, -1.2])
   wire = np.array([0.2, 0.5, -0.4, -0.7, -1.2])
   actual = np.array([-0.8, 0.1, -0.5, -1.0, -1.3])
@@ -1917,13 +1917,35 @@ def test_stop_lurch_attributes_request_to_wire_to_actuator():
   )
 
   # The stationary decel noise, positive actual acceleration, and hardest absolute decel are not
-  # lurch events. The moving -1.0 sample exceeds its milder request by 0.4 and splits cleanly.
+  # selected. The moving -1.0 sample exceeds its simultaneous request by 0.4.
   assert np.isclose(metrics["stop_lurch_worst"], 1.0)
   assert np.isclose(metrics["stop_lurch_excess"], 0.4)
-  assert np.isclose(metrics["stop_lurch_wire_extra"], 0.1)
-  assert np.isclose(metrics["stop_lurch_actuator_extra"], 0.3)
+  assert set(metrics) == {"stop_lurch_worst", "stop_lurch_excess", "stop_lurch_request",
+                          "stop_lurch_wire", "stop_lurch_speed", "stop_lurch_in_stopping"}
+  assert np.isclose(metrics["stop_lurch_request"], -0.6)
+  assert np.isclose(metrics["stop_lurch_wire"], -0.7)
   assert np.isclose(metrics["stop_lurch_speed"], 1.2)
   assert not metrics["stop_lurch_in_stopping"]
+
+
+def test_low_speed_snapshot_does_not_grade_delayed_command_or_response_as_port_braking():
+  # A released request and an earlier held command can differ without added port authority.
+  metrics = stop_lurch_metrics(
+    np.array([-1.2, -1.2, -0.6]), np.array([-1.2, -1.2, -1.2]),
+    np.array([-1.2, -1.2, -1.3]), np.array([3.0, 2.5, 1.2]),
+    np.ones(3, dtype=bool), np.zeros(3, dtype=bool), min_speed=.25, max_speed=2.,
+  )
+  route = {
+    "crashes": 0, "track_rms": None, "passthrough_rms": None,
+    "gasf_eff_mean": None, "windf_mean": None, "overshoot_frac": 0., "creep_frames": 0,
+    **metrics, "stop_jerk_worst": .8,
+  }
+  rows = validate_log.verdicts(route)
+  snapshot = next(v for v in rows if v["check"] == "low-speed deceleration (diagnostic)")
+  assert snapshot["ok"] and snapshot["status"] is None
+  assert "simultaneous request-aEgo +0.70" in snapshot["detail"]
+  assert "timing and actuator response unqualified" in snapshot["detail"]
+  assert not any(term in snapshot["detail"] for term in ("= port", "+ actuator", "primarily"))
 
 
 def test_base_route_normalizes_local_and_api_forms():

@@ -162,18 +162,6 @@ GAS_RELEASE_BAND_REQUEST_MAX = -0.15
 GAS_RELEASE_BAND_SPEED_MIN = 15.0
 GAS_RELEASE_BAND_SPEED_MAX = 25.0
 GAS_RELEASE_BAND_MIN_EPISODE_S = 0.6
-STOP_LURCH_EXCESS_FLAG = 0.30  # m/s^2 achieved beyond the controller input below 2 m/s. Absolute
-                               # deceleration only says the plan asked for braking; excess separates
-                               # car-port contribution from Honda actuator bite. STILL REPORTED,
-                               # no longer graded - see STOP_LURCH_PORT_FLAG.
-STOP_LURCH_PORT_FLAG = 0.15    # m/s^2 of the stop lurch owned by the CAR PORT
-                               # (`stop_lurch_wire_extra`), which is the only part we could fix.
-                               # Calibrated 2026-08-05 over the 9 ledger drives that reached a
-                               # stop: port contribution maxed at 0.057 (median 0.014) while the
-                               # Honda actuator reached 2.744, so 0.15 is ~2.6x the observed
-                               # port maximum and fires on 0 of 9. Grading the TOTAL instead fired
-                               # on 17 of 24 drives for a symptom tune-evidence.md says not to tune
-                               # against. Re-derive if the port ever regains supplemental authority.
 STOP_LURCH_MIN_VEGO = 0.25     # m/s: below longcontrol's stopping threshold, standstill velocity/
                                # IMU noise can report a decel while the van is already stationary.
 HARSH_FELT_JERK_RMS = 0.35    # m/s^3: RMS jerk of ACHIEVED accel while engaged. This is what the
@@ -1507,7 +1495,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
          "felt_jerk_rms": None, "cmd_jerk_rms": None, "felt_jerk_p99": None,
          "harshness_ratio": None, "felt_jerk_brake": None, "felt_jerk_gas": None,
          "stop_lurch_worst": None, "stop_lurch_excess": None,
-         "stop_lurch_wire_extra": None, "stop_lurch_actuator_extra": None,
          "stop_lurch_request": None, "stop_lurch_wire": None, "stop_lurch_speed": None,
          "stop_jerk_worst": None, "stop_sec": None,
          "downhill_min": None, "downhill_toggles_per_min": None,
@@ -1797,10 +1784,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     if mg.sum() > 50:
       out["felt_jerk_gas"] = float(np.sqrt(np.nanmean(fj[mg] ** 2)))
 
-  # STOP LURCH. Deliberately OUTSIDE the vEgo>3 gate above: the whole point is low speed. Absolute
-  # deceleration cannot attribute a lurch: it flags a perfectly followed firm request. Select the
-  # event where the achieved decel exceeds the controller input most, then split that excess into
-  # car-port extra brake (request -> wire) and Honda actuator bite (wire -> aEgo).
+  # Retain low-speed exposure below the road-speed gate. Separately published requests, held
+  # commands and vehicle response do not identify a cause without command pairing and timing.
   stopping = eng_all & (vego_all > STOP_LURCH_MIN_VEGO) & (vego_all < CREEP_VEGO) & (aego < 0.0)
   if stopping.sum() > 50:
     out.update(stop_lurch_metrics(
@@ -2248,26 +2233,14 @@ def verdicts(r):
         f"{r['cmd_jerk_rms']:.3f} = {r['harshness_ratio']:.1f}x amplification{split}",
         status="harsh ride - check the ratio: ~1x is our command, >>1x is added downstream" if harsh else None)
   if r.get("stop_lurch_worst") is not None:
-    # FLAG ON OUR SHARE, NOT THE TOTAL. Grading `stop_lurch_excess` (everything the car achieved
-    # beyond the command) fired on 17 of 24 eligible drives while tune-evidence.md's own attribution says
-    # the lurch is Honda's actuator bite and "do not tune against this metric" - a 71% flag rate on
-    # a symptom nobody may act on is noise in the cross-drive inspection summary. The
-    # car-port's contribution is already separated out as `stop_lurch_wire_extra`, so flag that and
-    # keep reporting the rest. If the port adds braking at a stop, wire_extra grows and this goes red.
-    lurch_bad = r.get("stop_lurch_wire_extra", 0.0) > STOP_LURCH_PORT_FLAG
     in_stop = r.get("stop_lurch_in_stopping")
     where = "" if in_stop is None else (" in longControlState=stopping" if in_stop
-                                        else " in longControlState=pid (NOT the stopping ramp)")
-    port_extra = r.get("stop_lurch_wire_extra", 0.0)
-    actuator_extra = r.get("stop_lurch_actuator_extra", 0.0)
-    owner = ("car-port command" if port_extra > actuator_extra
-             else "Honda actuator response")
-    add("stop lurch (felt)", not lurch_bad,
+                                        else " in longControlState=pid")
+    add("low-speed deceleration (diagnostic)", True,
         f"at {r['stop_lurch_speed']:.2f} m/s: request {r['stop_lurch_request']:+.2f}, "
-        f"wire {r['stop_lurch_wire']:+.2f}, aEgo {-r['stop_lurch_worst']:+.2f}; achieved extra "
-        f"{r['stop_lurch_excess']:+.2f} = port {port_extra:+.2f} + actuator {actuator_extra:+.2f} "
-        f"m/s^2{where}, peak jerk {r['stop_jerk_worst']:.2f} m/s^3",
-        status=f"low-speed excess decel is primarily {owner}" if lurch_bad else None)
+        f"wire {r['stop_lurch_wire']:+.2f}, aEgo {-r['stop_lurch_worst']:+.2f}; "
+        f"simultaneous request-aEgo {r['stop_lurch_excess']:+.2f} m/s^2{where}, "
+        f"peak jerk {r['stop_jerk_worst']:.2f} m/s^3; timing and actuator response unqualified")
   if r.get("sign_disagree_frac") is not None:
     non_grade = r.get("sign_disagree_non_grade_frac", 0.0)
     magnitude_bad = r["sign_disagree_worst"] < -SIGN_DISAGREE_MAG_FLAG
@@ -2564,7 +2537,7 @@ def main():
              "negative-request live gas (diagnostic)",
              "brake-domain transition bursts",
              "sign disagreement", "ride harshness (felt)",
-             "stop lurch (felt)"}
+             "low-speed deceleration (diagnostic)"}
   lateral = {"lateral telemetry (diagnostic)", "lateral model tracking (diagnostic)",
              "lateral high-authority following (diagnostic)"}
   hardware = {"device thermal"}
