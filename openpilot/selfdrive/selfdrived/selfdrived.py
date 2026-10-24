@@ -586,13 +586,20 @@ class SelfdriveD:
       eco_mode = self.factory_eco_mode
       personality_param = get_longitudinal_personality_param(eco_mode)
       CS = self.CS_prev
-      automatic_personality = None
+      automatic_personality = self.automatic_personality if eco_mode == self.eco_mode else None
       if (self.CP.carFingerprint == HONDA.HONDA_ODYSSEY_5G_MMR and self.CP.openpilotLongitudinalControl and
           not self.CP.passive and CS.canValid and math.isfinite(CS.vEgo)):
-        automatic_personality = (log.LongitudinalPersonality.relaxed if eco_mode else
-                                 log.LongitudinalPersonality.aggressive if CS.vEgo < 55 * CV.MPH_TO_MS else
-                                 log.LongitudinalPersonality.standard)
-      if automatic_personality is not None and automatic_personality != self.automatic_personality:
+        if eco_mode:
+          automatic_personality = log.LongitudinalPersonality.relaxed
+        else:
+          # Retain the selected speed band through a 2 mph return margin.
+          hysteresis = 2 * CV.MPH_TO_MS
+          lower_speed = 45 * CV.MPH_TO_MS + (hysteresis if automatic_personality == log.LongitudinalPersonality.aggressive else 0.)
+          upper_speed = 65 * CV.MPH_TO_MS - (hysteresis if automatic_personality == log.LongitudinalPersonality.relaxed else 0.)
+          automatic_personality = (log.LongitudinalPersonality.aggressive if CS.vEgo < lower_speed else
+                                   log.LongitudinalPersonality.relaxed if CS.vEgo > upper_speed else
+                                   log.LongitudinalPersonality.standard)
+      if automatic_personality is not None and (automatic_personality != self.automatic_personality or eco_mode != self.eco_mode):
         # Speed/mode changes select a native profile; live adjustments last until the next change.
         self.params.put(personality_param, automatic_personality, block=True)
       elif eco_mode != self.eco_mode:

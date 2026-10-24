@@ -157,8 +157,8 @@ def test_mode_switch_waits_for_matching_following_preference(daemon, monkeypatch
 
 def test_odyssey_speed_selects_native_profiles_and_preserves_eco(daemon, monkeypatch):
   daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
-  for eco, mph, expected in ((True, 70, 2), (False, 0, 0), (False, 54.99, 0), (False, 55, 1), (False, 70, 1),
-                             (False, 54.99, 0), (True, 30, 2), (True, 70, 2), (False, 70, 1),
+  for eco, mph, expected in ((True, 70, 2), (False, 0, 0), (False, 44.9, 0), (False, 50, 1), (False, 70, 2),
+                             (False, 55, 1), (True, 30, 2), (True, 70, 2), (False, 70, 2),
                              (False, 30, 0)):
     CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=eco, vEgo=mph * CV.MPH_TO_MS)
     daemon.CS_prev = CS
@@ -169,6 +169,79 @@ def test_odyssey_speed_selects_native_profiles_and_preserves_eco(daemon, monkeyp
     assert message.personality == expected
     assert message.ecoMode == eco
     assert not daemon.events.contains(selfdrived.ET.WARNING)
+
+
+@pytest.mark.parametrize('initial_mph,profile,boundary_noise,return_mph', [
+  (40., 0, (44.9, 45.1, 46.9, 45.0), 47.1),
+  (70., 2, (65.1, 64.9, 63.1, 65.0), 62.9),
+])
+def test_automatic_following_does_not_swap_near_speed_boundaries(
+    daemon, monkeypatch, initial_mph, profile, boundary_noise, return_mph):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  CS = car.CarState.new_message(canValid=True, vEgo=initial_mph * CV.MPH_TO_MS)
+  daemon.CS_prev = CS
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == profile
+  put = Mock(wraps=daemon.params.put)
+  monkeypatch.setattr(daemon.params, 'put', put)
+
+  for mph in boundary_noise * 3:
+    CS.vEgo = mph * CV.MPH_TO_MS
+    poll_params(daemon, monkeypatch)
+    assert daemon.personality == profile
+  put.assert_not_called()
+
+  CS.vEgo = return_mph * CV.MPH_TO_MS
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == 1
+  put.assert_called_once_with('LongitudinalPersonality', 1, block=True)
+  put.reset_mock()
+  for mph in (45.1, 55.1, 54.9, 64.9) * 3:
+    CS.vEgo = mph * CV.MPH_TO_MS
+    poll_params(daemon, monkeypatch)
+    assert daemon.personality == 1
+  put.assert_not_called()
+
+
+@pytest.mark.parametrize('mph,profile', [(44.9, 0), (45.1, 1), (64.9, 1), (65.1, 2)])
+def test_automatic_following_starts_in_the_requested_speed_band(daemon, monkeypatch, mph, profile):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  daemon.CS_prev = car.CarState.new_message(canValid=True, vEgo=mph * CV.MPH_TO_MS)
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == profile
+
+
+@pytest.mark.parametrize('initial_mph,held_mph,profile', [(40., 46., 0), (70., 64., 2)])
+@pytest.mark.parametrize('invalid', ['can', 'speed'])
+def test_invalid_speed_state_does_not_discard_following_hysteresis(
+    daemon, monkeypatch, initial_mph, held_mph, profile, invalid):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  CS = car.CarState.new_message(canValid=True, vEgo=initial_mph * CV.MPH_TO_MS)
+  daemon.CS_prev = CS
+  poll_params(daemon, monkeypatch)
+  CS.vEgo = float('nan') if invalid == 'speed' else held_mph * CV.MPH_TO_MS
+  CS.canValid = invalid != 'can'
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == profile
+  CS.canValid = True
+  CS.vEgo = held_mph * CV.MPH_TO_MS
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == profile
+
+
+@pytest.mark.parametrize('mph,expected', [(30., 0), (46., 1), (64., 1), (70., 2)])
+def test_econ_exit_selects_a_fresh_speed_band(daemon, monkeypatch, mph, expected):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=True, vEgo=mph * CV.MPH_TO_MS)
+  daemon.CS_prev = CS
+  daemon._update_eco_mode(CS)
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == 2
+  CS.ecoMode = False
+  daemon._update_eco_mode(CS)
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == expected
+  assert daemon.eco_mode is False
 
 
 def test_odyssey_distance_button_lasts_until_next_automatic_selection(daemon, monkeypatch):
