@@ -18,6 +18,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper, DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
+from openpilot.common.utils import MovingAverage
 
 from openpilot.selfdrive.car.car_events import CarEvents
 from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
@@ -108,6 +109,7 @@ class SelfdriveD:
     self.eco_mode = False
     self.factory_eco_mode = False
     self.automatic_personality = None
+    self.following_speed = MovingAverage(600)  # One minute of valid 10 Hz parameter polls.
 
     car_recognized = self.CP.brand != 'mock'
 
@@ -589,16 +591,12 @@ class SelfdriveD:
       automatic_personality = self.automatic_personality if eco_mode == self.eco_mode else None
       if (self.CP.carFingerprint == HONDA.HONDA_ODYSSEY_5G_MMR and self.CP.openpilotLongitudinalControl and
           not self.CP.passive and CS.canValid and math.isfinite(CS.vEgo)):
-        if eco_mode:
-          automatic_personality = log.LongitudinalPersonality.relaxed
-        else:
-          # Retain the selected speed band through a 2 mph return margin.
-          hysteresis = 2 * CV.MPH_TO_MS
-          lower_speed = 45 * CV.MPH_TO_MS + (hysteresis if automatic_personality == log.LongitudinalPersonality.aggressive else 0.)
-          upper_speed = 65 * CV.MPH_TO_MS - (hysteresis if automatic_personality == log.LongitudinalPersonality.relaxed else 0.)
-          automatic_personality = (log.LongitudinalPersonality.aggressive if CS.vEgo < lower_speed else
-                                   log.LongitudinalPersonality.relaxed if CS.vEgo > upper_speed else
-                                   log.LongitudinalPersonality.standard)
+        self.following_speed.add_value(CS.vEgo)
+        speed = self.following_speed.get_average()
+        automatic_personality = (log.LongitudinalPersonality.relaxed if eco_mode else
+                                 log.LongitudinalPersonality.aggressive if speed < 45 * CV.MPH_TO_MS else
+                                 log.LongitudinalPersonality.relaxed if speed > 65 * CV.MPH_TO_MS else
+                                 log.LongitudinalPersonality.standard)
       if automatic_personality is not None and (automatic_personality != self.automatic_personality or eco_mode != self.eco_mode):
         # Speed/mode changes select a native profile; live adjustments last until the next change.
         self.params.put(personality_param, automatic_personality, block=True)
