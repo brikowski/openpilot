@@ -17,22 +17,11 @@ Quick start:
 * https://electronstudio.github.io/raylib-python-cffi/README.html#quickstart
 
 The startup spinner uses a white fifth-generation Odyssey with black Sport-style wheels,
-animated rims, and a scrolling road. Preview it with `BIG=1 python -m openpilot.system.ui.spinner`.
+fully rotating wheels, and a scrolling road. Preview it with `BIG=1 python -m openpilot.system.ui.spinner`.
 The existing stdin protocol still accepts numeric progress or startup messages. The illustration
-is `openpilot/selfdrive/assets/images/odyssey_sport.png`; its wheel coordinates and
-standalone renderer are in `openpilot/system/ui/lib/odyssey_scene.py`. Both boot stages
-use the system monotonic clock so wheel and road motion continue across the handoff.
-
-The optional AGNOS early-boot theme uses `.agents/odyssey_boot.py` and a `magic.service`
-override pointing to a stable copy under `/data/odyssey-boot`. It animates only while
-no display client owns the compositor and retains the stock background if its renderer
-or the recognized OS compositor is unavailable. The original OS script stays intact.
-The firmware's initial image is a matching still. The packer's `--pack-splash` command
-replaces only its BMP pixels, preserving the DDPH header, bitmap metadata, and padding.
-Device installation retains the original splash and compositor under
-`/data/odyssey-boot/backup`; removing the service override and restoring the original
-splash restores the stock early screens. An AGNOS OS update may require reinstalling
-the optional theme.
+is `openpilot/selfdrive/assets/images/odyssey_sport.png`; its wheel coordinates are in
+`openpilot/system/ui/widgets/odyssey.py`. The firmware splash and AGNOS background use
+their stock graphics; no separate device-side theme installation is needed.
 
 Style guide:
 * All graphical elements should subclass [`Widget`](/openpilot/system/ui/widgets/__init__.py).
