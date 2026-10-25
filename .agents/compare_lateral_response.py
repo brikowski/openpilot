@@ -35,6 +35,36 @@ def can_schema_verified(child):
     'SG_ STEER_TORQUE_REQUEST : 23|1@0+ (1,0)', 'SG_ CHECKSUM : 35|4@0+ (1,0)'))
 
 
+def received_factory_modes(messages, child):
+  """Recover unpublished legacy mode from physical CAN with the recorded signal layout.
+
+  The Odyssey uses the validated seven-byte status transport even in older recordings whose
+  shared DBC described six bytes. Require the pinned ECON bit to agree before decoding it.
+  """
+  if not child or not re.fullmatch('[0-9a-f]{40}', child):
+    return np.empty((0, 2))
+  source = subprocess.run(['git', '-C', 'opendbc_repo', 'show',
+                           child+':opendbc/dbc/generator/honda/_bosch_2018.dbc'], capture_output=True, text=True)
+  if source.returncode or not re.search(
+      r'BO_ 545 ECON_STATUS: 6 SCM\s+SG_ ECON_ON : 23\|1@0\+ \(1,0\) \[0\|1\]', source.stdout):
+    return np.empty((0, 2))
+  override = subprocess.run(['git', '-C', 'opendbc_repo', 'show',
+                             child+':opendbc/dbc/generator/honda/honda_odyssey_5g_mmr.dbc'], capture_output=True, text=True)
+  if not override.returncode and not all(part in ' '.join(override.stdout.split()) for part in (
+      'BO_ 545 ECON_STATUS: 7 SCM', 'SG_ ECON_ON : 23|1@0+ (1,0) [0|1]', 'SG_ CHECKSUM : 51|4@0+')):
+    return np.empty((0, 2))
+  from opendbc.car.honda.hondacan import honda_checksum
+  rows = []
+  for m in sorted(messages, key=lambda m: m.logMonoTime):
+    if m.which() != 'can':
+      continue
+    for f in m.can:
+      b = bytes(f.dat)
+      if f.src == 1 and f.address == 0x221 and len(b) == 7 and honda_checksum(f.address, None, b) == b[-1] & 15:
+        rows.append([m.logMonoTime/1e9, (b[2] >> 7) & 1])
+  return np.asarray(rows, dtype=float).reshape(-1, 2)
+
+
 def held(rows, times, max_age):
   """Hold prior publications only; absent or stale streams remain explicitly unsupported."""
   rows, times = np.asarray(rows), np.asarray(times)
@@ -256,6 +286,11 @@ def authority_blocks(d, *, width, driver_limit, cap=STOCK_CAP):
 
 def route_report(messages, route, provenance):
   d, bad_packets = native_streams(messages)
+  mode_source = 'carState' if len(d['mode']) else 'unavailable'
+  if not len(d['mode']):
+    d['mode'] = received_factory_modes(messages, provenance.get('opendbc_commit_full'))
+    if len(d['mode']):
+      mode_source = 'received_CAN'
   blocks, exposure = [], []
   for width in (.5, 1.):
     for driver in (300, 1200):
@@ -270,7 +305,7 @@ def route_report(messages, route, provenance):
     provenance['provenance_exact'] = False
   provenance = dict(provenance, steering_dbc_verified=can_schema_verified(provenance.get('opendbc_commit_full')))
   return {'version': VERSION, 'tool_sha256': TOOL_SHA256,
-    'route': route, 'provenance': provenance, 'stock_reference': STOCK_CAP,
+    'route': route, 'provenance': provenance, 'stock_reference': STOCK_CAP, 'mode_source': mode_source,
     'wire': {'frames': len(wire), 'extra_frames': int(np.sum(active & (abs(wire[:, 1]) > STOCK_CAP))),
               'output_mismatches': int(np.sum(~output_agreement(wire, d['output']))), 'bad_packets': bad_packets},
     'faults_or_overrides': int(np.sum(np.any(d['state'][:, 2:5] > .5, axis=1))),

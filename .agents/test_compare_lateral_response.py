@@ -340,3 +340,89 @@ def test_sources_changing_during_assessment_cannot_be_saved(tmp_path, monkeypatc
   with pytest.raises(ValueError, match='changed during'):
     assessment.main()
   assert not saved
+
+
+def test_legacy_factory_mode_requires_recorded_signal_semantics(monkeypatch):
+  from compare_lateral_response import received_factory_modes
+  from opendbc.can import CANPacker
+  packer = CANPacker('honda_odyssey_5g_mmr_generated')
+  def message(kind, t=0, **kwargs):
+    return SimpleNamespace(logMonoTime=t, which=lambda: kind, **kwargs)
+  frames = [packer.make_can_msg('ECON_STATUS', 1, {'ECON_ON': value}) for value in (0, 1)]
+  messages = [message('can', (i+1)*40_000_000,
+                      can=[SimpleNamespace(address=a, dat=b, src=bus)]) for i, (a, b, bus) in enumerate(frames)]
+  source = 'BO_ 545 ECON_STATUS: 6 SCM\n SG_ ECON_ON : 23|1@0+ (1,0) [0|1] "" XXX\n'
+  monkeypatch.setattr('compare_lateral_response.subprocess.run', lambda args, **_kw: SimpleNamespace(
+    returncode=int(args[-1].endswith('honda_odyssey_5g_mmr.dbc')), stdout=source))
+  np.testing.assert_array_equal(received_factory_modes(messages, 'a'*40), [[.04, 0], [.08, 1]])
+  assert not len(received_factory_modes(messages, None))
+  assert not len(received_factory_modes(messages, 'a'*12))
+  source = source.replace('23|1@0+', '22|1@0+')
+  assert not len(received_factory_modes(messages, 'a'*40))
+
+
+@pytest.mark.parametrize('fault', ['checksum', 'length', 'bus', 'address', 'missing_source'])
+def test_legacy_factory_mode_rejects_unqualified_physical_frames(monkeypatch, fault):
+  from compare_lateral_response import received_factory_modes
+  from opendbc.can import CANPacker
+  a, b, bus = CANPacker('honda_odyssey_5g_mmr_generated').make_can_msg('ECON_STATUS', 1, {'ECON_ON': 1})
+  if fault == 'checksum':
+    b = b[:-1]+bytes([b[-1] ^ 1])
+  elif fault == 'length':
+    from opendbc.car.honda.hondacan import honda_checksum
+    b = b[:-1]
+    b = b[:-1]+bytes([(b[-1] & 0xf0) | honda_checksum(a, None, b[:-1]+bytes([b[-1] & 0xf0]))])
+  elif fault == 'bus':
+    bus = 0
+  elif fault == 'address':
+    a += 1
+  source = 'BO_ 545 ECON_STATUS: 6 SCM\n SG_ ECON_ON : 23|1@0+ (1,0) [0|1] "" XXX\n'
+  monkeypatch.setattr('compare_lateral_response.subprocess.run', lambda args, **_kw: SimpleNamespace(
+    returncode=int(fault == 'missing_source' or args[-1].endswith('honda_odyssey_5g_mmr.dbc')), stdout=source))
+  m = SimpleNamespace(logMonoTime=40_000_000, which=lambda: 'can', can=[SimpleNamespace(address=a, dat=b, src=bus)])
+  assert not len(received_factory_modes([m], 'a'*40))
+
+
+@pytest.mark.parametrize('published', [False, True])
+def test_missing_legacy_mode_can_be_recovered_without_replacing_published_state(monkeypatch, published):
+  from opendbc.can import CANPacker
+  import compare_lateral_response as assessment
+  d = native()
+  if not published:
+    d['mode'] = np.empty((0, 2))
+  messages = []
+  packer = CANPacker('honda_odyssey_5g_mmr_generated')
+  for t in np.arange(0, 6.01, .04):
+    a, b, bus = packer.make_can_msg('ECON_STATUS', 1, {'ECON_ON': 1})
+    messages.append(SimpleNamespace(logMonoTime=int(t*1e9), which=lambda: 'can',
+                                  can=[SimpleNamespace(address=a, dat=b, src=bus)]))
+  source = 'BO_ 545 ECON_STATUS: 6 SCM\n SG_ ECON_ON : 23|1@0+ (1,0) [0|1] "" XXX\n'
+  monkeypatch.setattr(assessment.subprocess, 'run', lambda args, **_kw: SimpleNamespace(
+    returncode=int(args[-1].endswith('honda_odyssey_5g_mmr.dbc')), stdout=source))
+  monkeypatch.setattr(assessment, 'native_streams', lambda _messages: (d, 0))
+  monkeypatch.setattr(assessment, 'can_schema_verified', lambda _child: True)
+  r = route_report(messages, 'synthetic', {'git_commit_full': 'a'*40, 'opendbc_commit_full': 'b'*40, 'provenance_exact': True})
+  assert r['blocks']
+  assert r['mode_source'] == ('carState' if published else 'received_CAN')
+  assert all(b['econ'] == (not published) for b in r['blocks'])
+  if not published:
+    d['model'][:, 1] = 2
+    r = route_report(messages, 'synthetic', {'opendbc_commit_full': 'b'*40})
+    assert not r['blocks']
+
+
+@pytest.mark.parametrize('change', [None, 'bit', 'checksum'])
+def test_legacy_factory_mode_honors_a_recorded_odyssey_override(monkeypatch, change):
+  from compare_lateral_response import received_factory_modes
+  from opendbc.can import CANPacker
+  a, b, bus = CANPacker('honda_odyssey_5g_mmr_generated').make_can_msg('ECON_STATUS', 1, {'ECON_ON': 1})
+  m = SimpleNamespace(logMonoTime=40_000_000, which=lambda: 'can', can=[SimpleNamespace(address=a, dat=b, src=bus)])
+  base = 'BO_ 545 ECON_STATUS: 6 SCM\n SG_ ECON_ON : 23|1@0+ (1,0) [0|1] "" XXX\n'
+  override = 'BO_ 545 ECON_STATUS: 7 SCM\n SG_ ECON_ON : 23|1@0+ (1,0) [0|1] "" XXX\n SG_ CHECKSUM : 51|4@0+ (1,0) [0|15] "" XXX'
+  if change == 'bit':
+    override = override.replace('23|1@0+', '22|1@0+')
+  elif change == 'checksum':
+    override = override.replace('51|4@0+', '43|4@0+')
+  monkeypatch.setattr('compare_lateral_response.subprocess.run', lambda args, **_kw: SimpleNamespace(
+    returncode=0, stdout=override if args[-1].endswith('honda_odyssey_5g_mmr.dbc') else base))
+  assert bool(len(received_factory_modes([m], 'a'*40))) == (change is None)
