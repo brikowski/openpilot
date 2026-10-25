@@ -9,3 +9,5 @@ pre-commit:
       run: .venv/bin/python -m pytest .agents/test_validate_log.py .agents/test_extract.py .agents/test_inspect_response.py .agents/test_compare_uphill_response.py .agents/test_compare_lateral_response.py .agents/test_replay_carcontroller.py .agents/test_inspect_response_model.py .agents/test_inspect_pitch_grade.py .agents/test_inspect_honda_objects.py .agents/test_private_paths.py .agents/test_check_offroad.py .agents/test_sync_upstream.py .agents/test_publish_public.py .agents/test_pull_logs.py openpilot/common/tests/test_prefix.py -q
     - name: Honda tune lint
       run: .venv/bin/ruff check opendbc_repo/opendbc/car/honda
+    - name: offroad UI tests
+      run: SCALE=1 .venv/bin/python -m pytest openpilot/selfdrive/ui/tests/test_display_wake.py openpilot/selfdrive/ui/tests/test_screensaver.py openpilot/selfdrive/ui/tests/test_lead_bar.py openpilot/selfdrive/ui/tests/test_settings.py -q
