@@ -174,8 +174,8 @@ def output_agreement(wire, output):
     return np.zeros(len(wire), dtype=bool)
   ix = np.searchsorted(output[:, 0], wire[:, 0], side='left')
   valid = ix < len(output)
-  ix = np.minimum(ix, len(output)-1)
-  valid &= (output[ix, 0]-wire[:, 0] <= .04) & (output[ix, 1] == wire[:, 1])
+  values = output[np.minimum(ix, len(output)-1)]
+  valid &= (values[:, 0]-wire[:, 0] <= .04) & (values[:, 1] == wire[:, 1])
   # The last TX before a publication owns it. Earlier batched TXs are not extra confirmations.
   valid[:-1] &= ix[:-1] != ix[1:]
   return valid

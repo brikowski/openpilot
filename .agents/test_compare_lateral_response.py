@@ -41,6 +41,13 @@ def test_transmission_matches_following_output_once_and_does_not_mask_corruption
   np.testing.assert_array_equal(output_agreement(wire, output), [False, True, False, False])
 
 
+@pytest.mark.parametrize('tail_counts', [0, 2560, 3000])
+def test_unobserved_transmissions_do_not_reuse_the_last_output(tail_counts):
+  wire = np.array([[0., 123], [.01, 2560], [.02, tail_counts], [.03, tail_counts]])
+  output = np.array([[.005, 123], [.015, 2560]])
+  np.testing.assert_array_equal(output_agreement(wire, output), [True, True, False, False])
+
+
 def test_driver_history_includes_held_boundary_and_rejects_missing_state():
   d = native()
   d['state'][49, 6] = 600  # Held through the left boundary at .495s; current input is zero.
