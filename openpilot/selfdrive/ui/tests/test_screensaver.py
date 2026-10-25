@@ -3,6 +3,9 @@ from types import SimpleNamespace
 import pyray as rl
 import pytest
 
+from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT
+from openpilot.selfdrive.ui.tests.test_display_wake import backlight as backlight, display as display
+
 @pytest.fixture
 def screen(monkeypatch, tmp_path):
   monkeypatch.setenv('SCALE', '1')
@@ -141,3 +144,29 @@ def test_new_offroad_alert_reveals_menu_for_another_ten_seconds(screen):
   assert screen.app.get_active_widget() is screen.menu
   advance(screen, 21)
   assert screen.app.get_active_widget() is screen.saver
+
+
+def test_screensaver_holds_offroad_display_and_restores_normal_timeout(display, backlight):
+  state, device, now = display
+  state.started = state.ignition = False
+  device.set_screensaver_active(True)
+  device.update()
+  now[0] = 3600
+  device.update()
+  assert device.awake and device._brightness_target > 0
+  device.set_screensaver_active(False)
+  now[0] += DISPLAY_TIMEOUT - 0.01
+  device.update()
+  assert device.awake
+  now[0] += 4
+  device.update()
+  assert not device.awake and device._brightness_target == 0
+
+
+def test_screensaver_cannot_hold_onroad_display(display, backlight):
+  _, device, now = display
+  device.set_screensaver_active(True)
+  device.update()
+  now[0] = DISPLAY_TIMEOUT + 3
+  device.update()
+  assert not device.awake and device._brightness_target == 0
