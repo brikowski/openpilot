@@ -992,6 +992,27 @@ def test_verdict_reports_direct_gas_handoff_without_inventing_a_limit():
   assert "no calibrated handoff limit" in handoff["detail"]
 
 
+@pytest.mark.parametrize('measured,command,flagged', [(.4, .4, True), (.4, .14, True), (.2, .001, False)])
+def test_jerk_flag_preserves_the_symptom_without_assigning_physical_ownership(measured, command, flagged):
+  # The same estimated jerk can follow different commands; the RMS ratio is not causal attribution.
+  route = {
+    "crashes": 0, "track_rms": None, "passthrough_rms": None,
+    "gasf_eff_mean": None, "windf_mean": None, "overshoot_frac": 0., "creep_frames": 0,
+    "felt_jerk_rms": measured, "cmd_jerk_rms": command, "felt_jerk_p99": 1.2,
+    "harshness_ratio": measured / command,
+  }
+  result = next(v for v in validate_log.verdicts(route) if v["check"] == "aEgo jerk (diagnostic)")
+  assert result["ok"] == (not flagged)
+  assert "RMS ratio" in result["detail"]
+  assert "physical motion and timing unqualified" in result["detail"]
+  assert "amplification" not in result["detail"]
+  if flagged:
+    assert "inspect" in result["status"] and "physical motion" in result["status"]
+    assert "downstream" not in result["status"] and "our command" not in result["status"]
+  else:
+    assert result["status"] is None
+
+
 def test_verdict_records_alpha_long_mode_without_grading_the_mode():
   route = {
     "crashes": 0,

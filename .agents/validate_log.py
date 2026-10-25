@@ -164,11 +164,7 @@ GAS_RELEASE_BAND_SPEED_MAX = 25.0
 GAS_RELEASE_BAND_MIN_EPISODE_S = 0.6
 STOP_LURCH_MIN_VEGO = 0.25     # m/s: below longcontrol's stopping threshold, standstill velocity/
                                # IMU noise can report a decel while the van is already stationary.
-HARSH_FELT_JERK_RMS = 0.35    # m/s^3: RMS jerk of ACHIEVED accel while engaged. This is what the
-                              # BODY feels, and it is NOT a following metric - it is the symptom
-                              # readout. Measured 0.25-0.39 across drives while commanded jerk was
-                              # only 0.12-0.24, i.e. the car amplifies our command ~2x. Reported
-                              # with that ratio so harshness can be attributed rather than guessed.
+AEGO_JERK_RMS_FLAG = 0.35  # m/s^3: inspection threshold; physical jerk is unqualified.
 DOWNHILL_PITCH = -0.012       # rad (~-0.7 deg / -1.2% grade, -0.12 m/s^2 of hill_brake): the grade
                               # breakout, where the defect concentrates (10-66 toggles/min vs 2.4 overall)
 DESCENT_HOLD_MIN_S = 0.5      # gate unit (restated 2026-08-06): a hold-episode is >=0.5 s of
@@ -1760,12 +1756,9 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   out["brake_toggle_min_gap"] = (
       float(np.min(np.diff(brake_edge_times))) if len(brake_edge_times) > 1 else None)
 
-  # RIDE HARSHNESS - the driver's actual experience, and the thing our fidelity checks cannot see.
-  # Command fidelity can be perfect while the ride is harsh: the wire is a TARGET Honda's ECU
-  # closes its own loop on, and it amplifies commanded jerk ~2x. Split gas/brake because braking
-  # is consistently the harsher domain (0.27-0.92 vs 0.22-0.32 m/s^3) and that is what the driver
-  # reports. The RATIO is the attribution: ~1 means the car is tracking our command's smoothness,
-  # >>1 means the harshness is being added downstream of us.
+  # aEgo is an estimated response. Its jerk and command ratio do not establish physical
+  # harshness or fault ownership; inspect causal commands and independently timed motion.
+  # Retain the legacy "felt" field names for ledger compatibility.
   w = max(1, int(JERK_WIN_S / dt))
   aego_s = _causal_lpf(aego, dt, JERK_SMOOTH_TAU)
   fj = np.zeros_like(aego_s)
@@ -2224,18 +2217,15 @@ def verdicts(r):
         f"{r['brake_episode_count']} episode(s), median duration {duration}, 80% depth {ramp80}"
         f"{downhill}")
   if r.get("felt_jerk_rms") is not None:
-    # Reported, and flagged on the SYMPTOM - not on blame. The driver feels aEgo jerk; whether it
-    # is ours is what the ratio and the gas/brake split are for. Naming a check after a suspected
-    # cause instead of the symptom is exactly how `domain chatter` got demoted two days before the
-    # driver reported the thing it was watching.
-    harsh = r["felt_jerk_rms"] > HARSH_FELT_JERK_RMS
+    # Keep estimated-response variation visible without attributing its RMS ratio.
+    harsh = r["felt_jerk_rms"] > AEGO_JERK_RMS_FLAG
     split = ""
     if r.get("felt_jerk_brake") is not None and r.get("felt_jerk_gas") is not None:
       split = f" [brake {r['felt_jerk_brake']:.2f} vs gas {r['felt_jerk_gas']:.2f}]"
-    add("ride harshness (felt)", not harsh,
+    add("aEgo jerk (diagnostic)", not harsh,
         f"aEgo jerk RMS {r['felt_jerk_rms']:.3f}, p99 {r['felt_jerk_p99']:.2f} vs commanded "
-        f"{r['cmd_jerk_rms']:.3f} = {r['harshness_ratio']:.1f}x amplification{split}",
-        status="harsh ride - check the ratio: ~1x is our command, >>1x is added downstream" if harsh else None)
+        f"{r['cmd_jerk_rms']:.3f} = {r['harshness_ratio']:.1f}x RMS ratio{split}; physical motion and timing unqualified",
+        status="inspect causal commands and independently timed physical motion" if harsh else None)
   if r.get("stop_lurch_worst") is not None:
     in_stop = r.get("stop_lurch_in_stopping")
     where = "" if in_stop is None else (" in longControlState=stopping" if in_stop
@@ -2540,7 +2530,7 @@ def main():
              "brake release hold (diagnostic)",
              "negative-request live gas (diagnostic)",
              "brake-domain transition bursts",
-             "sign disagreement", "ride harshness (felt)",
+             "sign disagreement", "aEgo jerk (diagnostic)",
              "low-speed deceleration (diagnostic)"}
   lateral = {"lateral telemetry (diagnostic)", "lateral model tracking (diagnostic)",
              "lateral high-authority following (diagnostic)"}
