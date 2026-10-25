@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-DISPLAY_TIMEOUT = 15
+DISPLAY_TIMEOUT = 60
 
 
 @dataclass
@@ -10,7 +10,6 @@ class DisplayWakePolicy:
   ignition: bool = False
   started: bool = False
   enabled: bool = False
-  keep_awake: bool = False
   alert: tuple | None = None
   offroad_alerts: set[str] | None = None
   timed_out: bool = False
@@ -19,17 +18,15 @@ class DisplayWakePolicy:
     self.deadline = now + timeout
 
   def update(self, now: float, timeout: int, *, ignition: bool, started: bool, enabled: bool | None,
-             alert: tuple | None, keep_awake: bool, touch: bool,
+             alert: tuple | None, touch: bool,
              offroad_alerts: set[str] | None, pc: bool) -> tuple[bool, bool]:
-    keep_awake = started and (keep_awake or alert is not None)
-    reset = (touch or keep_awake or keep_awake != self.keep_awake or
+    reset = (touch or (started and alert is not None) or
              ignition != self.ignition or started != self.started or self.deadline < 0)
     self.ignition = ignition
     self.started = started
-    self.keep_awake = keep_awake
 
     if started:
-      if alert is not None and alert != self.alert:
+      if alert != self.alert:
         reset = True
       self.alert = alert
       if enabled is not None:

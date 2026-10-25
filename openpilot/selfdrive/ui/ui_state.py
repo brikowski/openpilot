@@ -382,22 +382,15 @@ class Device:
 
     now = time.monotonic()
     alert = None
-    keep_awake = False
     enabled = None
     if ui_state.started:
       sm = ui_state.sm
-      keep_awake = (ui_state.alpha_long_enabled and sm.alive['carState'] and sm.valid['carState'] and
-                    sm.recv_frame['carState'] >= ui_state.started_frame and sm['carState'].cruiseState.enabled)
       if sm.recv_frame['selfdriveState'] >= ui_state.started_frame and sm.alive['selfdriveState']:
         ss = sm['selfdriveState']
         enabled = ss.enabled
       visible_alert = AlertRenderer.get_alert(sm)
       if visible_alert is not None:
         alert = (visible_alert.size, visible_alert.status, visible_alert.text1, visible_alert.text2)
-      lead_present = (sm.alive['radarState'] and sm.valid['radarState'] and
-                      sm.recv_frame['radarState'] >= ui_state.started_frame and
-                      (sm['radarState'].leadOne.present or sm['radarState'].leadTwo.present))
-      keep_awake = keep_awake and lead_present
     else:
       if self._screensaver_active:
         self._wake_policy.reset(now, self.interactive_timeout)
@@ -409,7 +402,7 @@ class Device:
 
     awake, timeout_edge = self._wake_policy.update(
       now, self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
-      enabled=enabled, alert=alert, keep_awake=keep_awake,
+      enabled=enabled, alert=alert,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
     if timeout_edge:
