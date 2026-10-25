@@ -95,12 +95,18 @@ def display(monkeypatch, tmp_path):
     updated = {'selfdriveState': True}
     recv_time = {'selfdriveState': 0.0}
 
-  sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False)),
+  class State(SimpleNamespace):
+    @property
+    def parked(self):
+      return module.UIState.parked.fget(self)
+
+  sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False), canValid=True, standstill=False,
+                                         gearShifter=module.car.CarState.GearShifter.drive),
                 selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0),
                                                alertStatus=SimpleNamespace(raw=0), alertText1='', alertText2=''),
                 radarState=SimpleNamespace(leadOne=SimpleNamespace(present=False), leadTwo=SimpleNamespace(present=False)))
-  state = SimpleNamespace(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, started_time=0., sm=sm,
-                          light_sensor=-1, params=SimpleNamespace(get=lambda _: None, get_bool=lambda _: False))
+  state = State(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, started_time=0., sm=sm,
+                light_sensor=-1, params=SimpleNamespace(get=lambda _: None, get_bool=lambda _: False))
   monkeypatch.setattr(module, 'ui_state', state)
   monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[], set_should_render=lambda _: None))
   monkeypatch.setattr(module, 'PC', False)

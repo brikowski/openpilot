@@ -3,6 +3,7 @@ import time
 import pyray as rl
 
 from openpilot.selfdrive.ui.ui_state import device, ui_state
+from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
 from openpilot.system.ui.lib.application import gui_app, MousePos
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.odyssey import OdysseyAnimation
@@ -11,7 +12,7 @@ from openpilot.system.ui.widgets.odyssey import OdysseyAnimation
 IDLE_TIMEOUT = 10.0
 
 
-class OffroadScreensaver(Widget):
+class Screensaver(Widget):
   def __init__(self, *menus: Widget):
     super().__init__()
     self._menus = menus
@@ -19,6 +20,7 @@ class OffroadScreensaver(Widget):
     self._multi_touch = True
     self._last_interaction = time.monotonic()
     self._alerts = device.offroad_alerts
+    self._eligible = not ui_state.started or ui_state.parked
     gui_app.add_nav_stack_tick(self._tick)
 
   def _tick(self):
@@ -29,8 +31,13 @@ class OffroadScreensaver(Widget):
     new_alert = bool(alerts - self._alerts)
     self._alerts = alerts
 
-    # Leave onboarding, dialogs, and the driving view unobstructed.
-    if ui_state.started or new_alert or (not active and top not in self._menus):
+    onroad_alert = ui_state.started and AlertRenderer.get_alert(ui_state.sm) is not None
+    eligible = (not ui_state.started or ui_state.parked) and not onroad_alert
+    if eligible != self._eligible:
+      self._eligible = eligible
+      self._last_interaction = now
+    # Driving, alerts, onboarding and dialogs take priority over the animation.
+    if not eligible or new_alert or (not active and top not in self._menus):
       self._last_interaction = now
       if active:
         gui_app.pop_widget()

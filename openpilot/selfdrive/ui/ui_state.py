@@ -135,6 +135,13 @@ class UIState:
   def engaged(self) -> bool:
     return self.started and self.sm["selfdriveState"].enabled
 
+  @property
+  def parked(self) -> bool:
+    sm = self.sm
+    return (self.started and sm.alive['carState'] and sm.valid['carState'] and
+            sm.recv_frame['carState'] >= self.started_frame and sm['carState'].canValid and
+            sm['carState'].gearShifter == car.CarState.GearShifter.park and sm['carState'].standstill)
+
   def is_onroad(self) -> bool:
     return self.started
 
@@ -290,6 +297,7 @@ class Device:
     self._interactive_timeout_callbacks: list[Callable] = []
     self._awake: bool = True
     self._screensaver_active = False
+    self._parked = False
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
@@ -381,6 +389,12 @@ class Device:
     from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
 
     now = time.monotonic()
+    parked = ui_state.parked
+    if parked != self._parked:
+      self._parked = parked
+      self._wake_policy.reset(now, self.interactive_timeout)
+    if self._screensaver_active and (not ui_state.started or parked):
+      self._wake_policy.reset(now, self.interactive_timeout)
     alert = None
     enabled = None
     if ui_state.started:
@@ -392,8 +406,6 @@ class Device:
       if visible_alert is not None:
         alert = (visible_alert.size, visible_alert.status, visible_alert.text1, visible_alert.text2)
     else:
-      if self._screensaver_active:
-        self._wake_policy.reset(now, self.interactive_timeout)
       if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:
         self._offroad_alerts = {key for key in OFFROAD_ALERTS if ui_state.params.get(key)}
         if ui_state.params.get_bool('UpdateAvailable'):
