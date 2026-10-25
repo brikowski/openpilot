@@ -36,6 +36,31 @@ def test_offroad_alert_argument_does_not_hold_display_on():
   assert not step(policy, DISPLAY_TIMEOUT + .1, started=False, alert=warning)[0]
 
 
+@pytest.mark.parametrize('name', ['leadDeparting', 'trafficReady'])
+def test_departure_popup_wakes_a_sleeping_display_and_then_allows_sleep(display, name):
+  from openpilot.cereal import log
+  from openpilot.selfdrive.selfdrived.events import EVENTS, ET
+
+  state, device, now = display
+  device._update_wakefulness()
+  now[0] = DISPLAY_TIMEOUT + 3
+  device._update_wakefulness()
+  assert not device.awake
+  popup = EVENTS[getattr(log.OnroadEvent.EventName, name)][ET.PERMANENT]
+  ss = state.sm['selfdriveState']
+  ss.alertSize.raw, ss.alertStatus.raw = int(popup.alert_size), int(popup.alert_status)
+  ss.alertText1, ss.alertText2 = popup.alert_text_1, popup.alert_text_2
+  device._update_wakefulness()
+  assert device.awake
+  assert ss.alertStatus.raw == 0
+  now[0] += 3.1
+  ss.alertSize.raw = 0
+  device._update_wakefulness()
+  now[0] += DISPLAY_TIMEOUT + 3
+  device._update_wakefulness()
+  assert not device.awake
+
+
 def test_engagement_disengagement_and_ignition_transitions_wake():
   policy = DisplayWakePolicy()
   step(policy, 0)

@@ -469,6 +469,14 @@ class SelfdriveD:
     if self.CP.openpilotLongitudinalControl and not self.CP.passive and CS.canValid and CS.ecoModeValid:
       self.factory_eco_mode = CS.ecoMode
 
+  def _update_departure_alerts(self):
+    if self.sm.updated['driverAssistance'] and self.sm.all_checks(['driverAssistance']):
+      assistance = self.sm['driverAssistance']
+      if assistance.leadDeparting:
+        self.events.add(EventName.leadDeparting)
+      if assistance.trafficReady:
+        self.events.add(EventName.trafficReady)
+
   def _update_personality(self, CS):
     # Decrement the selected mode's personality on distance button press.
     if self.CP.openpilotLongitudinalControl:
@@ -573,6 +581,7 @@ class SelfdriveD:
     self._update_eco_mode(CS)
     self.update_events(CS)
     if not self.CP.passive and self.initialized:
+      self._update_departure_alerts()
       self.enabled, self.active = self.state_machine.update(self.events)
     self.update_alerts(CS)
 

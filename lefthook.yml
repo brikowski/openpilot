@@ -11,3 +11,5 @@ pre-commit:
       run: .venv/bin/ruff check opendbc_repo/opendbc/car/honda
     - name: offroad UI tests
       run: SCALE=1 .venv/bin/python -m pytest openpilot/selfdrive/ui/tests/test_display_wake.py openpilot/selfdrive/ui/tests/test_screensaver.py openpilot/selfdrive/ui/tests/test_lead_bar.py openpilot/selfdrive/ui/tests/test_settings.py -q
+    - name: departure alert tests
+      run: .venv/bin/python -m pytest openpilot/selfdrive/controls/tests/test_departure_alerts.py -q

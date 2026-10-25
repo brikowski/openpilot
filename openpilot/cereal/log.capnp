@@ -132,6 +132,8 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     excessiveActuation @96;
     bigModelLoading @100;
     bigModelFailed @102;
+    leadDeparting @106;
+    trafficReady @107;
 
     lowBatteryDEPRECATED @40;
     soundsUnavailableDEPRECATED @47;
@@ -1219,6 +1221,10 @@ struct DriverAssistance {
   # Lane Departure Warnings
   leftLaneDeparture @0 :Bool;
   rightLaneDeparture @1 :Bool;
+
+  # One-shot stopped-traffic notifications, independent of engagement.
+  leadDeparting @2 :Bool;
+  trafficReady @3 :Bool;  # model stop-to-proceed inference, not a detected green light
 
   # FCW, AEB, etc. will go here
 }

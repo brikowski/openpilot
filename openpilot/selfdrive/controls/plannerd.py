@@ -3,6 +3,7 @@ from opendbc.car.structs import car
 from openpilot.common.params import Params
 from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.controls.lib.departure_alerts import DepartureAlerts
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 import openpilot.cereal.messaging as messaging
@@ -17,6 +18,7 @@ def main():
   cloudlog.info("plannerd got CarParams: %s", CP.brand)
 
   ldw = LaneDepartureWarning()
+  departure_alerts = DepartureAlerts()
   longitudinal_planner = LongitudinalPlanner(CP)
   pm = messaging.PubMaster(['longitudinalPlan', 'driverAssistance'])
   sm = messaging.SubMaster(['carControl', 'carState', 'controlsState', 'radarState', 'modelV2', 'selfdriveState'],
@@ -33,6 +35,7 @@ def main():
       msg.valid = sm.all_checks()
       msg.driverAssistance.leftLaneDeparture = ldw.left
       msg.driverAssistance.rightLaneDeparture = ldw.right
+      msg.driverAssistance.leadDeparting, msg.driverAssistance.trafficReady = departure_alerts.update(sm)
       pm.send('driverAssistance', msg)
 
 

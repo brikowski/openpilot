@@ -18,7 +18,7 @@ def daemon(monkeypatch, tmp_path):
   params = Params()
   Path(params.get_param_path('EcoModeEnabled')).write_text('1')
   monkeypatch.setattr(selfdrived.messaging, 'PubMaster', Mock())
-  monkeypatch.setattr(selfdrived.messaging, 'SubMaster', Mock(return_value=SimpleNamespace(frame=1)))
+  monkeypatch.setattr(selfdrived.messaging, 'SubMaster', Mock(return_value=SimpleNamespace(frame=1, updated={'driverAssistance': False})))
   monkeypatch.setattr(selfdrived.messaging, 'sub_sock', Mock())
   metadata = SimpleNamespace(openpilot=SimpleNamespace(comma_remote=False), tested_channel=False)
   monkeypatch.setattr(selfdrived, 'get_build_metadata', lambda: metadata)

@@ -385,6 +385,14 @@ def invalid_lkas_setting_alert(CP: car.CarParams, CS: car.CarState, sm: messagin
 
 
 EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
+  EventName.leadDeparting: {
+    ET.PERMANENT: Alert("Vehicle ahead is moving", "", AlertStatus.normal, AlertSize.small,
+                        Priority.LOWEST, VisualAlert.none, AudibleAlert.prompt, 3.0),
+  },
+  EventName.trafficReady: {
+    ET.PERMANENT: Alert("Traffic may be ready", "", AlertStatus.normal, AlertSize.small,
+                        Priority.LOWEST, VisualAlert.none, AudibleAlert.prompt, 3.0),
+  },
   # ********** events with no alerts **********
 
   EventName.noGps: {},
