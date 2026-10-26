@@ -73,13 +73,14 @@ jobs:
           python3 .agents/preflash.py
       - name: Publish checked development pair
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           OPENDBC_SYNC_KEY: ${{ secrets.OPENDBC_SYNC_KEY }}
           EXPECTED_PARENT: ${{ steps.before.outputs.parent }}
           EXPECTED_CHILD: ${{ steps.before.outputs.child }}
         run: |
           test -n "$OPENDBC_SYNC_KEY"
           install -d -m 700 ~/.ssh
-          curl --fail --silent --show-error https://api.github.com/meta | python3 -c \
+          curl --fail --silent --show-error --header "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/meta | python3 -c \
             'import json,sys; print("\n".join("github.com " + key for key in json.load(sys.stdin)["ssh_keys"] if key.startswith("ssh-ed25519 ")))' > ~/.ssh/known_hosts
           eval "$(ssh-agent -s)"
           trap 'ssh-agent -k >/dev/null' EXIT

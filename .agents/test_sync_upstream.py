@@ -1,5 +1,7 @@
 """Exercise paired sync and publication on isolated local Git repositories."""
+import os
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -215,3 +217,27 @@ def test_sync_key_uses_ssh_despite_checkout_https_rewrites(repositories):
   git(child, 'config', 'url.https://github.com/.insteadOf', 'git@github.com:')
   git(child, 'config', 'remote.origin.pushurl', push_url)
   assert git(child, 'remote', 'get-url', '--push', 'origin') == 'ssh://git@github.com/brikowski/opendbc.git'
+
+
+def test_host_key_download_authenticates_with_the_job_token(tmp_path):
+  workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/odyssey-upstream.yaml').read_text()
+  step = workflow.split('      - name: Publish checked development pair\n', 1)[1]
+  binary = tmp_path / 'bin'
+  binary.mkdir()
+  curl = binary / 'curl'
+  curl.write_text('#!/usr/bin/env python3\nimport json,sys\n'
+                  'args=sys.argv[1:]\n'
+                  'if "--header" not in args or args[args.index("--header")+1] != "Authorization: Bearer test-actions-token":\n'
+                  '  raise SystemExit(22)\n'
+                  'assert args[-1] == "https://api.github.com/meta"\n'
+                  'print(json.dumps({"ssh_keys":["ssh-rsa ignored", "ssh-ed25519 test-host-key"]}))\n')
+  curl.chmod(0o755)
+  hosts = tmp_path / 'known_hosts'
+  command = step[step.index('curl '):step.index('eval ')]
+  command = command.replace('~/.ssh/known_hosts', shlex.quote(str(hosts)))
+  result = subprocess.run(['bash', '-eo', 'pipefail', '-c', command], text=True, capture_output=True,
+                          env={**os.environ, 'PATH': str(binary) + os.pathsep + os.environ['PATH'],
+                               'GITHUB_TOKEN': 'test-actions-token'})
+  assert result.returncode == 0, result.stderr
+  assert '          GITHUB_TOKEN: ${{ github.token }}\n' in step
+  assert hosts.read_text() == 'github.com ssh-ed25519 test-host-key\n'
