@@ -50,14 +50,9 @@ class Screensaver(Widget):
     elif now - self._last_interaction >= IDLE_TIMEOUT:
       gui_app.push_widget(self)
 
-  def show_event(self):
-    super().show_event()
-    device.set_screensaver_active(True)
-
   def hide_event(self):
     super().hide_event()
     self._last_interaction = time.monotonic()
-    device.set_screensaver_active(False)
 
   def _handle_mouse_press(self, mouse_pos: MousePos):
     # Pop during this widget's input dispatch so the waking press cannot reach the menu.

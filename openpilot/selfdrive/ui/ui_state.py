@@ -296,7 +296,6 @@ class Device:
     self._override_interactive_timeout: int | None = None
     self._interactive_timeout_callbacks: list[Callable] = []
     self._awake: bool = True
-    self._screensaver_active = False
     self._parked = False
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
@@ -318,10 +317,6 @@ class Device:
   @property
   def offroad_alerts(self) -> frozenset[str]:
     return frozenset(self._offroad_alerts or ())
-
-  def set_screensaver_active(self, active: bool) -> None:
-    self._screensaver_active = active
-    self._reset_interactive_timeout()
 
   @property
   def interactive_timeout(self) -> int:
@@ -392,8 +387,6 @@ class Device:
     parked = ui_state.parked
     if parked != self._parked:
       self._parked = parked
-      self._wake_policy.reset(now, self.interactive_timeout)
-    if self._screensaver_active and (not ui_state.started or parked):
       self._wake_policy.reset(now, self.interactive_timeout)
     alert = None
     enabled = None

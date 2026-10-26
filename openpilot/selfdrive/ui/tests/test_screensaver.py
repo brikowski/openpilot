@@ -29,8 +29,7 @@ def screen(monkeypatch, tmp_path):
   state = SimpleNamespace(started=False, parked=False, sm=object())
   alert = [None]
   monkeypatch.setattr(module.AlertRenderer, 'get_alert', lambda _: alert[0])
-  device = SimpleNamespace(awake=True, offroad_alerts=frozenset(), active=False)
-  device.set_screensaver_active = lambda active: setattr(device, 'active', active)
+  device = SimpleNamespace(awake=True, offroad_alerts=frozenset())
   monkeypatch.setattr(module, 'ui_state', state)
   monkeypatch.setattr(module, 'device', device)
   monkeypatch.setattr(widgets, 'device', device)
@@ -58,7 +57,6 @@ def test_menu_enters_after_ten_seconds_and_stays_active(screen):
   assert screen.app.get_active_widget() is screen.menu
   advance(screen, 10)
   assert screen.app.get_active_widget() is screen.saver
-  assert screen.device.active
   advance(screen, 3600)
   assert screen.app.get_active_widget() is screen.saver
 
@@ -89,7 +87,6 @@ def test_waking_press_is_consumed_and_returns_to_the_same_menu(screen, layers, s
   advance(screen, 11, [touch(down=True, press=True, slot=slot)])
   render()
   assert screen.app.get_active_widget() is screen.settings
-  assert not screen.device.active
   advance(screen, 12, [touch(release=True, slot=slot)])
   render()
   assert not clicks
@@ -115,7 +112,6 @@ def test_onroad_immediately_removes_screensaver_and_cannot_reenter(screen):
   screen.state.started = True
   advance(screen, 10.01)
   assert screen.app.get_active_widget() is screen.menu
-  assert not screen.device.active
   advance(screen, 100)
   assert screen.app.get_active_widget() is screen.menu
   screen.state.started = False
@@ -152,7 +148,6 @@ def test_losing_park_confirmation_removes_screensaver_immediately(screen):
   screen.state.parked = False
   advance(screen, 10.01)
   assert screen.app.get_active_widget() is screen.menu
-  assert not screen.device.active
 
 
 def test_onroad_alert_exits_screensaver_and_restarts_ten_seconds_after_clear(screen):
@@ -189,37 +184,34 @@ def test_new_offroad_alert_reveals_menu_for_another_ten_seconds(screen):
   screen.device.offroad_alerts = frozenset({'UpdateAvailable'})
   advance(screen, 11)
   assert screen.app.get_active_widget() is screen.menu
-  assert not screen.device.active
   advance(screen, 20.999)
   assert screen.app.get_active_widget() is screen.menu
   advance(screen, 21)
   assert screen.app.get_active_widget() is screen.saver
 
 
-def test_screensaver_holds_offroad_display_and_restores_normal_timeout(display, backlight):
+@pytest.mark.parametrize('parked', [False, True])
+def test_screensaver_does_not_extend_the_one_minute_display_deadline(display, backlight, screen, monkeypatch, parked):
+  from openpilot.selfdrive.ui.layouts import screensaver as module
+  from openpilot.selfdrive.ui.ui_state import car
+
   state, device, now = display
-  state.started = state.ignition = False
-  device.set_screensaver_active(True)
+  state.started = state.ignition = parked
+  state.sm['carState'].gearShifter = car.CarState.GearShifter.park
+  state.sm['carState'].standstill = True
+  monkeypatch.setattr(module, 'ui_state', state)
+  monkeypatch.setattr(module, 'device', device)
   device.update()
-  now[0] = 3600
-  device.update()
-  assert device.awake and device._brightness_target > 0
-  device.set_screensaver_active(False)
-  now[0] += DISPLAY_TIMEOUT - 0.01
-  device.update()
-  assert device.awake
-  now[0] += 4
-  device.update()
-  assert not device.awake and device._brightness_target == 0
-
-
-def test_screensaver_cannot_hold_onroad_display(display, backlight):
-  _, device, now = display
-  device.set_screensaver_active(True)
-  device.update()
-  now[0] = DISPLAY_TIMEOUT + 3
-  device.update()
-  assert not device.awake and device._brightness_target == 0
+  for timestamp in (0, 10, 30, 59, 60, 61, 62, 100):
+    now[0] = timestamp
+    advance(screen, timestamp)
+    device.update()
+    assert device._wake_policy.deadline == DISPLAY_TIMEOUT
+    assert device.awake == (timestamp < DISPLAY_TIMEOUT + 2)
+    if timestamp >= 10:
+      assert screen.app.get_active_widget() is screen.saver
+  assert device._brightness_target == 0
+  assert backlight[0] == backlight[1] == [(DISPLAY_TIMEOUT + 2, False)]
 
 
 @pytest.mark.parametrize('fault', ['drive', 'neutral', 'reverse', 'unknown', 'moving', 'can_invalid', 'stale', 'invalid', 'previous_drive'])
@@ -245,7 +237,7 @@ def test_park_requires_current_valid_stationary_car_state(display, fault):
   assert not state.parked
 
 
-def test_park_wakes_sleeping_display_and_screensaver_stays_bright(display, backlight):
+def test_park_wakes_sleeping_display_then_times_out_again(display, backlight):
   from openpilot.selfdrive.ui.ui_state import car
   state, device, now = display
   device.update()
@@ -256,10 +248,9 @@ def test_park_wakes_sleeping_display_and_screensaver_stays_bright(display, backl
   state.sm['carState'].standstill = True
   device.update()
   assert device.awake and device._brightness_target > 0
-  device.set_screensaver_active(True)
-  now[0] = 3600
+  now[0] += DISPLAY_TIMEOUT + 3
   device.update()
-  assert device.awake and device._brightness_target > 0
+  assert not device.awake and device._brightness_target == 0
   state.sm['carState'].gearShifter = car.CarState.GearShifter.drive
   device.update()
   assert device.awake
