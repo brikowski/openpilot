@@ -202,6 +202,8 @@ MILD_CREEP_BRAKE_COMMITS = {
   "c30238e6f540",  # calibrated gas ordering retains brake translation and fallback
   "c1b897f57d4a",  # settled handoff tolerance retains numeric brake translation
   "ba58977e0c5c",  # filtered excess release retains numeric brake translation
+  # Gas/coast and steering descendants retain this translation and fallback, not domain timing.
+  "bd99f2b80130", "fb79e144a7c2", "963d3a8437b2", "24057b269408",
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
