@@ -9,9 +9,13 @@ from openpilot.common.params import Params
 def main():
   started_at = time.monotonic_ns()
   sm = messaging.SubMaster(["deviceState"])
-  sm.update(3000)
-  if (not sm.updated["deviceState"] or not sm.valid["deviceState"] or not sm.alive["deviceState"] or
-      sm.logMonoTime["deviceState"] < started_at):
+  deadline = started_at + 3_000_000_000
+  while (remaining := deadline - time.monotonic_ns()) > 0:
+    sm.update(max(1, remaining // 1_000_000))
+    if (sm.updated["deviceState"] and sm.valid["deviceState"] and sm.alive["deviceState"] and
+        sm.logMonoTime["deviceState"] >= started_at):
+      break
+  else:
     raise SystemExit("refusing: no fresh valid deviceState")
   if sm["deviceState"].started or not Params().get_bool("IsOffroad"):
     raise SystemExit("refusing: device is not confirmed offroad")

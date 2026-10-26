@@ -29,7 +29,7 @@ def test_deployment_rejects_unconfirmed_offroad_state(offroad, started, updated,
   params = MagicMock()
   params.get_bool.return_value = offroad
   with patch.object(guard.messaging, "SubMaster", return_value=sm), patch.object(guard, "Params", return_value=params), \
-       patch.object(guard.time, "monotonic_ns", return_value=10), pytest.raises(SystemExit, match="refusing:"):
+       patch.object(guard.time, "monotonic_ns", side_effect=[10, 10, 3_000_000_011]), pytest.raises(SystemExit, match="refusing:"):
     guard.main()
 
 
@@ -43,6 +43,29 @@ def test_deployment_accepts_new_valid_offroad_state():
   with patch.object(guard.messaging, "SubMaster", return_value=sm), patch.object(guard, "Params", return_value=params), \
        patch.object(guard.time, "monotonic_ns", return_value=10):
     guard.main()
+  params.get_bool.assert_called_once_with("IsOffroad")
+
+
+@pytest.mark.parametrize("first", ["stale", "missing", "invalid", "dead"])
+def test_deployment_waits_for_new_valid_offroad_state(first):
+  sm = MagicMock()
+  sm.__getitem__.return_value = SimpleNamespace(started=False)
+
+  def update(_timeout):
+    initial = sm.update.call_count == 1
+    sm.updated = {"deviceState": not (initial and first == "missing")}
+    sm.valid = {"deviceState": not (initial and first == "invalid")}
+    sm.alive = {"deviceState": not (initial and first == "dead")}
+    sm.logMonoTime = {"deviceState": 5 if initial and first == "stale" else 20}
+
+  sm.update.side_effect = update
+  params = MagicMock()
+  params.get_bool.return_value = True
+  with patch.object(guard.messaging, "SubMaster", return_value=sm), patch.object(guard, "Params", return_value=params), \
+       patch.object(guard.time, "monotonic_ns", side_effect=[10, 10, 11]):
+    guard.main()
+  assert sm.update.call_count == 2
+  assert all(1 <= call.args[0] <= 3000 for call in sm.update.call_args_list)
   params.get_bool.assert_called_once_with("IsOffroad")
 
 
