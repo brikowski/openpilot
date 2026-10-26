@@ -84,5 +84,5 @@ jobs:
           eval "$(ssh-agent -s)"
           trap 'ssh-agent -k >/dev/null' EXIT
           ssh-add - <<< "$OPENDBC_SYNC_KEY"
-          git -C opendbc_repo config remote.origin.pushurl git@github.com:brikowski/opendbc.git
+          git -C opendbc_repo config remote.origin.pushurl ssh://git@github.com/brikowski/opendbc.git
           python3 .agents/sync_upstream.py --publish --expected-parent "$EXPECTED_PARENT" --expected-child "$EXPECTED_CHILD"

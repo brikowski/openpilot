@@ -1,5 +1,7 @@
 """Exercise paired sync and publication on isolated local Git repositories."""
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -204,3 +206,12 @@ def test_generated_lock_uses_the_completed_submodule_merge(repositories, tmp_pat
   sync.main([])
   assert git(parent, 'show', 'HEAD:uv.lock') == 'resolved from merged manifests'
   assert git(parent, 'status', '--porcelain') == ''
+
+
+def test_sync_key_uses_ssh_despite_checkout_https_rewrites(repositories):
+  _, child, *_ = repositories()
+  workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/odyssey-upstream.yaml').read_text()
+  push_url = re.search(r'config remote.origin.pushurl (\S+)', workflow).group(1)
+  git(child, 'config', 'url.https://github.com/.insteadOf', 'git@github.com:')
+  git(child, 'config', 'remote.origin.pushurl', push_url)
+  assert git(child, 'remote', 'get-url', '--push', 'origin') == 'ssh://git@github.com/brikowski/opendbc.git'
