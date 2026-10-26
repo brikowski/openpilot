@@ -1,0 +1,21 @@
+name: Odyssey weekly upstream sync
+
+on:
+  schedule:
+    - cron: '15 6 * * 1'
+      timezone: America/Chicago
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: odyssey-weekly-maintenance
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'brikowski/openpilot'
+    uses: brikowski/openpilot/.github/workflows/odyssey-upstream.yaml@ody-op-test
+    secrets:
+      OPENDBC_SYNC_KEY: ${{ secrets.OPENDBC_SYNC_KEY }}

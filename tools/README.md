@@ -67,10 +67,12 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 
 Use `ody-op-test` for development, tooling, and supervised tests. `ody-op` is the public install
 branch and repository default; target development pull requests to `ody-op-test`. GitHub Actions
-publishes the latest `ody-op-test` every Monday at 6:15 AM America/Chicago
-after software checks pass. The scheduler lives on `ody-op` and publishes
-the exact checked revision; development advances during testing abort that release. The weekly task
-does not sync upstream or rebase the tune. `master` is inactive history; use `upstream/master` for
+publishes the latest `ody-op-test` every Sunday at 6:15 PM America/Chicago
+after software checks pass. Monday at 6:15 AM, a separate job merges official master and its exact
+opendbc pin into `ody-op-test`, validates it, and publishes opendbc before the parent. Both retain
+existing history and stop for source conflicts or concurrent development. The small schedulers live
+on `ody-op`; neither weekly job deploys to the device. Sunday publishes the exact checked revision.
+`master` is inactive history; use `upstream/master` for
 deliberate upstream updates. For a manual
 release, preview with `.venv/bin/python .agents/publish_public.py`, then publish with
 `.venv/bin/python .agents/publish_public.py --publish`. This retains vehicle code, tests, and submodule
@@ -95,8 +97,9 @@ This checkout also exposes a small set of explicit VS Code tasks in
   upstream-pinned nested commit. The counts describe commit identity, so a cherry-picked change
   can be source-equivalent while still appearing in both histories; inspect the actual diff before
   importing anything. **Sync Upstream Locally**
-  runs `.agents/sync_upstream.py`; it can rewrite local history, never pushes, and requires both
-  repositories to be clean and on `ody-op-test`.
+  runs `.agents/sync_upstream.py`; it preserves existing history and requires both repositories
+  clean and on `ody-op-test`. It does not push unless explicitly invoked with `--publish` and both
+  expected remote tips after validation.
 - **Run Jotpluggler** and **Run Cabana** inspect a local route; build the binaries once with
   `tools/op.sh build openpilot/tools/jotpluggler/jotpluggler openpilot/tools/cabana/cabana` if they
   are not present. Cabana accepts `live` when `ODYSSEY_DEVICE` names the comma device.

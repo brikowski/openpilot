@@ -1,0 +1,88 @@
+name: Odyssey upstream compatibility
+
+on:
+  workflow_call:
+    secrets:
+      OPENDBC_SYNC_KEY:
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CI: 1
+  DEBUG: 0
+  PYTHONPATH: ${{ github.workspace }}
+  RAYLIB_BACKEND: headless
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: lfs.fetchexclude
+  GIT_CONFIG_VALUE_0: openpilot/selfdrive/modeld/models/big_driving_tinygrad.pkl
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ody-op-test
+          fetch-depth: 0
+          submodules: true
+      - name: Prepare paired development branches
+        id: before
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C opendbc_repo config user.name 'github-actions[bot]'
+          git -C opendbc_repo config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C opendbc_repo switch -C ody-op-test
+          git remote add upstream https://github.com/commaai/openpilot.git
+          git -C opendbc_repo remote add upstream https://github.com/commaai/opendbc.git
+          echo "parent=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "child=$(git -C opendbc_repo rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Set up merge tooling
+        run: ./tools/op.sh setup
+      - name: Merge official master and its pinned opendbc
+        run: python3 .agents/sync_upstream.py
+      - name: Set up merged build environment
+        run: ./tools/op.sh setup
+      - name: Check dependencies and lint
+        run: |
+          uv lock --check
+          ruff check openpilot opendbc_repo/opendbc/car/honda
+          ruff check .agents --ignore ISC002
+      - name: Build merged source
+        run: scons -j2
+      - name: Check merged vehicle behavior and development tools
+        run: |
+          python3 -m pytest -q \
+            opendbc_repo/opendbc/car/honda/tests/test_honda.py \
+            opendbc_repo/opendbc/safety/tests/test_honda.py \
+            openpilot/common/tests/test_prefix.py \
+            openpilot/selfdrive/car/tests/test_cruise_speed.py \
+            openpilot/selfdrive/controls/tests/test_controlsd.py \
+            openpilot/selfdrive/controls/tests/test_longitudinal_planner.py \
+            openpilot/selfdrive/controls/tests/test_departure_alerts.py \
+            openpilot/selfdrive/selfdrived/tests/test_eco_mode.py \
+            openpilot/selfdrive/locationd/test/test_torqued.py \
+            openpilot/selfdrive/ui/tests/test_display_wake.py \
+            openpilot/selfdrive/ui/tests/test_screensaver.py \
+            openpilot/selfdrive/ui/tests/test_lead_bar.py \
+            openpilot/selfdrive/ui/tests/test_settings.py \
+            .agents
+          python3 .agents/preflash.py
+      - name: Publish checked development pair
+        env:
+          OPENDBC_SYNC_KEY: ${{ secrets.OPENDBC_SYNC_KEY }}
+          EXPECTED_PARENT: ${{ steps.before.outputs.parent }}
+          EXPECTED_CHILD: ${{ steps.before.outputs.child }}
+        run: |
+          test -n "$OPENDBC_SYNC_KEY"
+          install -d -m 700 ~/.ssh
+          curl --fail --silent --show-error https://api.github.com/meta | python3 -c \
+            'import json,sys; print("\n".join("github.com " + key for key in json.load(sys.stdin)["ssh_keys"] if key.startswith("ssh-ed25519 ")))' > ~/.ssh/known_hosts
+          eval "$(ssh-agent -s)"
+          trap 'ssh-agent -k >/dev/null' EXIT
+          ssh-add - <<< "$OPENDBC_SYNC_KEY"
+          git -C opendbc_repo config remote.origin.pushurl git@github.com:brikowski/opendbc.git
+          python3 .agents/sync_upstream.py --publish --expected-parent "$EXPECTED_PARENT" --expected-child "$EXPECTED_CHILD"

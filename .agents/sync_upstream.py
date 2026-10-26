@@ -1,146 +1,137 @@
 #!/usr/bin/env python3
-"""Rebase both tuning repositories locally onto openpilot's compatible upstream pair.
+"""Merge official master and its exact opendbc pin without rewriting history.
 
-This script deliberately never pushes. It resolves only opendbc_repo gitlink conflicts; any source
-conflict is left for a human to inspect. Run the full validation task after it completes, then use
-the separate publish task if the result should replace the remote rebased branch.
+The default is local only. --publish sends an already-validated pair with explicit remote-tip guards.
+
+Fork workflow definitions are retained. Only the paired gitlink and a generated uv.lock conflict
+are otherwise resolved automatically. Other source conflicts abort the merge for manual review. Validate the resulting pair before publishing it.
 """
-
 import argparse
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-OPENDBC = REPO / "opendbc_repo"
-ALLOWED_BRANCHES = {"ody-op-test"}
+OPENDBC = REPO / 'opendbc_repo'
+BRANCH = 'ody-op-test'
+REMOTES = {REPO: 'https://github.com/brikowski/openpilot.git', OPENDBC: 'https://github.com/brikowski/opendbc.git'}
 
 
-def run(args, *, cwd=REPO, check=True, capture=False, env=None):
-  result = subprocess.run(args, cwd=cwd, check=False, text=True,
-                          capture_output=capture, env=env)
-  if check and result.returncode:
-    if capture:
-      print(result.stdout, end="")
-      print(result.stderr, end="", file=sys.stderr)
-    raise subprocess.CalledProcessError(result.returncode, args)
-  return result
+def run(args, *, cwd=None, check=True, capture=False, env=None):
+  return subprocess.run(args, cwd=cwd or REPO, check=check, text=True, capture_output=capture, env=env)
 
 
-def output(args, *, cwd=REPO):
+def output(args, *, cwd=None):
   return run(args, cwd=cwd, capture=True).stdout.strip()
 
 
-def clean_or_exit():
-  parent = output(["git", "status", "--porcelain"])
-  child = output(["git", "status", "--porcelain"], cwd=OPENDBC)
-  if parent or child:
-    sys.exit("refusing local rebase: both openpilot and opendbc_repo must be clean")
+def contains(repo, base):
+  return run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], cwd=repo, check=False).returncode == 0
 
 
-def rebase_in_progress():
-  git_dir = Path(output(["git", "rev-parse", "--git-dir"]))
-  if not git_dir.is_absolute():
-    git_dir = REPO / git_dir
-  return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
+def merging(repo):
+  return run(['git', 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], cwd=repo, check=False, capture=True).returncode == 0
 
 
-def opendbc_needs_rebase(pinned_sha, branch):
-  return run(
-    ["git", "merge-base", "--is-ancestor", pinned_sha, branch], cwd=OPENDBC, check=False,
-  ).returncode != 0
+def start_merge(repo, base):
+  result = run(['git', 'merge', '--no-ff', '--no-commit', '--no-log', base], cwd=repo, check=False)
+  conflicts = output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=repo).splitlines()
+  if result.returncode and not conflicts:
+    raise SystemExit('merge failed before conflict resolution; nothing was pushed')
+  return conflicts
 
 
-def resolve_parent_gitlinks(new_opendbc):
-  env = {**os.environ, "GIT_EDITOR": "true"}
-  while rebase_in_progress():
-    unresolved = output(["git", "diff", "--name-only", "--diff-filter=U"]).splitlines()
-    if unresolved == ["opendbc_repo"]:
-      run(["git", "update-index", "--cacheinfo", f"160000,{new_opendbc},opendbc_repo"])
-    elif unresolved:
-      sys.exit("parent rebase stopped for source conflict(s):\n  " + "\n  ".join(unresolved) +
-               "\nResolve them normally, then continue the rebase. Nothing was pushed.")
+def check_pair():
+  for repo in (REPO, OPENDBC):
+    if output(['git', 'branch', '--show-current'], cwd=repo) != BRANCH:
+      raise SystemExit('sync requires ody-op-test in both repositories')
+    if output(['git', 'status', '--porcelain'], cwd=repo):
+      raise SystemExit('sync requires clean parent and opendbc checkouts')
+  old_parent = output(['git', 'rev-parse', 'HEAD'])
+  old_child = output(['git', 'rev-parse', 'HEAD'], cwd=OPENDBC)
+  if output(['git', 'rev-parse', 'HEAD:opendbc_repo']) != old_child:
+    raise SystemExit('parent and opendbc must be paired before sync')
 
-    continued = run(["git", "rebase", "--continue"], check=False, capture=True, env=env)
-    if continued.returncode == 0:
-      continue
+  return old_parent, old_child
 
-    # --continue exits nonzero when it lands this commit but the NEXT one conflicts. Fresh
-    # conflicts belong to the loop head, which classifies them (gitlink -> auto-resolve, source
-    # -> stop with instructions). Bailing here instead left the 2026-08-08 rebase stopped at
-    # commit 2 of 13 over a plain gitlink conflict that the loop itself knew how to resolve.
-    if output(["git", "diff", "--name-only", "--diff-filter=U"]):
-      continue
 
-    # A parent commit that only moved the old opendbc pointer can become empty after every gitlink
-    # conflict is deliberately resolved to the final rebased opendbc SHA. Skip only that proven
-    # pointer-only commit; never discard a source change.
-    names = output(["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "REBASE_HEAD"]).splitlines()
-    if names == ["opendbc_repo"]:
-      run(["git", "rebase", "--skip"], env=env)
-      continue
-    print(continued.stdout, end="")
-    print(continued.stderr, end="", file=sys.stderr)
-    sys.exit("parent rebase needs manual attention. Nothing was pushed.")
+def publish(expected_parent, expected_child):
+  parent, child = check_pair()
+  for repo, expected in ((REPO, expected_parent), (OPENDBC, expected_child)):
+    remote = output(['git', 'remote', 'get-url', 'origin'], cwd=repo)
+    if remote.removesuffix('.git') != REMOTES[repo].removesuffix('.git'):
+      raise SystemExit('refusing an unexpected publication destination')
+    if output(['git', 'ls-remote', 'origin', f'refs/heads/{BRANCH}'], cwd=repo).split()[0] != expected:
+      raise SystemExit('development advanced during sync/checks; nothing was pushed')
+    if not contains(repo, expected):
+      raise SystemExit('sync must preserve the previous development history')
+  env = {**os.environ, 'GIT_LFS_SKIP_PUSH': '1'}
+  for repo, sha in ((OPENDBC, child), (REPO, parent)):
+    run(['git', 'push', 'origin', f'{sha}:refs/heads/{BRANCH}'], cwd=repo, env=env)
+    assert output(['git', 'ls-remote', 'origin', f'refs/heads/{BRANCH}'], cwd=repo).split()[0] == sha
+  print('Published exact paired development revisions; no device deployment.')
 
 
 def main(argv=None):
-  argparse.ArgumentParser(description=__doc__).parse_args(argv)
-  branch = output(["git", "branch", "--show-current"])
-  if branch not in ALLOWED_BRANCHES:
-    sys.exit(f"refusing local rebase on {branch!r}; expected one of {sorted(ALLOWED_BRANCHES)}")
-  if output(["git", "branch", "--show-current"], cwd=OPENDBC) != branch:
-    sys.exit("parent and opendbc_repo must be on the same tuning branch")
-  clean_or_exit()
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument('--publish', action='store_true', help='publish an already-validated local pair instead of syncing')
+  parser.add_argument('--expected-parent')
+  parser.add_argument('--expected-child')
+  args = parser.parse_args(argv)
+  if args.publish:
+    if not args.expected_parent or not args.expected_child:
+      parser.error('publication requires both expected remote tips')
+    publish(args.expected_parent, args.expected_child)
+    return
+  old_parent, old_child = check_pair()
+  run(['git', 'fetch', '--no-tags', '--no-recurse-submodules', 'upstream', 'master'])
+  base = output(['git', 'rev-parse', 'upstream/master'])
+  pin = output(['git', 'rev-parse', f'{base}:opendbc_repo'])
+  run(['git', 'fetch', '--no-tags', '--no-recurse-submodules', 'upstream', pin], cwd=OPENDBC)
+  if contains(REPO, base):
+    if not contains(OPENDBC, pin):
+      raise SystemExit('existing parent does not contain its compatible opendbc base')
+    print('Already synced; existing commits preserved.')
+    return
 
-  print("Fetching openpilot upstream and opendbc upstream...")
-  run(["git", "fetch", "upstream"])
-  run(["git", "fetch", "upstream"], cwd=OPENDBC)
-  pinned = output(["git", "ls-tree", "upstream/master", "opendbc_repo"]).split()
-  if len(pinned) < 3:
-    sys.exit("could not resolve the opendbc commit pinned by openpilot upstream/master")
-  pinned_sha = pinned[2]
+  try:
+    conflicts = start_merge(REPO, base)
+    if output(['git', 'ls-tree', old_parent, '.github/workflows']):
+      run(['git', 'restore', f'--source={old_parent}', '--staged', '--worktree', '--', '.github/workflows'])
+      conflicts = [p for p in conflicts if not p.startswith('.github/workflows/')]
+    if set(conflicts) - {'opendbc_repo', 'uv.lock'}:
+      raise SystemExit('upstream source conflicts require manual review: ' + ', '.join(conflicts))
+    if 'uv.lock' in conflicts:
+      # Regenerate from the merged manifests; do not choose either side's dependency metadata.
+      lock = run(['git', 'show', f'{base}:uv.lock'], capture=True).stdout
+      (REPO / 'uv.lock').write_text(lock)
+    if not contains(OPENDBC, pin):
+      if start_merge(OPENDBC, pin):
+        raise SystemExit('opendbc source conflicts require manual review')
+      run(['git', 'commit', '-m', 'Sync OpenPilot-pinned opendbc'], cwd=OPENDBC)
+    child = output(['git', 'rev-parse', 'HEAD'], cwd=OPENDBC)
+    run(['git', 'add', 'opendbc_repo'])
+    paths = [line.split(maxsplit=1)[1] for line in output(
+      ['git', 'config', '-f', '.gitmodules', '--get-regexp', 'path']).splitlines()]
+    other_paths = [p for p in paths if p != 'opendbc_repo']
+    if other_paths:
+      run(['git', 'submodule', 'update', '--init', '--recursive', '--', *other_paths])
+    if (REPO / 'uv.lock').is_file():
+      run(['uv', 'lock'])
+      run(['git', 'add', 'uv.lock'])
+    run(['git', 'diff', '--cached', '--check'])
+    run(['git', 'commit', '-m', 'Sync official OpenPilot master'])
+  except (subprocess.CalledProcessError, SystemExit):
+    for repo in (OPENDBC, REPO):
+      if merging(repo):
+        run(['git', 'merge', '--abort'], cwd=repo)
+    raise
 
-  if not opendbc_needs_rebase(pinned_sha, branch):
-    print(f"opendbc_repo already contains openpilot's pinned {pinned_sha[:12]}; preserving its history...")
-  else:
-    print(f"Rebasing opendbc_repo onto openpilot's pinned {pinned_sha[:12]}...")
-    child_rebase = run(["git", "rebase", pinned_sha], cwd=OPENDBC, check=False)
-    if child_rebase.returncode:
-      run(["git", "rebase", "--abort"], cwd=OPENDBC, check=False)
-      sys.exit("opendbc source conflict; rebase aborted and nothing was pushed")
-  new_opendbc = output(["git", "rev-parse", "HEAD"], cwd=OPENDBC)
-
-  # Temporarily detach the submodule worktree at the pointer recorded by the parent. The rebased
-  # branch ref remains at new_opendbc, while the parent rebase gets the clean tree git requires.
-  run(["git", "submodule", "update", "--checkout", "opendbc_repo"])
-  print("Rebasing openpilot; only the opendbc_repo pointer is auto-resolved...")
-  parent_rebase = run(["git", "rebase", "upstream/master"], check=False)
-  if parent_rebase.returncode:
-    resolve_parent_gitlinks(new_opendbc)
-
-  # Update every upstream-owned submodule, then reattach the tuned opendbc worktree to its branch.
-  paths = output(["git", "config", "-f", ".gitmodules", "--get-regexp", "path"]).splitlines()
-  for line in paths:
-    path = line.split(maxsplit=1)[1]
-    if path != "opendbc_repo":
-      run(["git", "submodule", "update", "--init", "--recursive", path])
-  run(["git", "checkout", branch], cwd=OPENDBC)
-
-  recorded = output(["git", "ls-tree", "HEAD", "opendbc_repo"]).split()[2]
-  if recorded != new_opendbc:
-    run(["git", "add", "opendbc_repo"])
-    run(["git", "commit", "-m", "honda: update opendbc after upstream rebase"])
-    recorded = output(["git", "ls-tree", "HEAD", "opendbc_repo"]).split()[2]
-  if recorded != new_opendbc:
-    sys.exit(f"rebased parent pins {recorded}, but opendbc_repo is {new_opendbc}")
-
-  print("\nLocal rebase complete; nothing was pushed.")
-  print("Run `lefthook run pre-commit` and `.agents/preflash.py`, inspect the net tune diff, " +
-        "then explicitly publish or deploy.")
-  run(["git", "diff", "--stat", f"{pinned_sha}..{branch}"], cwd=OPENDBC)
+  assert contains(REPO, old_parent) and contains(REPO, base)
+  assert contains(OPENDBC, old_child) and contains(OPENDBC, pin)
+  assert output(['git', 'rev-parse', 'HEAD:opendbc_repo']) == child
+  print('Local sync complete; history preserved. Nothing was pushed.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   main()

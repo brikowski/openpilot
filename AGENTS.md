@@ -53,15 +53,22 @@ behavior in the simplest appropriate layer.
 `ody-op-test` is the development and supervised-test branch for Honda Bosch command following on
 `HONDA_ODYSSEY_5G_MMR`, including tooling and documentation. `ody-op` is the clean public install
 branch and repository default. Target development pull requests to `ody-op-test`. Integrate changes
-and their tests linearly on `ody-op-test` in both the parent and nested `opendbc`. GitHub Actions runs
-software checks and publishes the latest `ody-op-test` to `ody-op`
-every Monday at 6:15 AM America/Chicago after those checks pass. Software checks also run manually,
+and their tests directly on `ody-op-test` in both the parent and nested `opendbc`. Upstream syncs use
+merge commits to preserve both histories. GitHub Actions runs software checks and publishes the
+latest `ody-op-test` to `ody-op` every Sunday at 6:15 PM America/Chicago after those checks pass.
+Software checks also run manually,
 without push or pull-request triggers. Inherited upstream workflows are disabled in the fork's
-GitHub settings. The small scheduler lives on
-the default branch, `ody-op`, with its reviewed source also in `ody-op-test`. `master` is inactive
+GitHub settings. The small schedulers live on
+the default branch, `ody-op`, with their reviewed source also in `ody-op-test`. Every Monday at
+6:15 AM America/Chicago, a separate job merges official master and its exact opendbc pin into
+`ody-op-test`, checks the result, and publishes the nested source before the parent. Source conflicts
+or concurrent development stop publication. Sync retains the fork workflow definitions to avoid
+reactivating inherited CI. The opendbc push uses a repository-specific deploy key.
+`master` is inactive
 history; use `upstream/master` for deliberate upstream updates. The scheduler publishes
-the exact checked revision and rejects development advances during testing. The weekly task does
-not sync upstream or rebase the tune. Manual releases remain
+the exact checked revision and rejects development advances during testing. The Sunday release does
+not sync upstream; neither weekly job rewrites development history or deploys to the device.
+Manual releases remain
 available: preview with `.venv/bin/python .agents/publish_public.py`, then publish with
 `.venv/bin/python .agents/publish_public.py --publish`. The publisher retains vehicle
 code, build files, tests, and the paired gitlink, excludes custom agent, analysis, editor, and
@@ -192,7 +199,7 @@ Use that first divergence to choose the work:
   upstream-rooted port restores actuator semantics. Any future learner telemetry must be
   reconstructed offline or moved to an explicitly named diagnostic event accepted by the
   corresponding schema owner.
-- **Never sync opendbc to its own master.** Rebase it to the commit openpilot master pins, or
+- **Never sync opendbc to its own master.** Merge only the commit openpilot master pins, or
   `controlsd` crashes on-road from a `car.capnp` schema mismatch.
 - `lefthook run pre-commit` covers focused lint and pure metric tests. `.agents/preflash.py` adds
   Odyssey interface and panda-safety coverage; neither substitutes for a road drive.
