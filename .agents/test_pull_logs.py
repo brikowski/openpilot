@@ -70,7 +70,8 @@ def test_pull_retries_broken_pipe_with_partial_files_and_keepalives(monkeypatch,
   assert "--partial-dir=.rsync-partial" in command
   assert "--timeout=60" in command
   assert "ServerAliveInterval=10" in command[command.index("-e") + 1]
-  assert kwargs == {"capture_output": True, "text": True}
+  assert kwargs == {"input": "0000004c--bbbbbbbbbb--0/rlog.zst\n0000004c--bbbbbbbbbb--1/rlog.zst\n",
+                    "capture_output": True, "text": True}
 
   errors = [json.loads(line) for line in pull_logs._pull_error_log().read_text().splitlines()]
   assert len(errors) == 1
@@ -283,3 +284,109 @@ def test_pull_cannot_accept_unavailable_source_checksums(monkeypatch, tmp_path, 
   monkeypatch.setattr(pull_logs, "_ssh", ssh)
   monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
   assert not pull_logs.pull(route, expected_segments=1)
+
+
+@pytest.mark.parametrize("catalog_count", [2, 3])
+def test_pull_pins_closed_source_snapshot_when_next_segment_finishes(monkeypatch, tmp_path, catalog_count):
+  route = "0000004c--bbbbbbbbbb"
+  digest = hashlib.sha256(b"complete").hexdigest()
+  calls = []
+
+  def ssh(command):
+    if "sha256sum" in command:
+      # Segment 2 finishes while the selected 0/1 snapshot is being copied.
+      output = "\n".join(f"{digest}  {pull_logs.REMOTE_ROOT}/{route}--{i}/rlog.zst" for i in (0, 1, 2))
+    else:
+      output = "\n".join(f"{pull_logs.REMOTE_ROOT}/{route}--{i}" for i in (0, 1))
+    return subprocess.CompletedProcess([], 0, output, "")
+
+  def transfer(command, **kwargs):
+    calls.append((command, kwargs))
+    for name in kwargs["input"].splitlines():
+      path = tmp_path / name
+      path.parent.mkdir(parents=True, exist_ok=True)
+      path.write_bytes(b"complete")
+    return subprocess.CompletedProcess(command, 0, "", "")
+
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "_ssh", ssh)
+  monkeypatch.setattr(pull_logs.subprocess, "run", transfer)
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  assert pull_logs.pull(route, expected_segments=catalog_count)
+  assert len(calls) == 1
+  assert calls[0][1]["input"].splitlines() == [f"{route}--0/rlog.zst", f"{route}--1/rlog.zst"]
+  assert pull_logs._local_segment_indices(route) == [0, 1]
+
+
+def test_pull_rejects_existing_unverified_tail_outside_closed_snapshot(monkeypatch, tmp_path):
+  route = "0000004c--bbbbbbbbbb"
+  for i in (0, 1):
+    path = tmp_path / f"{route}--{i}"
+    path.mkdir()
+    (path / "rlog.zst").write_bytes(b"partial" if i else b"complete")
+  digest = hashlib.sha256(b"complete").hexdigest()
+
+  def ssh(command):
+    path = f"{pull_logs.REMOTE_ROOT}/{route}--0"
+    output = f"{digest}  {path}/rlog.zst\n" if "sha256sum" in command else path + "\n"
+    return subprocess.CompletedProcess([], 0, output, "")
+
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "_ssh", ssh)
+  monkeypatch.setattr(pull_logs.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, "", ""))
+  monkeypatch.setattr(pull_logs, "PULL_ATTEMPTS", 1)
+  assert not pull_logs.pull(route, expected_segments=1)
+  assert (tmp_path / f"{route}--1/rlog.zst").read_bytes() == b"partial"
+
+
+def test_transfer_and_checksum_inventory_require_logger_lock_absence(monkeypatch, tmp_path):
+  route = "0000004c--bbbbbbbbbb"
+  digest = hashlib.sha256(b"complete").hexdigest()
+  path = tmp_path / f"{route}--0"
+  path.mkdir()
+  (path / "rlog.zst").write_bytes(b"complete")
+  commands = []
+
+  def ssh(command):
+    commands.append(command)
+    source = f"{pull_logs.REMOTE_ROOT}/{route}--0"
+    output = (f"{digest}  {source}/rlog.zst\n" if "sha256sum" in command else
+              f"1.0 {source}\n" if "%T@" in command else source + "\n")
+    return subprocess.CompletedProcess([], 0, output, "")
+
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  monkeypatch.setattr(pull_logs, "_ssh", ssh)
+  pull_logs.remote_routes()
+  pull_logs._remote_segment_indices(route)
+  assert pull_logs._verify_rlog_hashes(route, [0]) == (True, "")
+  assert len(commands) == 3
+  assert "rlog.lock" not in commands[0]  # The retained catalog must not hide an unfinished tail.
+  for command in commands[1:]:
+    assert "-execdir /bin/test ! -e ./rlog.lock" in command
+  # Exercise the same logger-owned condition on real directories, without GNU find on this host.
+  (path / "rlog.lock").touch()
+  assert subprocess.run(["/bin/test", "!", "-e", "./rlog.lock"], cwd=path).returncode == 1
+  (path / "rlog.lock").unlink()
+  assert subprocess.run(["/bin/test", "!", "-e", "./rlog.lock"], cwd=path).returncode == 0
+
+
+def test_rsync_does_not_copy_newly_closed_files_outside_snapshot(monkeypatch, tmp_path):
+  import shutil
+
+  if not shutil.which("rsync"):
+    pytest.skip("rsync is required for the transfer integration check")
+  route = "0000004c--bbbbbbbbbb"
+  remote, local = tmp_path / "remote", tmp_path / "local"
+  remote.mkdir()
+  local.mkdir()
+  for i in (0, 1):
+    path = remote / f"{route}--{i}"
+    path.mkdir()
+    (path / "rlog.zst").write_bytes(b"complete")
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", local)
+  command = pull_logs._pull_command()
+  command[-2] = str(remote) + "/"  # Local source exercises rsync; no SSH or device access.
+  result = subprocess.run(command, input=f"{route}--0/rlog.zst\n", text=True, capture_output=True)
+  assert result.returncode == 0, result.stderr
+  assert (local / f"{route}--0/rlog.zst").read_bytes() == b"complete"
+  assert not (local / f"{route}--1/rlog.zst").exists()

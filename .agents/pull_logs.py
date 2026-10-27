@@ -8,6 +8,8 @@ Usage modes:
 
 SSH preserves private full-rate evidence that is not automatically available through hosted route
 sources. Qlogs are too decimated for transition and jerk metrics.
+Only segments without the logger-owned rlog.lock are selected. Transfers and hash checks
+use that fixed snapshot; newly closed segments wait for the next pull.
 Retained contiguous suffixes are usable when their transfer matches the device inventory;
 validation records their available segment extent rather than implying a whole drive.
 
@@ -44,6 +46,7 @@ SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
 LOGID_RE = re.compile(r"[0-9a-f]{8}--[0-9a-f]+")
 PULL_ATTEMPTS = 3
 PULL_RETRY_DELAYS = (2, 5)
+CLOSED_RLOG_FILTER = r"-execdir /bin/test ! -e ./rlog.lock \;"
 
 
 def _ssh(cmd):
@@ -53,7 +56,7 @@ def _ssh(cmd):
 
 
 def remote_routes():
-  """Retained full-rate route summaries and exact segment indices."""
+  """Retained route catalog, including unclosed segments that are not yet validated."""
   r = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -name rlog.zst -printf '%T@ %h\\n'")
   if r.returncode != 0:
     sys.exit(f"cannot reach {DEVICE}: {r.stderr.strip() or 'ssh failed'}\n" +
@@ -139,21 +142,21 @@ def _local_rlog_count(rid):
 def _remote_segment_indices(rid):
   """Read currently retained rlogs, rather than assuming every route still starts at zero."""
   pattern = shlex.quote(f"{REMOTE_ROOT}/{rid}--*/rlog.zst")
-  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} -printf '%h\\n'")
+  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} {CLOSED_RLOG_FILTER} -printf '%h\\n'")
   if result.returncode:
     raise RuntimeError(result.stderr.strip() or "cannot read retained rlog inventory")
   names = (Path(line).name for line in result.stdout.splitlines())
   indices = sorted({int(name.rsplit("--", 1)[1]) for name in names
                     if re.fullmatch(re.escape(rid) + r"--\d+", name)})
   if not indices:
-    raise RuntimeError("no retained rlogs in remote inventory")
+    raise RuntimeError("no closed rlogs in remote inventory")
   return indices
 
 
 def _verify_rlog_hashes(rid, retained):
   """Verify retained source bytes; older local-only segments are not requalified."""
   pattern = shlex.quote(f"{REMOTE_ROOT}/{rid}--*/rlog.zst")
-  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} -exec sha256sum {{}} +")
+  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} {CLOSED_RLOG_FILTER} -exec sha256sum {{}} +")
   if result.returncode:
     raise RuntimeError(result.stderr.strip() or "cannot read retained rlog checksums")
   verified = set()
@@ -165,6 +168,8 @@ def _verify_rlog_hashes(rid, retained):
     if source.name != "rlog.zst" or not re.fullmatch(re.escape(rid) + r"--\d+", source.parent.name):
       raise RuntimeError("unexpected file in retained rlog checksum inventory")
     index = int(source.parent.name.rsplit("--", 1)[1])
+    if index not in retained:
+      continue  # The route may have closed another segment after this snapshot.
     if index in verified:
       raise RuntimeError("duplicate retained rlog checksum")
     path = LOCAL_ROOT / source.parent.name / "rlog.zst"
@@ -181,7 +186,7 @@ def _verify_rlog_hashes(rid, retained):
   return True, ""
 
 
-def _local_segments_contiguous(rid, expected_segments=None, expected_indices=None):
+def _local_segments_contiguous(rid, expected_indices=None):
   """Reject transfer omissions and interior gaps; allow a verified retained suffix."""
   indices = _local_segment_indices(rid)
   if not indices:
@@ -197,8 +202,8 @@ def _local_segments_contiguous(rid, expected_segments=None, expected_indices=Non
     missing = sorted(set(expected_indices) - set(indices))
     if missing:
       return False, f"missing retained segment(s): {','.join(map(str, missing[:8]))}"
-  if expected_segments is not None and len(indices) < expected_segments:
-    return False, f"only {len(indices)}/{expected_segments} segments are complete"
+    if expected_indices and indices[-1] > max(expected_indices):
+      return False, "unverified local tail extends beyond the closed source snapshot"
   return True, ""
 
 
@@ -224,11 +229,10 @@ def _selection_summary(route_count, recent, scope, targets, skipped, *, redo=Fal
           f"{len(targets)} {selected_label}, {len(skipped)} already validated")
 
 
-def _pull_command(rid):
-  return ["rsync", "-a", "--checksum", "--partial", "--partial-dir=.rsync-partial", "--timeout=60", "--prune-empty-dirs",
-          "--include=*/", "--include=rlog.zst", "--exclude=*",
+def _pull_command():
+  return ["rsync", "-a", "-R", "--files-from=-", "--checksum", "--partial", "--partial-dir=.rsync-partial", "--timeout=60",
           "-e", "ssh " + " ".join(SSH_OPTS),
-          f"{DEVICE}:{REMOTE_ROOT}/{rid}--*", str(LOCAL_ROOT) + "/"]
+          f"{DEVICE}:{REMOTE_ROOT}/", str(LOCAL_ROOT) + "/"]
 
 
 def pull(rid, expected_segments=None):
@@ -236,19 +240,22 @@ def pull(rid, expected_segments=None):
   LOCAL_ROOT.mkdir(parents=True, exist_ok=True)
   # CUSTOM TOOLING: keep interrupted rlogs outside their final path, retry the Wi-Fi/SSH stalls
   # observed on 2026-08-02, and retain the exact rsync failure for the next diagnosis.
-  cmd = _pull_command(rid)
+  cmd = _pull_command()
   for attempt in range(1, PULL_ATTEMPTS + 1):
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    completed = _local_rlog_count(rid)
+    result = None
     try:
       retained = _remote_segment_indices(rid)
-      contiguous, completeness_detail = _local_segments_contiguous(rid, expected_segments, retained)
+      print(f"  closed source snapshot: segments {retained[0]}–{retained[-1]} ({len(retained)} files)", flush=True)
+      files = "".join(f"{rid}--{index}/rlog.zst\n" for index in retained)
+      result = subprocess.run(cmd, input=files, capture_output=True, text=True)
+      contiguous, completeness_detail = _local_segments_contiguous(rid, expected_indices=retained)
       if result.returncode == 0 and contiguous:
         contiguous, completeness_detail = _verify_rlog_hashes(rid, retained)
     except (RuntimeError, subprocess.TimeoutExpired) as e:
       contiguous, completeness_detail = False, str(e)
+    completed = _local_rlog_count(rid)
     enough = contiguous and completed > 0
-    if result.returncode == 0 and enough:
+    if result is not None and result.returncode == 0 and enough:
       indices = _local_segment_indices(rid)
       if indices[0] != 0:
         print(f"  partial route: retained segments {indices[0]}–{indices[-1]}; initial segments unavailable")
@@ -256,12 +263,12 @@ def pull(rid, expected_segments=None):
         print(f"  pull recovered on attempt {attempt}/{PULL_ATTEMPTS}")
       return True
 
-    detail = (result.stderr.strip() or result.stdout.strip()
-              or completeness_detail
-              or "rsync completed without an rlog")
-    failure = f"  pull attempt {attempt}/{PULL_ATTEMPTS} failed (rsync exit {result.returncode}, {completed} local segment(s)): {detail}"
+    detail = (result.stderr.strip() or result.stdout.strip()) if result is not None else ""
+    detail = detail or completeness_detail or "rsync completed without an rlog"
+    returncode = result.returncode if result is not None else None
+    failure = f"  pull attempt {attempt}/{PULL_ATTEMPTS} failed (rsync exit {returncode}, {completed} local segment(s)): {detail}"
     print(failure)
-    _record_pull_error(rid, attempt, result.returncode, detail, completed, expected_segments)
+    _record_pull_error(rid, attempt, returncode, detail, completed, expected_segments)
     if attempt < PULL_ATTEMPTS:
       delay = PULL_RETRY_DELAYS[min(attempt - 1, len(PULL_RETRY_DELAYS) - 1)]
       print(f"  retrying in {delay}s; partial data retained")
