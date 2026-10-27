@@ -109,9 +109,9 @@ active safety rails.
   delayed observer. After 0.5 s of continuous active gas, it compares the earlier
   `carControl` request with measured `aEgo` within the same received target gear and applies a bounded,
   slewed correction to `GAS_COMMAND` only. Received target-gear or transmission-activity changes
-  clear delayed history. During warmup, issued correction remains within mapped headroom. A reverse
-  error restores a gas reduction proportionally instead of targeting zero immediately; current excess
-  can reduce gas before the delayed observer is ready. New positive feedback waits for that observer. The activity
+  clear delayed history. During warmup, issued correction remains within mapped headroom. Reverse
+  error withdraws an issued correction proportionally, so a tiny excess does not discard needed gas;
+  current excess can reduce gas before the delayed observer is ready. New positive feedback waits for that observer. The activity
   byte is compared as reported state, without assuming a gear ratio or a shift-complete encoding. Missing,
   stale or invalid gear or brake state disables feedback while preserving the feedforward map.
   Gas feedback requires released received brakes; launch gas remains available during Honda brake holds. Falling grade
