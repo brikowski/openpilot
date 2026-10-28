@@ -602,10 +602,11 @@ class SelfdriveD:
           not self.CP.passive and CS.canValid and math.isfinite(CS.vEgo)):
         self.following_speed.add_value(CS.vEgo)
         speed = self.following_speed.get_average()
-        automatic_personality = (log.LongitudinalPersonality.relaxed if eco_mode else
-                                 log.LongitudinalPersonality.aggressive if speed < 45 * CV.MPH_TO_MS else
-                                 log.LongitudinalPersonality.relaxed if speed > 65 * CV.MPH_TO_MS else
-                                 log.LongitudinalPersonality.standard)
+        highway = speed >= 55 * CV.MPH_TO_MS
+        if eco_mode:
+          automatic_personality = log.LongitudinalPersonality.relaxed if highway else log.LongitudinalPersonality.standard
+        else:
+          automatic_personality = log.LongitudinalPersonality.standard if highway else log.LongitudinalPersonality.aggressive
       if automatic_personality is not None and (automatic_personality != self.automatic_personality or eco_mode != self.eco_mode):
         # Speed/mode changes select a native profile; live adjustments last until the next change.
         self.params.put(personality_param, automatic_personality, block=True)

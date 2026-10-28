@@ -79,7 +79,7 @@ def test_distance_button_saves_each_mode_independently(daemon, monkeypatch):
     assert daemon.params.get(key) == changed
 
 
-def test_eco_entry_starts_relaxed_after_closer_selection(daemon, monkeypatch):
+def test_fallback_eco_entry_starts_relaxed_after_closer_selection(daemon, monkeypatch):
   daemon.params.put('EcoLongitudinalPersonality', 0, block=True)
   daemon.params.put('LongitudinalPersonality', 0, block=True)
   monkeypatch.setattr(daemon.params, 'put', lambda key, value, **kwargs: Params.put(daemon.params, key, value, block=True))
@@ -157,8 +157,8 @@ def test_mode_switch_waits_for_matching_following_preference(daemon, monkeypatch
 
 def test_odyssey_speed_selects_native_profiles_and_preserves_eco(daemon, monkeypatch):
   daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
-  for eco, mph, expected in ((True, 70, 2), (False, 0, 0), (False, 44.9, 0), (False, 50, 1), (False, 70, 2),
-                             (False, 55, 1), (True, 30, 2), (True, 70, 2), (False, 70, 2),
+  for eco, mph, expected in ((True, 70, 2), (False, 0, 0), (False, 50, 0), (False, 54.9, 0), (False, 55, 1),
+                             (False, 70, 1), (True, 30, 1), (True, 54.9, 1), (True, 55, 2), (True, 70, 2), (False, 70, 1),
                              (False, 30, 0)):
     CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=eco, vEgo=mph * CV.MPH_TO_MS)
     daemon.CS_prev = CS
@@ -172,31 +172,34 @@ def test_odyssey_speed_selects_native_profiles_and_preserves_eco(daemon, monkeyp
     assert not daemon.events.contains(selfdrived.ET.WARNING)
 
 
-@pytest.mark.parametrize('initial_mph,initial_profile,new_mph,new_profile', [
-  (70., 2, 40., 0),
-  (40., 0, 70., 2),
+@pytest.mark.parametrize('eco,initial_mph,initial_profile,new_mph,new_profile', [
+  (False, 70., 1, 40., 0),
+  (False, 40., 0, 70., 1),
+  (True, 70., 2, 40., 1),
+  (True, 40., 1, 70., 2),
 ])
-def test_brief_speed_changes_keep_following_until_the_average_crosses_each_band(
-    daemon, monkeypatch, initial_mph, initial_profile, new_mph, new_profile):
+def test_brief_speed_changes_keep_following_until_the_average_crosses_the_band(
+    daemon, monkeypatch, eco, initial_mph, initial_profile, new_mph, new_profile):
   daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
-  CS = car.CarState.new_message(canValid=True, vEgo=initial_mph * CV.MPH_TO_MS)
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=eco, vEgo=initial_mph * CV.MPH_TO_MS)
   daemon.CS_prev = CS
+  daemon._update_eco_mode(CS)
   for _ in range(600):
     poll_params(daemon, monkeypatch)
   assert daemon.personality == initial_profile
   put = Mock(wraps=daemon.params.put)
   monkeypatch.setattr(daemon.params, 'put', put)
 
-  # At 10 Hz, a minute at 70 followed by 40 reaches the middle band after about
-  # ten seconds and the closest band after about fifty seconds (and vice versa).
+  # At 10 Hz, a minute at 70 followed by 40 crosses 55 after about thirty seconds
+  # of the new speed, in either direction and in either factory mode.
   CS.vEgo = new_mph * CV.MPH_TO_MS
-  for polls, expected in ((90, initial_profile), (20, 1), (380, 1), (20, new_profile), (200, new_profile)):
+  for polls, expected in ((290, initial_profile), (20, new_profile), (600, new_profile)):
     for _ in range(polls):
       poll_params(daemon, monkeypatch)
     assert daemon.personality == expected
     if expected == initial_profile:
       put.assert_not_called()
-  assert put.call_count == 2
+  assert put.call_count == 1
 
 
 def test_following_average_keeps_speed_history_through_econ(daemon, monkeypatch):
@@ -211,8 +214,9 @@ def test_following_average_keeps_speed_history_through_econ(daemon, monkeypatch)
   daemon._update_eco_mode(CS)
   poll_params(daemon, monkeypatch)
   assert daemon.eco_mode is False
-  assert daemon.personality == 2
-  assert daemon.params.get('LongitudinalPersonality') == 2
+  assert daemon.personality == 1
+  assert daemon.params.get('LongitudinalPersonality') == 1
+  assert daemon.params.get('EcoLongitudinalPersonality') == 2
   for _ in range(510):
     poll_params(daemon, monkeypatch)
   assert daemon.personality == 0
@@ -234,15 +238,31 @@ def test_invalid_can_samples_cannot_change_the_following_average(daemon, monkeyp
   assert daemon.personality == 0
 
 
-@pytest.mark.parametrize('mph,profile', [(44.9, 0), (45.1, 1), (64.9, 1), (65.1, 2)])
-def test_automatic_following_starts_in_the_requested_speed_band(daemon, monkeypatch, mph, profile):
+@pytest.mark.parametrize('eco,mph,profile', [
+  (False, 54.9, 0), (False, 55., 1), (False, 55.1, 1), (False, 70., 1),
+  (True, 0., 1), (True, 54.9, 1), (True, 55., 2), (True, 55.1, 2),
+])
+def test_automatic_following_starts_in_the_requested_speed_band(daemon, monkeypatch, eco, mph, profile):
   daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
-  daemon.CS_prev = car.CarState.new_message(canValid=True, vEgo=mph * CV.MPH_TO_MS)
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=eco, vEgo=mph * CV.MPH_TO_MS)
+  daemon.CS_prev = CS
+  daemon._update_eco_mode(CS)
   poll_params(daemon, monkeypatch)
   assert daemon.personality == profile
 
 
-@pytest.mark.parametrize('initial_mph,held_mph,profile', [(40., 46., 0), (70., 64., 2)])
+@pytest.mark.parametrize('eco,profile', [(False, 1), (True, 2)])
+def test_exact_55_mph_average_selects_highway_profile(daemon, monkeypatch, eco, profile):
+  daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
+  CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=eco, vEgo=50 * CV.MPH_TO_MS)
+  daemon.CS_prev = CS
+  daemon._update_eco_mode(CS)
+  monkeypatch.setattr(daemon.following_speed, 'get_average', lambda: 55 * CV.MPH_TO_MS)
+  poll_params(daemon, monkeypatch)
+  assert daemon.personality == profile
+
+
+@pytest.mark.parametrize('initial_mph,held_mph,profile', [(40., 56., 0), (70., 54., 1)])
 @pytest.mark.parametrize('invalid', ['can', 'speed'])
 def test_invalid_speed_state_does_not_discard_following_average(
     daemon, monkeypatch, initial_mph, held_mph, profile, invalid):
@@ -260,14 +280,14 @@ def test_invalid_speed_state_does_not_discard_following_average(
   assert daemon.personality == profile
 
 
-@pytest.mark.parametrize('mph,expected', [(30., 0), (46., 1), (64., 1), (70., 2)])
-def test_econ_exit_selects_a_fresh_speed_band(daemon, monkeypatch, mph, expected):
+@pytest.mark.parametrize('mph,eco_profile,expected', [(30., 1, 0), (54.9, 1, 0), (55., 2, 1), (70., 2, 1)])
+def test_econ_exit_selects_a_fresh_speed_band(daemon, monkeypatch, mph, eco_profile, expected):
   daemon.CP.carFingerprint = HONDA.HONDA_ODYSSEY_5G_MMR
   CS = car.CarState.new_message(canValid=True, ecoModeValid=True, ecoMode=True, vEgo=mph * CV.MPH_TO_MS)
   daemon.CS_prev = CS
   daemon._update_eco_mode(CS)
   poll_params(daemon, monkeypatch)
-  assert daemon.personality == 2
+  assert daemon.personality == eco_profile
   CS.ecoMode = False
   daemon._update_eco_mode(CS)
   poll_params(daemon, monkeypatch)
