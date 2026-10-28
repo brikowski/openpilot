@@ -151,8 +151,11 @@ active safety rails.
   after the existing same-drivetrain delayed observer and current response both show excess
   acceleration beyond the response margin, with an issued gas command that encodes as zero and fresh idle gas/brake
   feedback. That release remains in coast while excess persists, without treating active gas as a
-  passive observation. Fresh valid CAN, pose and received drivetrain/braking state qualify it;
-  mode changes clear its history. Stronger requests and low-speed fallbacks retain their authority.
+  passive observation. An already-selected coast release tolerates small measured response changes
+  while its prior forecast still supplies the request. A measured shortfall beyond the existing
+  response margin or a request beyond that forecast restores gas availability. Fresh valid CAN,
+  pose and received drivetrain/braking state qualify it; mode changes clear its history. Stronger
+  requests and low-speed fallbacks retain their authority.
   No new learner or gas-map gain is added. This selection does not activate friction braking, alter
   `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
