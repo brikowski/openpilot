@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""Opt-in, offroad Wi-Fi backup of closed rlogs using an independently installed Proton CLI.
+
+Install outside the checkout in /data/proton-log-backup. Nothing in OpenPilot starts this tool.
+Account sessions, configuration and receipts are device-local and never belong in Git.
+"""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import re
+import signal
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+ROOT = Path('/data/proton-log-backup')
+LOGS = Path('/data/media/0/realdata')
+SEGMENT = re.compile(r'[0-9a-f]{8}--[0-9a-f]+--\d+')
+SESSION = 'ch.proton.drive/drive-sdk-cli/auth-session.gpg'
+
+
+class BackupError(Exception):
+  pass
+
+
+class Paused(BackupError):
+  pass
+
+
+def read_config(root):
+  try:
+    config = json.loads((root / 'config.json').read_text())
+    destination = config.get('destination', '')
+    if (config.get('enabled') is not True or not isinstance(destination, str) or
+        not destination.startswith('/my-files/') or
+        any(part in ('', '.', '..') for part in destination.split('/')[1:])):
+      return None
+    return config
+  except (OSError, ValueError, AttributeError):
+    return None
+
+
+def write_config(root, config):
+  root.mkdir(mode=0o700, parents=True, exist_ok=True)
+  with tempfile.NamedTemporaryFile(mode='w', dir=root, delete=False) as stream:
+    json.dump(config, stream)
+    stream.flush()
+    os.fsync(stream.fileno())
+    temporary = Path(stream.name)
+  temporary.replace(root / 'config.json')
+
+
+def has_session(root):
+  path = root / 'password-store' / SESSION
+  return path.is_file() and not path.is_symlink() and path.stat().st_size > 0
+
+
+def environment(root):
+  return {**os.environ,
+          'PATH': f'{root}/bin:/usr/bin:/bin',
+          'GNUPGHOME': str(root / 'gnupg'),
+          'PASSWORD_STORE_DIR': str(root / 'password-store'),
+          'PASSWORD_STORE_ENABLE_EXTENSIONS': 'false',
+          'PROTON_DRIVE_CREDENTIALS_STORE': 'pass',
+          'PROTON_DRIVE_CACHE_DIR': str(root / 'client'),
+          'PROTON_DRIVE_LOG_LEVEL': 'ERROR'}
+
+
+class LiveState:
+  """Require current hardwared state as well as the offroad parameter; fail closed on restart."""
+  def __init__(self):
+    sys.path.insert(0, '/data/openpilot')
+    from openpilot.cereal import messaging
+    from openpilot.common.params import Params
+    self.sm = messaging.SubMaster(['deviceState'])
+    self.params = Params()
+
+  def __call__(self):
+    self.sm.update(0)
+    ds = self.sm['deviceState']
+    age = time.monotonic_ns() - self.sm.logMonoTime['deviceState']
+    return (self.sm.valid['deviceState'] and self.sm.alive['deviceState'] and
+            0 <= age < 3_000_000_000 and not ds.started and
+            self.params.get_bool('IsOffroad') and ds.networkType == 'wifi')
+
+
+def stop_process(process):
+  try:
+    os.killpg(process.pid, signal.SIGTERM)
+    process.wait(timeout=3)
+  except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+  except ProcessLookupError:
+    process.wait()
+
+
+class Proton:
+  def __init__(self, root, allowed):
+    self.root, self.allowed = root, allowed
+
+  def call(self, *args):
+    if not self.allowed():
+      raise Paused('waiting for opt-in, login and offroad Wi-Fi')
+    # File-backed output avoids deadlock on verbose CLI errors. Never print client output,
+    # which could contain account details. No stdin means a background job cannot prompt.
+    with tempfile.TemporaryFile() as output:
+      process = subprocess.Popen([str(self.root / 'bin/proton-drive'), *args, '--json'],
+                                 env=environment(self.root), stdin=subprocess.DEVNULL,
+                                 stdout=output, stderr=subprocess.DEVNULL, start_new_session=True)
+      deadline = time.monotonic() + 600
+      try:
+        while process.poll() is None:
+          if not self.allowed():
+            raise Paused('upload paused: opt-in, login or offroad Wi-Fi changed')
+          if time.monotonic() > deadline:
+            raise BackupError('Proton command timed out; will retry')
+          time.sleep(0.5)
+        if process.returncode:
+          raise BackupError('Proton unavailable: check sign-in, connection and quota; will retry')
+        output.seek(0)
+        return output.read()
+      finally:
+        if process.poll() is None:
+          stop_process(process)
+
+  def info(self, path):
+    try:
+      node = json.loads(self.call('filesystem', 'info', path))
+      if not isinstance(node, dict) or not node.get('uid'):
+        raise ValueError('missing node identity')
+      return node
+    except (ValueError, TypeError) as error:
+      raise BackupError('unrecognized Proton metadata; leaving backup unconfirmed') from error
+
+  def upload(self, directory, destination):
+    self.call('filesystem', 'upload', str(directory), destination,
+              '--file-conflict-strategy', 'skip', '--folder-conflict-strategy', 'merge', '--skip-thumbnails')
+
+
+def fingerprint(path):
+  stat = path.stat()
+  return json.dumps([stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns])
+
+
+def closed_rlogs(logs):
+  if not logs.is_dir():
+    return
+  for directory in sorted(logs.iterdir()):
+    if directory.is_symlink() or not SEGMENT.fullmatch(directory.name) or not directory.is_dir():
+      continue
+    path = directory / 'rlog.zst'
+    if path.is_file() and not path.is_symlink() and not (directory / 'rlog.lock').exists():
+      yield path
+
+
+class Backup:
+  def __init__(self, root, logs, state):
+    self.root, self.logs, self.state = root, logs, state
+    self.client = Proton(root, self.allowed)
+
+  def allowed(self):
+    return read_config(self.root) is not None and has_session(self.root) and self.state()
+
+  def once(self):
+    if not self.allowed():
+      return 0
+    config = read_config(self.root)
+    destination = config['destination']
+    self.client.allowed = lambda: self.allowed() and read_config(self.root)['destination'] == destination
+    # An existing destination must be accessible with the currently signed-in account.
+    # Its UID also prevents receipts for one account/folder from skipping another's backup.
+    namespace = self.client.info(destination)['uid']
+    completed = 0
+    with sqlite3.connect(self.root / 'receipts.sqlite') as receipts:
+      receipts.execute('CREATE TABLE IF NOT EXISTS receipts '
+                       '(namespace TEXT, segment TEXT, fingerprint TEXT, sha256 TEXT, '
+                       'PRIMARY KEY(namespace, segment))')
+      for source in closed_rlogs(self.logs):
+        if not self.allowed() or read_config(self.root)['destination'] != destination:
+          break
+        segment = source.parent.name
+        try:
+          before = fingerprint(source)
+          row = receipts.execute('SELECT fingerprint FROM receipts WHERE namespace=? AND segment=?',
+                                 (namespace, segment)).fetchone()
+          if row and row[0] == before:
+            continue
+          with tempfile.TemporaryDirectory(prefix='transfer-', dir=self.root) as temp:
+            staged = Path(temp) / segment
+            staged.mkdir()
+            target = staged / 'rlog.zst'
+            # Keep only this closed rlog alive if the stock disk-space deleter runs.
+            # A hard link avoids copying videos or allocating another rlog's worth of space.
+            os.link(source, target)
+            with target.open('rb') as stream:
+              sha1 = hashlib.file_digest(stream, 'sha1').hexdigest()
+              stream.seek(0)
+              sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if ((source.parent / 'rlog.lock').exists() or
+                json.loads(fingerprint(target))[:-1] != json.loads(before)[:-1]):
+              continue
+            self.client.upload(staged, destination)
+            remote = self.client.info(f'{destination}/{segment}/rlog.zst')
+            revision = remote.get('activeRevision') or {}
+            digest = (revision.get('claimedDigests') or {}).get('sha1')
+            if digest != sha1 or revision.get('claimedSize') != target.stat().st_size:
+              raise BackupError('remote rlog digest differs; leaving backup unconfirmed')
+          # Removing our hard link changes ctime. Store the final source fingerprint.
+          after = fingerprint(source)
+          receipts.execute('INSERT OR REPLACE INTO receipts VALUES (?, ?, ?, ?)',
+                           (namespace, segment, after, sha256))
+          receipts.commit()
+          completed += 1
+        except FileNotFoundError:
+          continue  # The stock deleter may remove a source before staging or after upload.
+    return completed
+
+
+def main():
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument('command', choices=('run', 'once', 'status', 'enable', 'disable', 'login', 'logout'))
+  parser.add_argument('--destination', default='/my-files/Documents/openpilot/rlogs')
+  args = parser.parse_args()
+  os.umask(0o077)
+  if args.command == 'status':
+    print(json.dumps({'enabled': read_config(ROOT) is not None, 'saved_session': has_session(ROOT)}))
+    return
+  if args.command in ('disable', 'login', 'logout'):
+    write_config(ROOT, {'enabled': False, 'destination': args.destination})
+    if args.command != 'disable':
+      subprocess.run([str(ROOT / 'bin/proton-drive'), 'auth', args.command], env=environment(ROOT), check=True)
+    return
+  if args.command == 'enable':
+    if not has_session(ROOT):
+      raise BackupError('sign in using the login command before enabling backups')
+    config = {'enabled': True, 'destination': args.destination}
+    # Validate configuration locally before making any cloud call.
+    with tempfile.TemporaryDirectory() as temp:
+      write_config(Path(temp), config)
+      if read_config(Path(temp)) is None:
+        raise BackupError('destination must be an explicit folder under /my-files/')
+    Proton(ROOT, lambda: has_session(ROOT)).info(args.destination)
+    write_config(ROOT, config)
+    print('backup enabled; waiting for fresh offroad Wi-Fi state')
+    return
+  backup = Backup(ROOT, LOGS, LiveState())
+  with (ROOT / 'run.lock').open('w') as lock:
+    try:
+      fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+      raise BackupError('another backup process is running') from error
+    # Remove hard links left by interrupted transfers after obtaining the exclusive lock.
+    import shutil
+    for path in ROOT.glob('transfer-*'):
+      if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    while True:
+      try:
+        completed = backup.once()
+        if completed:
+          print(f'verified {completed} rlog backup(s)', flush=True)
+      except (BackupError, OSError, sqlite3.Error) as error:
+        print(str(error), flush=True)
+        if args.command == 'once':
+          raise SystemExit(1) from error
+      if args.command == 'once':
+        return
+      time.sleep(30)
+
+
+if __name__ == '__main__':
+  try:
+    main()
+  except BackupError as error:
+    sys.exit(str(error))

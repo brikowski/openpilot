@@ -178,7 +178,9 @@ Use that first divergence to choose the work:
   `ProtonDrive-*-folder/Documents/openpilot` under `~/Library/CloudStorage` and read `rlogs/`
   directly. `LOG_ROOT` or `OPENPILOT_PRIVATE_ROOT` can override discovery. The Proton account name
   and absolute File Provider mount are machine-local and must not be committed. The comma device
-  does not have Proton Drive access.
+  has no Proton Drive access by default. The optional standalone
+  [rlog backup service](.agents/comma-log-backup.md) requires owner sign-in and explicit enablement;
+  its account session and configuration stay outside the checkout.
 - Private ledgers and route-specific tuning notes are stored in the same Proton Drive folder under
   `evidence/`. Analysis tools read that folder directly; `ODYSSEY_EVIDENCE_ROOT` can override it.
   Do not commit route IDs, event times, or route-specific conclusions to GitHub.
