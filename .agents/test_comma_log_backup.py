@@ -1,5 +1,6 @@
 import hashlib
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -37,11 +38,12 @@ def setup(tmp_path):
         return {'uid': self.namespace}
       return {'uid': path, 'activeRevision': {'claimedDigests': {'sha1': self.remote.get(path)}, 'claimedSize': len(b'full-rate evidence')}}
 
-    def upload(self, directory, destination):
-      calls.append(('upload', directory.name))
-      assert list(directory.iterdir()) == [directory / 'rlog.zst']
-      self.remote.setdefault(f'{destination}/{directory.name}/rlog.zst',
-                             hashlib.sha1((directory / 'rlog.zst').read_bytes()).hexdigest())
+    def upload(self, source, destination):
+      calls.append(('upload', source.parent.name))
+      assert source.name == 'rlog.zst' and source.is_file()
+      assert source.parent.parent == logs  # Original source, never a staged copy/link.
+      self.remote.setdefault(f'{destination}/{source.parent.name}/rlog.zst',
+                             hashlib.sha1(source.read_bytes()).hexdigest())
 
   job.client = Client()
   return SimpleNamespace(root=root, logs=logs, job=job, calls=calls, session=session)
@@ -147,6 +149,56 @@ def test_other_account_or_folder_does_not_reuse_receipts(setup):
   assert setup.job.once() == 1
   setup.job.client.namespace = 'another-account~another-folder'
   assert setup.job.once() == 1
+
+
+def test_source_deletion_during_backup_is_not_prevented_or_reversed(setup):
+  directory = segment(setup)
+
+  def deleted(source, destination):
+    assert source.stat().st_nlink == 1
+    shutil.rmtree(directory)
+    raise FileNotFoundError('stock deleter removed the segment')
+
+  setup.job.client.upload = deleted
+  assert setup.job.once() == 0
+  assert not directory.exists()
+  assert not list(setup.root.rglob('rlog.zst'))
+  with sqlite3.connect(setup.root / 'receipts.sqlite') as db:
+    assert db.execute('SELECT COUNT(*) FROM receipts').fetchone() == (0,)
+
+
+def test_upload_passes_only_original_rlog_and_skips_conflicts(setup, monkeypatch):
+  source = segment(setup) / 'rlog.zst'
+  proton = backup.Proton(setup.root, lambda: True)
+  calls = []
+  monkeypatch.setattr(proton, 'info', lambda _: {'uid': 'existing-folder'})
+  monkeypatch.setattr(proton, 'call', lambda *args: calls.append(args))
+  proton.upload(source, DESTINATION)
+  assert calls == [('filesystem', 'upload', str(source), f'{DESTINATION}/{source.parent.name}',
+                    '--file-conflict-strategy', 'skip', '--skip-thumbnails')]
+
+
+def test_new_remote_segment_folder_is_created_before_direct_file_upload(setup, monkeypatch):
+  source = segment(setup) / 'rlog.zst'
+  proton = backup.Proton(setup.root, lambda: True)
+  calls = []
+
+  def missing(_):
+    raise backup.BackupError('not found')
+
+  monkeypatch.setattr(proton, 'info', missing)
+  monkeypatch.setattr(proton, 'call', lambda *args: calls.append(args))
+  proton.upload(source, DESTINATION)
+  assert calls[0] == ('filesystem', 'create-folder', DESTINATION, source.parent.name)
+  assert calls[1][0:3] == ('filesystem', 'upload', str(source))
+
+
+@pytest.mark.parametrize('operation', ['download', 'delete', 'trash', 'move'])
+def test_worker_cannot_download_or_delete_cloud_files(setup, monkeypatch, operation):
+  proton = backup.Proton(setup.root, lambda: True)
+  monkeypatch.setattr(subprocess, 'Popen', lambda *a, **kw: pytest.fail('client must not start'))
+  with pytest.raises(backup.BackupError, match='only upload'):
+    proton.call('filesystem', operation, DESTINATION)
 
 
 def test_opt_out_during_transfer_cancels_child_process(tmp_path):

@@ -22,6 +22,7 @@ ROOT = Path('/data/proton-log-backup')
 LOGS = Path('/data/media/0/realdata')
 SEGMENT = re.compile(r'[0-9a-f]{8}--[0-9a-f]+--\d+')
 SESSION = 'ch.proton.drive/drive-sdk-cli/auth-session.gpg'
+OPERATIONS = {('filesystem', 'info'), ('filesystem', 'create-folder'), ('filesystem', 'upload')}
 
 
 class BackupError(Exception):
@@ -105,6 +106,8 @@ class Proton:
     self.root, self.allowed = root, allowed
 
   def call(self, *args):
+    if tuple(args[:2]) not in OPERATIONS:
+      raise BackupError('the backup worker permits only upload and destination metadata operations')
     if not self.allowed():
       raise Paused('waiting for opt-in, login and offroad Wi-Fi')
     # File-backed output avoids deadlock on verbose CLI errors. Never print client output,
@@ -138,9 +141,16 @@ class Proton:
     except (ValueError, TypeError) as error:
       raise BackupError('unrecognized Proton metadata; leaving backup unconfirmed') from error
 
-  def upload(self, directory, destination):
-    self.call('filesystem', 'upload', str(directory), destination,
-              '--file-conflict-strategy', 'skip', '--folder-conflict-strategy', 'merge', '--skip-thumbnails')
+  def upload(self, source, destination):
+    parent = f'{destination}/{source.parent.name}'
+    try:
+      self.info(parent)
+    except Paused:
+      raise
+    except BackupError:
+      self.call('filesystem', 'create-folder', destination, source.parent.name)
+    self.call('filesystem', 'upload', str(source), parent,
+              '--file-conflict-strategy', 'skip', '--skip-thumbnails')
 
 
 def fingerprint(path):
@@ -191,34 +201,29 @@ class Backup:
                                  (namespace, segment)).fetchone()
           if row and row[0] == before:
             continue
-          with tempfile.TemporaryDirectory(prefix='transfer-', dir=self.root) as temp:
-            staged = Path(temp) / segment
-            staged.mkdir()
-            target = staged / 'rlog.zst'
-            # Keep only this closed rlog alive if the stock disk-space deleter runs.
-            # A hard link avoids copying videos or allocating another rlog's worth of space.
-            os.link(source, target)
-            with target.open('rb') as stream:
-              sha1 = hashlib.file_digest(stream, 'sha1').hexdigest()
-              stream.seek(0)
-              sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
-            if ((source.parent / 'rlog.lock').exists() or
-                json.loads(fingerprint(target))[:-1] != json.loads(before)[:-1]):
-              continue
-            self.client.upload(staged, destination)
-            remote = self.client.info(f'{destination}/{segment}/rlog.zst')
-            revision = remote.get('activeRevision') or {}
-            digest = (revision.get('claimedDigests') or {}).get('sha1')
-            if digest != sha1 or revision.get('claimedSize') != target.stat().st_size:
-              raise BackupError('remote rlog digest differs; leaving backup unconfirmed')
-          # Removing our hard link changes ctime. Store the final source fingerprint.
+          with source.open('rb') as stream:
+            sha1 = hashlib.file_digest(stream, 'sha1').hexdigest()
+            stream.seek(0)
+            sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
+          if (source.parent / 'rlog.lock').exists() or fingerprint(source) != before:
+            continue
+          # Read the original file directly. Never copy, link, restore, or preserve source logs;
+          # the stock deleter owns their lifetime, even if that interrupts a backup.
+          self.client.upload(source, destination)
+          remote = self.client.info(f'{destination}/{segment}/rlog.zst')
+          revision = remote.get('activeRevision') or {}
+          digest = (revision.get('claimedDigests') or {}).get('sha1')
+          if digest != sha1 or revision.get('claimedSize') != source.stat().st_size:
+            raise BackupError('remote rlog digest differs; leaving backup unconfirmed')
           after = fingerprint(source)
+          if after != before:
+            continue
           receipts.execute('INSERT OR REPLACE INTO receipts VALUES (?, ?, ?, ?)',
                            (namespace, segment, after, sha256))
           receipts.commit()
           completed += 1
         except FileNotFoundError:
-          continue  # The stock deleter may remove a source before staging or after upload.
+          continue  # Source deletion is authoritative, including during a transfer.
     return completed
 
 
@@ -255,11 +260,6 @@ def main():
       fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as error:
       raise BackupError('another backup process is running') from error
-    # Remove hard links left by interrupted transfers after obtaining the exclusive lock.
-    import shutil
-    for path in ROOT.glob('transfer-*'):
-      if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
     while True:
       try:
         completed = backup.once()

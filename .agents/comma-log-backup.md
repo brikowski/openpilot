@@ -23,12 +23,17 @@ enable flag, destination, encrypted account session, encryption key and receipts
   follows hardwared's network classification; cancellation follows its detection of a change.
 - Only closed full-rate rlogs are selected. Qlogs, video, account information and evidence ledgers
   are not uploaded. Logger locks and source changes are checked before transfer.
-- Transfers stage one hard link to the closed rlog, so the stock space deleter cannot truncate
-  an in-flight source. No copy of the video directory is made. Interrupted staging is cleaned
-  up on the next exclusive worker start. The stock deleter and power-down behavior are unchanged.
+- The worker's command allowlist permits only upload, folder creation and node metadata reads.
+  It rejects Drive file downloads, deletion and movement before starting the client. It runs no
+  bidirectional synchronization. Client/account metadata caches are not downloaded rlog copies.
+- Transfers read the original rlog directly. They create no log copies, hard links, preservation
+  flags, upload xattrs or changes inside `realdata`. The stock space deleter and power-down
+  behavior remain authoritative. Source deletion may interrupt a transfer; the worker never
+  restores a removed segment or retains a private copy. Ordinary open-file lifetime applies
+  while a transfer reads a file, without adding a persistent reference.
 - Existing remote files are skipped, never replaced. The client handles encryption and upload
   integrity. A local receipt is written only after the remote revision's claimed SHA-1 and byte
-  count match the staged file. This metadata check is not an independent download/readback.
+  count match the original file. This metadata check is not an independent download/readback.
   Failed, interrupted or mismatched uploads remain pending; retries are idempotent.
 - Receipts bind the destination UID and source fingerprint, and retain the source SHA-256.
   They do not periodically re-audit later cloud deletions. Cloud synchronization is not an
@@ -99,10 +104,12 @@ startup registration, remove only the marked optional Proton block in `/data/con
 
 Focused tests cover disabled/signed-out/expired states, closed-file selection, live Wi-Fi and
 offroad gating, cancellation, remote mismatches, retry after an interrupted acknowledgment,
-and destination-specific receipts. Deliberate mutations removing opt-out, login, cellular
-exclusion or digest rejection must each fail the relevant test. These are separate checks
+destination-specific receipts, rejected download/delete commands and source deletion during
+transfer. Deliberate mutations removing opt-out, login, cellular exclusion, digest rejection,
+download rejection or source-deletion freedom must each fail the relevant test. These are separate checks
 from car-port/preflash coverage; no vehicle runtime source or nested gitlink changes.
 
 Keep as opt-in diagnostic tooling. Activation requires a real owner sign-in and explicit
-enablement. A successful live upload and independent Proton download/hash comparison are
-required before claiming end-to-end backup operation; software tests alone do not establish it.
+enablement. A successful live upload and independent Proton download/hash comparison on an
+analysis computer are required before claiming end-to-end backup operation; the comma must
+not download Drive file payloads for verification. Software tests alone do not establish it.
