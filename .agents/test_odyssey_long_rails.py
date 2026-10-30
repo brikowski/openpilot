@@ -11,7 +11,8 @@ import numpy as np
 
 from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.honda.carcontroller import ODYSSEY_RESPONSE_DELAY_FRAMES, odyssey_low_speed_gas_command
+from opendbc.car.honda.carcontroller import (ODYSSEY_RESPONSE_DELAY_FRAMES, ODYSSEY_RESPONSE_SLEW_COUNTS,
+                                             odyssey_low_speed_gas_command)
 from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -273,12 +274,14 @@ class TestOdysseyLongRails(unittest.TestCase):
     gas = np.array([command for _, command, _ in seen])
     matched_gas = np.array([command for _, command, _ in matched])
     assert gas[0] == -60 and gas[99] > 0
-    assert np.max(np.diff(gas[:100])) <= 25
+    assert np.all(np.diff(gas[:100]) >= 0), "grade preactivation must not pulse before feedback is eligible"
     np.testing.assert_array_equal(gas[:126], matched_gas[:126])
     assert gas[-1] - matched_gas[-1] > 100
     assert gas.max() <= GAS_MAX
     assert np.max(np.diff(gas[99:])) <= 100
-    assert np.max(np.diff(gas[101:])) <= 10
+    # Feedforward is still settling; isolate feedback slew from its shared pitch-filter drift.
+    feedback = gas - matched_gas
+    assert np.max(np.diff(feedback[101:])) <= ODYSSEY_RESPONSE_SLEW_COUNTS + 1  # wire quantization
 
   def test_uphill_zero_request_keeps_only_an_active_gas_domain(self):
     requests = [0.2] * 100 + [0.0] * 100
@@ -405,8 +408,10 @@ class TestOdysseyLongRails(unittest.TestCase):
   def test_uphill_negative_request_keeps_existing_gas_until_the_bounded_release(self):
     """A climb may need engine output for a negative net request, without arming gas from coast."""
     accels = np.array([0.10] * 200 + [-0.23] * 100 + [-0.27] * 100)
-    _, level = _run(True, accels, pitch=0.0, vego=31.0)
-    rejects, uphill = _run(True, accels, pitch=0.03, vego=31.0)
+    _, level = _run(True, accels, pitch=0.0, vego=31.0, aegos=accels, target_gear=7)
+    rejects, uphill = _run(True, accels, pitch=0.03, vego=31.0, aegos=accels, target_gear=7)
+    _, unqualified = _run(True, accels, pitch=0.03, vego=31.0, aegos=accels)
+    _, excess = _run(True, accels, pitch=0.03, vego=31.0, aegos=.1, target_gear=7)
     assert not rejects
 
     level_accel = np.array([accel for accel, _, _ in level])
@@ -417,6 +422,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert (level_gas[100:150] == GAS_INACTIVE).all()
     assert (uphill_gas[100:150] != GAS_INACTIVE).all()
     assert (uphill_gas[150:] == GAS_INACTIVE).all()
+    assert all(gas == GAS_INACTIVE for _, gas, _ in unqualified[100:])
+    assert all(gas == GAS_INACTIVE for _, gas, _ in excess[100:])
 
   def test_gas_command_matches_bounded_odyssey_translation(self):
     """Only the targeted speed and demand band may differ from upstream's direct map."""

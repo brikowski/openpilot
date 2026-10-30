@@ -28,7 +28,7 @@ active safety rails.
   domains from the raw request, with response-qualified gas entry from settled coast, brake entry
   from observed coast with a prior forecast, and response-qualified road-speed brake release. Its
   active behavior is low-speed non-positive → brake below 5 m/s, fallback road-speed brake entry at -0.30
-  m/s², and active-gas continuity above Honda's upstream -0.20 m/s² split. It does not add a
+  m/s², and ordinary active-gas continuity above Honda's raw -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
   passive-response candidate uses the existing same-gear forecast at 8–35 m/s. Both forecast
   and measured acceleration must fall below a negative request by the response margin before
@@ -38,8 +38,8 @@ active safety rails.
   It bypasses pre-activation
   and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
   `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration requires assistance.
-  An already-active gas domain also retains a positive response correction through the feedforward
-  floor while fresh, pedal-free state remains within the existing response margin. This requires
+  Below the raw gas split, an already-active gas domain retains calibrated feedforward or a positive
+  response correction while fresh, pedal-free state remains within the existing response margin. This requires
   fresh received drivetrain state, active PID
   control, idle brake feedback and 8–35 m/s; it neither starts new gas authority nor requires a coast
   estimate to retain already-qualified feedback. Gear and activity changes restart delayed
@@ -65,8 +65,9 @@ active safety rails.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
   The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
   request-ramped, bounded pitch load. Its grade-proportional gas term rises
-  from the brake boundary, remains request-sensitive through zero, and blends
-  into the positive-request grade term. A fresh negative gas bridge retains
+  from the brake boundary and shares the existing positive-request grade gain through zero.
+  Light-grade weighting and the existing feedforward ceiling remain; calibration alone cannot
+  extend ordinary gas continuity below the raw split. A fresh negative gas bridge retains
   `-60` at level/downhill grade and blends toward mapped gas on an uphill;
   it does not enter when the compensated map is at its zero-gas floor.
   Downhill gas compensation uses the existing grade term through zero net demand;
