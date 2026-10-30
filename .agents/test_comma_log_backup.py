@@ -58,9 +58,9 @@ def segment(setup, index=0):
 
 
 @pytest.mark.parametrize('condition', [
-  'disabled', 'missing-config', 'invalid-config', 'missing-session', 'empty-session', 'symlink-session', 'onroad-or-no-wifi',
+  'disabled', 'missing-config', 'invalid-config', 'missing-session', 'empty-session', 'symlink-session', 'no-wifi',
 ])
-def test_no_cloud_calls_without_opt_in_login_and_offroad_wifi(setup, condition):
+def test_no_cloud_calls_without_opt_in_login_and_wifi(setup, condition):
   segment(setup)
   if condition == 'disabled':
     backup.write_config(setup.root, {'enabled': False, 'destination': DESTINATION})
@@ -209,24 +209,32 @@ def test_opt_out_during_transfer_cancels_child_process(tmp_path):
                     f'Path({str(root / "child.pid")!r}).write_text(str(os.getpid()))\ntime.sleep(30)\n')
   client.chmod(0o700)
   started = time.monotonic()
-  proton = backup.Proton(root, lambda: time.monotonic() - started < 0.2)
+
+  def allowed():
+    try:
+      ready = int((root / 'child.pid').read_text()) > 0
+    except (FileNotFoundError, ValueError):
+      ready = False
+    return not ready and time.monotonic() - started < 5
+
+  proton = backup.Proton(root, allowed)
   with pytest.raises(backup.Paused):
     proton.call('filesystem', 'info', DESTINATION)
-  assert time.monotonic() - started < 4
+  assert time.monotonic() - started < 7
   with pytest.raises(ProcessLookupError):
     os.kill(int((root / 'child.pid').read_text()), 0)
 
 
-@pytest.mark.parametrize('started,offroad,network,age,valid,alive,expected', [
-  (False, True, 'wifi', 0, True, True, True),
-  (True, True, 'wifi', 0, True, True, False),
-  (False, False, 'wifi', 0, True, True, False),
-  (False, True, 'cell4G', 0, True, True, False),
-  (False, True, 'wifi', 4_000_000_000, True, True, False),
-  (False, True, 'wifi', 0, False, True, False),
-  (False, True, 'wifi', 0, True, False, False),
+@pytest.mark.parametrize('started,network,age,valid,alive,expected', [
+  (False, 'wifi', 0, True, True, True),
+  (True, 'wifi', 0, True, True, True),
+  (True, 'cell4G', 0, True, True, False),
+  (True, 'none', 0, True, True, False),
+  (True, 'wifi', 4_000_000_000, True, True, False),
+  (True, 'wifi', 0, False, True, False),
+  (True, 'wifi', 0, True, False, False),
 ])
-def test_live_gate_requires_fresh_offroad_wifi(monkeypatch, started, offroad, network, age, valid, alive, expected):
+def test_live_gate_requires_fresh_wifi_including_while_driving(monkeypatch, started, network, age, valid, alive, expected):
   gate = backup.LiveState.__new__(backup.LiveState)
 
   class Messages:
@@ -240,7 +248,6 @@ def test_live_gate_requires_fresh_offroad_wifi(monkeypatch, started, offroad, ne
   gate.sm.valid = {'deviceState': valid}
   gate.sm.alive = {'deviceState': alive}
   gate.sm.logMonoTime = {'deviceState': 10_000_000_000 - age}
-  gate.params = SimpleNamespace(get_bool=lambda _: offroad)
   monkeypatch.setattr(backup.time, 'monotonic_ns', lambda: 10_000_000_000)
   assert gate() is expected
 

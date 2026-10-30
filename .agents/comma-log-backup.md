@@ -2,7 +2,7 @@
 
 This private tool uploads completed `rlog.zst` files directly from the comma to the existing
 `Documents/openpilot/rlogs` folder in the owner's Proton account. Any Wi-Fi connection can be
-used while the device is parked, including a phone hotspot. Hotspots use the phone's data.
+used while parked or driving, including a phone hotspot. Hotspots use the phone's data.
 The Mac does not participate in uploads. It still needs Proton synchronization to download files
 for local analysis, and each newly available route still needs `validate_log.py` validation.
 
@@ -18,9 +18,11 @@ enable flag, destination, encrypted account session, encryption key and receipts
 - Missing, invalid or disabled configuration, or a missing session, produces no Proton calls.
   The service never initiates sign-in. An expired/revoked session cannot authorize uploads;
   failed commands leave files pending for retry without prompting or falling back to credentials.
-- Every upload requires fresh valid `deviceState`, offroad state and Wi-Fi. Active client
+- Every upload requires fresh valid `deviceState` and Wi-Fi, regardless of driving state. Active client
   processes are terminated when those conditions or opt-in/session availability change. This
   follows hardwared's network classification; cancellation follows its detection of a change.
+  The service and its children retain low CPU and idle I/O priority while driving. Closed
+  segments are reconsidered every 30 seconds; the active logger-owned segment waits until closed.
 - Only closed full-rate rlogs are selected. Qlogs, video, account information and evidence ledgers
   are not uploaded. Logger locks and source changes are checked before transfer.
 - The worker's command allowlist permits only upload, folder creation and node metadata reads.
@@ -43,7 +45,7 @@ enable flag, destination, encrypted account session, encryption key and receipts
   encryption does not protect against someone who controls the device/account.
 
 The original Mac puller remains available. Its transfer/hash checks overlap closed-file and
-byte-fidelity coverage; this service adds device-side opt-in, login, live network/offroad gates,
+byte-fidelity coverage; this service adds device-side opt-in, login, live network gates,
 remote conflict handling and receipts. It changes no lateral/longitudinal command path and
 provides no road-performance evidence.
 
@@ -102,8 +104,8 @@ startup registration, remove only the marked optional Proton block in `/data/con
 
 ## Validation and decision
 
-Focused tests cover disabled/signed-out/expired states, closed-file selection, live Wi-Fi and
-offroad gating, cancellation, remote mismatches, retry after an interrupted acknowledgment,
+Focused tests cover disabled/signed-out/expired states, closed-file selection, live Wi-Fi while
+parked or driving, cancellation, remote mismatches, retry after an interrupted acknowledgment,
 destination-specific receipts, rejected download/delete commands and source deletion during
 transfer. Deliberate mutations removing opt-out, login, cellular exclusion, digest rejection,
 download rejection or source-deletion freedom must each fail the relevant test. These are separate checks

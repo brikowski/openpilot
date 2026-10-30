@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in, offroad Wi-Fi backup of closed rlogs using an independently installed Proton CLI.
+"""Opt-in Wi-Fi backup of closed rlogs using an independently installed Proton CLI.
 
 Install outside the checkout in /data/proton-log-backup. Nothing in OpenPilot starts this tool.
 Account sessions, configuration and receipts are device-local and never belong in Git.
@@ -73,21 +73,18 @@ def environment(root):
 
 
 class LiveState:
-  """Require current hardwared state as well as the offroad parameter; fail closed on restart."""
+  """Require current hardwared Wi-Fi state, whether parked or driving."""
   def __init__(self):
     sys.path.insert(0, '/data/openpilot')
     from openpilot.cereal import messaging
-    from openpilot.common.params import Params
     self.sm = messaging.SubMaster(['deviceState'])
-    self.params = Params()
 
   def __call__(self):
     self.sm.update(0)
     ds = self.sm['deviceState']
     age = time.monotonic_ns() - self.sm.logMonoTime['deviceState']
     return (self.sm.valid['deviceState'] and self.sm.alive['deviceState'] and
-            0 <= age < 3_000_000_000 and not ds.started and
-            self.params.get_bool('IsOffroad') and ds.networkType == 'wifi')
+            0 <= age < 3_000_000_000 and ds.networkType == 'wifi')
 
 
 def stop_process(process):
@@ -109,7 +106,7 @@ class Proton:
     if tuple(args[:2]) not in OPERATIONS:
       raise BackupError('the backup worker permits only upload and destination metadata operations')
     if not self.allowed():
-      raise Paused('waiting for opt-in, login and offroad Wi-Fi')
+      raise Paused('waiting for opt-in, login and Wi-Fi')
     # File-backed output avoids deadlock on verbose CLI errors. Never print client output,
     # which could contain account details. No stdin means a background job cannot prompt.
     with tempfile.TemporaryFile() as output:
@@ -120,7 +117,7 @@ class Proton:
       try:
         while process.poll() is None:
           if not self.allowed():
-            raise Paused('upload paused: opt-in, login or offroad Wi-Fi changed')
+            raise Paused('upload paused: opt-in, login or Wi-Fi changed')
           if time.monotonic() > deadline:
             raise BackupError('Proton command timed out; will retry')
           time.sleep(0.5)
@@ -252,7 +249,7 @@ def main():
         raise BackupError('destination must be an explicit folder under /my-files/')
     Proton(ROOT, lambda: has_session(ROOT)).info(args.destination)
     write_config(ROOT, config)
-    print('backup enabled; waiting for fresh offroad Wi-Fi state')
+    print('backup enabled; waiting for fresh Wi-Fi state')
     return
   backup = Backup(ROOT, LOGS, LiveState())
   with (ROOT / 'run.lock').open('w') as lock:
