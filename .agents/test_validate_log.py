@@ -17,7 +17,7 @@ from validate_log import (
   LOW_SPEED_BRAKE_PID_COMMITS,
   RAW_ROAD_BRAKE_COMMITS,
   THREE_DOMAIN_COMMITS,
-  _acc_control_cycle_inputs,
+  _honda_control_cycles,
   _base_route,
   _brake_passthrough_expected,
   _domain_model,
@@ -79,8 +79,8 @@ def test_longitudinal_coverage_requires_fresh_acc_frames(monkeypatch, capsys, co
     timestamp = int(round(time * 1e9))
     messages.extend([
       event("carControl", timestamp, SimpleNamespace(longActive=True, orientationNED=[0., 0., 0.],
-                                                     actuators=SimpleNamespace(accel=.5))),
-      event("carState", timestamp, SimpleNamespace(vEgo=15., aEgo=.5, brakePressed=False)),
+                                                     actuators=SimpleNamespace(accel=.5, longControlState="pid"))),
+      event("carState", timestamp, SimpleNamespace(vEgo=15., aEgo=.5, gasPressed=False, brakePressed=False)),
       event("longitudinalPlan", timestamp, SimpleNamespace(aTarget=.5)),
       event("controlsState", timestamp, SimpleNamespace(longitudinalPlanMonoTime=timestamp)),
     ])
@@ -112,6 +112,86 @@ def test_longitudinal_coverage_requires_fresh_acc_frames(monkeypatch, capsys, co
     else:
       with pytest.raises(SystemExit, match="not full-rate"):
         inspect_following.inspect("synthetic")
+
+
+def _phased_following_trace(domain, *, grade=False):
+  from opendbc.can import CANPacker
+
+  packer = CANPacker(validate_log.ODYSSEY_PT_DBC)
+  messages = []
+  requested, pitches, quantization = [], [], []
+  grid = 1.002 + np.arange(400) * .01
+  filtered_pitch = 0.
+
+  def event(kind, time, value):
+    return SimpleNamespace(which=lambda: kind, logMonoTime=int(round(time * 1e9)), **{kind: value})
+
+  def control(request, pitch):
+    return SimpleNamespace(longActive=True, orientationNED=[0., pitch, 0.],
+                           actuators=SimpleNamespace(accel=request, longControlState="pid"))
+
+  previous = control(-.5 if grade else (.2 if domain == "gas" else -.2), .15 if grade else 0.)
+  messages.append(event("carControl", .995, previous))
+  for tick in range(400):
+    time = 1. + tick * .01
+    state = SimpleNamespace(vEgo=20., aEgo=previous.actuators.accel, gasPressed=False, brakePressed=False)
+    messages.append(event("carState", time + .001, state))
+    request = -.5 if grade else (.2 if domain == "gas" else -.2) + .15 * np.sin(tick * .2)
+    pitch = (.15 if tick % 100 < 50 else -.1) if grade else 0.
+    if grade and tick == 175:
+      pitch = float("nan")
+    current = control(request, pitch)
+    requested.append(request)
+    pitches.append(pitch)
+    messages.append(event("carControl", time + .002, current))
+    sampled_pitch = previous.orientationNED[1]
+    filtered_pitch = (filtered_pitch + .01 / (.5 + .01) * (sampled_pitch - filtered_pitch)
+                      if np.isfinite(sampled_pitch) else 0.)
+    frames = [packer.make_can_msg("STEERING_CONTROL", 1, {"STEER_TORQUE": 0})]
+    if tick % 2 == 0:
+      expected = previous.actuators.accel
+      if grade and np.isfinite(sampled_pitch):
+        load = max(9.81 * np.sin(filtered_pitch) * .3, expected)
+        expected = min(expected + load, 0.)
+      frame = packer.make_can_msg("ACC_CONTROL", 1, {"ACCEL_COMMAND": expected,
+                                 "BRAKE_REQUEST": domain == "brake", "GAS_COMMAND": 123 if domain == "gas" else -30000})
+      frames.append(frame)
+      data = frame[1]
+      raw = (data[3] << 3) | (data[4] >> 5)
+      wire = (raw - 2048 if raw >= 1024 else raw) / 100.
+      quantization.append(wire - expected)
+    messages.append(event("sendcan", time + .003,
+                          [SimpleNamespace(address=a, dat=d, src=b) for a, d, b in frames]))
+    previous = current
+  return messages, grid, np.array(requested), np.array(pitches), np.array(quantization)
+
+
+@pytest.mark.parametrize("domain", ["gas", "brake"])
+@pytest.mark.parametrize("shuffled", [False, True])
+def test_wire_following_uses_consumed_control_across_publication_phases(domain, shuffled):
+  messages, grid, requested, pitch, quantization = _phased_following_trace(domain)
+  if shuffled:
+    messages.reverse()
+  zeros = np.zeros(len(grid))
+  active = np.ones(len(grid), dtype=bool)
+  result = validate_log._following(messages, grid, requested, active, active, pitch, np.full(len(grid), 20.),
+                                  zeros.astype(bool), zeros.astype(bool), requested, zeros, zeros, .01,
+                                  zeros.astype(bool), "27628fdcef86", active, active, zeros.astype(bool))
+  assert result[f"follow_{domain}_rms"] == pytest.approx(np.sqrt(np.mean(quantization ** 2)), abs=1e-10)
+  assert result[f"follow_{domain}_cycles"] == len(quantization)
+  if domain == "brake":
+    assert result["brake_expected_wire_rms"] == result["follow_brake_rms"]
+
+
+def test_wire_translation_retains_every_grade_filter_update_and_invalid_pose_reset():
+  messages, grid, requested, pitch, quantization = _phased_following_trace("brake", grade=True)
+  zeros = np.zeros(len(grid))
+  active = np.ones(len(grid), dtype=bool)
+  result = validate_log._following(messages, grid, requested, active, active, pitch, np.full(len(grid), 20.),
+                                  zeros.astype(bool), zeros.astype(bool), requested, zeros, zeros, .01,
+                                  zeros.astype(bool), "c59c156ae694", active, active, zeros.astype(bool))
+  assert result["brake_expected_wire_rms"] == pytest.approx(np.sqrt(np.mean(quantization ** 2)), abs=1e-10)
+  assert result["follow_brake_rms"] > result["brake_expected_wire_rms"] + .05
 
 
 @pytest.mark.parametrize("pedal,field", [("gas", "override_events"), ("brake", "takeover_events")])
@@ -1637,13 +1717,13 @@ def test_acc_control_cycle_pairing_uses_control_sampled_before_state_publication
   c1 = SimpleNamespace(actuators=SimpleNamespace(accel=.2))
   state = SimpleNamespace(aEgo=-.4)
   frame = SimpleNamespace(address=0x1DF, src=1)
-  messages = [Message(kind="carControl", carControl=c0),
-              Message(kind="carState", carState=state),
-              Message(kind="carControl", carControl=c1),
+  messages = [Message(kind="carControl", carControl=c0, logMonoTime=900_000_000),
+              Message(kind="carState", carState=state, logMonoTime=950_000_000),
+              Message(kind="carControl", carControl=c1, logMonoTime=970_000_000),
               Message(kind="sendcan", sendcan=[frame], logMonoTime=1_000_000_000)]
-  cycles = list(_acc_control_cycle_inputs(messages))
+  cycles = list(_honda_control_cycles(messages))
   assert len(cycles) == 1
-  assert cycles[0] == (1_000_000_000, c0, state, frame)
+  assert cycles[0] == (1_000_000_000, c0, state, [frame])
 
 
 def _descent_hold_trace(n=300, request=0.1, pitch_val=-0.02, hold_frames=80):

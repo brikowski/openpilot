@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from opendbc.car import ACCELERATION_DUE_TO_GRAVITY
+from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, DT_CTRL
 from openpilot.tools.lib.logreader import LogReader
 from private_paths import evidence_path, evidence_root, rlog_root
 # Same reason: read the interface accel rails from the live params, not a copied number.
@@ -1386,10 +1386,11 @@ def _thermal(msgs):
   return r
 
 
-def _acc_control_cycle_inputs(msgs):
-  """Pair each physical Honda ACC transmit with card's sampled control/state snapshot."""
+def _honda_control_cycles(msgs):
+  """Pair Honda controller calls with card's sampled control/state, in native clock order."""
   latest_control = sampled_control = sampled_state = None
-  for message in msgs:
+  messages = sorted((m for m in msgs if m.which() in ("carControl", "carState", "sendcan")), key=lambda m: m.logMonoTime)
+  for message in messages:
     kind = message.which()
     if kind == "carControl":
       latest_control = message.carControl
@@ -1397,9 +1398,8 @@ def _acc_control_cycle_inputs(msgs):
       sampled_state = message.carState
       sampled_control = latest_control
     elif kind == "sendcan" and sampled_control is not None and sampled_state is not None:
-      for frame in message.sendcan:
-        if frame.address == 0x1DF and frame.src == 1:
-          yield message.logMonoTime, sampled_control, sampled_state, frame
+      if any(frame.address in (0xE4, 0x194, 0x1DF) for frame in message.sendcan):
+        yield message.logMonoTime, sampled_control, sampled_state, message.sendcan
 
 
 def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brakepressed,
@@ -1409,7 +1409,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
 
   controlsd passes carControl.actuators.accel into CarController.update; we put ACCEL_COMMAND on
   the wire. Any gap between those exact handoff signals is ours and nothing upstream can explain
-  it. The wire is decoded from sent ACC_CONTROL on bus 1, not proxied off carOutput.
+  it. Compare native ACC_CONTROL packets with their consumed input. Retain every controller
+  call for source-model filter history; physical/domain readouts keep their existing grid.
 
   Deliberately measures the BRAKE domain, which the historical `passthrough_rms` excluded. Exact
   source mapping retains the wider legacy threshold for revisions that intentionally modify the
@@ -1422,6 +1423,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   """
   source_commit = (opendbc_commit or "")[:12]
   out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
+         "follow_brake_cycles": 0, "follow_gas_cycles": 0,
          "brake_expected_wire_rms": None, "brake_expected_wire_mean": None,
          "brake_translation_sec": None, "brake_translation_delta_median": None,
          "brake_translation_delta_min": None, "brake_translation_delta_max": None,
@@ -1518,21 +1520,28 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   try:
     from opendbc.can.parser import CANParser
     cp = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
-    t, br, ac, gas = [], [], [], []
-    for m in msgs:
-      if m.which() == "sendcan":
-        # Parser validity persists between updates; only verified ACC frames establish coverage.
-        frames = [(c.address, c.dat, c.src) for c in m.sendcan if c.address == 0x1DF and c.src == 1]
-        if frames and 0x1DF in cp.update([(m.logMonoTime, frames)]):
-          t.append(m.logMonoTime / 1e9)
-          br.append(int(cp.vl["ACC_CONTROL"]["BRAKE_REQUEST"]))
-          ac.append(float(cp.vl["ACC_CONTROL"]["ACCEL_COMMAND"]))
-          gas.append(float(cp.vl["ACC_CONTROL"]["GAS_COMMAND"]))
+    inputs = []
+    for timestamp, control, state, batch in _honda_control_cycles(msgs):
+      row = [timestamp / 1e9, float(control.actuators.accel), float(state.aEgo), float(state.vEgo),
+             float(control.orientationNED[1]) if len(control.orientationNED) == 3 else np.nan,
+             bool(control.longActive), str(control.actuators.longControlState) == "pid",
+             bool(state.gasPressed), bool(state.brakePressed), np.nan, np.nan, np.nan]
+      # Odd controller calls still update the pitch filter, but emit no ACC packet.
+      frames = [(f.address, f.dat, f.src) for f in batch if f.address == 0x1DF and f.src == 1]
+      if frames and 0x1DF in cp.update([(timestamp, frames)]):
+        v = cp.vl["ACC_CONTROL"]
+        row[9:] = [int(v["BRAKE_REQUEST"]), float(v["GAS_COMMAND"]), float(v["ACCEL_COMMAND"])]
+      inputs.append(row)
   except Exception:
     return out
-  if len(t) < 50:
+  if not inputs:
     return out
-  t = np.array(t)
+  inputs = np.asarray(inputs, dtype=float)
+  valid_acc = np.isfinite(inputs[:, 11])
+  cycle = inputs[valid_acc]
+  if len(cycle) < 50:
+    return out
+  t, br, gas, ac = cycle[:, 0], cycle[:, 9], cycle[:, 10], cycle[:, 11]
   # A long qlog route still has thousands of sendcan frames, so a count check passes while the
   # data is far too sparse to see a toggle. Gate on rate instead.
   if _rate(t) < SENDCAN_RATE_MIN:
@@ -1542,7 +1551,6 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   BR = _hold_last(grid, t, br) > 0.5
   AC = _hold_last(grid, t, ac)
   GAS = _hold_last(grid, t, gas)
-  err = AC - requested
   eng_all, vego_all = active.copy(), vego     # keep un-gated masks for stop/start metrics
 
   out.update(level_positive_response_metrics(
@@ -1671,26 +1679,35 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   out["coast_domain_frac"] = float(cd.sum() / active.sum())
   out["coast_domain_sec"] = float(cd.sum() * dt)
   out["coast_domain_events"] = int(np.sum(np.diff(cd.astype(np.int8), prepend=0) == 1))
-  if gd.sum() > 50:
-    out["follow_gas_rms"] = float(np.sqrt(np.nanmean(err[gd] ** 2)))
-  follow_bd = bd
-  if follow_bd.sum() > 50:
-    out["follow_brake_rms"] = float(np.sqrt(np.nanmean(err[follow_bd] ** 2)))
-    out["follow_brake_mean"] = float(np.nanmean(err[follow_bd]))
+  wire_active = ((cycle[:, 5] > .5) & (cycle[:, 3] > FOLLOW_MIN_VEGO) &
+                 (cycle[:, 8] < .5) & np.isfinite(cycle[:, 1]))
+  wire_gas = wire_active & (cycle[:, 9] < .5) & (cycle[:, 10] > GAS_INACTIVE)
+  wire_brake = wire_active & (cycle[:, 9] > .5)
+  out["follow_gas_cycles"] = int(wire_gas.sum())
+  out["follow_brake_cycles"] = int(wire_brake.sum())
+  wire_error = cycle[:, 11] - cycle[:, 1]
+  # Preserve the existing exposure duration when moving from the control grid to 50 Hz CAN.
+  if wire_gas.sum() * CAN_COMMAND_PERIOD_S > 50 * dt:
+    out["follow_gas_rms"] = float(np.sqrt(np.mean(wire_error[wire_gas] ** 2)))
+  if wire_brake.sum() * CAN_COMMAND_PERIOD_S > 50 * dt:
+    out["follow_brake_rms"] = float(np.sqrt(np.mean(wire_error[wire_brake] ** 2)))
+    out["follow_brake_mean"] = float(np.mean(wire_error[wire_brake]))
     expected_brake, translated, has_translation = _expected_brake_command(
-      source_commit, requested, vego_all, pitch, pid, BR, dt, gas_pressed=gaspressed, brake_pressed=brakepressed,
+      source_commit, inputs[:, 1], inputs[:, 3], inputs[:, 4], inputs[:, 6] > .5, inputs[:, 9] > .5, DT_CTRL,
+      gas_pressed=inputs[:, 7] > .5, brake_pressed=inputs[:, 8] > .5,
     )
     if has_translation:
-      expected_error = AC - expected_brake
-      out["brake_expected_wire_rms"] = float(np.sqrt(np.nanmean(expected_error[follow_bd] ** 2)))
-      out["brake_expected_wire_mean"] = float(np.nanmean(expected_error[follow_bd]))
-      translated &= follow_bd
-      out["brake_translation_sec"] = float(translated.sum() * dt)
+      expected_brake, translated = expected_brake[valid_acc], translated[valid_acc]
+      expected_error = cycle[:, 11] - expected_brake
+      out["brake_expected_wire_rms"] = float(np.sqrt(np.mean(expected_error[wire_brake] ** 2)))
+      out["brake_expected_wire_mean"] = float(np.mean(expected_error[wire_brake]))
+      translated &= wire_brake
+      out["brake_translation_sec"] = float(translated.sum() * CAN_COMMAND_PERIOD_S)
       if translated.any():
-        delta = expected_brake[translated] - requested[translated]
-        out["brake_translation_delta_median"] = float(np.nanmedian(delta))
-        out["brake_translation_delta_min"] = float(np.nanmin(delta))
-        out["brake_translation_delta_max"] = float(np.nanmax(delta))
+        delta = expected_brake[translated] - cycle[:, 1][translated]
+        out["brake_translation_delta_median"] = float(np.median(delta))
+        out["brake_translation_delta_min"] = float(np.min(delta))
+        out["brake_translation_delta_max"] = float(np.max(delta))
 
   # The wire checks above locate car-port divergence. These separate achieved-response readouts
   # answer the road question for each domain without averaging gas and brake together. Driver gas
@@ -1722,18 +1739,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
       dt=dt,
     ))
   if model_valid and source_commit in RESPONSE_QUALIFIED_BRAKE_RELEASE_COMMITS:
-    cycle_parser = CANParser(ODYSSEY_PT_DBC, [("ACC_CONTROL", 0)], 1)
-    cycles = []
-    for timestamp, control, state, frame in _acc_control_cycle_inputs(msgs):
-      cycle_parser.update([(timestamp, [(frame.address, frame.dat, frame.src)])])
-      signals = cycle_parser.vl["ACC_CONTROL"]
-      cycles.append((timestamp / 1e9, float(control.actuators.accel), float(state.aEgo),
-                     float(state.vEgo), float(control.orientationNED[1]) if len(control.orientationNED) == 3 else np.nan,
-                     bool(control.longActive), str(control.actuators.longControlState) == "pid",
-                     bool(state.gasPressed), bool(state.brakePressed), bool(signals["BRAKE_REQUEST"]),
-                     float(signals["GAS_COMMAND"])))
-    if len(cycles) >= 2:
-      cycle = np.asarray(cycles, dtype=float)
+    if len(cycle) >= 2:
       _, cycle_entry, cycle_model_valid, _ = _domain_model(
         opendbc_commit, cycle[:, 1], cycle[:, 3], cycle[:, 4], np.ones(len(cycle)),
         float(np.median(np.diff(cycle[:, 0]))))
@@ -1970,7 +1976,7 @@ def verdicts(r):
   # defect. Every check here compares ACCEL_COMMAND to carControl.actuators.accel and nothing else.
   if r.get("follow_gas_rms") is not None:
     add("following - gas domain", r["follow_gas_rms"] <= FOLLOW_GAS_RMS_LIMIT,
-        f"RMS(wire - request) {r['follow_gas_rms']:.4f} (<= {FOLLOW_GAS_RMS_LIMIT})",
+        f"RMS(wire - consumed request) {r['follow_gas_rms']:.4f} (<= {FOLLOW_GAS_RMS_LIMIT})",
         status="wire diverging from the controller input where nothing should diverge"
                if r["follow_gas_rms"] > FOLLOW_GAS_RMS_LIMIT else None)
   if r.get("follow_brake_rms") is not None:

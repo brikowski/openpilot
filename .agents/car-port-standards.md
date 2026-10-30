@@ -216,6 +216,11 @@ implement them there instead of adding Honda compensation. In the port, prefer r
 learned vehicle state over fixed tuning when it directly represents the controlled behavior. Keep
 constraints and fallbacks where needed, and do not add a learner solely to remove a constant.
 
+Compare each native ACC transmit with the `carControl` sampled before its paired `carState`
+publication. A newer request on the shared analysis grid can legitimately precede the next
+50 Hz command. Historical translation models retain every controller call, including steering-only
+calls, so their filter history matches the source. Keep physical-response measurements separate.
+
 A large `aEgo` or lateral-response residual alone does not identify a port bug. Align response timing,
 separate domains and authority states, and condition on the relevant speed, request, grade, gear,
 lead, and driver-input exposure before changing Honda code.
