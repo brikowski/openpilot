@@ -176,6 +176,11 @@ active safety rails.
 
 ## Steering-authority assessment
 
+Upstream documents stock Odyssey MMR LKA commands up to 2560. Its note describes higher RDM
+commands as nonlinear and accompanied by brake drag, without specifying the axle or a 3840
+endpoint. Use this documented command policy as the stock reference; the EPS-only response
+above 2560 and any tracking benefit from the extended range still require physical evidence.
+
 `validate_log.py` automatically saves native Odyssey Alpha Long steering reports under private
 `evidence/steering-authority/`. Compare explicit recorded configurations with
 `.venv/bin/python .agents/compare_lateral_response.py CANDIDATE.json --baseline STOCK.json --output COMPARISON.json`.
