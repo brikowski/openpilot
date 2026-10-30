@@ -47,13 +47,40 @@ def read_config(root):
 
 
 def write_config(root, config):
-  root.mkdir(mode=0o700, parents=True, exist_ok=True)
-  with tempfile.NamedTemporaryFile(mode='w', dir=root, delete=False) as stream:
-    json.dump(config, stream)
+  write_json(root / 'config.json', config)
+
+
+def write_json(path, value):
+  path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+  with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+    json.dump(value, stream)
     stream.flush()
     os.fsync(stream.fileno())
     temporary = Path(stream.name)
-  temporary.replace(root / 'config.json')
+  temporary.replace(path)
+
+
+class UploadProgress:
+  """Publish only aggregate queue state; UI updates must never become display-wake events."""
+  def __init__(self, root):
+    self.path = root / 'status.json'
+    self.values = {'state': 'checking', 'completed': 0, 'total': 0}
+    self._published = None
+    self._last_write = float('-inf')
+
+  def update(self, state=None, **counts):
+    if state is not None:
+      self.values['state'] = state
+    self.values.update(counts)
+    now = time.monotonic()
+    if self.values == self._published and now - self._last_write < 5:
+      return
+    try:
+      write_json(self.path, {'version': 1, 'updated_at': now, **self.values})
+      self._published = self.values.copy()
+      self._last_write = now
+    except OSError:
+      pass  # A status-display failure must not interrupt backups.
 
 
 def has_session(root):
@@ -99,8 +126,9 @@ def stop_process(process):
 
 
 class Proton:
-  def __init__(self, root, allowed):
+  def __init__(self, root, allowed, heartbeat=lambda: None):
     self.root, self.allowed = root, allowed
+    self.heartbeat = heartbeat
 
   def call(self, *args):
     if tuple(args[:2]) not in OPERATIONS:
@@ -120,6 +148,7 @@ class Proton:
             raise Paused('upload paused: opt-in, login or Wi-Fi changed')
           if time.monotonic() > deadline:
             raise BackupError('Proton command timed out; will retry')
+          self.heartbeat()
           time.sleep(0.5)
         if process.returncode:
           raise BackupError('Proton unavailable: check sign-in, connection and quota; will retry')
@@ -169,17 +198,24 @@ def closed_rlogs(logs):
 class Backup:
   def __init__(self, root, logs, state):
     self.root, self.logs, self.state = root, logs, state
-    self.client = Proton(root, self.allowed)
+    self.progress = UploadProgress(root)
+    self.client = Proton(root, self.allowed, self.progress.update)
 
   def allowed(self):
     return read_config(self.root) is not None and has_session(self.root) and self.state()
 
+  def report_waiting(self):
+    state = 'disabled' if read_config(self.root) is None else 'waiting_wifi' if has_session(self.root) else 'sign_in'
+    self.progress.update(state)
+
   def once(self):
     if not self.allowed():
+      self.report_waiting()
       return 0
     config = read_config(self.root)
     destination = config['destination']
     self.client.allowed = lambda: self.allowed() and read_config(self.root)['destination'] == destination
+    self.progress.update('checking')
     # An existing destination must be accessible with the currently signed-in account.
     # Its UID also prevents receipts for one account/folder from skipping another's backup.
     namespace = self.client.info(destination)['uid']
@@ -188,16 +224,29 @@ class Backup:
       receipts.execute('CREATE TABLE IF NOT EXISTS receipts '
                        '(namespace TEXT, segment TEXT, fingerprint TEXT, sha256 TEXT, '
                        'PRIMARY KEY(namespace, segment))')
+      sources = []
+      verified = 0
+      total = 0
       for source in closed_rlogs(self.logs):
+        try:
+          before = fingerprint(source)
+          row = receipts.execute('SELECT fingerprint FROM receipts WHERE namespace=? AND segment=?',
+                                 (namespace, source.parent.name)).fetchone()
+          total += 1
+          if row and row[0] == before:
+            verified += 1
+          else:
+            sources.append(source)
+        except FileNotFoundError:
+          continue
+      self.progress.update('uploading' if verified < total else 'complete', completed=verified, total=total)
+      for source in sources:
         if not self.allowed() or read_config(self.root)['destination'] != destination:
+          self.report_waiting()
           break
         segment = source.parent.name
         try:
           before = fingerprint(source)
-          row = receipts.execute('SELECT fingerprint FROM receipts WHERE namespace=? AND segment=?',
-                                 (namespace, segment)).fetchone()
-          if row and row[0] == before:
-            continue
           with source.open('rb') as stream:
             sha1 = hashlib.file_digest(stream, 'sha1').hexdigest()
             stream.seek(0)
@@ -219,8 +268,14 @@ class Backup:
                            (namespace, segment, after, sha256))
           receipts.commit()
           completed += 1
+          verified += 1
+          self.progress.update('uploading' if verified < total else 'complete', completed=verified)
         except FileNotFoundError:
+          total -= 1
+          self.progress.update(total=total)
           continue  # Source deletion is authoritative, including during a transfer.
+      else:
+        self.progress.update('complete' if verified == total else 'pending')
     return completed
 
 
@@ -235,6 +290,7 @@ def main():
     return
   if args.command in ('disable', 'login', 'logout'):
     write_config(ROOT, {'enabled': False, 'destination': args.destination})
+    UploadProgress(ROOT).update('disabled')
     if args.command != 'disable':
       subprocess.run([str(ROOT / 'bin/proton-drive'), 'auth', args.command], env=environment(ROOT), check=True)
     return
@@ -249,6 +305,7 @@ def main():
         raise BackupError('destination must be an explicit folder under /my-files/')
     Proton(ROOT, lambda: has_session(ROOT)).info(args.destination)
     write_config(ROOT, config)
+    UploadProgress(ROOT).update('checking')
     print('backup enabled; waiting for fresh Wi-Fi state')
     return
   backup = Backup(ROOT, LOGS, LiveState())
@@ -263,6 +320,10 @@ def main():
         if completed:
           print(f'verified {completed} rlog backup(s)', flush=True)
       except (BackupError, OSError, sqlite3.Error) as error:
+        if isinstance(error, Paused):
+          backup.report_waiting()
+        else:
+          backup.progress.update('retrying')
         print(str(error), flush=True)
         if args.command == 'once':
           raise SystemExit(1) from error

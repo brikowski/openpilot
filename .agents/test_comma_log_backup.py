@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import shutil
 import sqlite3
@@ -151,6 +152,79 @@ def test_other_account_or_folder_does_not_reuse_receipts(setup):
   assert setup.job.once() == 1
 
 
+def test_progress_counts_only_confirmed_backups_and_finishes_at_total(setup):
+  segment(setup)
+  segment(setup, 1)
+  snapshots = []
+  upload = setup.job.client.upload
+
+  def observe(source, destination):
+    snapshots.append(json.loads((setup.root / 'status.json').read_text()))
+    upload(source, destination)
+
+  setup.job.client.upload = observe
+  assert setup.job.once() == 2
+  assert [(row['state'], row['completed'], row['total']) for row in snapshots] == [('uploading', 0, 2), ('uploading', 1, 2)]
+  final = json.loads((setup.root / 'status.json').read_text())
+  assert (final['state'], final['completed'], final['total']) == ('complete', 2, 2)
+  assert set(final) == {'version', 'updated_at', 'state', 'completed', 'total'}
+  assert setup.job.once() == 0
+  assert json.loads((setup.root / 'status.json').read_text())['state'] == 'complete'
+
+
+def test_failed_transfer_reports_retrying_without_claiming_completion(setup, monkeypatch):
+  segment(setup)
+
+  def failed(*_):
+    raise backup.BackupError('connection failed')
+
+  setup.job.client.upload = failed
+  monkeypatch.setattr(backup, 'ROOT', setup.root)
+  monkeypatch.setattr(backup, 'LiveState', lambda: None)
+  monkeypatch.setattr(backup, 'Backup', lambda *args: setup.job)
+  monkeypatch.setattr(sys, 'argv', ['backup', 'once'])
+  with pytest.raises(SystemExit) as error:
+    backup.main()
+  assert error.value.code == 1
+  final = json.loads((setup.root / 'status.json').read_text())
+  assert (final['state'], final['completed'], final['total']) == ('retrying', 0, 1)
+
+
+@pytest.mark.parametrize('reason', ['disabled', 'sign_in', 'waiting_wifi'])
+def test_waiting_reason_is_reported_without_cloud_activity(setup, reason):
+  if reason == 'disabled':
+    backup.write_config(setup.root, {'enabled': False, 'destination': DESTINATION})
+  elif reason == 'sign_in':
+    setup.session.unlink()
+  else:
+    setup.job.state = lambda: False
+  assert setup.job.once() == 0
+  assert json.loads((setup.root / 'status.json').read_text())['state'] == reason
+  assert setup.calls == []
+
+
+def test_status_write_failure_does_not_stop_backups(setup, monkeypatch):
+  segment(setup)
+
+  def unwritable(*_):
+    raise OSError('status storage unavailable')
+
+  monkeypatch.setattr(backup, 'write_json', unwritable)
+  assert setup.job.once() == 1
+
+
+def test_progress_heartbeat_stays_fresh_during_long_transfers(setup, monkeypatch):
+  now = [0.]
+  monkeypatch.setattr(backup.time, 'monotonic', lambda: now[0])
+  progress = backup.UploadProgress(setup.root)
+  progress.update('uploading', completed=1, total=2)
+  now[0] = 600.
+  progress.update()
+  final = json.loads((setup.root / 'status.json').read_text())
+  assert final['updated_at'] == 600.
+  assert (final['state'], final['completed'], final['total']) == ('uploading', 1, 2)
+
+
 def test_source_deletion_during_backup_is_not_prevented_or_reversed(setup):
   directory = segment(setup)
 
@@ -209,18 +283,20 @@ def test_opt_out_during_transfer_cancels_child_process(tmp_path):
                     f'Path({str(root / "child.pid")!r}).write_text(str(os.getpid()))\ntime.sleep(30)\n')
   client.chmod(0o700)
   started = time.monotonic()
+  beats = []
 
   def allowed():
     try:
       ready = int((root / 'child.pid').read_text()) > 0
     except (FileNotFoundError, ValueError):
       ready = False
-    return not ready and time.monotonic() - started < 5
+    return (not ready or not beats) and time.monotonic() - started < 5
 
-  proton = backup.Proton(root, allowed)
+  proton = backup.Proton(root, allowed, heartbeat=lambda: beats.append(True))
   with pytest.raises(backup.Paused):
     proton.call('filesystem', 'info', DESTINATION)
   assert time.monotonic() - started < 7
+  assert beats
   with pytest.raises(ProcessLookupError):
     os.kill(int((root / 'child.pid').read_text()), 0)
 

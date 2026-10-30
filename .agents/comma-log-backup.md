@@ -40,6 +40,12 @@ enable flag, destination, encrypted account session, encryption key and receipts
 - Receipts bind the destination UID and source fingerprint, and retain the source SHA-256.
   They do not periodically re-audit later cloud deletions. Cloud synchronization is not an
   independent archival backup. This tool never deletes source logs or cloud data.
+- `status.json` atomically publishes version 1 aggregate progress: `state`, `completed`,
+  `total` and monotonic `updated_at`. Counts refer to completed, retained rlog files in the
+  current scan; only matching receipts count as complete. No account details, destinations,
+  filenames or route IDs are exposed. Long client operations refresh the heartbeat every five
+  seconds, and display-status write failures never block backup. Disabled/sign-out operations
+  immediately publish a hidden state.
 - Sign-in uses Proton's browser flow. Only its session is saved, encrypted using Proton's
   supported `pass` backend. The unattended GPG key stays on this device in a private directory;
   encryption does not protect against someone who controls the device/account.
@@ -48,6 +54,13 @@ The original Mac puller remains available. Its transfer/hash checks overlap clos
 byte-fidelity coverage; this service adds device-side opt-in, login, live network gates,
 remote conflict handling and receipts. It changes no lateral/longitudinal command path and
 provides no road-performance evidence.
+
+The main UI passively reads this optional file at most once per second while visible, offroad
+or in confirmed stationary Park. It shows checking, progress, completion, Wi-Fi wait, sign-in,
+retry and unavailable states; stale status cannot claim completion. It hides while driving,
+under the screensaver/settings/dialogs, and for devices without the optional uploader. This
+indicator registers no alert, input, navigation or display-wake events. Upload start, progress
+and completion do not reset the ten-second screensaver or sixty-second display deadline.
 
 ## Client and dependencies
 
