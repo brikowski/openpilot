@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Pull and Validate New Logs",
+      "label": "Check Proton and Validate New Logs",
       "type": "shell",
       "command": "UV_CACHE_DIR=/private/tmp/openpilot-uv-cache uv run --frozen python .agents/pull_logs.py --all-new",
       "options": {

@@ -50,10 +50,24 @@ enable flag, destination, encrypted account session, encryption key and receipts
   supported `pass` backend. The unattended GPG key stays on this device in a private directory;
   encryption does not protect against someone who controls the device/account.
 
-The original Mac puller remains available. Its transfer/hash checks overlap closed-file and
-byte-fidelity coverage; this service adds device-side opt-in, login, live network gates,
-remote conflict handling and receipts. It changes no lateral/longitudinal command path and
-provides no road-performance evidence.
+The Mac intake command is `.venv/bin/python .agents/pull_logs.py --all-new` (`--list` previews).
+It checks Proton first, validates the available snapshot and makes no device connection by default.
+Newly available segments reopen previously partial ledger coverage. Its age filter uses file mtimes;
+Proton arrival times can differ from drive times. Do not treat available segments as a whole drive.
+
+If an expected drive or segment is absent, check Mac Proton synchronization first. Then use
+`--route ROUTE_ID --device-fallback` (with `COMMA_SSH` configured) to inspect the uploader and retrieve
+missing device data. The probe reads service/progress state, opt-in/session presence, closed/active
+segments, matching historical receipts and fixed sanitized error messages. It saves a private
+`evidence/log-acquisition-ledger.jsonl` entry before transfer, even if diagnosis is unavailable. It
+never signs in, modifies uploader configuration or starts a cloud transfer. A receipt proves a past
+upload verification and can also belong to an older destination; it does not prove current cloud
+presence. Distinguish incomplete uploads from Mac sync lag, changed destinations or later deletions;
+record unknown causes as unknown. `--list` never connects, even with `--device-fallback`.
+
+Fallback transfer/hash checks overlap closed-file and byte-fidelity coverage; this service adds
+device-side opt-in, login, live network gates, remote conflict handling and receipts. Neither changes
+a lateral/longitudinal command path or provides road-performance evidence.
 
 The main UI passively reads this optional file at most once per second while visible, offroad
 or in confirmed stationary Park. It shows checking, progress, completion, Wi-Fi wait, sign-in,

@@ -184,8 +184,18 @@ Use that first divergence to choose the work:
 - Private ledgers and route-specific tuning notes are stored in the same Proton Drive folder under
   `evidence/`. Analysis tools read that folder directly; `ODYSSEY_EVIDENCE_ROOT` can override it.
   Do not commit route IDs, event times, or route-specific conclusions to GitHub.
-- Pull private full-rate rlogs with `.agents/pull_logs.py`; qlogs are too decimated for the
-  transition metrics. Use `.agents/extract.py` for repeat exploratory analysis.
+- Check the Proton-synchronized archive for new drives before connecting to the car. The standalone
+  uploader is the primary acquisition path. `.agents/pull_logs.py --all-new` validates available
+  full-rate rlogs without SSH; `--list` previews availability. Compare segment coverage with the
+  ledger so newly uploaded portions of an older drive are not skipped. Archive availability is a
+  snapshot, not proof of whole-drive coverage or of cloud absence; check Mac Proton synchronization
+  when an expected drive is missing. Use `--device-fallback` only for expected logs unavailable from
+  Proton. Before a fallback transfer, inspect uploader opt-in/session presence, service/progress,
+  closed versus active segments, matching historical receipts and sanitized errors; save the result
+  in private `evidence/log-acquisition-ledger.jsonl`. Identify the upload failure or sync delay when
+  supported; otherwise record the unresolved cause rather than assuming the uploader failed. Matching
+  receipts prove a past cloud check, not current cloud presence. Qlogs are too decimated for transition
+  metrics. Use `.agents/extract.py` for repeat exploratory analysis.
 - Run every drive through `.agents/validate_log.py`, which writes one row per route to Proton Drive's
   `evidence/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
