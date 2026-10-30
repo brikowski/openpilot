@@ -2,6 +2,7 @@ import pyray as rl
 import openpilot.cereal.messaging as messaging
 from openpilot.selfdrive.ui.mici.layouts.home import MiciHomeLayout
 from openpilot.selfdrive.ui.layouts.screensaver import Screensaver
+from openpilot.selfdrive.ui.widgets.upload_status import UploadStatus
 from openpilot.selfdrive.ui.mici.layouts.settings.settings import SettingsLayout
 from openpilot.selfdrive.ui.mici.layouts.offroad_alerts import MiciOffroadAlerts
 from openpilot.selfdrive.ui.mici.onroad.augmented_road_view import AugmentedRoadView
@@ -66,6 +67,7 @@ class MiciMainLayout(Scroller):
     self._on_body_changed()
 
     self._screensaver = Screensaver(self, self._settings_layout)
+    self._upload_status = UploadStatus()
 
   @property
   def _onroad_layout(self) -> Widget:
@@ -106,6 +108,8 @@ class MiciMainLayout(Scroller):
 
     # Render
     super()._render(self._rect)
+    if gui_app.get_active_widget() is self:
+      self._upload_status.render(self._rect)
 
   def _handle_transitions(self):
     # Don't pop if onboarding

@@ -6,6 +6,7 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.layouts.sidebar import Sidebar, SIDEBAR_WIDTH
 from openpilot.selfdrive.ui.layouts.home import HomeLayout
 from openpilot.selfdrive.ui.layouts.screensaver import Screensaver
+from openpilot.selfdrive.ui.widgets.upload_status import UploadStatus
 from openpilot.selfdrive.ui.layouts.settings.settings import SettingsLayout, PanelType
 from openpilot.selfdrive.ui.onroad.augmented_road_view import AugmentedRoadView
 from openpilot.selfdrive.ui.ui_state import device, ui_state
@@ -52,6 +53,7 @@ class MainLayout(Widget):
       gui_app.push_widget(self._onboarding_window)
 
     self._screensaver = Screensaver(self)
+    self._upload_status = UploadStatus()
 
   def _render(self, _):
     self._handle_onroad_transition()
@@ -131,3 +133,5 @@ class MainLayout(Widget):
 
     content_rect = self._content_rect if self._sidebar.is_visible else self._rect
     self._layouts[self._current_mode].render(content_rect)
+    if self._current_mode != MainState.SETTINGS and gui_app.get_active_widget() is self:
+      self._upload_status.render(content_rect)
