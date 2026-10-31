@@ -176,10 +176,12 @@ active safety rails.
 
 ## Steering-authority assessment
 
-Upstream documents stock Odyssey MMR LKA commands up to 2560. Its note describes higher RDM
-commands as nonlinear and accompanied by brake drag, without specifying the axle or a 3840
-endpoint. Use this documented command policy as the stock reference; the EPS-only response
-above 2560 and any tracking benefit from the extended range still require physical evidence.
+The fuller historical upstream note documents stock Odyssey MMR LKA commands up to 2560 and
+RDM commands up to 3840. It reports a small, nonlinear motor-torque increase above 2560 and
+one-sided brake drag during RDM; it does not identify the axle. Preserve these reported stock
+observations as prior evidence, rather than assuming an EPS plateau at 2560. Quantify this
+vehicle's tracking benefit separately; the commented-out nonlinear lookup is not a validated
+calibration. See the [original note](https://github.com/commaai/opendbc/blob/5ead387a0c1ee238d33dc29ff304044ea7e0d383/opendbc/car/honda/interface.py#L185).
 
 `validate_log.py` automatically saves native Odyssey Alpha Long steering reports under private
 `evidence/steering-authority/`. Compare explicit recorded configurations with
