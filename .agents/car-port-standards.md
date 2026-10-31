@@ -120,7 +120,12 @@ active safety rails.
   grade changes alone do not restart the observer. A request change does not by itself veto feedback:
   the filtered delayed error is limited to the sign and
   magnitude of the latest acceleration error. Qualified feedback retains a bounded integral offset
-  at zero error; ineligible feedback clears it. Output uses the calibrated command's available headroom
+  at zero error. Valid active coast with idle received brakes and an unchanged drivetrain pauses
+  sampling and retains only a learned gas reduction. Positive-request gas reentry applies that offset using the existing
+  warmup, reverse-error, headroom and slew rules. Braking, driver input, unreliable state and drivetrain
+  changes clear the paused offset; accepted factory mode changes also discard it. Positive offsets
+  are not retained through coast. Other ineligible feedback clears its state.
+  Output uses the calibrated command's available headroom
   in both directions, including the low-speed trim. Fresh delayed feedback uses that headroom for
   its integral offset; warmup reconstructs that offset from the issued correction after accounting
   for the current proportional reduction.
