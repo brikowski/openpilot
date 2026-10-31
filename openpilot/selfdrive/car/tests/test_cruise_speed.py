@@ -13,7 +13,7 @@ ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 
 
-def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
+def run_cruise_simulation(cruise, personality, t_end=20.):
   from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
 
   man = Maneuver(
@@ -25,7 +25,6 @@ def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
     cruise_values=[cruise],
     prob_lead_values=[0.0],
     breakpoints=[0.],
-    e2e=e2e,
     personality=personality,
   )
   valid, output = man.evaluate()
@@ -33,8 +32,7 @@ def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
   return output[-1, 3]
 
 
-@parameterized_class(("e2e", "personality", "speed"), itertools.product(
-                      [True, False], # e2e
+@parameterized_class(("personality", "speed"), itertools.product(
                       log.LongitudinalPersonality.schema.enumerants, # personality
                       [5,35])) # speed
 class TestCruiseSpeed(OpenpilotTestCase):
@@ -42,7 +40,7 @@ class TestCruiseSpeed(OpenpilotTestCase):
     print(f'Testing {self.speed} m/s')
     cruise_speed = float(self.speed)
 
-    simulation_steady_state = run_cruise_simulation(cruise_speed, self.e2e, self.personality)
+    simulation_steady_state = run_cruise_simulation(cruise_speed, self.personality)
     self.assertAlmostEqual(simulation_steady_state, cruise_speed, delta=.01, msg=f'Did not reach {self.speed} m/s')
 
 

@@ -132,6 +132,8 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     excessiveActuation @96;
     bigModelLoading @100;
     bigModelFailed @102;
+    leadDeparting @106;
+    trafficReady @107;
 
     lowBatteryDEPRECATED @40;
     soundsUnavailableDEPRECATED @47;
@@ -139,6 +141,7 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     usbErrorDEPRECATED @78;
     audioFeedbackDEPRECATED @97;
     bigModelReadyDEPRECATED @101;
+    econSuggestionDEPRECATED @105;
   }
 }
 
@@ -822,7 +825,6 @@ struct SelfdriveState {
   alertHudVisual @12 :Car.CarControl.HUDControl.VisualAlert;
 
   # configurable driving settings
-  experimentalMode @10 :Bool;
   personality @11 :LongitudinalPersonality;
   ecoMode @14 :Bool;
 
@@ -867,6 +869,7 @@ struct SelfdriveState {
 
   deprecated :group {
     alertSound @8 :Car.CarControl.HUDControl.AudibleAlert;
+    experimentalMode @10 :Bool;
   }
 }
 
@@ -1218,6 +1221,10 @@ struct DriverAssistance {
   # Lane Departure Warnings
   leftLaneDeparture @0 :Bool;
   rightLaneDeparture @1 :Bool;
+
+  # One-shot stopped-traffic notifications, independent of engagement.
+  leadDeparting @2 :Bool;
+  trafficReady @3 :Bool;  # model stop-to-proceed inference, not a detected green light
 
   # FCW, AEB, etc. will go here
 }
