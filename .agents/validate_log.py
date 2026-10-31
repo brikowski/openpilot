@@ -208,6 +208,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "27628fdcef86",  # grade calibration and qualified gas retain numeric brake translation
   "554d5ee23aa2",  # gas-memory retention keeps numeric brake translation and fallback
   "4deda8a8427e",  # added-gas withdrawal retains numeric brake translation
+  "a741ce343036",  # single coast sample buffer preserves commands and forecasts
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
