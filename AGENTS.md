@@ -11,13 +11,15 @@ behavior; account for it only where observed response requires it, without dupli
 or affecting Standard mode with ECON-specific logic. Keep production changes minimal relative to current
 `commaai/openpilot` and its pinned `commaai/opendbc`.
 
-Prefer the simplest appropriate behavior that directly responds to the commanded and observed
-vehicle state. Favor reliable live or learned state and straightforward control over unnecessary
-fixed tuning, heuristics, and special cases. Use fixed values when they are the simplest correct
-solution or necessary constraints or fallbacks. Keep behavior and implementation simple while
-preserving correct, smooth, reliable control. Remove redundant or obsolete logic instead of adding
-compensating logic. Add complexity or learning only for a meaningful behavioral benefit, and keep
-code, tuning, abstractions, and documentation to what is useful.
+Continuously prefer the simplest effective solution. Before adding code, tuning, heuristics,
+special cases, or abstractions, determine whether existing behavior can be simplified, removed,
+or used directly. Favor reliable live or learned state and straightforward control over unnecessary
+fixed behavior. Use fixed values when they are the simplest correct solution or necessary constraints
+or fallbacks. Retain complexity only for a clear behavioral benefit; keep code and documentation useful.
+
+Write production changes as if they could be upstreamed to OpenPilot. Follow existing architecture
+and conventions, prefer general solutions when the evidence supports shared behavior, and keep
+vehicle-specific logic narrow. Keep implementations minimal, maintainable, and easy to review.
 
 For every comparable private full-rate route, resolve the exact parent and nested `opendbc` revisions,
 reconstruct the command path with zero-order-held CAN, and identify the first repeatable breakdown:
