@@ -57,6 +57,7 @@ jobs:
             opendbc_repo/opendbc/car/honda/tests/test_honda.py \
             opendbc_repo/opendbc/safety/tests/test_honda.py \
             openpilot/common/tests/test_prefix.py \
+            openpilot/system/manager/test/test_auto_update.py \
             openpilot/selfdrive/car/tests/test_cruise_speed.py \
             openpilot/selfdrive/controls/tests/test_controlsd.py \
             openpilot/selfdrive/controls/tests/test_longitudinal_planner.py \

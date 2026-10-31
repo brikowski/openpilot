@@ -15,6 +15,8 @@ pre-commit:
       run: SCALE=1 .venv/bin/python -m pytest openpilot/selfdrive/ui/tests/test_display_wake.py openpilot/selfdrive/ui/tests/test_screensaver.py openpilot/selfdrive/ui/tests/test_lead_bar.py openpilot/selfdrive/ui/tests/test_settings.py -q
     - name: departure alert tests
       run: .venv/bin/python -m pytest openpilot/selfdrive/controls/tests/test_departure_alerts.py -q
+    - name: automatic update tests
+      run: .venv/bin/python -m pytest openpilot/system/manager/test/test_auto_update.py -q
 
 pre-push:
   jobs:
