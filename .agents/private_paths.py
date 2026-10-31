@@ -1,19 +1,16 @@
-"""Find private analysis data in the active Proton Drive mount on this Mac."""
+"""Find the ignored, local-only analysis archive."""
 
 import os
 from pathlib import Path
+
+DEFAULT_ROOT = Path(__file__).resolve().parents[1] / ".private"
 
 
 def private_root() -> Path:
   if configured := os.environ.get("OPENPILOT_PRIVATE_ROOT"):
     root = Path(configured).expanduser()
   else:
-    cloud = Path.home() / "Library/CloudStorage"
-    matches = [p for p in cloud.glob("ProtonDrive-*-folder/Documents/openpilot") if p.is_dir()]
-    if len(matches) != 1:
-      raise FileNotFoundError(f"expected one active Proton Drive openpilot folder under {cloud}; "
-                              "set OPENPILOT_PRIVATE_ROOT if needed")
-    root = matches[0]
+    root = DEFAULT_ROOT
   if not root.is_dir():
     raise FileNotFoundError(root)
   return root

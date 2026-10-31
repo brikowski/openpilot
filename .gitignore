@@ -74,6 +74,7 @@ htmlcov
 *.bz2
 *.zst
 *.rlog
+/.private/
 
 build/
 

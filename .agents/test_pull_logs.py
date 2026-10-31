@@ -206,7 +206,7 @@ def test_partial_validation_does_not_hide_newly_available_segments(monkeypatch, 
   monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
   monkeypatch.setattr(pull_logs, "rlog_root", lambda: tmp_path)
   monkeypatch.setattr(pull_logs, "local_routes", lambda: ([(route, pull_logs.datetime.now().timestamp(), len(retained))], {route: set(retained)}))
-  monkeypatch.setattr(sys, "argv", ["pull_logs.py", *selection, "--list"])
+  monkeypatch.setattr(sys, "argv", ["pull_logs.py", *selection, "--local", "--list"])
   pull_logs.main()
   assert f"{int(not complete)} not yet validated" in capsys.readouterr().out
   # Pruning still uses the explicit validation ledger, independently of device retention.
@@ -385,6 +385,7 @@ def test_rsync_does_not_copy_newly_closed_files_outside_snapshot(monkeypatch, tm
     (path / "rlog.zst").write_bytes(b"complete")
   monkeypatch.setattr(pull_logs, "LOCAL_ROOT", local)
   command = pull_logs._pull_command()
+  command = [arg for arg in command if not arg.startswith('--rsync-path=')]  # Linux priority wrapper is verified separately.
   command[-2] = str(remote) + "/"  # Local source exercises rsync; no SSH or device access.
   result = subprocess.run(command, input=f"{route}--0/rlog.zst\n", text=True, capture_output=True)
   assert result.returncode == 0, result.stderr
@@ -392,34 +393,24 @@ def test_rsync_does_not_copy_newly_closed_files_outside_snapshot(monkeypatch, tm
   assert not (local / f"{route}--1/rlog.zst").exists()
 
 
-@pytest.mark.parametrize("options", [["--all-new"], ["--route", "0000004c--bbbbbbbbbb"], ["--since-hours", "24"],
-                                     ["--all-new", "--device-fallback", "--list"]])
-def test_proton_is_checked_without_device_access(monkeypatch, tmp_path, options):
+@pytest.mark.parametrize("options", [["--all-new"], ["--route", "0000004c--bbbbbbbbbb"], ["--since-hours", "24"]])
+def test_local_mode_never_connects_to_the_device(monkeypatch, tmp_path, options):
   route = "0000004c--bbbbbbbbbb"
   segment = tmp_path / f"{route}--0"
   segment.mkdir()
   (segment / "rlog.zst").write_bytes(b"closed")
   monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
   monkeypatch.setattr(pull_logs, "rlog_root", lambda: tmp_path)
-  monkeypatch.setattr(pull_logs, "_ssh", lambda *_: pytest.fail("Proton intake must not connect to the device"))
+  monkeypatch.setattr(pull_logs, "_ssh", lambda *_: pytest.fail("local mode must not connect"))
   calls = []
   monkeypatch.setattr(pull_logs, "validate", lambda rid, desc: calls.append(rid) or 0)
-  monkeypatch.setattr(sys, "argv", ["pull_logs.py", *options])
+  monkeypatch.setattr(sys, "argv", ["pull_logs.py", *options, "--local"])
   pull_logs.main()
-  assert calls == ([] if "--list" in options else [route])
-
-
-def test_empty_proton_archive_does_not_silently_connect(monkeypatch, tmp_path, capsys):
-  monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
-  monkeypatch.setattr(pull_logs, "rlog_root", lambda: tmp_path)
-  monkeypatch.setattr(pull_logs, "_ssh", lambda *_: pytest.fail("device fallback must be explicit"))
-  monkeypatch.setattr(sys, "argv", ["pull_logs.py", "--all-new"])
-  pull_logs.main()
-  assert "check Proton synchronization" in capsys.readouterr().out
+  assert calls == [route]
 
 
 @pytest.mark.parametrize("local_indices", [[0], [0, 1]])
-def test_fallback_follows_proton_and_diagnoses_before_transfer(monkeypatch, tmp_path, local_indices):
+def test_default_download_checks_device_before_validation(monkeypatch, tmp_path, local_indices):
   route = "0000004c--bbbbbbbbbb"
   for index in local_indices:
     segment = tmp_path / f"{route}--{index}"
@@ -433,79 +424,55 @@ def test_fallback_follows_proton_and_diagnoses_before_transfer(monkeypatch, tmp_
     calls.append(("device", route))
     return [(route, pull_logs.datetime.now().timestamp(), 2)], {route: {0, 1}}
   monkeypatch.setattr(pull_logs, "remote_routes", device)
-  monkeypatch.setattr(pull_logs, "diagnose_upload", lambda rid, indices: calls.append(("diagnose", rid, indices)))
   monkeypatch.setattr(pull_logs, "pull", lambda rid, **kw: calls.append(("pull", rid)) or True)
-  monkeypatch.setattr(sys, "argv", ["pull_logs.py", "--route", route, "--device-fallback"])
+  monkeypatch.setattr(sys, "argv", ["pull_logs.py", "--route", route])
   pull_logs.main()
-  expected = [("validate", route), ("device", route)]
+  expected = [("device", route)]
   if local_indices == [0]:
-    expected.extend([("diagnose", route, {0}), ("pull", route), ("validate", route)])
+    expected.append(("pull", route))
+  expected.append(("validate", route))
   assert calls == expected
 
 
-@pytest.mark.parametrize("returncode,output", [(0, '{"state":"waiting_wifi"}'), (255, ""), (0, "invalid")])
-def test_fallback_diagnosis_is_saved_even_when_probe_unavailable(monkeypatch, tmp_path, returncode, output):
+def test_device_list_does_not_download_or_validate(monkeypatch, tmp_path):
   route = "0000004c--bbbbbbbbbb"
   monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
+  monkeypatch.setattr(pull_logs, "rlog_root", lambda: tmp_path)
+  monkeypatch.setattr(pull_logs, "remote_routes", lambda: ([(route, 1., 1)], {route: {0}}))
+  monkeypatch.setattr(pull_logs, "pull", lambda *a, **kw: pytest.fail("list must not download"))
+  monkeypatch.setattr(pull_logs, "validate", lambda *a: pytest.fail("list must not validate"))
+  monkeypatch.setattr(sys, "argv", ["pull_logs.py", "--all-new", "--list"])
+  pull_logs.main()
+
+
+def test_failed_download_is_not_validated(monkeypatch, tmp_path):
+  route = "0000004c--bbbbbbbbbb"
+  monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
+  monkeypatch.setattr(pull_logs, "rlog_root", lambda: tmp_path)
+  monkeypatch.setattr(pull_logs, "remote_routes", lambda: ([(route, 1., 1)], {route: {0}}))
+  monkeypatch.setattr(pull_logs, "pull", lambda *a, **kw: False)
+  monkeypatch.setattr(pull_logs, "validate", lambda *a: pytest.fail("failed transfer must not validate"))
+  monkeypatch.setattr(sys, "argv", ["pull_logs.py", "--all-new"])
+  with pytest.raises(SystemExit) as result:
+    pull_logs.main()
+  assert result.value.code == 1
+
+
+def test_remote_transfer_and_checksum_work_run_at_idle_priority(monkeypatch, tmp_path):
+  route = "0000004c--bbbbbbbbbb"
+  path = tmp_path / f"{route}--0" / "rlog.zst"
+  path.parent.mkdir()
+  path.write_bytes(b"closed")
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
+  digest = hashlib.sha256(b"closed").hexdigest()
   commands = []
   def ssh(command):
     commands.append(command)
-    return subprocess.CompletedProcess([], returncode, output, "")
+    return subprocess.CompletedProcess([], 0, f"{digest}  {pull_logs.REMOTE_ROOT}/{route}--0/rlog.zst\n", "")
   monkeypatch.setattr(pull_logs, "_ssh", ssh)
-  row = pull_logs.diagnose_upload(route, {0, 2})
-  assert row["proton_local_segments"] == [0, 2]
-  assert row["uploader"] == ({"state": "waiting_wifi"} if returncode == 0 and output.startswith("{") else {"probe": "unavailable"})
-  assert json.loads((tmp_path / "log-acquisition-ledger.jsonl").read_text()) == row
-  assert "_uploader_snapshot" in commands[0]
-  assert "proton-drive auth" not in commands[0]
-
-
-def test_uploader_probe_reports_receipts_and_safe_errors_without_mutation(monkeypatch, tmp_path):
-  import shutil
-  import sqlite3
-  import comma_log_backup as backup
-
-  route = "0000004c--bbbbbbbbbb"
-  root = tmp_path / "proton-log-backup"
-  root.mkdir()
-  shutil.copy(Path(backup.__file__), root / "comma_log_backup.py")
-  backup.write_config(root, {"enabled": True, "destination": "/my-files/private-account/rlogs"})
-  session = root / "password-store" / backup.SESSION
-  session.parent.mkdir(parents=True)
-  session.write_text("secret session contents")
-  (root / "status.json").write_text(json.dumps({"state": "retrying", "completed": 1, "total": 2,
-                                              "updated_at": pull_logs.time.monotonic()}))
-  logs = tmp_path / "media/0/realdata"
-  for i in range(3):
-    segment = logs / f"{route}--{i}"
-    segment.mkdir(parents=True)
-    (segment / "rlog.zst").write_bytes(b"closed")
-  (logs / f"{route}--2/rlog.lock").touch()
-  with sqlite3.connect(root / "receipts.sqlite") as receipts:
-    receipts.execute("CREATE TABLE receipts (namespace TEXT, segment TEXT, fingerprint TEXT, sha256 TEXT)")
-    for i in (0, 1):
-      source = logs / f"{route}--{i}/rlog.zst"
-      receipts.execute("INSERT INTO receipts VALUES (?, ?, ?, ?)",
-                       ("private-uid", source.parent.name, backup.fingerprint(source) if i == 0 else "old fingerprint", "digest"))
-  before = {str(p): p.read_bytes() for p in root.rglob("*") if p.is_file()}
-  commands = []
-  def run(command, **kwargs):
-    commands.append(command)
-    return subprocess.CompletedProcess(command, 0, "Proton command timed out; will retry\nsecret client output", "")
-  monkeypatch.setattr(pull_logs.subprocess, "run", run)
-  result = pull_logs._uploader_snapshot(route, root)
-  assert result["installed"] and result["enabled"] and result["saved_session"] and result["service_active"]
-  assert result["state"] == "retrying" and result["completed"] == 1 and result["total"] == 2
-  assert sorted(result["closed_segments"]) == [0, 1] and result["open_segments"] == [2]
-  assert result["receipted_segments"] == [0]
-  assert result["recent_errors"] == ["Proton command timed out; will retry"]
-  assert not any(word in json.dumps(result) for word in ("secret", "private-account", "private-uid"))
-  assert {str(p): p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
-  assert [command[0] for command in commands] == ["systemctl", "journalctl"]
-
-
-def test_uploader_probe_handles_absent_installation(tmp_path):
-  assert pull_logs._uploader_snapshot("0000004c--bbbbbbbbbb", tmp_path) == {"installed": False}
+  assert pull_logs._verify_rlog_hashes(route, [0]) == (True, "")
+  assert commands[0].startswith("nice -n 19 ionice -c 3 ")
+  assert "--rsync-path=nice -n 19 ionice -c 3 rsync" in pull_logs._pull_command()
 
 
 def test_local_catalog_does_not_validate_an_open_tail_via_its_closed_prefix(monkeypatch, tmp_path):

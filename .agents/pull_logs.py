@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
-"""Validate private full-rate rlogs from Proton first; use SSH only for explicit fallback.
+"""Download private full-rate rlogs over Tailscale SSH and validate the local archive.
 
-Usage modes:
+    .venv/bin/python .agents/pull_logs.py --all-new ["note"]
+    .venv/bin/python .agents/pull_logs.py --since-hours 48 ["note"]
     .venv/bin/python .agents/pull_logs.py --route ROUTE_ID ["note"]
-    .venv/bin/python .agents/pull_logs.py --since-hours 48 ["note"]     # everything new
-    .venv/bin/python .agents/pull_logs.py --all-new ["note"]             # every available route not in ledger
 
-The default reads the Proton-synchronized archive without connecting to the car.
-If an expected drive or segment is unavailable, check Mac synchronization, then add
---device-fallback to inspect the uploader and retrieve missing device logs. A missing
-local file alone does not prove that it is missing from the cloud. Qlogs are too
-decimated for transition and jerk metrics.
-Only segments without the logger-owned rlog.lock are selected. Transfers and hash checks
-use that fixed snapshot; newly closed segments wait for the next pull.
-Retained contiguous suffixes are usable when their transfer matches the device inventory;
-validation records their available segment extent rather than implying a whole drive.
+The default checks the device and downloads new closed rlogs. --list previews the
+inventory without downloading; --local reads only the existing archive without SSH.
+Use COMMA_SSH=comma@<tailnet-host> or ODYSSEY_DEVICE=<tailnet-host>. The Mac's SSH
+configuration owns authentication and the Tailscale hostname.
 
-Device host comes from $COMMA_SSH or $ODYSSEY_DEVICE. Private rlogs and the
-ledger are found under the active Proton Drive folder in ~/Library/CloudStorage.
+Only logger-unlocked files in a fixed source snapshot are transferred. Downloads
+resume after interruption and must match source SHA-256 hashes. Available contiguous
+suffixes remain partial routes. Qlogs are too decimated for transition metrics.
+Private logs and evidence default to the Git-excluded .private/ folder in this repo.
 """
 import argparse
 import hashlib
-import inspect
 import json
 import os
 import re
@@ -43,7 +38,7 @@ REMOTE_ROOT = "/data/media/0/realdata"
 try:
   LOCAL_ROOT = rlog_root()
 except FileNotFoundError:
-  LOCAL_ROOT = Path.home() / ".comma/media/0/realdata"  # pure tests can import without Proton Drive
+  LOCAL_ROOT = REPO / ".private/rlogs"  # Pure tests can import before archive creation.
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
             "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3",
             "-o", "LogLevel=ERROR"]
@@ -64,7 +59,7 @@ def remote_routes():
   r = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -name rlog.zst -printf '%T@ %h\\n'")
   if r.returncode != 0:
     sys.exit(f"cannot reach {DEVICE}: {r.stderr.strip() or 'ssh failed'}\n" +
-             "Is the device powered and on wifi? Override with COMMA_SSH=user@ip")
+             "Is the device powered and connected to Tailscale? Set COMMA_SSH=comma@<tailnet-host>")
   newest, retained = {}, {}
   for line in r.stdout.splitlines():
     parts = line.split()
@@ -86,7 +81,7 @@ def remote_routes():
 
 
 def local_routes():
-  """Catalog the Proton mirror, including files that File Provider must hydrate on read."""
+  """Catalog the local archive without contacting the device."""
   newest, available, locked = {}, {}, set()
   for path in LOCAL_ROOT.glob("*/rlog.zst"):
     match = re.fullmatch(r"([0-9a-f]{8}--[0-9a-f]+)--(\d+)", path.parent.name)
@@ -103,84 +98,6 @@ def local_routes():
     available.pop(rid, None)
   routes = sorted(((rid, newest[rid], len(indices)) for rid, indices in available.items()), key=lambda row: -row[1])
   return routes, available
-
-
-def _uploader_snapshot(rid, root="/data/proton-log-backup"):
-  """Read-only device probe, sent over stdin; return no credentials or raw client output."""
-  import runpy
-  import types
-  import json
-  import sqlite3
-  import subprocess
-  import time
-  from pathlib import Path
-
-  root = Path(root)
-  script = root / "comma_log_backup.py"
-  if not script.is_file():
-    return {"installed": False}
-  backup = types.SimpleNamespace(**runpy.run_path(str(script)))
-  result = {"installed": True, "enabled": backup.read_config(root) is not None,
-            "saved_session": backup.has_session(root)}
-  service = subprocess.run(["systemctl", "is-active", "proton-log-backup.service"], capture_output=True, text=True, timeout=10)
-  result["service_active"] = service.returncode == 0
-  try:
-    status = json.loads((root / "status.json").read_text())
-    states = {"checking", "uploading", "complete", "pending", "disabled", "waiting_wifi", "sign_in", "retrying"}
-    result["state"] = status.get("state") if status.get("state") in states else "unknown"
-    for key in ("completed", "total"):
-      if type(status.get(key)) is int:
-        result[key] = status[key]
-    if type(status.get("updated_at")) in (int, float):
-      result["heartbeat_age_s"] = round(time.monotonic() - status["updated_at"], 1)
-  except (OSError, ValueError, AttributeError):
-    result["state"] = "unavailable"
-  result["closed_segments"], result["open_segments"], result["receipted_segments"] = [], [], []
-  receipts = None
-  try:
-    if (root / "receipts.sqlite").is_file():
-      receipts = sqlite3.connect(f"file:{root}/receipts.sqlite?mode=ro", uri=True)
-    for source in root.parent.joinpath("media/0/realdata").glob(f"{rid}--*/rlog.zst"):
-      index = int(source.parent.name.rsplit("--", 1)[1])
-      if (source.parent / "rlog.lock").exists():
-        result["open_segments"].append(index)
-        continue
-      result["closed_segments"].append(index)
-      # A matching receipt proves a past upload check, not current cloud presence or Mac sync.
-      if receipts and receipts.execute("SELECT 1 FROM receipts WHERE segment=? AND fingerprint=?",
-                                       (source.parent.name, backup.fingerprint(source))).fetchone():
-        result["receipted_segments"].append(index)
-  except (OSError, ValueError, sqlite3.Error):
-    result["receipt_check"] = "unavailable"
-  finally:
-    if receipts:
-      receipts.close()
-  journal = subprocess.run(["journalctl", "-u", "proton-log-backup.service", "-n", "40", "--no-pager", "-o", "cat"],
-                           capture_output=True, text=True, timeout=10)
-  # Never save raw CLI/journal text. These are the worker's fixed, credential-free errors.
-  errors = ("Proton command timed out; will retry", "Proton unavailable: check sign-in, connection and quota; will retry",
-            "unrecognized Proton metadata; leaving backup unconfirmed", "remote rlog digest differs; leaving backup unconfirmed")
-  result["recent_errors"] = [message for message in errors if message in journal.stdout]
-  result["journal_available"] = journal.returncode == 0
-  return result
-
-
-def diagnose_upload(rid, local_indices):
-  """Keep a private receipt before fallback, including unavailable/ambiguous diagnoses."""
-  script = inspect.getsource(_uploader_snapshot) + f"\nprint(__import__('json').dumps(_uploader_snapshot({rid!r})))\n"
-  try:
-    result = _ssh("python3 - <<'PROTON_DIAGNOSTIC'\n" + script + "PROTON_DIAGNOSTIC")
-    status = json.loads(result.stdout) if result.returncode == 0 else {"probe": "unavailable"}
-  except (OSError, ValueError, subprocess.TimeoutExpired):
-    status = {"probe": "unavailable"}
-  row = {"date": datetime.now().astimezone().isoformat(), "route": rid,
-         "proton_local_segments": sorted(local_indices), "uploader": status}
-  path = evidence_root() / "log-acquisition-ledger.jsonl"
-  with path.open("a") as stream:
-    stream.write(json.dumps(row) + "\n")
-  print(f"  uploader diagnostic: {json.dumps(status, sort_keys=True)}")
-  print("  A device receipt is a past cloud verification; missing Mac files can also mean sync lag or later cloud deletion.")
-  return row
 
 
 def ledger_routes(retained=None):
@@ -258,7 +175,8 @@ def _remote_segment_indices(rid):
 def _verify_rlog_hashes(rid, retained):
   """Verify retained source bytes; older local-only segments are not requalified."""
   pattern = shlex.quote(f"{REMOTE_ROOT}/{rid}--*/rlog.zst")
-  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} {CLOSED_RLOG_FILTER} -exec sha256sum {{}} +")
+  result = _ssh(f"nice -n 19 ionice -c 3 find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} "
+                f"{CLOSED_RLOG_FILTER} -exec sha256sum {{}} +")
   if result.returncode:
     raise RuntimeError(result.stderr.strip() or "cannot read retained rlog checksums")
   verified = set()
@@ -333,6 +251,7 @@ def _selection_summary(route_count, recent, scope, targets, skipped, *, redo=Fal
 
 def _pull_command():
   return ["rsync", "-a", "-R", "--files-from=-", "--checksum", "--partial", "--partial-dir=.rsync-partial", "--timeout=60",
+          "--rsync-path=nice -n 19 ionice -c 3 rsync",
           "-e", "ssh " + " ".join(SSH_OPTS),
           f"{DEVICE}:{REMOTE_ROOT}/", str(LOCAL_ROOT) + "/"]
 
@@ -446,16 +365,12 @@ def main():
   ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   g = ap.add_mutually_exclusive_group(required=True)
   g.add_argument("--route", help="one route: bare log id or dongle/logid")
-  g.add_argument("--since-hours", type=float, help="every route newer than N hours not yet in the ledger")
-  g.add_argument("--all-new", action="store_true", help="every available route not yet fully covered by the ledger")
+  g.add_argument("--since-hours", type=float, help="routes newer than N hours not yet fully validated")
+  g.add_argument("--all-new", action="store_true", help="all retained routes not yet fully validated")
   ap.add_argument("description", nargs="?", default="", help="note for the ledger row(s)")
   ap.add_argument("--redo", action="store_true", help="include already-validated routes")
-  ap.add_argument("--list", action="store_true", help="list Proton availability without validation or device contact")
-  ap.add_argument("--device-fallback", action="store_true",
-                  help="after Proton, inspect device uploads and fetch additional/missing logs over SSH")
-  # CUSTOM TOOLING: retain private rlogs by default. Metric backfills repeatedly needed routes
-  # older than the device's ~2-day window, so implicit seven-day deletion discarded irreplaceable
-  # evidence. Cleanup remains available only as an explicit, reviewable action.
+  ap.add_argument("--list", action="store_true", help="preview the selected inventory without downloading or validating")
+  ap.add_argument("--local", action="store_true", help="validate existing local files without SSH")
   ap.add_argument("--prune-hours", type=float,
                   help="OPT IN: after validation, delete ledgered local routes older than this")
   args = ap.parse_args()
@@ -469,67 +384,36 @@ def main():
       sys.exit(f"could not parse a log id out of '{args.route}'")
     route_id = match[0]
 
-  routes, available = local_routes()
-  done = set() if args.redo else ledger_routes(available)
+  routes, retained = local_routes() if args.local else remote_routes()
+  done = set() if args.redo else ledger_routes(retained)
   if route_id:
     targets = [row for row in routes if row[0] == route_id]
     skipped, scope = [], "selected"
   else:
     targets, skipped, scope = _select_routes(routes, done, since_hours=args.since_hours, all_new=args.all_new)
   print(_selection_summary(len(routes), len(targets) + len(skipped), scope, targets, skipped,
-                           redo=args.redo, source="Proton archive"))
+                           redo=args.redo, source="Local archive" if args.local else "Tailscale device"))
   for rid, _, count in targets:
-    contiguous, detail = _local_segments_contiguous(rid)
-    print(f"  {rid}: {count} available segment(s)" + (f"; {detail}" if not contiguous else ""))
-  print("  Archive availability is a snapshot, not proof of a whole drive or completed uploads.")
+    print(f"  {rid}: {count} retained segment(s)")
   if args.list:
     return
 
-  failed, processed = set(), set()
-  for rid, _, _ in targets:
-    print(f"\n===== Proton: {rid} =====")
+  failed = set()
+  for rid, _, count in targets:
+    print(f"\n===== {rid} =====")
+    if not args.local and not retained[rid] <= set(_local_segment_indices(rid)):
+      if not pull(rid, expected_segments=count):
+        failed.add(rid)
+        continue
     if validate(rid, args.description) != 0:
       failed.add(rid)
-    else:
-      processed.add(rid)
-
-  if args.device_fallback:
-    print("\nChecking device only after the Proton archive; diagnosing any fallback before transfer.")
-    routes, retained = remote_routes()
-    done = set() if args.redo else ledger_routes(retained)
-    if route_id:
-      targets = [row for row in routes if row[0] == route_id]
-      if not targets and route_id not in processed:
-        print(f"  {route_id} is unavailable in Proton and the device catalog")
-        failed.add(route_id)
-    else:
-      targets, _, _ = _select_routes(routes, done, since_hours=args.since_hours, all_new=args.all_new)
-    for rid, _, expected_segments in targets:
-      local = set(_local_segment_indices(rid))
-      if retained[rid] <= local:
-        if rid not in processed and rid not in failed and validate(rid, args.description) != 0:
-          failed.add(rid)
-        continue  # The available archive covers this device inventory; no transfer is needed.
-      print(f"\n===== Device fallback: {rid} =====")
-      diagnose_upload(rid, local)
-      if not pull(rid, expected_segments=expected_segments) or validate(rid, args.description) != 0:
-        failed.add(rid)
-      else:
-        failed.discard(rid)
-  elif route_id and not targets:
-    print(f"  {route_id} is not available in the Proton mirror")
+  if route_id and not targets:
+    print(f"  {route_id} is unavailable in the selected inventory")
     failed.add(route_id)
-
-  if not args.device_fallback:
-    print("\nNo device connection made. If expected logs are absent, check Proton synchronization; "
-          "use --device-fallback to investigate uploads and retrieve device logs.")
-  # Prune only when explicitly requested, after validating and re-reading the ledger so anything
-  # just validated counts as safe.
   if args.prune_hours is not None:
     prune(args.prune_hours, ledger_routes())
-
   if failed:
-    print(f"\n{len(failed)} route(s) failed: {', '.join(failed)}")
+    print(f"\n{len(failed)} route(s) failed: {', '.join(sorted(failed))}")
     sys.exit(1)
 
 

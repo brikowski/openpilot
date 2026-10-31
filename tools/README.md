@@ -79,15 +79,16 @@ release, preview with `.venv/bin/python .agents/publish_public.py`, then publish
 pins, excludes custom tooling, and preserves public CI configuration. Publication never deploys to
 the device; device build/health checks and road assessment remain separate gates.
 
-Set `ODYSSEY_DEVICE` to the comma device address in your local shell before using live-device
-tasks. Private rlogs and route evidence live in Proton Drive; the analysis scripts discover the
-active folder under `~/Library/CloudStorage`. Follow its `Documents/openpilot/README.md` for
-shell tasks that use `LOG_ROOT`. Keep machine-specific addresses and private route data out of Git.
+Set `COMMA_SSH=comma@<tailnet-host>` or `ODYSSEY_DEVICE` in your local shell before using
+live-device tasks. Private rlogs and route evidence live in the Git-excluded `.private/` folder.
+Read `.private/README.md` for the local archive layout and `LOG_ROOT` setup. Downloads are manual,
+use Tailscale SSH, and may run while driving or over cellular. Keep machine-specific addresses
+and private route data out of Git.
 
 This checkout also exposes a small set of explicit VS Code tasks in
 [`../.vscode/tasks.json`](../.vscode/tasks.json):
 
-- **Pull and Validate New Logs** SSH-pulls retained private full-rate rlogs and updates the
+- **Download and Validate New Logs (Tailscale)** SSH-pulls retained private full-rate rlogs and updates the
   authoritative validation ledger. The task sets `UV_CACHE_DIR` to a writable temporary cache.
 - **Validate One Route** re-runs the authoritative validator for one already-local route without
   pulling anything. **Inspect Following Trace** prints the planner → `carControl` → wire → `aEgo`

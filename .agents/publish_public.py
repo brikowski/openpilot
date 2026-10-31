@@ -18,7 +18,7 @@ EXCLUDED = {
   'tools/deploy_staging.sh', 'tools/sync_ody_op.sh',
   'openpilot/tools/jotpluggler/layouts/brikowski.json',
 }
-PREFIXES = ('.agents/', '.vscode/', '.codex/', '.claude/')
+PREFIXES = ('.agents/', '.vscode/', '.codex/', '.claude/', '.private/')
 
 
 def git(repo, *args, env=None, data=None):

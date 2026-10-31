@@ -102,6 +102,15 @@ class TestPublicRelease(unittest.TestCase):
     self.assertNotEqual(updated, public)
     self.assertEqual(self.git('show', f'{updated}:.github/workflows/odyssey-release.yaml') + '\n', self.scheduler)
 
+  def test_publication_excludes_even_forced_private_archive_files(self):
+    self.write('.private/evidence/receipt.json', 'synthetic private receipt\n')
+    self.write('.private/rlogs/segment/rlog.zst', 'synthetic private log\n')
+    self.git('add', '-f', '.private')
+    self.git('commit', '-qm', 'synthetic private files')
+    public = self.public(source='HEAD')
+    paths = self.git('ls-tree', '-r', '--name-only', public).splitlines()
+    self.assertFalse(any(path.startswith('.private/') for path in paths))
+
   def test_dependencies_keep_vehicle_tests_without_custom_hooks(self):
     public = self.public()
     project = tomllib.loads(self.git('show', f'{public}:pyproject.toml'))

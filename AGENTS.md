@@ -1,7 +1,7 @@
 # Odyssey command-following — cold-start rules
 
 Read this before changing lateral or longitudinal behavior or its tooling. This file holds decisions
-and invariants; private route history and derivations belong in the Proton Drive evidence folder.
+and invariants; private route history and derivations belong in the ignored local `.private/evidence/` folder.
 
 ## Project objective
 
@@ -81,7 +81,7 @@ and nested opendbc SHAs paired; use `git revert` to change or retire a candidate
 road-known-good pair reachable.
 
 Old experiment branches and their mechanisms are historical evidence, not active targets or
-accepted knowledge. Their private measurements remain in Proton Drive's `evidence/tune-evidence.md`;
+accepted knowledge. Their private measurements remain in `.private/evidence/tune-evidence.md`;
 they do not prohibit a new source-compatible hypothesis owned by current logs.
 
 Alpha Long has a separate safety boundary on this Bosch Odyssey: enabling
@@ -173,31 +173,23 @@ Use that first divergence to choose the work:
 
 ## Workflow
 
-- Private rlogs are not stored in GitHub. On macOS analysis hosts, read
-  `Proton Drive/Documents/openpilot/README.md`. Analysis tools find the active
-  `ProtonDrive-*-folder/Documents/openpilot` under `~/Library/CloudStorage` and read `rlogs/`
-  directly. `LOG_ROOT` or `OPENPILOT_PRIVATE_ROOT` can override discovery. The Proton account name
-  and absolute File Provider mount are machine-local and must not be committed. The comma device
-  has no Proton Drive access by default. The optional standalone
-  [rlog backup service](.agents/comma-log-backup.md) requires owner sign-in and explicit enablement;
-  its account session and configuration stay outside the checkout.
-- Private ledgers and route-specific tuning notes are stored in the same Proton Drive folder under
-  `evidence/`. Analysis tools read that folder directly; `ODYSSEY_EVIDENCE_ROOT` can override it.
-  Do not commit route IDs, event times, or route-specific conclusions to GitHub.
-- Check the Proton-synchronized archive for new drives before connecting to the car. The standalone
-  uploader is the primary acquisition path. `.agents/pull_logs.py --all-new` validates available
-  full-rate rlogs without SSH; `--list` previews availability. Compare segment coverage with the
-  ledger so newly uploaded portions of an older drive are not skipped. Archive availability is a
-  snapshot, not proof of whole-drive coverage or of cloud absence; check Mac Proton synchronization
-  when an expected drive is missing. Use `--device-fallback` only for expected logs unavailable from
-  Proton. Before a fallback transfer, inspect uploader opt-in/session presence, service/progress,
-  closed versus active segments, matching historical receipts and sanitized errors; save the result
-  in private `evidence/log-acquisition-ledger.jsonl`. Identify the upload failure or sync delay when
-  supported; otherwise record the unresolved cause rather than assuming the uploader failed. Matching
-  receipts prove a past cloud check, not current cloud presence. Qlogs are too decimated for transition
-  metrics. Use `.agents/extract.py` for repeat exploratory analysis.
-- Run every drive through `.agents/validate_log.py`, which writes one row per route to Proton Drive's
-  `evidence/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
+- Private rlogs and route evidence live locally in the Git-excluded `.private/` folder. Read
+  `.private/README.md` on the analysis host. Tools use `.private/rlogs/` and `.private/evidence/`
+  by default; `OPENPILOT_PRIVATE_ROOT`, `LOG_ROOT` and `ODYSSEY_EVIDENCE_ROOT` can override them.
+  Do not put this archive in cloud storage, force-add it to Git, or commit route-specific data.
+  Git ignores the archive; commit/push guards reject private files, and the public publisher
+  excludes `.private/` independently.
+- Download new drives on demand with `.agents/pull_logs.py --all-new`. The device is reached through
+  Tailscale SSH using machine-local `COMMA_SSH` or `ODYSSEY_DEVICE` configuration. `--list` previews
+  the selected device inventory; `--local --all-new` validates existing local files without SSH.
+  No background uploader or automatic cloud transfer is used.
+- Manual downloads are allowed while driving and over cellular or a phone hotspot. Remote rsync
+  and checksum reads run at low CPU/I/O priority. Only closed full-rate rlogs are copied, with
+  resumable partial files and source SHA-256 verification. New segments reopen previously partial
+  validation coverage; retained suffixes remain explicitly partial. Qlogs are too decimated for
+  transition metrics. Use `.agents/extract.py` for repeat exploratory analysis.
+- Run every drive through `.agents/validate_log.py`, which writes one row per route to local
+  `.private/evidence/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
 - Use `.agents/inspect_response.py` to rank achieved-jerk peaks against the causal wire-command
   history, physical command-domain edges, gear changes, terrain, lead state, and powertrain context.
@@ -262,6 +254,6 @@ independent, evidence-backed change, but retain both source pairs for attributio
 
 ## Current focus
 
-The latest route exposure, trial decisions, and exact rollback pair are in the private Proton Drive
-evidence. Keep Alpha Long enabled for these trials unless the user changes it. Honda CMBS is
+The latest route exposure, trial decisions, and exact rollback pair are in local
+`.private/evidence/`. Keep Alpha Long enabled for these trials unless the user changes it. Honda CMBS is
 unavailable while it is active. Command-path fidelity alone does not establish closed-loop benefit.

@@ -65,7 +65,6 @@ jobs:
             openpilot/selfdrive/locationd/test/test_torqued.py \
             openpilot/selfdrive/ui/tests/test_display_wake.py \
             openpilot/selfdrive/ui/tests/test_screensaver.py \
-            openpilot/selfdrive/ui/tests/test_upload_status.py \
             openpilot/selfdrive/ui/tests/test_lead_bar.py \
             openpilot/selfdrive/ui/tests/test_settings.py
       - name: Test development tools and Odyssey interface
