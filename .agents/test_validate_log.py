@@ -416,6 +416,41 @@ class _ProvenanceMessage:
     return self._service
 
 
+@pytest.mark.parametrize(("legacy", "observed", "expected"), [
+  (False, [True], True),
+  (True, [False], False),
+  (False, [False, True], "mixed"),
+  (True, [False, False], False),
+  (True, [], True),
+  (False, [], False),
+  (None, [], None),
+])
+def test_passive_mode_uses_recorded_car_params_before_legacy_init(legacy, observed, expected):
+  msgs = [_ProvenanceMessage("initData", passive=legacy)]
+  msgs += [_ProvenanceMessage("carParams", passive=value, openpilotLongitudinalControl=True)
+           for value in observed]
+  assert validate_log._provenance(msgs)["passive"] == expected
+
+
+@pytest.mark.parametrize(("passive", "alpha", "expected"), [
+  (True, True, "dashcam (OpenPilot outputs disabled)"),
+  (True, False, "dashcam (OpenPilot outputs disabled)"),
+  (True, None, "dashcam (OpenPilot outputs disabled)"),
+  (False, True, "Alpha Long enabled (OpenPilot longitudinal)"),
+  (False, False, "Alpha Long disabled (stock radar longitudinal)"),
+  ("mixed", True, "mixed active/dashcam configuration"),
+  (None, True, "longitudinal capability configured; operating mode unknown"),
+  (None, None, None),
+])
+def test_control_mode_description_distinguishes_capability_from_operation(passive, alpha, expected):
+  assert validate_log._control_mode_description({"passive": passive, "alpha_longitudinal": alpha}) == expected
+
+
+def test_passive_mode_survives_missing_init_data():
+  msg = _ProvenanceMessage("carParams", passive=True, openpilotLongitudinalControl=True)
+  assert validate_log._provenance([msg])["passive"] is True
+
+
 def test_honda_brake_firmware_retains_query_identity_and_changes_without_logging_ids():
   from opendbc.car.structs import car
 
@@ -1104,17 +1139,17 @@ def test_verdict_records_alpha_long_mode_without_grading_the_mode():
     "passthrough_rms": None,
     "gasf_eff_mean": None,
     "windf_mean": None,
-    "alpha_longitudinal": False,
+    "alpha_longitudinal": False, "passive": False,
     "overshoot_frac": 0.0,
     "creep_frames": 0,
   }
 
   mode = next(v for v in validate_log.verdicts(route)
-              if v["check"] == "Alpha Long mode (diagnostic)")
+              if v["check"] == "Control mode (diagnostic)")
 
   assert mode["ok"]
   assert mode["status"] is None
-  assert mode["detail"] == "disabled (stock radar longitudinal)"
+  assert mode["detail"] == "Alpha Long disabled (stock radar longitudinal)"
 
 
 def test_verdict_uses_source_matched_brake_wire_error_without_requiring_grade_exposure():

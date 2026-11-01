@@ -920,7 +920,9 @@ def _honda_brake_firmware(msgs):
 def _provenance(msgs):
   """Which code actually drove the car, read from the log's own initData - NOT from the local
   checkout, which says nothing about what the device was running. Without this an A/B between
-  branches produces ledger rows that are indistinguishable after the fact."""
+  branches produces ledger rows that are indistinguishable after the fact. Operating mode comes
+  from recorded CarParams, with the legacy initData flag only as a fallback."""
+  passive, passive_values = _observed_field(msgs, "carParams", "passive", transform=bool)
   brake_firmware = _honda_brake_firmware(msgs)
   for m in msgs:
     if m.which() == "initData":
@@ -949,7 +951,7 @@ def _provenance(msgs):
         "git_dirty": dirty,
         "git_remote": _text(_safe_attr(d, "gitRemote")),
         "op_version": _text(_safe_attr(d, "version")),
-        "passive": _safe_attr(d, "passive"),
+        "passive": passive if passive_values else _safe_attr(d, "passive"),
         "model_kind": model_kind,
         "model_kind_values": model_values,
         "model_blob_full": model_blob,
@@ -966,7 +968,7 @@ def _provenance(msgs):
   return {
     "git_branch": None, "git_commit": None, "git_commit_full": None,
     "opendbc_commit": None, "opendbc_commit_full": None, "git_dirty": None,
-    "git_remote": None, "op_version": None, "passive": None,
+    "git_remote": None, "op_version": None, "passive": passive,
     "model_kind": None, "model_kind_values": [], "model_blob_full": None,
     "model_small_blob_full": None, "model_big_blob_full": None,
     "experimental_mode": None, "experimental_mode_values": [],
@@ -1839,6 +1841,20 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   return out
 
 
+def _control_mode_description(r):
+  """Describe operating configuration independently of longitudinal capability."""
+  if r.get("passive") is True:
+    return "dashcam (OpenPilot outputs disabled)"
+  if r.get("passive") == "mixed":
+    return "mixed active/dashcam configuration"
+  alpha = r.get("alpha_longitudinal")
+  if alpha is None:
+    return None
+  if r.get("passive") is None:
+    return "longitudinal capability configured; operating mode unknown"
+  return "Alpha Long enabled (OpenPilot longitudinal)" if alpha else "Alpha Long disabled (stock radar longitudinal)"
+
+
 def verdicts(r):
   """Map metrics -> per-check PASS/FLAG and the watchlist status each implies."""
   v = []
@@ -1847,10 +1863,9 @@ def verdicts(r):
 
   add("controlsd crashes", r["crashes"] == 0,
       f"{r['crashes']}" + (f" ({', '.join(r.get('crashed_procs', []))})" if r["crashes"] else ""))
-  if r.get("alpha_longitudinal") is not None:
-    add("Alpha Long mode (diagnostic)", True,
-        "enabled (OpenPilot longitudinal)" if r["alpha_longitudinal"]
-        else "disabled (stock radar longitudinal)")
+  mode = _control_mode_description(r)
+  if mode is not None:
+    add("Control mode (diagnostic)", True, mode)
   if r["track_rms"] is not None:
     add("track RMS |aEgo-carControl|", r["track_rms"] <= TRACK_RMS_LIMIT,
         f"{r['track_rms']:.3f} (<= {TRACK_RMS_LIMIT})"
@@ -2500,7 +2515,7 @@ def main():
   if segment_coverage and (not segment_coverage["starts_at_zero"] or segment_coverage["missing_between"]):
     r["notes"].append(f"PARTIAL route: segments {segment_coverage['first']}–{segment_coverage['last']}, "
                       f"{segment_coverage['count']} available; metrics cover only recorded data.")
-  if platform == ODYSSEY and alpha_longitudinal:
+  if platform == ODYSSEY and alpha_longitudinal and not r.get("passive"):
     from compare_lateral_response import route_report, save_report
     authority = route_report(msgs, _base_route(args.route), provenance=_provenance(msgs))
     authority["segment_coverage"] = segment_coverage
@@ -2525,16 +2540,16 @@ def main():
   print(f"  model:    {r.get('model_kind') or '?'} @ {r.get('model_blob_full') or '?'}")
   print(f"  state:    legacy_experimental={r.get('experimental_mode')!s} / "
         f"personality={r.get('longitudinal_personality') or '?'}")
-  if r.get("alpha_longitudinal") is not None:
-    print("  mode:     Alpha Long enabled (OpenPilot longitudinal)" if r["alpha_longitudinal"]
-          else "  mode:     Alpha Long disabled (stock radar longitudinal)")
+  mode = _control_mode_description(r)
+  if mode is not None:
+    print(f"  mode:     {mode}")
   for note in r["notes"]:
     print(f"  ! {note}")
   conv = {"controlsd crashes", "track RMS |aEgo-carControl|", "passthrough RMS",
           "gasfactor stability", "windfactor rail exposure", "windfactor shadow (offline)",
           "accel rail saturation"}
   driver = {"gas overrides", "brake takeovers"}
-  configuration = {"Alpha Long mode (diagnostic)"}
+  configuration = {"Control mode (diagnostic)"}
   quality = {"following - gas domain", "following - brake domain",
              "achieved following - gas domain (diagnostic)",
              "achieved following - brake domain (diagnostic)",
