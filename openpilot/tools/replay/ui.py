@@ -29,7 +29,7 @@ os.environ['BASEDIR'] = BASEDIR
 ANGLE_SCALE = 5.0
 
 
-def ui_thread():
+def ui_thread(addr):
   # Get monitor info before creating window
   rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
   rl.init_window(1, 1, "")
@@ -84,6 +84,7 @@ def ui_thread():
       'vehicleParameters',
       'narrowRoadCameraState',
     ],
+    addr=addr,
   )
 
   img = np.zeros((480, 640, 3), dtype='uint8')
@@ -252,9 +253,19 @@ def ui_thread():
 
 
 def get_arg_parser():
-  return argparse.ArgumentParser(description="Show replay data in a UI.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(description="Show replay data in a UI.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+  parser.add_argument("ip_address", nargs="?", default="127.0.0.1", help="The ip address on which to receive zmq messages.")
+
+  parser.add_argument("--frame-address", default=None, help="The frame address (fully qualified ZMQ endpoint for frames) on which to receive zmq messages.")
+  return parser
 
 
 if __name__ == "__main__":
-  get_arg_parser().parse_args(sys.argv[1:])
-  ui_thread()
+  args = get_arg_parser().parse_args(sys.argv[1:])
+
+  if args.ip_address != "127.0.0.1":
+    os.environ["ZMQ"] = "1"
+    messaging.reset_context()
+
+  ui_thread(args.ip_address)

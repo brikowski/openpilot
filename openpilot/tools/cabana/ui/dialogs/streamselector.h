@@ -68,7 +68,7 @@ public:
   std::unique_ptr<AbstractStream> open() override;
 
 private:
-  int mode_ = 1;  // 0 = local, 1 = remote
+  int mode_ = 1;  // 0 = MSGQ, 1 = ZMQ
   std::string ip_address_;
 };
 

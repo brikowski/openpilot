@@ -9,10 +9,8 @@
 #include <mutex>
 #include <string>
 
+#include <zmq.h>
 #include <stdarg.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <unistd.h>
 #include "json11/json11.hpp"
 #include "common/version.h"
 #include "common/hardware/hw.h"
@@ -20,11 +18,13 @@
 class SwaglogState {
 public:
   SwaglogState() {
-    sock = socket(AF_UNIX, SOCK_DGRAM, 0);
-    int sndbuf = SWAGLOG_MAX_SIZE;
-    setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, Path::swaglog_ipc().c_str(), sizeof(addr.sun_path) - 1);
+    zctx = zmq_ctx_new();
+    sock = zmq_socket(zctx, ZMQ_PUSH);
+
+    // Timeout on shutdown for messages to be received by the logging process
+    int timeout = 100;
+    zmq_setsockopt(sock, ZMQ_LINGER, &timeout, sizeof(timeout));
+    zmq_connect(sock, Path::swaglog_ipc().c_str());
 
     // workaround for https://github.com/dropbox/json11/issues/38
     setlocale(LC_NUMERIC, "C");
@@ -62,7 +62,8 @@ public:
   }
 
   ~SwaglogState() {
-    close(sock);
+    zmq_close(sock);
+    zmq_ctx_destroy(zctx);
   }
 
   void log(int levelnum, const char* filename, int lineno, const char* func, const char* msg, const std::string& log_s) {
@@ -70,13 +71,12 @@ public:
     if (levelnum >= print_level) {
       printf("%s: %s\n", filename, msg);
     }
-    // drop if logmessaged is busy, not running, or the message is too big
-    sendto(sock, log_s.data(), log_s.length(), MSG_DONTWAIT, (struct sockaddr*)&addr, sizeof(addr));
+    zmq_send(sock, log_s.data(), log_s.length(), ZMQ_NOBLOCK);
   }
 
   std::mutex lock;
-  int sock = -1;
-  struct sockaddr_un addr = {};
+  void* zctx = nullptr;
+  void* sock = nullptr;
   int print_level;
   json11::Json::object ctx_j;
 };

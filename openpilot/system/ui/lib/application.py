@@ -617,10 +617,8 @@ class GuiApplication:
 
         # Store all mouse events for the current frame
         self._mouse_events = self._mouse.get_events()
-        # ignore additional fingers to avoid jumping
-        for mouse_event in self._mouse_events:
-          if mouse_event.slot == 0:
-            self._last_mouse_event = mouse_event
+        if len(self._mouse_events) > 0:
+          self._last_mouse_event = self._mouse_events[-1]
 
         # Skip rendering when screen is off
         if not self._should_render:

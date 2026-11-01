@@ -16,7 +16,6 @@ from openpilot.system.manager.helpers import unblock_stdout, save_bootlog
 from openpilot.system.manager.process import ensure_running
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.system.athena.registration import register, UNREGISTERED_DONGLE_ID
-from openpilot.system.updated.updated import can_install_update
 from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.common.version import get_build_metadata
 from openpilot.common.hardware.hw import Paths
@@ -98,24 +97,6 @@ def manager_cleanup() -> None:
   cloudlog.info("everything is dead")
 
 
-def should_reboot_for_update(params: Params, sm: messaging.SubMaster) -> bool:
-  if (not params.get_bool("UpdateAvailable") or params.get_bool("DisableUpdates") or
-      params.get("UpdaterState") != "idle" or not params.get_bool("IsOffroad") or
-      any(params.get_bool(key) for key in ("DoShutdown", "DoUninstall", "DoReboot"))):
-    return False
-
-  services = ['deviceState', 'pandaStates']
-  if not all(sm.updated[s] for s in services) or not sm.all_checks(services) or sm['deviceState'].started:
-    return False
-
-  # Offroad can also mean startup was blocked while the car is still running.
-  pandas = sm['pandaStates']
-  if not pandas or any(ps.pandaType == log.PandaState.PandaType.unknown or ps.ignitionLine or ps.ignitionCan for ps in pandas):
-    return False
-
-  return can_install_update(params.get("UpdaterTargetBranch"))
-
-
 def manager_thread() -> None:
   cloudlog.bind(daemon="manager")
   cloudlog.info("manager start")
@@ -179,10 +160,6 @@ def manager_thread() -> None:
           f.write(str(time.monotonic()))
     except Exception:
       pass
-
-    if should_reboot_for_update(params, sm):
-      cloudlog.info("installing staged update automatically with ignition off")
-      params.put_bool("DoReboot", True, block=True)
 
     # Exit main loop when uninstall/shutdown/reboot is needed
     shutdown = False

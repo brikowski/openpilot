@@ -16,9 +16,9 @@ TEST_CASES = [(cfg.proc_name, copy.deepcopy(cfg)) for cfg in pr.CONFIGS if cfg.p
 
 class TestFuzzProcesses(OpenpilotTestCase):
 
-  # TODO: more examples. random inputs currently break the input migrations and can hang the replay
+  # TODO: make this faster and increase examples
   @parameterized.expand(TEST_CASES)
-  @fuzzy_test(max_examples=1)
+  @fuzzy_test(max_examples=10)
   def test_fuzz_process(self, proc_name, cfg, fuzzy):
     msgs = [capnp_random_dict(fuzzy, log.Event.schema, event, real_floats=True) for event in sorted(cfg.pubs)]
     for i, msg in enumerate(msgs):

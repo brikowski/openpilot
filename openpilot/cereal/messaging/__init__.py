@@ -1,6 +1,6 @@
 # must be built with scons
 from msgq import fake_event_handle, drain_sock_raw, MultiplePublishersError, IpcError, \
-                 Poller, SubSocket, PubSocket, SocketEventHandle, toggle_fake_events, \
+                 Context, Poller, SubSocket, PubSocket, SocketEventHandle, toggle_fake_events, \
                  set_fake_prefix, get_fake_prefix, delete_fake_prefix, wait_for_one_event
 import msgq
 import os
@@ -15,6 +15,7 @@ from openpilot.common.utils import MovingAverage
 
 __all__ = (
   "NO_TRAVERSAL_LIMIT",
+  "Context",
   "FrequencyTracker",
   "IpcError",
   "MultiplePublishersError",
@@ -36,6 +37,7 @@ __all__ = (
   "recv_one_or_none",
   "recv_one_retry",
   "recv_sock",
+  "reset_context",
   "set_fake_prefix",
   "sub_sock",
   "toggle_fake_events",
@@ -51,12 +53,16 @@ def pub_sock(endpoint: str) -> PubSocket:
   return msgq.pub_sock(endpoint, segment_size)
 
 
-def sub_sock(endpoint: str, poller: Poller | None = None,
+def sub_sock(endpoint: str, poller: Poller | None = None, addr: str = "127.0.0.1",
              conflate: bool = False, timeout: int | None = None) -> SubSocket:
   service = SERVICE_LIST.get(endpoint)
   segment_size = service.queue_size if service else 0
-  return msgq.sub_sock(endpoint, poller=poller, conflate=conflate,
+  return msgq.sub_sock(endpoint, poller=poller, addr=addr, conflate=conflate,
                        timeout=timeout, segment_size=segment_size)
+
+
+def reset_context():
+  msgq.context = Context()
 
 
 def log_from_bytes(dat: bytes, struct: capnp.lib.capnp._StructModule = log.Event) -> capnp.lib.capnp._DynamicStructReader:
@@ -175,7 +181,7 @@ class FrequencyTracker:
 class SubMaster:
   def __init__(self, services: list[str], poll: str | None = None,
                ignore_alive: list[str] | None = None, ignore_avg_freq: list[str] | None = None,
-               ignore_valid: list[str] | None = None, frequency: float | None = None):
+               ignore_valid: list[str] | None = None, addr: str = "127.0.0.1", frequency: float | None = None):
     self.frame = -1
     self.services = services
     self.seen = dict.fromkeys(services, False)
@@ -210,7 +216,7 @@ class SubMaster:
 
     for s in services:
       p = self.poller if s not in self.non_polled_services else None
-      self.sock[s] = sub_sock(s, poller=p, conflate=True)
+      self.sock[s] = sub_sock(s, poller=p, addr=addr, conflate=True)
 
       try:
         data = new_message(s)

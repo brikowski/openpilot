@@ -48,10 +48,6 @@ def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant)
   state.sm.updated['selfdriveState'] = True
   monkeypatch.setattr(gui_app, 'texture', lambda *args, **kwargs: rl.Texture())
   monkeypatch.setattr(gui_app, 'font', lambda *args, **kwargs: rl.Font())
-  from openpilot.selfdrive.ui.layouts.settings import initial_cruise_speed
-  monkeypatch.setattr(initial_cruise_speed, 'ui_state', state)
-  from openpilot.selfdrive.ui.mici.layouts.settings import initial_cruise_speed as mici_initial_cruise_speed
-  monkeypatch.setattr(mici_initial_cruise_speed, 'ui_state', state)
   if variant == 'tici':
     from openpilot.selfdrive.ui.layouts.settings import toggles
     monkeypatch.setattr(toggles, 'ui_state', state)

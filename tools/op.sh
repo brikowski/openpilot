@@ -81,33 +81,6 @@ function op_install_post_commit() {
   ln -sf ../../scripts/post-commit post-commit
 }
 
-function op_lfs_shim() {
-  echo "$(git -C "$OPENPILOT_ROOT" rev-parse --path-format=absolute --git-common-dir)/git-lfs"
-}
-
-# the shim lives in the git dir so it works in every worktree and on every
-# branch, and survives the venv being rebuilt
-function op_install_lfs() {
-  local shim
-  shim="$(op_lfs_shim)"
-  cp "$OPENPILOT_ROOT/scripts/git-lfs" "$shim"
-  chmod +x "$shim"
-  git -C "$OPENPILOT_ROOT" config --local filter.lfs.clean "$shim clean -- %f"
-  git -C "$OPENPILOT_ROOT" config --local filter.lfs.smudge "$shim smudge -- %f"
-  git -C "$OPENPILOT_ROOT" config --local filter.lfs.process "$shim filter-process"
-  git -C "$OPENPILOT_ROOT" config --local filter.lfs.required false
-  local hooks
-  hooks="$(git -C "$OPENPILOT_ROOT" rev-parse --git-path hooks)"
-  printf '#!/bin/sh\nexec "%s" pre-push "$@"\n' "$shim" > "$hooks/pre-push"
-  chmod +x "$hooks/pre-push"
-  # stock hooks from "git lfs install" exit 2 without git-lfs on PATH, and we don't use lfs locks
-  for hook in post-checkout post-commit post-merge; do
-    if grep -qs "git lfs $hook" "$hooks/$hook"; then
-      rm "$hooks/$hook"
-    fi
-  done
-}
-
 function op_check_openpilot_dir() {
   echo "Checking for openpilot directory..."
   if [[ -f "$OPENPILOT_ROOT/launch_openpilot.sh" ]]; then
@@ -129,13 +102,7 @@ function op_check_git() {
     echo -e " ↳ [${GREEN}✔${NC}] git found."
   fi
 
-  echo "Checking for git lfs..."
-  if cmp -s "$OPENPILOT_ROOT/scripts/git-lfs" "$(op_lfs_shim)"; then
-    echo -e " ↳ [${GREEN}✔${NC}] git lfs shim installed."
-  else
-    echo -e " ↳ [${RED}✗${NC}] git lfs shim missing or outdated! Run 'op setup'"
-    return 1
-  fi
+  echo "Checking for git lfs files..."
   if [[ $(file -b "$OPENPILOT_ROOT/openpilot/selfdrive/modeld/models/dmonitoring_model.onnx") == "data" ]]; then
     echo -e " ↳ [${GREEN}✔${NC}] git lfs files found."
   else
@@ -237,11 +204,15 @@ EOF
 
   op_activate_venv
 
-  op_install_lfs
-
   echo "Pulling git lfs files..."
   st="$(date +%s)"
-  if ! retry 3 "$(op_lfs_shim)" pull; then
+  git config --local filter.lfs.clean ".venv/bin/git-lfs clean -- %f"
+  git config --local filter.lfs.smudge ".venv/bin/git-lfs smudge -- %f"
+  git config --local filter.lfs.process ".venv/bin/git-lfs filter-process"
+  git config --local filter.lfs.required true
+  printf '#!/bin/sh\nexec .venv/bin/git-lfs pre-push "$@"\n' > "$(git rev-parse --git-path hooks)/pre-push"
+  chmod +x "$(git rev-parse --git-path hooks)/pre-push"
+  if ! retry 3 git lfs pull; then
     echo -e " ↳ [${RED}✗${NC}] Pulling git lfs files failed!"
     return 1
   fi

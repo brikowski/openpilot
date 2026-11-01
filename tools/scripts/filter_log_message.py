@@ -48,6 +48,7 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument('--absolute', action='store_true')
   parser.add_argument('--level', default='DEBUG')
+  parser.add_argument('--addr', default='127.0.0.1')
   parser.add_argument("route", type=str, nargs='*', help="route name + segment number for offline usage")
   args = parser.parse_args()
 
@@ -67,7 +68,7 @@ if __name__ == "__main__":
         elif m.which() == 'operatingSystemLog':
           print_operating_system_log(m.logMonoTime-st, m.operatingSystemLog)
   else:
-    sm = messaging.SubMaster(['logMessage', 'operatingSystemLog'])
+    sm = messaging.SubMaster(['logMessage', 'operatingSystemLog'], addr=args.addr)
     while True:
       sm.update()
 

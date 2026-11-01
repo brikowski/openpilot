@@ -38,7 +38,7 @@ namespace Path {
   }
 
   inline std::string swaglog_ipc() {
-    return "/tmp/logmessage" + Path::openpilot_prefix();
+    return "ipc:///tmp/logmessage" + Path::openpilot_prefix();
   }
 
   inline std::string download_cache_root() {

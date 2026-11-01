@@ -13,14 +13,14 @@ from openpilot.selfdrive.ui.lib.prime_state import PrimeState
 from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.hardware import HARDWARE, PC
-from openpilot.common.hardware.usb import cable_connected, get_usb_state, is_chestnut_usb_id, usb_host_connected
+from openpilot.common.hardware.usb import cable_connected, get_usb_state, is_chestnut_usb_id
 from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
 
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
 PARAM_UPDATE_TIME = 1 / 5.0
 OFFROAD_ALERT_POLL_INTERVAL = 1.0
-DISPLAY_FADE_DURATION = 2.0
+DISPLAY_FADE_DURATION = 0.5
 
 
 class UIStatus(Enum):
@@ -89,7 +89,6 @@ class UIState:
 
     # Core state variables
     self.is_metric: bool = self.params.get_bool("IsMetric")
-    self.initial_cruise_speed: int = self.params.get("InitialCruiseSpeedKph", return_default=True)
     self.is_release = self.params.get_bool("IsReleaseBranch")
     self.always_on_dm: bool = self.params.get_bool("AlwaysOnDM")
     self.navigation_enabled: bool = self.params.get_bool("NavigationEnabled")
@@ -134,13 +133,6 @@ class UIState:
   @property
   def engaged(self) -> bool:
     return self.started and self.sm["selfdriveState"].enabled
-
-  @property
-  def parked(self) -> bool:
-    sm = self.sm
-    return (self.started and sm.alive['carState'] and sm.valid['carState'] and
-            sm.recv_frame['carState'] >= self.started_frame and sm['carState'].canValid and
-            sm['carState'].gearShifter == car.CarState.GearShifter.park and sm['carState'].standstill)
 
   def is_onroad(self) -> bool:
     return self.started
@@ -218,7 +210,7 @@ class UIState:
         self.status = UIStatus.DISENGAGED
         self.started_frame = self.sm.frame
         self.started_time = time.monotonic()
-        self.chestnut_present = self.sm["deviceState"].chestnutPresent or (self.chestnut_compiled and self.usb_connected and not usb_host_connected())
+        self.chestnut_present = self.sm["deviceState"].chestnutPresent or (self.chestnut_compiled and self.usb_connected)
 
       for callback in self._offroad_transition_callbacks:
         callback()
@@ -262,7 +254,6 @@ class UIState:
 
     self.recording_audio = self.params.get_bool("RecordAudio") and self.started
     self.is_metric = self.params.get_bool("IsMetric")
-    self.initial_cruise_speed = self.params.get("InitialCruiseSpeedKph", return_default=True)
     self.always_on_dm = self.params.get_bool("AlwaysOnDM")
     self.navigation_enabled = self.params.get_bool("NavigationEnabled")
     self.nav_destination_set = self.params.get("NavDestination") is not None
@@ -296,7 +287,6 @@ class Device:
     self._override_interactive_timeout: int | None = None
     self._interactive_timeout_callbacks: list[Callable] = []
     self._awake: bool = True
-    self._parked = False
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
@@ -313,10 +303,6 @@ class Device:
     # Override the interactive timeout duration temporarily
     self._override_interactive_timeout = timeout
     self._reset_interactive_timeout()
-
-  @property
-  def offroad_alerts(self) -> frozenset[str]:
-    return frozenset(self._offroad_alerts or ())
 
   @property
   def interactive_timeout(self) -> int:
@@ -381,23 +367,22 @@ class Device:
       self._last_brightness = brightness
 
   def _update_wakefulness(self):
-    from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
-
     now = time.monotonic()
-    parked = ui_state.parked
-    if parked != self._parked:
-      self._parked = parked
-      self._wake_policy.reset(now, self.interactive_timeout)
     alert = None
+    keep_awake = False
     enabled = None
     if ui_state.started:
       sm = ui_state.sm
+      keep_awake = (ui_state.alpha_long_enabled and sm.alive['carState'] and sm.valid['carState'] and
+                    sm.recv_frame['carState'] >= ui_state.started_frame and sm['carState'].cruiseState.enabled)
       if sm.recv_frame['selfdriveState'] >= ui_state.started_frame and sm.alive['selfdriveState']:
         ss = sm['selfdriveState']
+        alert = (ss.alertSize.raw, ss.alertStatus.raw, ss.alertText1, ss.alertText2) if ss.alertSize.raw else None
         enabled = ss.enabled
-      visible_alert = AlertRenderer.get_alert(sm)
-      if visible_alert is not None:
-        alert = (visible_alert.size, visible_alert.status, visible_alert.text1, visible_alert.text2)
+      lead_present = (sm.alive['radarState'] and sm.valid['radarState'] and
+                      sm.recv_frame['radarState'] >= ui_state.started_frame and
+                      (sm['radarState'].leadOne.present or sm['radarState'].leadTwo.present))
+      keep_awake = keep_awake and (alert is not None or lead_present)
     else:
       if now - self._offroad_alert_poll_time >= OFFROAD_ALERT_POLL_INTERVAL:
         self._offroad_alerts = {key for key in OFFROAD_ALERTS if ui_state.params.get(key)}
@@ -407,7 +392,7 @@ class Device:
 
     awake, timeout_edge = self._wake_policy.update(
       now, self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
-      enabled=enabled, alert=alert,
+      enabled=enabled, alert=alert, keep_awake=keep_awake,
       touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
     if timeout_edge:

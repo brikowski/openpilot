@@ -61,6 +61,7 @@ docs/_site/
 openpilot/selfdrive/pandad/pandad
 openpilot/cereal/services.h
 openpilot/cereal/gen
+openpilot/cereal/messaging/bridge
 openpilot/selfdrive/ui/translations/tmp
 openpilot/selfdrive/car/tests/cars_dump
 openpilot/system/camerad/camerad
@@ -74,7 +75,6 @@ htmlcov
 *.bz2
 *.zst
 *.rlog
-/.private/
 
 build/
 

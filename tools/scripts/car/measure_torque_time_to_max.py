@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import argparse
 import struct
 from collections import deque
@@ -11,10 +12,15 @@ import openpilot.cereal.messaging as messaging
 if __name__ == "__main__":
 
   parser = argparse.ArgumentParser(description='Sniff a communication socket')
-  parser.parse_args()
+  parser.add_argument('--addr', default='127.0.0.1')
+  args = parser.parse_args()
+
+  if args.addr != "127.0.0.1":
+    os.environ["ZMQ"] = "1"
+    messaging.reset_context()
 
   poller = messaging.Poller()
-  messaging.sub_sock('can', poller)
+  messaging.sub_sock('can', poller, addr=args.addr)
 
   active = 0
   start_t = 0

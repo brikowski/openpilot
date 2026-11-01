@@ -81,8 +81,7 @@ class AlertRenderer(Widget):
     self._full_text2_label = Label("", font_size=ALERT_FONT_BIG, text_alignment=TextAlignment.CENTER,
                                    text_alignment_vertical=TextAlignmentVertical.TOP)
 
-  @staticmethod
-  def get_alert(sm: messaging.SubMaster) -> Alert | None:
+  def get_alert(self, sm: messaging.SubMaster) -> Alert | None:
     """Generate the current alert based on selfdrive state."""
     ss = sm['selfdriveState']
 
@@ -105,7 +104,7 @@ class AlertRenderer(Widget):
           return ALERT_CRITICAL_REBOOT
 
     # No alert if size is none
-    if ss.alertSize.raw == 0:
+    if ss.alertSize == 0:
       return None
 
     # Don't get old alert
