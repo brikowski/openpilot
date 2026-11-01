@@ -37,10 +37,10 @@ def test_pitch_offset_holdout_cannot_fit_the_held_route():
   np.testing.assert_allclose(error, -.98)
 
 
-def test_feedforward_sensitivity_initializes_2000_count_odyssey_lookup(monkeypatch):
+def test_feedforward_sensitivity_uses_odyssey_instance_lookup(monkeypatch):
   monkeypatch.setattr(CarControllerParams, 'BOSCH_GAS_LOOKUP_V', [0, 1600])
   assert gas_lookup_delta(.3, .03, .022, 14.) == pytest.approx(-117.7, abs=.5)
-  assert CarControllerParams.BOSCH_GAS_LOOKUP_V == [0, 2000]
+  assert CarControllerParams.BOSCH_GAS_LOOKUP_V == [0, 1600]
 
 
 def test_feedforward_sensitivity_uses_speed_and_the_calibrated_ceiling():

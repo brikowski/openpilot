@@ -54,7 +54,7 @@ ODYSSEY_PT_DBC = "acura_rdx_2020_can_generated"
 def make_replay_controller(recorded_params):
   """Initialize candidate platform constants but retain the route's recorded CarParams.
 
-  Honda's interface sets class-level gas maps outside the serialized CarParams. Constructing
+  Legacy Honda interfaces set class-level gas maps outside the serialized CarParams. Constructing
   only CarController silently leaves the default map in place. The throwaway parameters below
   initialize those constants; they must not replace recorded flags, limits, or tuning.
   This calls parameter construction only, never the interface's ECU-disabling init method.

@@ -74,12 +74,11 @@ def leave_one_route_out(groups, held, width):
 
 
 def odyssey_gas_lookup():
-  """Initialize Odyssey's class-level lookup as card does before controller construction."""
-  from opendbc.car import gen_empty_fingerprint
-  from opendbc.car.honda.interface import CarInterface
+  """Read the current Odyssey controller's instance-scoped calibration."""
+  from opendbc.car import structs
   from opendbc.car.honda.values import CAR, CarControllerParams
-  CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)
-  return tuple(CarControllerParams.BOSCH_GAS_LOOKUP_BP), tuple(CarControllerParams.BOSCH_GAS_LOOKUP_V)
+  params = CarControllerParams(structs.CarParams(carFingerprint=CAR.HONDA_ODYSSEY_5G_MMR))
+  return tuple(params.BOSCH_GAS_LOOKUP_BP), tuple(params.BOSCH_GAS_LOOKUP_V)
 
 
 def gas_lookup_delta(request, pitch, offset, speed, lookup=None):
