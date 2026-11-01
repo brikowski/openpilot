@@ -99,7 +99,9 @@ The Odyssey supervised trial uses a fixed `[0, 3840]` LKA map with
 `latAccelFactor 1.35` and `friction 0.2 / 1.5` in both stock ACC and Alpha Long. Both retain
 `steerActuatorDelay 0.15` and the stock slew of 7680 CAN counts/s
 through Honda's ordinary rate limiter. The seed conversion preserves ordinary acceleration and
-friction commands in counts. `carOutput` reports the emitted counts normalized by the active
+friction commands in counts. Factory departure traffic includes 3840-count requests with idle
+reported brake feedback; do not gate this steering range on braking.
+`carOutput` reports the emitted counts normalized by the active
 range, including zero while inactive. Extra-count physical benefit remains unmeasured. The torque learner
 retains its stock physical sample buckets and fit coordinates, converting its published parameters
 to the active normalization. Its Odyssey cache version rejects prior fits; incompatible torque-configuration or steering-route
