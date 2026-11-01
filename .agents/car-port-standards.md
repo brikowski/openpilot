@@ -147,7 +147,9 @@ active safety rails.
   Nonnegative brake holding uses the prior coast estimate without learning its controlled response as coast.
   At 8–35 m/s, qualified pedal-free manual coast can initialize the same learner before engagement.
   Manual observations also require idle received gas/braking and pressure within one DBC step of zero;
-  physical-state qualification owns resets, while active control keeps its existing PID gates.
+  physical-state qualification owns resets. Paused observation clears partial samples while
+  retaining completed per-gear estimates; accepted factory mode changes still clear the model.
+  Active control keeps its existing PID gates.
   The first five settled observations use consecutive ACC cycles;
   established estimates retain their 100 ms update cadence. Each new coast starts a fresh sample
   buffer; a learned same-gear forecast remains available while the fresh observations settle.
