@@ -30,7 +30,8 @@ active safety rails.
   active behavior is low-speed non-positive → brake below 5 m/s, fallback road-speed brake entry at -0.30
   m/s², and ordinary active-gas continuity above Honda's raw -0.20 m/s² split. It does not add a
   gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
-  passive-response candidate uses the existing same-gear forecast at 8–35 m/s. Both forecast
+  passive-response candidate uses the existing same-gear forecast at 5–35 m/s. Qualified control
+  shares the ordinary gas/coast speed boundary; dedicated stopping authority remains below 5 m/s. Both forecast
   and measured acceleration must fall below a negative request by the response margin before
   settled coast or a held, physically inactive brake domain can enter gas. Fresh valid CAN,
   received gear and braking state qualify this additional authority. A new brake selection must
@@ -41,7 +42,7 @@ active safety rails.
   Below the raw gas split, an already-active gas domain retains calibrated feedforward or a positive
   response correction while fresh, pedal-free state remains within the existing response margin. This requires
   fresh received drivetrain state, active PID
-  control, idle brake feedback and 8–35 m/s; it neither starts new gas authority nor requires a coast
+  control, idle brake feedback and 5–35 m/s; it neither starts new gas authority nor requires a coast
   estimate to retain already-qualified feedback. Gear and activity changes restart delayed
   history in the response observer while preserving needed issued gas through its existing warmup,
   current-error, headroom and slew rules. A request for more deceleration than the current
@@ -85,7 +86,7 @@ active safety rails.
   fresh received braking state, a negative request, current overdeceleration, and a
   same-gear coast forecast that can supply the request. Release and gas handoff share active
   feedback: `COMPUTER_BRAKING` or finite `USER_BRAKE` above one DBC step. Without a qualified forecast, an active
-  brake follows the easing negative command. At 8–35 m/s in PID control with qualified CAN and
+  brake follows the easing negative command. At 5–35 m/s in PID control with qualified CAN and
   pose, an active brake remains available through zero and positive net-acceleration requests
   below the learned coast acceleration. It releases when the request reaches that forecast.
   A settled hold also yields to a positive-request acceleration shortfall when both current and
@@ -96,7 +97,7 @@ active safety rails.
   Gas and brake remain mutually exclusive; nonnegative brake targets retain raw `ACCEL_COMMAND`.
   Missing or unreliable state retains the raw-sign fallback for nonnegative requests. This does
   not extend low-speed stopping authority.
-  New gas entry at 8–35 m/s in PID control waits in coast while fresh received computer-braking
+  New gas entry at 5–35 m/s in PID control waits in coast while fresh received computer-braking
   or positive `USER_BRAKE` feedback remains active. It releases `BRAKE_REQUEST` immediately,
   preserves numeric `ACCEL_COMMAND`, and uses no fixed delay. A qualified handoff keeps its
   settled brake history through qualified coast and while feedback blocks gas, so early release does
