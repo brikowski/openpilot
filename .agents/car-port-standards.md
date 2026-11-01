@@ -196,6 +196,9 @@ The available global feedback cannot exclude unreported individual-wheel braking
 vehicle's delivered steering response and tracking benefit separately; the commented-out
 nonlinear lookup is not a validated calibration. See the [original note](https://github.com/commaai/opendbc/blob/5ead387a0c1ee238d33dc29ff304044ea7e0d383/opendbc/car/honda/interface.py#L185).
 
+On this Odyssey, `STEER_MOTOR_TORQUE.MOTOR_TORQUE` changes during manual steering with
+LKA inactive. Its raw report is not a qualified measurement of isolated LKA torque.
+
 `validate_log.py` automatically saves native Odyssey Alpha Long steering reports under private
 `evidence/steering-authority/`. Compare explicit recorded configurations with
 `.venv/bin/python .agents/compare_lateral_response.py CANDIDATE.json --baseline STOCK.json --output COMPARISON.json`.
