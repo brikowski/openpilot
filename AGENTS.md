@@ -70,9 +70,10 @@ reactivating inherited CI. The opendbc push uses a repository-specific deploy ke
 history; use `upstream/master` for deliberate upstream updates. The scheduler publishes
 the exact checked revision and rejects development advances during testing. The Sunday release does
 not sync upstream; neither weekly job rewrites development history or deploys to the device.
-Manual releases remain
-available: preview with `.venv/bin/python .agents/publish_public.py`, then publish with
-`.venv/bin/python .agents/publish_public.py --publish`. The publisher retains vehicle
+Push development source only to `ody-op-test`; leave publication of `ody-op` to the automatic
+GitHub Actions release workflow. Never manually push `ody-op` or run
+`.agents/publish_public.py --publish` from this checkout. A local preview is available with
+`.venv/bin/python .agents/publish_public.py`. The publisher retains vehicle
 code, build files, tests, and the paired gitlink, excludes custom agent, analysis, editor, and
 deployment tooling, and preserves the public branch’s independent CI configuration.
 Publication is not road-validated promotion and never deploys to the device.

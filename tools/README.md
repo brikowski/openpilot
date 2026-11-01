@@ -73,9 +73,10 @@ opendbc pin into `ody-op-test`, validates it, and publishes opendbc before the p
 existing history and stop for source conflicts or concurrent development. The small schedulers live
 on `ody-op`; neither weekly job deploys to the device. Sunday publishes the exact checked revision.
 `master` is inactive history; use `upstream/master` for
-deliberate upstream updates. For a manual
-release, preview with `.venv/bin/python .agents/publish_public.py`, then publish with
-`.venv/bin/python .agents/publish_public.py --publish`. This retains vehicle code, tests, and submodule
+deliberate upstream updates. Push development source only to `ody-op-test`; the automatic GitHub
+Actions release owns publication of `ody-op`. Do not manually push `ody-op` or run the publisher
+with `--publish` from this checkout. Use `.venv/bin/python .agents/publish_public.py` for a local
+preview only. The publisher retains vehicle code, tests, and submodule
 pins, excludes custom tooling, and preserves public CI configuration. Publication never deploys to
 the device; device build/health checks and road assessment remain separate gates.
 
