@@ -80,6 +80,23 @@ def set_consistent_flag(consistent: bool) -> None:
     consistent_file.unlink(missing_ok=True)
   os.sync()
 
+
+def can_install_update(target_branch: str | None) -> bool:
+  """Check the launcher's staging guards before requesting an automatic reboot."""
+  try:
+    if (not target_branch or not OVERLAY_INIT.is_file() or
+        not Path(FINALIZED, ".overlay_consistent").is_file() or Path(STAGING_ROOT, "old_openpilot").exists()):
+      return False
+
+    # Match the launcher's protection against overwriting local development work.
+    if run(["find", os.path.join(BASEDIR, ".git"), "-newer", str(OVERLAY_INIT), "-print", "-quit"]).strip():
+      return False
+    return run(["git", "rev-parse", "--abbrev-ref", "HEAD"], FINALIZED).strip() == target_branch
+  except (OSError, subprocess.CalledProcessError):
+    cloudlog.exception("unable to confirm staged update is installable")
+    return False
+
+
 def parse_release_notes(basedir: str) -> bytes:
   try:
     with open(os.path.join(basedir, "RELEASES.md"), "rb") as f:

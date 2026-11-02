@@ -4,9 +4,11 @@ On the Bosch Odyssey, the car's ECON button selects Eco Mode while OpenPilot con
 motion. There is no OpenPilot Eco setting. Eco stays off until a validated factory status is received.
 Factory ECON adds no OpenPilot acceleration cap. Its effect on Honda hardware remains native.
 
-Each ECON activation starts Relaxed, the farthest following distance. Turning ECON off selects
-Standard, the middle following distance. Settings and the steering-wheel distance button can change
-the selected profile until the next mode switch.
+The Odyssey selects a native following profile from its one-minute average of valid vehicle speed,
+including while cruise is disengaged. Below 55 mph, normal mode selects Aggressive (closest) and
+ECON selects Standard (middle). At 55 mph or above, normal mode selects Standard and ECON selects
+Relaxed (farthest). Speed history carries through ECON changes. Settings and the steering-wheel
+distance button can change the profile until the next automatic speed-band or mode change.
 
 A validated ECON change clears the temporary Honda gas-feedback and coast-response history.
 Gas feedback keeps its output slew while rebuilding from current response.

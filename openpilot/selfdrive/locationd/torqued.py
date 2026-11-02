@@ -7,6 +7,7 @@ import openpilot.cereal.messaging as messaging
 from openpilot.cereal import log
 from opendbc.car.structs import car
 from opendbc.car.honda.hondacan import CanBus as HondaCanBus
+from opendbc.car.honda.values import CAR as HONDA, CarControllerParams as HondaControllerParams
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, DT_MDL
@@ -57,6 +58,8 @@ class TorqueEstimator(ParameterEstimator):
     self.hist_len = int(HISTORY / DT_MDL)
     self.lag = 0.0
     self.track_all_points = track_all_points  # for offline analysis, without max lateral accel or max steer torque filters
+    self.torque_scale = HondaControllerParams(CP).STEER_MAX / 2560 if CP.carFingerprint == HONDA.HONDA_ODYSSEY_5G_MMR else 1.0
+    self.version = VERSION + int(self.torque_scale != 1.0)
     if decimated:
       self.min_bucket_points: list[float] = (MIN_BUCKET_POINTS / 10).tolist()
       self.min_points_total = MIN_POINTS_TOTAL_QLOG
@@ -106,7 +109,7 @@ class TorqueEstimator(ParameterEstimator):
           cache_ltp = log_evt.lateralTorqueParameters
         with car.CarParams.from_bytes(params_cache) as msg:
           cache_CP = msg
-        if self.get_restore_key(cache_CP, cache_ltp.version) == self.get_restore_key(CP, VERSION):
+        if self.get_restore_key(cache_CP, cache_ltp.version) == self.get_restore_key(CP, self.version):
           if cache_ltp.valid:
             initial_params = {
               'latAccelFactor': cache_ltp.latAccelFactorFiltered,
@@ -145,7 +148,7 @@ class TorqueEstimator(ParameterEstimator):
     self.resets += 1.0
     self.decay = MIN_FILTER_DECAY
     self.raw_points = defaultdict(lambda: deque(maxlen=self.hist_len))
-    self.filtered_points = TorqueBuckets(x_bounds=STEER_BUCKET_BOUNDS,
+    self.filtered_points = TorqueBuckets(x_bounds=[(lo / self.torque_scale, hi / self.torque_scale) for lo, hi in STEER_BUCKET_BOUNDS],
                                          min_points=self.min_bucket_points,
                                          min_points_total=self.min_points_total,
                                          points_per_bucket=POINTS_PER_BUCKET,
@@ -154,6 +157,8 @@ class TorqueEstimator(ParameterEstimator):
 
   def estimate_params(self):
     points = self.filtered_points.get_points(self.fit_points)
+    # Preserve the Odyssey's physical sampling range and fit metric when its command scale changes.
+    points[:, 0] *= self.torque_scale
     # total least square solution as both x and y are noisy observations
     # this is empirically the slope of the hysteresis parallelogram as opposed to the line through the diagonals
     try:
@@ -164,7 +169,7 @@ class TorqueEstimator(ParameterEstimator):
     except np.linalg.LinAlgError as e:
       cloudlog.exception(f"Error computing lateral torque parameters: {e}")
       slope = offset = friction_coeff = np.nan
-    return slope, offset, friction_coeff
+    return slope * self.torque_scale, offset, friction_coeff / self.torque_scale
 
   def update_params(self, params):
     self.decay = min(self.decay + DT_MDL, MAX_FILTER_DECAY)
@@ -207,7 +212,7 @@ class TorqueEstimator(ParameterEstimator):
         vego = np.interp(t, self.raw_points['carState_t'], self.raw_points['vego'])
         steer = np.interp(t, self.raw_points['carOutput_t'], self.raw_points['steer_torque']).item()
         lateral_acc = (vego * yaw_rate) - (np.sin(roll) * ACCELERATION_DUE_TO_GRAVITY).item()
-        if all(lat_active) and not any(steer_override) and (vego > MIN_VEL) and (abs(steer) > STEER_MIN_THRESHOLD):
+        if all(lat_active) and not any(steer_override) and (vego > MIN_VEL) and (abs(steer) * self.torque_scale > STEER_MIN_THRESHOLD):
           if abs(lateral_acc) <= LAT_ACC_THRESHOLD:
             self.filtered_points.add_point(steer, lateral_acc)
 
@@ -218,7 +223,7 @@ class TorqueEstimator(ParameterEstimator):
     msg = messaging.new_message('lateralTorqueParameters')
     msg.valid = valid
     lateralTorqueParameters = msg.lateralTorqueParameters
-    lateralTorqueParameters.version = VERSION
+    lateralTorqueParameters.version = self.version
     lateralTorqueParameters.useParams = self.use_params
 
     # Calculate raw estimates when possible, only update filters when enough points are gathered

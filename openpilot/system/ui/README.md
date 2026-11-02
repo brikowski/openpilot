@@ -16,6 +16,18 @@ Quick start:
 * https://www.raylib.com/cheatsheet/cheatsheet.html
 * https://electronstudio.github.io/raylib-python-cffi/README.html#quickstart
 
+The startup spinner uses a white fifth-generation Odyssey with black Sport-style wheels,
+fully rotating wheels, and a scrolling road. Preview it with `BIG=1 python -m openpilot.system.ui.spinner`.
+The existing stdin protocol still accepts numeric progress or startup messages. The illustration
+is `openpilot/selfdrive/assets/images/odyssey_sport.png`; its wheel coordinates are in
+`openpilot/system/ui/widgets/odyssey.py`. The firmware splash and AGNOS background use
+their stock graphics; no separate device-side theme installation is needed.
+
+The same animation fills the display after 10 seconds without touch input in the offroad
+home screen or settings. It stays awake until a touch returns to the previous menu or the
+car goes onroad. The waking touch is consumed. Onboarding and dialogs stay visible; a new
+offroad alert also reveals the menu and restarts the idle timer.
+
 Style guide:
 * All graphical elements should subclass [`Widget`](/openpilot/system/ui/widgets/__init__.py).
   * Prefer a stateful widget over a function for easy migration from QT
