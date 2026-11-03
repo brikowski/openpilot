@@ -1,5 +1,5 @@
 import numpy as np
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.system.ui.lib.application import gui_app

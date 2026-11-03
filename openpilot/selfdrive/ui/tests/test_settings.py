@@ -28,7 +28,7 @@ def test_disabling_lateral_maneuver_mode_preserves_live_delay():
 
 @pytest.mark.parametrize('variant', ['tici', 'mici'])
 def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant):
-  import pyray as rl
+  import raylib_nb as rl
   from pathlib import Path
   from openpilot.cereal import log
   from openpilot.common.params import Params
@@ -57,7 +57,8 @@ def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant)
     monkeypatch.setattr(toggles, 'ui_state', state)
     layout = toggles.TogglesLayout()
     assert 'EcoModeEnabled' not in layout._toggles
-    selected = layout._long_personality_setting.action_item.get_selected_button
+    def selected():
+      return layout._long_personality_setting.action_item.selected_button
 
     def select_standard():
       layout._set_longitudinal_personality(1)
