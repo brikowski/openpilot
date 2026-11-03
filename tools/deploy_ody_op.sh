@@ -18,6 +18,24 @@ fi
 $(cat "$ROOT_DIR/tools/check_offroad.py")
 ODY_OFFROAD_CHECK"
 
+MODEL_CHECK=".venv/bin/python - <<'ODY_MODEL_CHECK'
+import hashlib
+import subprocess
+from pathlib import Path
+
+model = Path('openpilot/selfdrive/modeld/models/dmonitoring_model.onnx')
+pointer = subprocess.check_output(['git', 'show', 'HEAD:' + str(model)], text=True)
+metadata = dict(line.split(' ', 1) for line in pointer.splitlines())
+if metadata.get('version') != 'https://git-lfs.github.com/spec/v1' or not metadata.get('oid', '').startswith('sha256:'):
+  raise SystemExit('refusing: model has no pinned LFS identity')
+if not model.is_file() or model.stat().st_size != int(metadata['size']):
+  raise SystemExit('refusing: model LFS content is missing or incomplete')
+with model.open('rb') as source:
+  if hashlib.file_digest(source, 'sha256').hexdigest() != metadata['oid'].removeprefix('sha256:'):
+    raise SystemExit('refusing: model LFS content does not match the pinned revision')
+print('model LFS content verified')
+ODY_MODEL_CHECK"
+
 usage() {
   cat <<'EOF'
 Usage: tools/deploy_ody_op.sh <deploy|verify>
@@ -154,8 +172,10 @@ if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin '$D
 tools/op.sh switch origin '$BRANCH'
 UV_CACHE_DIR='$DEVICE_UV_CACHE' UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' \
   UV_PYTHON_PREFERENCE=managed uv sync --frozen --all-extras
-PYTHONPATH=/data/openpilot UV_CACHE_DIR='$DEVICE_UV_CACHE' \
-  UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' UV_PYTHON_PREFERENCE=managed tools/op.sh build
+$MODEL_CHECK
+# Use the same memory-aware build entry point as device startup, without developer CLI dependencies.
+PATH=\"/data/openpilot/.venv/bin:\$PATH\" PYTHONPATH=/data/openpilot \
+  .venv/bin/python openpilot/system/manager/build.py
 # The updater's overlay can preserve root ownership from a prior install. Normalize the project
 # environment before reboot so its comma-owned git clean can replace editable package metadata.
 sudo chown -R comma:comma .venv

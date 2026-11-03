@@ -1,4 +1,5 @@
 """The deployment guard must fail closed on missing, stale or onroad state."""
+import hashlib
 import importlib.util
 import shlex
 import subprocess
@@ -178,3 +179,34 @@ printf '%s\n%s\n' "$result" "$output"
   valid = failure == "none"
   assert lines[0] == ("accepted" if valid else "refused")
   assert ("REMOTE_CALLED" in lines) == valid
+
+
+@pytest.mark.parametrize("contents", ["valid", "pointer", "empty", "corrupt", "missing"])
+def test_deployment_model_guard_checks_pinned_content_without_file_utility(tmp_path, monkeypatch, contents):
+  root = Path(__file__).parents[1]
+  script = (root / "tools/deploy_ody_op.sh").read_text()
+  code = script.split("<<'ODY_MODEL_CHECK'\n", 1)[1].split("\nODY_MODEL_CHECK", 1)[0]
+  binary = b"\x08\x08model-content"
+  pointer = ("version https://git-lfs.github.com/spec/v1\n" +
+             f"oid sha256:{hashlib.sha256(binary).hexdigest()}\nsize {len(binary)}\n")
+  model = tmp_path / "openpilot/selfdrive/modeld/models/dmonitoring_model.onnx"
+  model.parent.mkdir(parents=True)
+  if contents != "missing":
+    model.write_bytes({"valid": binary, "pointer": pointer.encode(), "empty": b"", "corrupt": b"x" * len(binary)}[contents])
+  monkeypatch.chdir(tmp_path)
+  with patch.object(subprocess, "check_output", return_value=pointer) as read_pointer:
+    if contents == "valid":
+      exec(compile(code, "model_guard", "exec"), {})
+    else:
+      with pytest.raises(SystemExit, match="refusing:"):
+        exec(compile(code, "model_guard", "exec"), {})
+  read_pointer.assert_called_once_with(["git", "show", "HEAD:openpilot/selfdrive/modeld/models/dmonitoring_model.onnx"], text=True)
+
+
+def test_deployment_uses_device_build_with_model_and_offroad_guards():
+  root = Path(__file__).parents[1]
+  script = (root / "tools/deploy_ody_op.sh").read_text()
+  command = script.split('local command="', 1)[1].split('\n"\n', 1)[0]
+  assert command.index("$OFFROAD_CHECK") < command.index("$MODEL_CHECK") < command.index(".venv/bin/python openpilot/system/manager/build.py")
+  assert 'PATH=\\"/data/openpilot/.venv/bin:\\$PATH\\"' in command
+  assert "tools/op.sh build" not in command
