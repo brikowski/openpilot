@@ -81,16 +81,20 @@ pins, excludes custom tooling, and preserves public CI configuration. Publicatio
 the device; device build/health checks and road assessment remain separate gates.
 
 Set `COMMA_SSH=comma@<tailnet-host>` or `ODYSSEY_DEVICE` in your local shell before using
-live-device tasks. Private rlogs and route evidence live in the Git-excluded `.private/` folder.
-Read `.private/README.md` for the local archive layout and `LOG_ROOT` setup. Downloads are manual,
-use Tailscale SSH, and may run while driving or over cellular. Keep machine-specific addresses
-and private route data out of Git.
+live-device tasks. Private rlogs and route evidence live in Proton Drive under
+`Documents/openpilot`; analysis tools discover the active folder under `~/Library/CloudStorage`.
+Read its `README.md` for the archive layout and `LOG_ROOT` setup. The optional
+[device uploader](../.agents/comma-log-backup.md) requires owner sign-in and explicit enablement;
+it uploads closed rlogs on Wi-Fi while parked or driving. Keep machine-specific addresses and
+private route data out of Git.
 
 This checkout also exposes a small set of explicit VS Code tasks in
 [`../.vscode/tasks.json`](../.vscode/tasks.json):
 
-- **Download and Validate New Logs (Tailscale)** SSH-pulls retained private full-rate rlogs and updates the
-  authoritative validation ledger. The task sets `UV_CACHE_DIR` to a writable temporary cache.
+- **Import and Validate New Logs (Proton)** validates the Proton-synchronized full-rate rlogs and updates the
+  authoritative validation ledger without connecting to the comma. Explicit `--device-fallback`
+  checks the uploader before retrieving missing logs over Tailscale; fallback is allowed while
+  driving or over cellular. The task sets `UV_CACHE_DIR` to a writable temporary cache.
 - **Validate One Route** re-runs the authoritative validator for one already-local route without
   pulling anything. **Inspect Following Trace** prints the planner → `carControl` → wire → `aEgo`
   trace for the same route; both tasks prompt for a route ID or unique prefix.
