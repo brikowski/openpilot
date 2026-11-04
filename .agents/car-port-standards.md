@@ -66,8 +66,7 @@ active safety rails.
   deceleration allow the same bounded forecast margin for initial release.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
   The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
-  request-ramped, bounded pitch load. Its grade-proportional gas term rises
-  from the brake boundary and shares the existing positive-request grade gain through zero.
+  bounded pitch load. The uphill load remains available through net-deceleration requests.
   Light-grade weighting and the existing feedforward ceiling remain; calibration alone cannot
   extend ordinary gas continuity below the raw split. A fresh negative gas bridge retains
   `-60` at level/downhill grade and blends toward mapped gas on an uphill;

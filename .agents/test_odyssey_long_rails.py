@@ -407,7 +407,7 @@ class TestOdysseyLongRails(unittest.TestCase):
 
   def test_uphill_negative_request_keeps_existing_gas_until_the_bounded_release(self):
     """A climb may need engine output for a negative net request, without arming gas from coast."""
-    accels = np.array([0.10] * 200 + [-0.23] * 100 + [-0.27] * 100)
+    accels = np.array([0.10] * 200 + [-0.23] * 100 + [-0.27] * 100 + [-0.50] * 100)
     _, level = _run(True, accels, pitch=0.0, vego=31.0, aegos=accels, target_gear=7)
     rejects, uphill = _run(True, accels, pitch=0.03, vego=31.0, aegos=accels, target_gear=7)
     _, unqualified = _run(True, accels, pitch=0.03, vego=31.0, aegos=accels)
@@ -420,8 +420,10 @@ class TestOdysseyLongRails(unittest.TestCase):
     uphill_gas = np.array([gas for _, gas, _ in uphill])
     np.testing.assert_array_equal(uphill_accel, level_accel)
     assert (level_gas[100:150] == GAS_INACTIVE).all()
-    assert (uphill_gas[100:150] != GAS_INACTIVE).all()
-    assert (uphill_gas[150:] == GAS_INACTIVE).all()
+    # Negative net requests can retain gas while the uphill load persists.
+    assert (uphill_gas[100:200] != GAS_INACTIVE).all()
+    # A request beyond calibrated gas headroom still releases it.
+    assert (uphill_gas[200:] == GAS_INACTIVE).all()
     assert all(gas == GAS_INACTIVE for _, gas, _ in unqualified[100:])
     assert all(gas == GAS_INACTIVE for _, gas, _ in excess[100:])
 
