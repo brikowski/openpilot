@@ -34,7 +34,7 @@ def route_files(root, route):
 
 
 def budget_status(root, policy):
-  usage = sum(p.stat().st_size for p in root.glob("*/rlog.zst") if p.is_file() and not p.is_symlink())
+  usage = sum(p.stat().st_size for p in root.rglob("rlog.zst") if p.is_file() and not p.is_symlink())
   budget = policy["budget_bytes"]
   if type(budget) is not int or budget < 1:
     raise ValueError("invalid archive budget")

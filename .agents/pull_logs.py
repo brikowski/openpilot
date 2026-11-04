@@ -264,7 +264,8 @@ def _remote_segment_indices(rid):
 def _verify_rlog_hashes(rid, retained):
   """Verify retained source bytes; older local-only segments are not requalified."""
   pattern = shlex.quote(f"{REMOTE_ROOT}/{rid}--*/rlog.zst")
-  result = _ssh(f"find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 -type f -path {pattern} {CLOSED_RLOG_FILTER} -exec sha256sum {{}} +")
+  result = _ssh(f"nice -n 19 ionice -c 3 find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 "
+                f"-type f -path {pattern} {CLOSED_RLOG_FILTER} -exec sha256sum {{}} +")
   if result.returncode:
     raise RuntimeError(result.stderr.strip() or "cannot read retained rlog checksums")
   verified = set()
@@ -339,6 +340,7 @@ def _selection_summary(route_count, recent, scope, targets, skipped, *, redo=Fal
 
 def _pull_command():
   return ["rsync", "-a", "-R", "--files-from=-", "--checksum", "--partial", "--partial-dir=.rsync-partial", "--timeout=60",
+          "--rsync-path=nice -n 19 ionice -c 3 rsync",
           "-e", "ssh " + " ".join(SSH_OPTS),
           f"{DEVICE}:{REMOTE_ROOT}/", str(LOCAL_ROOT) + "/"]
 

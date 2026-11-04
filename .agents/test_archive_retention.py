@@ -96,3 +96,12 @@ def test_apply_removes_only_the_inspected_whole_route_and_records_it(archive):
   assert recorded == [OLD]
   assert not (root / (OLD + "--0")).exists()
   assert (root / (BASE + "--0/rlog.zst")).exists()
+
+
+def test_budget_includes_resumable_partials_without_reading_payloads(archive, monkeypatch):
+  root, _, policy = archive
+  partial = root / (OLD + "--0/.rsync-partial")
+  partial.mkdir()
+  (partial / "rlog.zst").write_bytes(b"inflight")
+  monkeypatch.setattr(Path, "open", lambda *args, **kwargs: pytest.fail("budget checks must not hydrate or read rlogs"))
+  assert retention.budget_status(root, policy)["archive_bytes"] == 38

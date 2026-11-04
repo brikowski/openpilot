@@ -360,6 +360,7 @@ def test_transfer_and_checksum_inventory_require_logger_lock_absence(monkeypatch
   pull_logs._remote_segment_indices(route)
   assert pull_logs._verify_rlog_hashes(route, [0]) == (True, "")
   assert len(commands) == 3
+  assert commands[-1].startswith("nice -n 19 ionice -c 3 find ")
   assert "rlog.lock" not in commands[0]  # The retained catalog must not hide an unfinished tail.
   for command in commands[1:]:
     assert "-execdir /bin/test ! -e ./rlog.lock" in command
@@ -385,6 +386,9 @@ def test_rsync_does_not_copy_newly_closed_files_outside_snapshot(monkeypatch, tm
     (path / "rlog.zst").write_bytes(b"complete")
   monkeypatch.setattr(pull_logs, "LOCAL_ROOT", local)
   command = pull_logs._pull_command()
+  assert "--rsync-path=nice -n 19 ionice -c 3 rsync" in command
+  # The local fixture uses macOS rsync; the Linux remote priority policy is asserted above.
+  command[command.index("--rsync-path=nice -n 19 ionice -c 3 rsync")] = "--rsync-path=rsync"
   command[-2] = str(remote) + "/"  # Local source exercises rsync; no SSH or device access.
   result = subprocess.run(command, input=f"{route}--0/rlog.zst\n", text=True, capture_output=True)
   assert result.returncode == 0, result.stderr

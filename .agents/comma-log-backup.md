@@ -165,7 +165,8 @@ cloud check remain separate from passing these software checks.
 ## Archive budget and retention
 
 The Mac intake prints rlog usage and warns at the private policy budget. This is logical rlog
-size in the synchronized mirror, not account quota, video, evidence caches or Proton Trash.
+size including resumable partial rlogs in the synchronized mirror, not account quota, video,
+evidence caches or Proton Trash. Budget checks read metadata without downloading file payloads.
 `evidence/rlog-retention-policy.json` holds `budget_bytes`, `retention_days` and
 `protected_routes` (route-to-reason mapping). Keep active baselines, unresolved events and
 required comparison inputs protected when reviewing drives. Do not commit this policy or plans.
