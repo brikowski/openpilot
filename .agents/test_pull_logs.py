@@ -209,7 +209,7 @@ def test_partial_validation_does_not_hide_newly_available_segments(monkeypatch, 
   monkeypatch.setattr(sys, "argv", ["pull_logs.py", *selection, "--list"])
   pull_logs.main()
   assert f"{int(not complete)} not yet validated" in capsys.readouterr().out
-  # Pruning still uses the explicit validation ledger, independently of device retention.
+  # Ledger membership and the coverage needed for new intake remain separate.
   assert pull_logs.ledger_routes() == {route}
 
 
@@ -394,19 +394,21 @@ def test_rsync_does_not_copy_newly_closed_files_outside_snapshot(monkeypatch, tm
 
 @pytest.mark.parametrize("options", [["--all-new"], ["--route", "0000004c--bbbbbbbbbb"], ["--since-hours", "24"],
                                      ["--all-new", "--device-fallback", "--list"]])
-def test_proton_is_checked_without_device_access(monkeypatch, tmp_path, options):
+def test_proton_is_checked_without_device_access(monkeypatch, tmp_path, options, capsys):
   route = "0000004c--bbbbbbbbbb"
   segment = tmp_path / f"{route}--0"
   segment.mkdir()
   (segment / "rlog.zst").write_bytes(b"closed")
   monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
   monkeypatch.setattr(pull_logs, "rlog_root", lambda: tmp_path)
+  (tmp_path / "rlog-retention-policy.json").write_text(json.dumps({"budget_bytes": 1}))
   monkeypatch.setattr(pull_logs, "_ssh", lambda *_: pytest.fail("Proton intake must not connect to the device"))
   calls = []
   monkeypatch.setattr(pull_logs, "validate", lambda rid, desc: calls.append(rid) or 0)
   monkeypatch.setattr(sys, "argv", ["pull_logs.py", *options])
   pull_logs.main()
   assert calls == ([] if "--list" in options else [route])
+  assert "WARNING: archive budget reached" in capsys.readouterr().out
 
 
 def test_empty_proton_archive_does_not_silently_connect(monkeypatch, tmp_path, capsys):
@@ -474,6 +476,7 @@ def test_uploader_probe_reports_receipts_and_safe_errors_without_mutation(monkey
   session.parent.mkdir(parents=True)
   session.write_text("secret session contents")
   (root / "status.json").write_text(json.dumps({"state": "retrying", "completed": 1, "total": 2,
+                                              "pending_bytes": 512, "last_success_at": 1800000000., "error": "timeout",
                                               "updated_at": pull_logs.time.monotonic()}))
   logs = tmp_path / "media/0/realdata"
   for i in range(3):
@@ -496,6 +499,7 @@ def test_uploader_probe_reports_receipts_and_safe_errors_without_mutation(monkey
   result = pull_logs._uploader_snapshot(route, root)
   assert result["installed"] and result["enabled"] and result["saved_session"] and result["service_active"]
   assert result["state"] == "retrying" and result["completed"] == 1 and result["total"] == 2
+  assert result["pending_bytes"] == 512 and result["last_success_at"] == 1800000000. and result["error"] == "timeout"
   assert sorted(result["closed_segments"]) == [0, 1] and result["open_segments"] == [2]
   assert result["receipted_segments"] == [0]
   assert result["recent_errors"] == ["Proton command timed out; will retry"]

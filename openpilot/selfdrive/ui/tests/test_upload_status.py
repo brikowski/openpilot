@@ -9,8 +9,8 @@ from openpilot.selfdrive.ui.tests.test_display_wake import backlight as backligh
 from openpilot.selfdrive.ui.tests.test_screensaver import advance, screen as screen
 
 
-def write_status(path, state='uploading', *, completed=1, total=4, updated_at=0.):
-  path.write_text(json.dumps({'version': 1, 'updated_at': updated_at, 'state': state, 'completed': completed, 'total': total}))
+def write_status(path, state='uploading', *, completed=1, total=4, updated_at=0., **extra):
+  path.write_text(json.dumps({'version': 1, 'updated_at': updated_at, 'state': state, 'completed': completed, 'total': total, **extra}))
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def indicator(monkeypatch, tmp_path):
   monkeypatch.setattr(module, 'device', device)
   monkeypatch.setattr(module.AlertRenderer, 'get_alert', lambda _: None)
   now = [0.]
-  monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+  monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: now[0], time=lambda: 1800000000. + now[0]))
   labels, bars = [], []
   monkeypatch.setattr(module, 'gui_label', lambda rect, text, *a, **kw: labels.append(text))
   monkeypatch.setattr(module.rl, 'draw_rectangle_rounded', lambda rect, *a: bars.append(rect))
@@ -155,7 +155,7 @@ def test_upload_start_progress_and_completion_do_not_extend_idle_timeouts(displa
   monkeypatch.setattr(screensaver, 'device', device)
   monkeypatch.setattr(upload_status, 'ui_state', state)
   monkeypatch.setattr(upload_status, 'device', device)
-  monkeypatch.setattr(upload_status, 'time', SimpleNamespace(monotonic=lambda: now[0]))
+  monkeypatch.setattr(upload_status, 'time', SimpleNamespace(monotonic=lambda: now[0], time=lambda: 1800000000. + now[0]))
   monkeypatch.setattr(upload_status, 'gui_label', lambda *a, **kw: None)
   monkeypatch.setattr(upload_status.rl, 'draw_rectangle_rounded', lambda *a: None)
   path = tmp_path / 'status.json'
@@ -163,7 +163,8 @@ def test_upload_start_progress_and_completion_do_not_extend_idle_timeouts(displa
   for timestamp, status in [(0, 'checking'), (9, 'uploading'), (10, 'uploading'), (30, 'complete'), (59, 'uploading'),
                             (60, 'complete'), (62, 'complete'), (100, 'retrying')]:
     now[0] = timestamp
-    write_status(path, status, updated_at=timestamp)
+    write_status(path, status, updated_at=timestamp, pending_bytes=0 if status == 'complete' else 1024,
+                 last_success_at=1799999940., error=None)
     advance(screen, timestamp)
     widget._render(rl.Rectangle(0, 0, 2160, 1080))
     device.update()
@@ -173,3 +174,38 @@ def test_upload_start_progress_and_completion_do_not_extend_idle_timeouts(displa
       assert screen.app.get_active_widget() is screen.saver
   assert device._brightness_target == 0
   assert backlight[0] == backlight[1] == [(62, False)]
+
+
+def test_optional_bytes_verified_success_and_failure_detail(indicator):
+  write_status(indicator.path, pending_bytes=1073741824, last_success_at=1799999880., error=None)
+  render(indicator)
+  assert '1.0 GiB queued' in indicator.labels[1]
+  assert 'Last 2m ago' in indicator.labels[1]
+  indicator.now[0] = 1.
+  write_status(indicator.path, 'retrying', updated_at=1., pending_bytes=1073741824,
+               last_success_at=1799999880., error='content_mismatch')
+  render(indicator)
+  assert 'Cloud file differs' in indicator.labels[1]
+  assert 'Last 2m ago' in indicator.labels[1]
+  assert len(indicator.bars) == 2
+
+
+@pytest.mark.parametrize('extra', [{'pending_bytes': -1}, {'pending_bytes': True},
+                                   {'last_success_at': float('inf')}, {'last_success_at': -1},
+                                   {'error': 'private account details'}])
+def test_invalid_optional_diagnostics_are_never_displayed(indicator, extra):
+  write_status(indicator.path, **extra)
+  render(indicator)
+  assert not indicator.labels
+
+
+def test_future_success_time_is_not_claimed_as_recent(indicator):
+  write_status(indicator.path, last_success_at=1800000100.)
+  render(indicator)
+  assert indicator.labels == ['Uploading logs', '1 of 4 log files']
+
+
+def test_complete_counts_with_pending_bytes_cannot_claim_completion(indicator):
+  write_status(indicator.path, 'complete', completed=4, pending_bytes=1024)
+  render(indicator)
+  assert not indicator.labels

@@ -152,7 +152,8 @@ def test_other_account_or_folder_does_not_reuse_receipts(setup):
   assert setup.job.once() == 1
 
 
-def test_progress_counts_only_confirmed_backups_and_finishes_at_total(setup):
+def test_progress_counts_only_confirmed_backups_and_finishes_at_total(setup, monkeypatch):
+  monkeypatch.setattr(backup.time, 'time', lambda: 1800000000.)
   segment(setup)
   segment(setup, 1)
   snapshots = []
@@ -167,7 +168,12 @@ def test_progress_counts_only_confirmed_backups_and_finishes_at_total(setup):
   assert [(row['state'], row['completed'], row['total']) for row in snapshots] == [('uploading', 0, 2), ('uploading', 1, 2)]
   final = json.loads((setup.root / 'status.json').read_text())
   assert (final['state'], final['completed'], final['total']) == ('complete', 2, 2)
-  assert set(final) == {'version', 'updated_at', 'state', 'completed', 'total'}
+  assert [row['pending_bytes'] for row in snapshots] == [36, 18]
+  assert final['pending_bytes'] == 0
+  assert snapshots[0]['last_success_at'] is None
+  assert snapshots[1]['last_success_at'] == final['last_success_at'] == 1800000000.
+  assert final['error'] is None
+  assert set(final) == {'version', 'updated_at', 'state', 'completed', 'total', 'pending_bytes', 'last_success_at', 'error'}
   assert setup.job.once() == 0
   assert json.loads((setup.root / 'status.json').read_text())['state'] == 'complete'
 
@@ -176,7 +182,7 @@ def test_failed_transfer_reports_retrying_without_claiming_completion(setup, mon
   segment(setup)
 
   def failed(*_):
-    raise backup.BackupError('connection failed')
+    raise backup.BackupError('connection failed', code='proton_unavailable')
 
   setup.job.client.upload = failed
   monkeypatch.setattr(backup, 'ROOT', setup.root)
@@ -188,6 +194,9 @@ def test_failed_transfer_reports_retrying_without_claiming_completion(setup, mon
   assert error.value.code == 1
   final = json.loads((setup.root / 'status.json').read_text())
   assert (final['state'], final['completed'], final['total']) == ('retrying', 0, 1)
+  assert final['pending_bytes'] == len(b'full-rate evidence')
+  assert final['last_success_at'] is None
+  assert final['error'] == 'proton_unavailable'
 
 
 @pytest.mark.parametrize('reason', ['disabled', 'sign_in', 'waiting_wifi'])
@@ -335,3 +344,35 @@ def test_enable_requires_saved_login_before_any_client_call(setup, monkeypatch):
   monkeypatch.setattr(subprocess, 'Popen', lambda *a, **kw: pytest.fail('client must not start'))
   with pytest.raises(backup.BackupError, match='sign in'):
     backup.main()
+
+
+def test_last_verified_upload_survives_restart_and_receipt_only_scans(setup, monkeypatch):
+  segment(setup)
+  monkeypatch.setattr(backup.time, 'time', lambda: 1800000000.)
+  assert setup.job.once() == 1
+  progress = backup.UploadProgress(setup.root)
+  assert progress.values['last_success_at'] == 1800000000.
+  setup.job.progress = progress
+  monkeypatch.setattr(backup.time, 'time', lambda: 1800003600.)
+  assert setup.job.once() == 0
+  status = json.loads((setup.root / 'status.json').read_text())
+  assert status['last_success_at'] == 1800000000.
+  assert status['pending_bytes'] == 0
+
+
+@pytest.mark.parametrize('error,code', [(OSError('private local path'), 'local_storage'),
+                                       (sqlite3.Error('private receipt path'), 'receipt_storage'),
+                                       (backup.BackupError('private error details'), 'upload_failed')])
+def test_failure_status_reports_only_fixed_categories(setup, monkeypatch, error, code):
+  def failed():
+    raise error
+  monkeypatch.setattr(setup.job, 'once', failed)
+  monkeypatch.setattr(backup, 'ROOT', setup.root)
+  monkeypatch.setattr(backup, 'LiveState', lambda: None)
+  monkeypatch.setattr(backup, 'Backup', lambda *args: setup.job)
+  monkeypatch.setattr(sys, 'argv', ['backup', 'once'])
+  with pytest.raises(SystemExit):
+    backup.main()
+  status = json.loads((setup.root / 'status.json').read_text())
+  assert status['error'] == code and status['last_success_at'] is None
+  assert 'private' not in json.dumps(status)

@@ -201,6 +201,11 @@ Use that first divergence to choose the work:
   supported; otherwise record the unresolved cause rather than assuming the uploader failed. Matching
   receipts prove a past cloud check, not current cloud presence. Qlogs are too decimated for transition
   metrics. Use `.agents/extract.py` for repeat exploratory analysis.
+- Maintain the private `evidence/rlog-retention-policy.json` protection catalog for active baselines,
+  unresolved events and needed comparison inputs. Mac intake reports its archive budget. Use
+  `.agents/archive_retention.py` to preview whole-route cleanup, inspect the plan and protections,
+  then apply the unchanged plan deliberately. Archive deletion synchronizes to Proton and other Macs;
+  intake and the device uploader never prune automatically.
 - Run every drive through `.agents/validate_log.py`, which writes one row per route to Proton Drive's
   `evidence/log-validation-ledger.jsonl` (authoritative) and `.md` (human view).
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.

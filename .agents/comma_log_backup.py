@@ -8,6 +8,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import signal
@@ -23,10 +24,21 @@ LOGS = Path('/data/media/0/realdata')
 SEGMENT = re.compile(r'[0-9a-f]{8}--[0-9a-f]+--\d+')
 SESSION = 'ch.proton.drive/drive-sdk-cli/auth-session.gpg'
 OPERATIONS = {('filesystem', 'info'), ('filesystem', 'create-folder'), ('filesystem', 'upload')}
+ERROR_MESSAGES = {
+  'timeout': 'Proton command timed out; will retry',
+  'proton_unavailable': 'Proton unavailable: check sign-in, connection and quota; will retry',
+  'metadata': 'unrecognized Proton metadata; leaving backup unconfirmed',
+  'content_mismatch': 'remote rlog digest differs; leaving backup unconfirmed',
+  'local_storage': 'Local upload storage unavailable; will retry',
+  'receipt_storage': 'Upload receipt storage unavailable; will retry',
+  'upload_failed': 'Upload failed; will retry',
+}
 
 
 class BackupError(Exception):
-  pass
+  def __init__(self, message, code='upload_failed'):
+    super().__init__(message)
+    self.code = code if code in ERROR_MESSAGES else 'upload_failed'
 
 
 class Paused(BackupError):
@@ -64,7 +76,16 @@ class UploadProgress:
   """Publish only aggregate queue state; UI updates must never become display-wake events."""
   def __init__(self, root):
     self.path = root / 'status.json'
-    self.values = {'state': 'checking', 'completed': 0, 'total': 0}
+    try:
+      with self.path.open() as stream:
+        previous = json.loads(stream.read(4097))
+      success = previous.get('last_success_at')
+    except (OSError, ValueError, AttributeError):
+      success = None
+    if type(success) not in (int, float) or not math.isfinite(success) or success <= 0:
+      success = None
+    self.values = {'state': 'checking', 'completed': 0, 'total': 0, 'pending_bytes': 0,
+                   'last_success_at': success, 'error': None}
     self._published = None
     self._last_write = float('-inf')
 
@@ -147,11 +168,11 @@ class Proton:
           if not self.allowed():
             raise Paused('upload paused: opt-in, login or Wi-Fi changed')
           if time.monotonic() > deadline:
-            raise BackupError('Proton command timed out; will retry')
+            raise BackupError(ERROR_MESSAGES['timeout'], code='timeout')
           self.heartbeat()
           time.sleep(0.5)
         if process.returncode:
-          raise BackupError('Proton unavailable: check sign-in, connection and quota; will retry')
+          raise BackupError(ERROR_MESSAGES['proton_unavailable'], code='proton_unavailable')
         output.seek(0)
         return output.read()
       finally:
@@ -165,7 +186,7 @@ class Proton:
         raise ValueError('missing node identity')
       return node
     except (ValueError, TypeError) as error:
-      raise BackupError('unrecognized Proton metadata; leaving backup unconfirmed') from error
+      raise BackupError(ERROR_MESSAGES['metadata'], code='metadata') from error
 
   def upload(self, source, destination):
     parent = f'{destination}/{source.parent.name}'
@@ -230,17 +251,20 @@ class Backup:
       for source in closed_rlogs(self.logs):
         try:
           before = fingerprint(source)
+          size = source.stat().st_size
           row = receipts.execute('SELECT fingerprint FROM receipts WHERE namespace=? AND segment=?',
                                  (namespace, source.parent.name)).fetchone()
           total += 1
           if row and row[0] == before:
             verified += 1
           else:
-            sources.append(source)
+            sources.append((source, size))
         except FileNotFoundError:
           continue
-      self.progress.update('uploading' if verified < total else 'complete', completed=verified, total=total)
-      for source in sources:
+      pending_bytes = sum(size for _, size in sources)
+      self.progress.update('uploading' if verified < total else 'complete', completed=verified, total=total,
+                           pending_bytes=pending_bytes, error=None)
+      for source, size in sources:
         if not self.allowed() or read_config(self.root)['destination'] != destination:
           self.report_waiting()
           break
@@ -260,7 +284,7 @@ class Backup:
           revision = remote.get('activeRevision') or {}
           digest = (revision.get('claimedDigests') or {}).get('sha1')
           if digest != sha1 or revision.get('claimedSize') != source.stat().st_size:
-            raise BackupError('remote rlog digest differs; leaving backup unconfirmed')
+            raise BackupError(ERROR_MESSAGES['content_mismatch'], code='content_mismatch')
           after = fingerprint(source)
           if after != before:
             continue
@@ -269,10 +293,14 @@ class Backup:
           receipts.commit()
           completed += 1
           verified += 1
-          self.progress.update('uploading' if verified < total else 'complete', completed=verified)
+          pending_bytes -= size
+          success_at = time.time()  # noqa: TID251 -- persisted event time must survive a reboot.
+          self.progress.update('uploading' if verified < total else 'complete', completed=verified,
+                               pending_bytes=pending_bytes, last_success_at=success_at, error=None)
         except FileNotFoundError:
           total -= 1
-          self.progress.update(total=total)
+          pending_bytes -= size
+          self.progress.update(total=total, pending_bytes=pending_bytes)
           continue  # Source deletion is authoritative, including during a transfer.
       else:
         self.progress.update('complete' if verified == total else 'pending')
@@ -323,8 +351,9 @@ def main():
         if isinstance(error, Paused):
           backup.report_waiting()
         else:
-          backup.progress.update('retrying')
-        print(str(error), flush=True)
+          code = error.code if isinstance(error, BackupError) else 'receipt_storage' if isinstance(error, sqlite3.Error) else 'local_storage'
+          backup.progress.update('retrying', error=code)
+          print(ERROR_MESSAGES[code], flush=True)
         if args.command == 'once':
           raise SystemExit(1) from error
       if args.command == 'once':

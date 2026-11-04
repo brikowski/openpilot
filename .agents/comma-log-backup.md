@@ -41,8 +41,13 @@ enable flag, destination, encrypted account session, encryption key and receipts
   They do not periodically re-audit later cloud deletions. Cloud synchronization is not an
   independent archival backup. This tool never deletes source logs or cloud data.
 - `status.json` atomically publishes version 1 aggregate progress: `state`, `completed`,
-  `total` and monotonic `updated_at`. Counts refer to completed, retained rlog files in the
-  current scan; only matching receipts count as complete. No account details, destinations,
+  `total`, `pending_bytes`, `last_success_at`, `error` and monotonic `updated_at`. Counts refer to completed, retained rlog files in the
+  current scan; only matching receipts count as complete. Pending bytes describe unconfirmed
+  local rlogs, including existing cloud files still needing verification, not remaining network
+  traffic. Last-success wall time is retained across restarts and advances only after a verified
+  receipt commits. Error categories distinguish timeouts, unavailable Proton access, metadata,
+  content mismatch and local/receipt storage; raw client errors never reach the status file.
+  No account details, destinations,
   filenames or route IDs are exposed. Long client operations refresh the heartbeat every five
   seconds, and display-status write failures never block backup. Disabled/sign-out operations
   immediately publish a hidden state.
@@ -156,3 +161,22 @@ driving-visibility, timeout, archive-discovery and intake-order mutations when r
 feature. The decision remains keep as optional tooling and a passive display: no actuator,
 stock log-deleter or display-wake behavior is changed. Device installation and an end-to-end
 cloud check remain separate from passing these software checks.
+
+## Archive budget and retention
+
+The Mac intake prints rlog usage and warns at the private policy budget. This is logical rlog
+size in the synchronized mirror, not account quota, video, evidence caches or Proton Trash.
+`evidence/rlog-retention-policy.json` holds `budget_bytes`, `retention_days` and
+`protected_routes` (route-to-reason mapping). Keep active baselines, unresolved events and
+required comparison inputs protected when reviewing drives. Do not commit this policy or plans.
+
+`.venv/bin/python .agents/archive_retention.py --preview /private/path/plan.json` proposes whole
+validated routes older than the policy window using recorded drive dates, not Proton arrival
+mtimes. Unknown dates/source, incomplete coverage, locks, partial transfers and links stay.
+Validation alone does not make a drive disposable: inspect the proposed routes and protection
+catalog before applying. The retired `pull_logs.py --prune-hours` shortcut is no longer available.
+
+`--apply /private/path/plan.json` rechecks policy, validation coverage and every proposed file's
+size/mtime before removal, recording each completed route in `evidence/rlog-retention-ledger.jsonl`.
+Changes require another preview. Removal from this mirror propagates to Proton and other Macs.
+Nothing runs cleanup in the background, and the device uploader still has no cloud-delete command.

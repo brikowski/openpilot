@@ -26,7 +26,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 import time
@@ -110,6 +109,7 @@ def _uploader_snapshot(rid, root="/data/proton-log-backup"):
   import runpy
   import types
   import json
+  import math
   import sqlite3
   import subprocess
   import time
@@ -128,9 +128,15 @@ def _uploader_snapshot(rid, root="/data/proton-log-backup"):
     status = json.loads((root / "status.json").read_text())
     states = {"checking", "uploading", "complete", "pending", "disabled", "waiting_wifi", "sign_in", "retrying"}
     result["state"] = status.get("state") if status.get("state") in states else "unknown"
-    for key in ("completed", "total"):
+    for key in ("completed", "total", "pending_bytes"):
       if type(status.get(key)) is int:
         result[key] = status[key]
+    success = status.get("last_success_at")
+    if type(success) in (int, float) and math.isfinite(success) and success > 0:
+      result["last_success_at"] = success
+    if status.get("error") in {"timeout", "proton_unavailable", "metadata", "content_mismatch",
+                               "local_storage", "receipt_storage", "upload_failed"}:
+      result["error"] = status["error"]
     if type(status.get("updated_at")) in (int, float):
       result["heartbeat_age_s"] = round(time.monotonic() - status["updated_at"], 1)
   except (OSError, ValueError, AttributeError):
@@ -385,62 +391,6 @@ def validate(rid, desc):
                         cwd=REPO).returncode
 
 
-def prune(hours, validated):
-  """Explicitly delete local segments older than ``hours``.
-
-  ONE HARD RULE: only prune routes that are already in the ledger. A route we have not validated
-  has never had its metrics extracted, so deleting it would lose the drive outright.
-
-  Even so, understand what this costs. The device itself only retains ~2 days (its deleter starts
-  at 5GB free), so once a route ages out of BOTH places it is gone for good. Every time a new
-  metric is added to validate_log, old routes have to be re-run to backfill it - that happened six
-  times in the session this was written. Pruning at 48h means backfills only reach back ~2 days.
-  Pruning is opt-in because historical full-rate logs are the ground truth needed whenever a new
-  metric must be backfilled. Use --prune-hours only after deliberately archiving or accepting the
-  loss of those routes.
-
-  rsync -a preserves the device's mtime, so age here is when the drive happened, not when it was
-  downloaded - which is what we want.
-  """
-  if not LOCAL_ROOT.exists():
-    return
-  cutoff = datetime.now().timestamp() - hours * 3600
-  # Age a ROUTE by its NEWEST segment, and delete whole routes only.
-  # Per-segment mtime is a trap: the device boots with an unsynced RTC, and the final segment of a
-  # drive is touched during shutdown/next boot before NTP corrects it, so it carries a stale
-  # 2026-06-05 timestamp. Checking each segment individually therefore saw the last minute of a
-  # 20-hour-old drive as 52 days old and deleted it - which is exactly what happened to routes
-  # 00000017/00000019/0000001b the first time this ran. Same unsynced-clock trap as
-  # initData.wallTimeNanos (see validate_log._wall_start).
-  segs_by_route = {}
-  for d in sorted(LOCAL_ROOT.iterdir()):
-    if not d.is_dir():
-      continue
-    m = LOGID_RE.match(d.name)
-    if m:
-      segs_by_route.setdefault(m.group(0), []).append(d)
-
-  freed, victims, kept_unvalidated = 0, {}, set()
-  for rid, dirs in segs_by_route.items():
-    if max(d.stat().st_mtime for d in dirs) >= cutoff:
-      continue
-    if rid not in validated:
-      kept_unvalidated.add(rid)
-      continue
-    for d in dirs:
-      freed += sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
-      shutil.rmtree(d)
-    victims[rid] = len(dirs)
-  if victims:
-    print(f"\npruned {sum(victims.values())} segment(s) from {len(victims)} validated route(s) " +
-          f"older than {hours:g}h, freed {freed/1e6:.0f} MB")
-    for rid, n in sorted(victims.items()):
-      print(f"    {rid}  {n} segs")
-  if kept_unvalidated:
-    print(f"  kept {len(kept_unvalidated)} old route(s) that are NOT in the ledger yet: " +
-          f"{', '.join(sorted(kept_unvalidated))}")
-
-
 def main():
   global LEDGER, LOCAL_ROOT
   ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -453,11 +403,6 @@ def main():
   ap.add_argument("--list", action="store_true", help="list Proton availability without validation or device contact")
   ap.add_argument("--device-fallback", action="store_true",
                   help="after Proton, inspect device uploads and fetch additional/missing logs over SSH")
-  # CUSTOM TOOLING: retain private rlogs by default. Metric backfills repeatedly needed routes
-  # older than the device's ~2-day window, so implicit seven-day deletion discarded irreplaceable
-  # evidence. Cleanup remains available only as an explicit, reviewable action.
-  ap.add_argument("--prune-hours", type=float,
-                  help="OPT IN: after validation, delete ledgered local routes older than this")
   args = ap.parse_args()
   LEDGER = evidence_root() / "log-validation-ledger.jsonl"
   LOCAL_ROOT = rlog_root()
@@ -468,6 +413,17 @@ def main():
     if not match:
       sys.exit(f"could not parse a log id out of '{args.route}'")
     route_id = match[0]
+
+  policy_path = evidence_root() / "rlog-retention-policy.json"
+  if policy_path.exists():
+    from archive_retention import budget_status
+    try:
+      policy = json.loads(policy_path.read_text())
+      storage = budget_status(LOCAL_ROOT, policy)
+      warning = "WARNING: archive budget reached" if storage["budget_exceeded"] else "Archive storage"
+      print(f"{warning}: {storage['archive_bytes'] / 2**30:.1f} / {policy['budget_bytes'] / 2**30:.1f} GiB in the Mac mirror")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+      print(f"Archive budget unavailable: {type(error).__name__}")
 
   routes, available = local_routes()
   done = set() if args.redo else ledger_routes(available)
@@ -523,10 +479,6 @@ def main():
   if not args.device_fallback:
     print("\nNo device connection made. If expected logs are absent, check Proton synchronization; "
           "use --device-fallback to investigate uploads and retrieve device logs.")
-  # Prune only when explicitly requested, after validating and re-reading the ledger so anything
-  # just validated counts as safe.
-  if args.prune_hours is not None:
-    prune(args.prune_hours, ledger_routes())
 
   if failed:
     print(f"\n{len(failed)} route(s) failed: {', '.join(failed)}")
