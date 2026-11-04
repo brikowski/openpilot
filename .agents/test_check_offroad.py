@@ -210,3 +210,22 @@ def test_deployment_uses_device_build_with_model_and_offroad_guards():
   assert command.index("$OFFROAD_CHECK") < command.index("$MODEL_CHECK") < command.index(".venv/bin/python openpilot/system/manager/build.py")
   assert 'PATH=\\"/data/openpilot/.venv/bin:\\$PATH\\"' in command
   assert "tools/op.sh build" not in command
+
+
+@pytest.mark.parametrize("ssh_key", ["", "/tmp/deploy key"])
+def test_reboot_connection_checks_liveness_and_propagates_failure(ssh_key):
+  root = Path(__file__).parents[1]
+  script = (root / "tools/deploy_ody_op.sh").read_text().rsplit('\nmain "$@"', 1)[0]
+  script = '\n'.join(f"ROOT_DIR={shlex.quote(str(root))}" if line.startswith("ROOT_DIR=") else line
+                     for line in script.splitlines())
+  command = "printf 'build still running'"
+  stub = '\nssh() { printf "%s\\n" "$@"; return 73; }\n'
+  setup = "\nDEVICE=example.invalid\nSSH_KEY=" + shlex.quote(ssh_key) + "\n"
+  result = subprocess.run(["bash", "-c", script + stub + setup + "ssh_cmd " + shlex.quote(command)],
+                          capture_output=True, text=True)
+  assert result.returncode == 73
+  expected = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=10",
+              "-o", "ServerAliveCountMax=3"]
+  if ssh_key:
+    expected += ["-i", ssh_key]
+  assert result.stdout.splitlines() == expected + ["comma@example.invalid", command]

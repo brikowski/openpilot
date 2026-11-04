@@ -53,11 +53,11 @@ EOF
 
 ssh_cmd() {
   test -n "$DEVICE" || { echo "set ODYSSEY_DEVICE to the device address" >&2; return 1; }
+  local options=(-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
   if test -n "$SSH_KEY"; then
-    ssh -o BatchMode=yes -o ConnectTimeout=5 -i "$SSH_KEY" "comma@$DEVICE" "$@"
-  else
-    ssh -o BatchMode=yes -o ConnectTimeout=5 "comma@$DEVICE" "$@"
+    options+=(-i "$SSH_KEY")
   fi
+  ssh "${options[@]}" "comma@$DEVICE" "$@"
 }
 
 remote() {
