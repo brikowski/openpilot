@@ -102,7 +102,7 @@ through Honda's ordinary rate limiter. The seed conversion preserves ordinary ac
 friction commands in counts. Factory departure traffic includes 3840-count requests with idle
 reported brake feedback; do not gate this steering range on braking.
 `carOutput` reports the emitted counts normalized by the active
-range, including zero while inactive. Extra-count physical benefit remains unmeasured. The torque learner
+range, including zero while inactive. General extra-count road benefit remains unproven. The torque learner
 retains its stock physical sample buckets and fit coordinates, converting its published parameters
 to the active normalization. Its Odyssey cache version rejects prior fits; incompatible torque-configuration or steering-route
 caches must not be restored. See [`.agents/car-port-standards.md`](.agents/car-port-standards.md).

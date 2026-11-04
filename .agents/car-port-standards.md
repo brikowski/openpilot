@@ -175,7 +175,7 @@ active safety rails.
   friction 0.2 / 1.5 in stock ACC and Alpha Long. Both use the ordinary Honda
   limiter with 7680 CAN counts/s and delay 0.15. Seed scaling preserves acceleration and
   friction commands in counts. `carOutput` reports actual emitted counts normalized by
-  the active range; inactive output is zero. Higher-count physical benefit is unmeasured.
+  the active range; inactive output is zero. General higher-count road benefit remains unproven.
   The torque learner retains its stock physical sample range and fit metric, with points and
   fitted parameters published in the active normalization. Its Odyssey cache version rejects prior
   fits. Torque-cache identity also includes the seed configuration
