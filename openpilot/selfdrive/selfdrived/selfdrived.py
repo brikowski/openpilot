@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import math
 import os
 import time
 import threading
@@ -8,17 +7,14 @@ import openpilot.cereal.messaging as messaging
 
 from openpilot.cereal import log
 from opendbc.car.structs import car
-from opendbc.car.honda.values import CAR as HONDA
 from openpilot.cereal.visionipc import VisionStreamType
 from msgq.visionipc import VisionIpcClient
 
 
-from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper, DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
-from openpilot.common.utils import MovingAverage
 
 from openpilot.selfdrive.car.car_events import CarEvents
 from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
@@ -108,8 +104,6 @@ class SelfdriveD:
     self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
     self.eco_mode = False
     self.factory_eco_mode = False
-    self.automatic_personality = None
-    self.following_speed = MovingAverage(600)  # One minute of valid 10 Hz parameter polls.
 
     car_recognized = self.CP.brand != 'mock'
 
@@ -596,24 +590,9 @@ class SelfdriveD:
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       eco_mode = self.factory_eco_mode
       personality_param = get_longitudinal_personality_param(eco_mode)
-      CS = self.CS_prev
-      automatic_personality = self.automatic_personality if eco_mode == self.eco_mode else None
-      if (self.CP.carFingerprint == HONDA.HONDA_ODYSSEY_5G_MMR and self.CP.openpilotLongitudinalControl and
-          not self.CP.passive and CS.canValid and math.isfinite(CS.vEgo)):
-        self.following_speed.add_value(CS.vEgo)
-        speed = self.following_speed.get_average()
-        highway = speed >= 55 * CV.MPH_TO_MS
-        if eco_mode:
-          automatic_personality = log.LongitudinalPersonality.relaxed if highway else log.LongitudinalPersonality.standard
-        else:
-          automatic_personality = log.LongitudinalPersonality.standard if highway else log.LongitudinalPersonality.aggressive
-      if automatic_personality is not None and (automatic_personality != self.automatic_personality or eco_mode != self.eco_mode):
-        # Speed/mode changes select a native profile; live adjustments last until the next change.
-        self.params.put(personality_param, automatic_personality, block=True)
-      elif eco_mode != self.eco_mode:
+      if eco_mode != self.eco_mode:
         personality = log.LongitudinalPersonality.relaxed if eco_mode else log.LongitudinalPersonality.standard
         self.params.put(personality_param, personality, block=True)
-      self.automatic_personality = automatic_personality
       self.eco_mode, self.personality = eco_mode, self.params.get(personality_param, return_default=True)
       time.sleep(0.1)
 
