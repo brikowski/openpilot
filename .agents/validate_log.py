@@ -211,6 +211,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "a741ce343036",  # single coast sample buffer preserves commands and forecasts
   # Later observer revisions retain this numeric brake translation and raw fallback.
   "852c47a9b867", "c91503afe54b", "e334273862e8", "3b910620868f",
+  "b5a4597a01cd", "6a3be5fd57d9",
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
