@@ -2,7 +2,7 @@
 
 This is the repository-owned guidance for edits under `opendbc_repo/opendbc/car/` and the Honda
 panda-safety layer. Keep route IDs, measurements, and experiment history in the ignored local
-Proton Drive's `evidence/tune-evidence.md`; this file describes the current invariants only.
+`.private/evidence/tune-evidence.md`; this file describes the current invariants only.
 
 ## Keep the upstream boundaries
 
