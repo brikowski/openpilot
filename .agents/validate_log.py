@@ -1125,7 +1125,6 @@ def analyze(msgs, platform, alpha_longitudinal=None):
 
   active = cc_active > 0.5
   pid = (cc_pid > 0.5) & active
-  low_speed_pid_expected = provenance.get("opendbc_commit") in LOW_SPEED_BRAKE_PID_COMMITS
 
   # === coverage ===
   # How much drive is behind every number below. Never flags - it sets how much this row is worth.
@@ -1239,21 +1238,7 @@ def analyze(msgs, platform, alpha_longitudinal=None):
     r["rail_lo_frac"] = float((active & (wire <= HondaParams.BOSCH_ACCEL_MIN + RAIL_EPS)).sum() / active.sum())
 
   # === watchlist symptoms (Odyssey telemetry semantics) ===
-  # Compare controller input with the wire request to identify added brake authority.
-  # Achieved excess deceleration alone does not identify the actuator or its active domain.
   cmd_smooth = _causal_lpf(cc_accel, dt, JERK_SMOOTH_TAU)
-  low_speed_pid_window = (low_speed_pid_expected & pid & (vego > 1e-3) & (vego < 3.0) &
-                          (cc_accel < 0.0))
-  braking = pid & (cc_accel < -0.3) & ~low_speed_pid_window
-  brake_addon = wire - cc_accel                       # <0 = the port is adding brake
-  adding = brake_addon < -0.05
-  already_past = aego < cc_accel - OVERSHOOT_MARGIN    # car already beyond commanded decel
-  overshoot = braking & adding & already_past
-  r["overshoot_frac"] = float(overshoot.sum() / braking.sum()) if braking.sum() > 20 else 0.0
-  r["addon_mean"] = float(brake_addon[braking].mean()) if braking.sum() > 20 else 0.0
-  # Legacy ledger key: achieved deceleration beyond the wire, without received-braking qualification.
-  # This response readout does not establish friction-brake actuation or first-divergence ownership.
-  r["honda_bite_frac"] = float(((aego - wire) < -0.3)[braking].mean()) if braking.sum() > 20 else 0.0
 
   # (2. pitch-transition lag REMOVED 2026-07-29. It measured aEgo vs aTarget through grade
   #  changes - a closed-loop outcome with Honda's ECU inside it, not our command fidelity. It
@@ -1430,7 +1415,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   exact domain-decision input below.
   """
   source_commit = (opendbc_commit or "")[:12]
-  out = {"follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
+  out = {"overshoot_frac": None, "addon_mean": None, "honda_bite_frac": None,
+         "follow_brake_rms": None, "follow_brake_mean": None, "follow_gas_rms": None,
          "follow_brake_cycles": 0, "follow_gas_cycles": 0,
          "brake_expected_wire_rms": None, "brake_expected_wire_mean": None,
          "brake_translation_sec": None, "brake_translation_delta_median": None,
@@ -1694,6 +1680,17 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   out["follow_gas_cycles"] = int(wire_gas.sum())
   out["follow_brake_cycles"] = int(wire_brake.sum())
   wire_error = cycle[:, 11] - cycle[:, 1]
+  # Attribute added braking to consumed input and verified CAN, not interpolated carOutput.
+  braking = ((cycle[:, 5] > .5) & (cycle[:, 6] > .5) & (cycle[:, 8] < .5) &
+             (cycle[:, 9] > .5) & (cycle[:, 1] < -.3))
+  if source_commit in LOW_SPEED_BRAKE_PID_COMMITS:
+    braking &= ~((cycle[:, 3] > 1e-3) & (cycle[:, 3] < 3.))
+  if braking.sum() * CAN_COMMAND_PERIOD_S > 20 * dt:
+    already_past = cycle[:, 2] < cycle[:, 1] - OVERSHOOT_MARGIN
+    out["overshoot_frac"] = float(np.mean(((wire_error < -.05) & already_past)[braking]))
+    out["addon_mean"] = float(np.mean(wire_error[braking]))
+    # Achieved excess is a response readout, not proof of friction-brake actuation.
+    out["honda_bite_frac"] = float(np.mean((cycle[:, 2] - cycle[:, 11] < -.3)[braking]))
   # Preserve the existing exposure duration when moving from the control grid to 50 Hz CAN.
   if wire_gas.sum() * CAN_COMMAND_PERIOD_S > 50 * dt:
     out["follow_gas_rms"] = float(np.sqrt(np.mean(wire_error[wire_gas] ** 2)))
@@ -1962,12 +1959,11 @@ def verdicts(r):
         f"{r['takeover_rate']:.1f}/10min engaged{suffix}",
         status="driver braking near engagement repeatedly - inspect intent and command path" if not thin and r["takeover_rate"] > TAKEOVER_RATE_FLAG else None)
 
-  # Fresh test2 must not add braking; on historical/ody-op rows this remains a measured readout of
-  # the known supplemental controller rather than an assertion that it is absent.
-  add("port-added braking", r["overshoot_frac"] <= OVERSHOOT_FRAC_FLAG,
-      f"{r['overshoot_frac']*100:.1f}% braking frames still adding past target "
-      f"(addon mean {r.get('addon_mean', 0):+.3f}; achieved deceleration beyond wire {r.get('honda_bite_frac', 0)*100:.1f}%; actuator unverified)",
-      status="car port added brake authority" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
+  if r.get("overshoot_frac") is not None:
+    add("port-added braking", r["overshoot_frac"] <= OVERSHOOT_FRAC_FLAG,
+        f"{r['overshoot_frac']*100:.1f}% native brake frames still adding past target "
+        f"(addon mean {r.get('addon_mean', 0):+.3f}; achieved deceleration beyond wire {r.get('honda_bite_frac', 0)*100:.1f}%; actuator unverified)",
+        status="car port added brake authority" if r["overshoot_frac"] > OVERSHOOT_FRAC_FLAG else None)
   add("creep at stop", r["creep_frames"] < CREEP_MIN_FRAMES,
       f"{r['creep_frames']} frames sustained",
       status="creep comp (NOT Ford subtraction - see tune-evidence.md)" if r["creep_frames"] >= CREEP_MIN_FRAMES else None)

@@ -2317,3 +2317,42 @@ def test_symptom_review_requires_a_current_flag_and_exact_nested_source():
   clean = _status_row("00000004--mmmmmmmmmm", "current")
   assert "1/1 unresolved-source route" in _symptom_review_rows([clean, dirty], dirty["route"])[0]
   assert "1/1 exact-source route" in _symptom_review_rows([dirty, clean], clean["route"])[0]
+
+
+@pytest.mark.parametrize('extra_brake,native', [(0., True), (-.2, True), (0., False)])
+def test_added_braking_uses_consumed_native_commands(extra_brake, native):
+  from opendbc.can import CANPacker
+
+  messages, grid, requested, pitch, _ = _phased_following_trace('brake')
+  packer = CANPacker(validate_log.ODYSSEY_PT_DBC)
+  for message in messages:
+    if message.which() == 'carControl':
+      message.carControl.actuators.accel -= .4
+    elif message.which() == 'carState':
+      message.carState.aEgo -= 1.0
+    elif message.which() == 'sendcan':
+      frames = []
+      for frame in message.sendcan:
+        if frame.address == 0x1DF:
+          if not native:
+            continue
+          raw = (frame.dat[3] << 3) | (frame.dat[4] >> 5)
+          accel = (raw - 2048 if raw >= 1024 else raw) / 100. - .4 + extra_brake
+          address, data, bus = packer.make_can_msg('ACC_CONTROL', 1,
+                                                  {'ACCEL_COMMAND': accel, 'BRAKE_REQUEST': 1, 'GAS_COMMAND': -30000})
+          frame = SimpleNamespace(address=address, dat=data, src=bus)
+        frames.append(frame)
+      message.sendcan = frames
+  active = np.ones(len(grid), dtype=bool)
+  zeros = np.zeros(len(grid))
+  result = validate_log._following(messages, grid, requested - .4, active, active, pitch,
+                                  np.full(len(grid), 20.), ~active, ~active, requested - 1.0,
+                                  zeros, zeros, .01, ~active, '6a3be5fd57d9', active, active, ~active)
+  if native:
+    assert result['overshoot_frac'] == (1. if extra_brake else 0.)
+    assert result['addon_mean'] == pytest.approx(extra_brake, abs=.01)
+    assert result['honda_bite_frac'] == 1.
+  else:
+    assert result['overshoot_frac'] is None
+    assert result['addon_mean'] is None
+    assert result['honda_bite_frac'] is None
