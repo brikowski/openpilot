@@ -70,7 +70,8 @@ active safety rails.
   Light-grade weighting and the existing feedforward ceiling remain; calibration alone cannot
   extend ordinary gas continuity below the raw split. A fresh negative gas bridge retains
   `-60` at level/downhill grade and blends toward mapped gas on an uphill;
-  it does not enter when the compensated map is at its zero-gas floor.
+  it does not enter when the compensated map is at its zero-gas floor or a qualified coast
+  forecast is at or above the requested acceleration. Unknown coast response retains the bridge fallback.
   Downhill gas compensation uses the existing grade term through zero net demand;
   it does not fade with the request. Raw gas-domain `ACCEL_COMMAND` is preserved.
   Response feedback remains inactive during the bridge. An already-active
