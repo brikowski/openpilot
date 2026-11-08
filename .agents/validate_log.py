@@ -213,6 +213,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "852c47a9b867", "c91503afe54b", "e334273862e8", "3b910620868f",
   "b5a4597a01cd", "6a3be5fd57d9",
   "b6ebf89dd4ca",  # encoded handoff trend retains numeric brake translation and fallback
+  "d573d25cd2d4", "90825bb62937",  # gas/coast revisions retain numeric brake translation and fallback
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",
