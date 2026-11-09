@@ -63,7 +63,7 @@ def screen(monkeypatch, tmp_path):
   monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: now[0]))
   state = SimpleNamespace(started=False, parked=False, sm=object())
   alert = [None]
-  monkeypatch.setattr(module.AlertRenderer, 'get_alert', lambda _: alert[0])
+  monkeypatch.setattr(module, 'get_alert', lambda _: alert[0])
   device = SimpleNamespace(awake=True, offroad_alerts=frozenset())
   monkeypatch.setattr(module, 'ui_state', state)
   monkeypatch.setattr(module, 'device', device)

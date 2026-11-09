@@ -215,6 +215,7 @@ MILD_CREEP_BRAKE_COMMITS = {
   "b6ebf89dd4ca",  # encoded handoff trend retains numeric brake translation and fallback
   "d573d25cd2d4", "90825bb62937",  # gas/coast revisions retain numeric brake translation and fallback
   "4887161dd7a2",  # shared coast eligibility preserves the same translation
+  "5639f95ae502",  # pinned safety refactor preserves the Honda numeric translation
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",

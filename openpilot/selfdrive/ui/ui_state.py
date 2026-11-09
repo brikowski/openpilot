@@ -381,7 +381,7 @@ class Device:
       self._last_brightness = brightness
 
   def _update_wakefulness(self):
-    from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
+    from openpilot.selfdrive.ui.onroad.alert_renderer import get_alert
 
     now = time.monotonic()
     parked = ui_state.parked
@@ -395,7 +395,7 @@ class Device:
       if sm.recv_frame['selfdriveState'] >= ui_state.started_frame and sm.alive['selfdriveState']:
         ss = sm['selfdriveState']
         enabled = ss.enabled
-      visible_alert = AlertRenderer.get_alert(sm)
+      visible_alert = get_alert(sm)
       if visible_alert is not None:
         alert = (visible_alert.size, visible_alert.status, visible_alert.text1, visible_alert.text2)
     else:

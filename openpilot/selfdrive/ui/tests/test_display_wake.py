@@ -103,7 +103,8 @@ def display(monkeypatch, tmp_path):
   sm = SubMaster(carState=SimpleNamespace(cruiseState=SimpleNamespace(enabled=False), canValid=True, standstill=False,
                                          gearShifter=module.car.CarState.GearShifter.drive),
                 selfdriveState=SimpleNamespace(enabled=False, alertSize=SimpleNamespace(raw=0),
-                                               alertStatus=SimpleNamespace(raw=0), alertText1='', alertText2=''),
+                                               alertStatus=SimpleNamespace(raw=0), alertText1='', alertText2='',
+                                               alertHudVisual=module.car.CarControl.HUDControl.VisualAlert.none, alertType=''),
                 radarState=SimpleNamespace(leadOne=SimpleNamespace(present=False), leadTwo=SimpleNamespace(present=False)))
   state = State(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, started_time=0., sm=sm,
                 light_sensor=-1, params=SimpleNamespace(get=lambda _: None, get_bool=lambda _: False))

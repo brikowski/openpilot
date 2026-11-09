@@ -3,7 +3,7 @@ import time
 import raylib_nb as rl
 
 from openpilot.selfdrive.ui.ui_state import device, ui_state
-from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer
+from openpilot.selfdrive.ui.onroad.alert_renderer import get_alert
 from openpilot.system.ui.lib.application import gui_app, MousePos
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.odyssey import OdysseyAnimation
@@ -31,7 +31,7 @@ class Screensaver(Widget):
     new_alert = bool(alerts - self._alerts)
     self._alerts = alerts
 
-    onroad_alert = ui_state.started and AlertRenderer.get_alert(ui_state.sm) is not None
+    onroad_alert = ui_state.started and get_alert(ui_state.sm) is not None
     eligible = (not ui_state.started or ui_state.parked) and not onroad_alert
     if eligible != self._eligible:
       self._eligible = eligible
