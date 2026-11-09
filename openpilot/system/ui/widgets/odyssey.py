@@ -1,7 +1,8 @@
 import math
 import time
+from array import array
 
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.system.ui.lib.application import GL_VERSION, gui_app
 from openpilot.system.ui.widgets import Widget
@@ -57,7 +58,7 @@ class OdysseyAnimation(Widget):
     rl.set_texture_filter(self._texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
     self._shader = rl.load_shader_from_memory(WHEEL_VERTEX_SHADER, WHEEL_SHADER)
     self._rotation_loc = rl.get_shader_location(self._shader, "rotation")
-    self._rotation = rl.ffi.new("float[1]")
+    self._rotation = array("f", [0.0])
 
   def _render(self, rect: rl.Rectangle):
     elapsed = time.monotonic()
@@ -66,12 +67,12 @@ class OdysseyAnimation(Widget):
     distance = elapsed * 420.0
     road_y = rect.y + 776.0 * scale
     road = rl.Rectangle(rect.x, road_y, rect.width, 100.0 * scale)
-    rl.draw_rectangle_rounded(road, 0.5, 12, (16, 19, 24, 255))
+    rl.draw_rectangle_rounded(road, 0.5, 12, rl.Color(16, 19, 24, 255))
 
     rl.begin_scissor_mode(int(road.x), int(road.y), math.ceil(road.width), math.ceil(road.height))
     for i in range(math.ceil(self._texture.width / 260.0) + 1):
       x = rect.x + (i * 260.0 - distance % 260.0) * scale
-      rl.draw_rectangle_rec(rl.Rectangle(x, road_y + 60.0 * scale, 130.0 * scale, 7.0 * scale), (118, 124, 134, 255))
+      rl.draw_rectangle_rec(rl.Rectangle(x, road_y + 60.0 * scale, 130.0 * scale, 7.0 * scale), rl.Color(118, 124, 134, 255))
     rl.end_scissor_mode()
 
     bob = math.sin(elapsed * math.tau) * 1.5 * scale

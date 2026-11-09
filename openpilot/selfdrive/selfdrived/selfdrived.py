@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import math
 import os
 import time
 import threading
@@ -8,20 +7,16 @@ import openpilot.cereal.messaging as messaging
 
 from openpilot.cereal import log
 from opendbc.car.structs import car
-from opendbc.car.honda.values import CAR as HONDA
 from openpilot.cereal.visionipc import VisionStreamType
 from msgq.visionipc import VisionIpcClient
 
 
-from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper, DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
-from openpilot.common.utils import MovingAverage
 
 from openpilot.selfdrive.car.car_events import CarEvents
-from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
@@ -107,9 +102,6 @@ class SelfdriveD:
     self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
     self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
     self.eco_mode = False
-    self.factory_eco_mode = False
-    self.automatic_personality = None
-    self.following_speed = MovingAverage(600)  # One minute of valid 10 Hz parameter polls.
 
     car_recognized = self.CP.brand != 'mock'
 
@@ -132,7 +124,7 @@ class SelfdriveD:
     self.events_prev = []
     self.logged_comm_issue = None
     self.not_running_prev = None
-    self.personality = self.params.get(get_longitudinal_personality_param(self.eco_mode), return_default=True)
+    self.personality = self.params.get("LongitudinalPersonality", return_default=True)
     self.recalibrating_seen = False
     self.dm_lockout_set = False
     self.dm_uncertain_alerted = False
@@ -467,7 +459,7 @@ class SelfdriveD:
 
   def _update_eco_mode(self, CS):
     if self.CP.openpilotLongitudinalControl and not self.CP.passive and CS.canValid and CS.ecoModeValid:
-      self.factory_eco_mode = CS.ecoMode
+      self.eco_mode = CS.ecoMode
 
   def _update_departure_alerts(self):
     if self.sm.updated['driverAssistance'] and self.sm.all_checks(['driverAssistance']):
@@ -478,11 +470,11 @@ class SelfdriveD:
         self.events.add(EventName.trafficReady)
 
   def _update_personality(self, CS):
-    # Decrement the selected mode's personality on distance button press.
+    # Decrement personality on distance button press.
     if self.CP.openpilotLongitudinalControl:
       if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents):
         self.personality = (self.personality - 1) % 3
-        self.params.put(get_longitudinal_personality_param(self.eco_mode), self.personality)
+        self.params.put("LongitudinalPersonality", self.personality)
         self.events.add(EventName.personalityChanged)
 
   def data_sample(self):
@@ -594,27 +586,7 @@ class SelfdriveD:
       self.is_metric = self.params.get_bool("IsMetric")
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
-      eco_mode = self.factory_eco_mode
-      personality_param = get_longitudinal_personality_param(eco_mode)
-      CS = self.CS_prev
-      automatic_personality = self.automatic_personality if eco_mode == self.eco_mode else None
-      if (self.CP.carFingerprint == HONDA.HONDA_ODYSSEY_5G_MMR and self.CP.openpilotLongitudinalControl and
-          not self.CP.passive and CS.canValid and math.isfinite(CS.vEgo)):
-        self.following_speed.add_value(CS.vEgo)
-        speed = self.following_speed.get_average()
-        highway = speed >= 55 * CV.MPH_TO_MS
-        if eco_mode:
-          automatic_personality = log.LongitudinalPersonality.relaxed if highway else log.LongitudinalPersonality.standard
-        else:
-          automatic_personality = log.LongitudinalPersonality.standard if highway else log.LongitudinalPersonality.aggressive
-      if automatic_personality is not None and (automatic_personality != self.automatic_personality or eco_mode != self.eco_mode):
-        # Speed/mode changes select a native profile; live adjustments last until the next change.
-        self.params.put(personality_param, automatic_personality, block=True)
-      elif eco_mode != self.eco_mode:
-        personality = log.LongitudinalPersonality.relaxed if eco_mode else log.LongitudinalPersonality.standard
-        self.params.put(personality_param, personality, block=True)
-      self.automatic_personality = automatic_personality
-      self.eco_mode, self.personality = eco_mode, self.params.get(personality_param, return_default=True)
+      self.personality = self.params.get("LongitudinalPersonality", return_default=True)
       time.sleep(0.1)
 
   def run(self):

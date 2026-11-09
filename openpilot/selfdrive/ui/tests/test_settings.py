@@ -27,8 +27,8 @@ def test_disabling_lateral_maneuver_mode_preserves_live_delay():
 
 
 @pytest.mark.parametrize('variant', ['tici', 'mici'])
-def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant):
-  import pyray as rl
+def test_following_preference_is_shared_across_eco_states(monkeypatch, tmp_path, variant):
+  import raylib_nb as rl
   from pathlib import Path
   from openpilot.cereal import log
   from openpilot.common.params import Params
@@ -39,6 +39,7 @@ def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant)
   params = Params()
   params.put('LongitudinalPersonality', 0, block=True)
   Path(params.get_param_path('EcoModeEnabled')).write_text('1')
+  Path(params.get_param_path('EcoLongitudinalPersonality')).write_text('2')
   state = object.__new__(UIState)
   state._initialize()
   state._engaged_transition_callbacks = []
@@ -57,7 +58,8 @@ def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant)
     monkeypatch.setattr(toggles, 'ui_state', state)
     layout = toggles.TogglesLayout()
     assert 'EcoModeEnabled' not in layout._toggles
-    selected = layout._long_personality_setting.action_item.get_selected_button
+    def selected():
+      return layout._long_personality_setting.action_item.selected_button
 
     def select_standard():
       layout._set_longitudinal_personality(1)
@@ -75,18 +77,15 @@ def test_eco_personality_keeps_normal_preference(monkeypatch, tmp_path, variant)
 
     def select_standard():
       profile._handle_mouse_release(None)
-      profile._handle_mouse_release(None)
 
   assert selected() == 0
   message.ecoMode = True
-  message.personality = 2
   layout._update_state()
-  assert selected() == 2
+  assert selected() == 0
   select_standard()
   assert selected() == 1
-  assert params.get('LongitudinalPersonality') == 0
-  assert params.get('EcoLongitudinalPersonality') == 1
-  for enabled, personality in ((False, 0), (True, 1)):
+  assert params.get('LongitudinalPersonality') == 1
+  for enabled, personality in ((False, 1), (True, 1)):
     message.ecoMode = enabled
     message.personality = personality
     layout._update_state()

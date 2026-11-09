@@ -6,7 +6,6 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.mici.layouts.settings.initial_cruise_speed import InitialCruiseSpeedButton
-from openpilot.selfdrive.controls.lib.drive_helpers import get_longitudinal_personality_param
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -61,6 +60,7 @@ class TogglesLayoutMici(NavScroller):
     )
 
     enable_openpilot.set_enabled(lambda: not ui_state.engaged)
+    always_on_dm_toggle.set_enabled(not ui_state.params.get_bool("AlwaysOnDMLock"))
     record_front.set_enabled(False if ui_state.params.get_bool("RecordFrontLock") else (lambda: not ui_state.engaged))
     record_mic.set_enabled(lambda: not ui_state.engaged)
 
@@ -72,10 +72,6 @@ class TogglesLayoutMici(NavScroller):
 
   def _update_state(self):
     super()._update_state()
-
-    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
-    if self._personality_toggle._param != key:
-      self._refresh_personality()
 
     if ui_state.sm.updated["selfdriveState"]:
       personality = PERSONALITY_TO_INT[ui_state.sm["selfdriveState"].personality]
@@ -104,7 +100,5 @@ class TogglesLayoutMici(NavScroller):
       item.set_checked(ui_state.params.get_bool(key))
 
   def _refresh_personality(self):
-    key = get_longitudinal_personality_param(ui_state.sm["selfdriveState"].ecoMode)
-    self._personality_toggle._param = key
-    value = ui_state.params.get(key, return_default=True)
+    value = ui_state.params.get("LongitudinalPersonality", return_default=True)
     self._personality_toggle.set_value(self._personality_toggle._options[value])

@@ -1,10 +1,45 @@
 from types import SimpleNamespace
 
-import pyray as rl
+import raylib_nb as rl
 import pytest
 
 from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT
 from openpilot.selfdrive.ui.tests.test_display_wake import backlight as backlight, display as display
+
+
+def test_animation_uses_the_graphics_buffer_and_color_contract(monkeypatch, tmp_path):
+  monkeypatch.setenv('PARAMS_ROOT', str(tmp_path / 'params'))
+  monkeypatch.setenv('SCALE', '1')
+  from openpilot.system.ui.widgets import odyssey
+
+  monkeypatch.setattr(odyssey.gui_app, 'texture', lambda _: SimpleNamespace(width=1774, height=887))
+  for name in ('gen_texture_mipmaps', 'set_texture_filter', 'begin_scissor_mode', 'end_scissor_mode',
+               'begin_shader_mode', 'end_shader_mode', 'draw_texture_pro'):
+    monkeypatch.setattr(odyssey.rl, name, lambda *_: None)
+  monkeypatch.setattr(odyssey.rl, 'load_shader_from_memory', lambda *_: object())
+  monkeypatch.setattr(odyssey.rl, 'get_shader_location', lambda *_: 0)
+  monkeypatch.setattr(odyssey, 'time', SimpleNamespace(monotonic=lambda: 1.0))
+  colors, rotations = [], []
+
+  def draw(*args):
+    color = args[-1]
+    assert isinstance(color, rl.Color)
+    colors.append(color)
+
+  def uniform(shader, location, value, kind):
+    buffer = memoryview(value)
+    assert buffer.format == 'f' and buffer.nbytes == 4
+    assert kind == rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT
+    rotations.append(buffer[0])
+
+  monkeypatch.setattr(odyssey.rl, 'draw_rectangle_rounded', draw)
+  monkeypatch.setattr(odyssey.rl, 'draw_rectangle_rec', draw)
+  monkeypatch.setattr(odyssey.rl, 'set_shader_value', uniform)
+  animation = odyssey.OdysseyAnimation()
+  animation.render(rl.Rectangle(0, 0, 640, 320))
+  assert colors
+  assert rotations == pytest.approx([420 / 160])
+
 
 @pytest.fixture
 def screen(monkeypatch, tmp_path):

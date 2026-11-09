@@ -63,6 +63,19 @@ def test_stock_lead_shape_and_disappearance(renderer, monkeypatch):
   assert all(color.a == 0 for _, color in draws)
 
 
+def test_lead_draw_uses_platform_coordinates(renderer, monkeypatch):
+  from openpilot.selfdrive.ui.onroad import lead_bar
+
+  platform, module, widget, _, update = renderer
+  widget._rect = module.rl.Rectangle(25, 40, 2160, 1080)
+  update()
+  points = widget._lead_vehicles[0].bar.copy()
+  draws = []
+  monkeypatch.setattr(lead_bar, 'draw_polygon', lambda rect, points, color: draws.append(points))
+  widget._draw_lead_indicator()
+  np.testing.assert_allclose(draws[1], points + ([25, 40] if platform == 'c4' else [0, 0]))
+
+
 @pytest.mark.parametrize('longitudinal,valid,visible', [(True, True, True), (False, True, False), (True, False, False)])
 def test_stock_lead_render_requires_longitudinal_control_and_radar(renderer, monkeypatch, longitudinal, valid, visible):
   _, _, widget, sm, update = renderer

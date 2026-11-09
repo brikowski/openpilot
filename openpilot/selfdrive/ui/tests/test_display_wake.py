@@ -340,7 +340,7 @@ def test_pc_display_remains_bright_after_idle_timeout(display, backlight, monkey
 
 @pytest.mark.parametrize('variant', ['tizi', 'mici'])
 def test_screen_timeout_has_no_setting_and_ignores_legacy_value(display, monkeypatch, variant):
-  import pyray as rl
+  import raylib_nb as rl
   from pathlib import Path
   from openpilot.common.params import Params, UnknownKeyName
   from openpilot.selfdrive.ui import ui_state as module

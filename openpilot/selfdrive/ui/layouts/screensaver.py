@@ -1,6 +1,6 @@
 import time
 
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.selfdrive.ui.onroad.alert_renderer import AlertRenderer

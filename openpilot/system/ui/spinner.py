@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import pyray as rl
+import raylib_nb as rl
 import select
 import sys
 
@@ -29,7 +29,7 @@ else:
   FONT_SIZE = 32
   LINE_HEIGHT = 36
 MARGIN_H = 100
-DARKGRAY = (55, 55, 55, 255)
+DARKGRAY = rl.Color(55, 55, 55, 255)
 
 
 def clamp(value, min_value, max_value):
