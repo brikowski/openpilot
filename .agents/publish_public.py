@@ -2,7 +2,7 @@
 """Prepare or publish a software-validated ody-op release without custom development tooling.
 
 Build through a temporary Git index: leave the checkout untouched, keep vehicle tests and exact
-submodule pins, and inherit the public branch's independent CI configuration. Publication only fast-forwards;
+submodule pins, refresh reviewed weekly schedulers, and retain the other public CI. Publication only fast-forwards;
 a stale checkout or concurrent public update cannot overwrite newer source. The Sunday workflow
 runs --publish after software checks; the same command is available manually. The default is a local preview.
 """
@@ -56,6 +56,8 @@ def build_public(repo, source, parent):
     if removed:
       git(repo, 'update-index', '--force-remove', '--', *removed, env=env)
     git(repo, 'restore', f'--source={parent}', '--staged', '--', '.github', env=env)
+    git(repo, 'restore', f'--source={source}', '--staged', '--',
+        '.github/workflows/odyssey-release.yaml', '.github/workflows/odyssey-sync.yaml', env=env)
     for path in ('tools/README.md', '.gitignore', 'pyproject.toml', 'uv.lock'):
       if path in paths:
         original = subprocess.run(['git', 'show', f'{source}:{path}'], cwd=repo,

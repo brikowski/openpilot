@@ -29,8 +29,10 @@ class TestPublicRelease(unittest.TestCase):
     self.git('config', 'user.name', 'Mirror Test')
     self.git('config', 'user.email', 'mirror@example.invalid')
     self.write('.github/workflows/tests.yml', 'public CI\n')
-    self.scheduler = (Path(__file__).resolve().parents[1] / '.github/workflows/odyssey-release.yaml').read_text()
-    self.write('.github/workflows/odyssey-release.yaml', self.scheduler)
+    self.schedulers = {name: (Path(__file__).resolve().parents[1] / name).read_text() for name in (
+      '.github/workflows/odyssey-release.yaml', '.github/workflows/odyssey-sync.yaml')}
+    for name, content in self.schedulers.items():
+      self.write(name, content.replace('timezone: America/Chicago', 'timezone: Etc/UTC'))
     self.write('car.py', 'baseline\n')
     self.git('add', '.')
     self.git('commit', '-qm', 'upstream')
@@ -52,7 +54,8 @@ class TestPublicRelease(unittest.TestCase):
                  '.vscode/tasks.json', '.codex/local.json', '.claude/local.json'):
       self.write(path, 'development tooling\n')
     self.write('.github/workflows/tests.yml', 'shared vehicle CI\n')
-    self.write('.github/workflows/odyssey-release.yaml', 'unpublished scheduler edit\n')
+    for name, content in self.schedulers.items():
+      self.write(name, content)
     self.git('add', '.')
     (self.repo / 'opendbc_repo').mkdir()
     self.git('update-index', '--add', '--cacheinfo', f'160000,{self.parent},opendbc_repo')
@@ -94,13 +97,28 @@ class TestPublicRelease(unittest.TestCase):
 
   def test_weekly_scheduler_survives_vehicle_releases(self):
     public = self.public()
-    self.assertEqual(self.git('show', f'{public}:.github/workflows/odyssey-release.yaml') + '\n', self.scheduler)
+    for name, content in self.schedulers.items():
+      self.assertEqual(self.git('show', f'{public}:{name}') + '\n', content)
     self.write('car.py', 'next vehicle change\n')
     self.git('add', 'car.py')
     self.git('commit', '-qm', 'vehicle update')
     updated = self.public(source='HEAD', parent=public)
     self.assertNotEqual(updated, public)
-    self.assertEqual(self.git('show', f'{updated}:.github/workflows/odyssey-release.yaml') + '\n', self.scheduler)
+    for name, content in self.schedulers.items():
+      self.assertEqual(self.git('show', f'{updated}:{name}') + '\n', content)
+
+  def test_scheduler_only_changes_publish_without_vehicle_changes(self):
+    public = self.public()
+    for name, content in self.schedulers.items():
+      self.write(name, content.replace('timezone: America/Chicago', 'timezone: Etc/UTC'))
+    self.git('add', '.github/workflows')
+    self.git('commit', '-qm', 'reviewed weekly schedule change')
+    updated = self.public(source='HEAD', parent=public)
+    self.assertNotEqual(updated, public)
+    self.assertEqual(set(self.git('diff', '--name-only', public, updated).splitlines()), set(self.schedulers))
+    for name in self.schedulers:
+      self.assertEqual(self.git('ls-tree', 'HEAD', name), self.git('ls-tree', updated, name))
+    self.assertEqual(self.git('show', f'{updated}:.github/workflows/tests.yml'), 'public CI')
 
   def test_publication_excludes_even_forced_private_archive_files(self):
     self.write('.private/evidence/receipt.json', 'synthetic private receipt\n')

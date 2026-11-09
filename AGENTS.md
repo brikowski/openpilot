@@ -57,12 +57,12 @@ behavior in the simplest appropriate layer.
 branch and repository default. Target development pull requests to `ody-op-test`. Integrate changes
 and their tests directly on `ody-op-test` in both the parent and nested `opendbc`. Upstream syncs use
 merge commits to preserve both histories. GitHub Actions runs software checks and publishes the
-latest `ody-op-test` to `ody-op` every Sunday at 6:15 PM America/Chicago after those checks pass.
+latest `ody-op-test` to `ody-op` every Sunday at 12:01 AM America/Chicago after those checks pass.
 Software checks also run manually,
 without push or pull-request triggers. Inherited upstream workflows are disabled in the fork's
 GitHub settings. The small schedulers live on
 the default branch, `ody-op`, with their reviewed source also in `ody-op-test`. Every Monday at
-6:15 AM America/Chicago, a separate job merges official master and its exact opendbc pin into
+12:01 AM America/Chicago, a separate job merges official master and its exact opendbc pin into
 `ody-op-test`, checks the result, and publishes the nested source before the parent. Source conflicts
 or concurrent development stop publication. Sync retains the fork workflow definitions to avoid
 reactivating inherited CI. The opendbc push uses a repository-specific deploy key.
@@ -75,7 +75,8 @@ GitHub Actions release workflow. Never manually push `ody-op` or run
 `.agents/publish_public.py --publish` from this checkout. A local preview is available with
 `.venv/bin/python .agents/publish_public.py`. The publisher retains vehicle
 code, build files, tests, and the paired gitlink, excludes custom agent, analysis, editor, and
-deployment tooling, and preserves the public branch’s independent CI configuration.
+deployment tooling, refreshes the two reviewed weekly schedulers, and preserves the rest of the
+public branch’s independent CI configuration.
 Publication is not road-validated promotion and never deploys to the device.
 Use only these two branches; do not create additional branches or worktrees. Verify the public tree
 retains identical vehicle source, tests, and submodule pins. Publish the nested source before the
