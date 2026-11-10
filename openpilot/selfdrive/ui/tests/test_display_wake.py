@@ -109,7 +109,8 @@ def display(monkeypatch, tmp_path):
   state = State(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, started_time=0., sm=sm,
                 light_sensor=-1, params=SimpleNamespace(get=lambda _: None, get_bool=lambda _: False))
   monkeypatch.setattr(module, 'ui_state', state)
-  monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[], set_should_render=lambda _: None))
+  monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[], set_should_render=lambda _: None,
+                                                       big_ui=lambda: True))
   monkeypatch.setattr(module, 'PC', False)
   from openpilot.selfdrive.ui.onroad import alert_renderer
   monkeypatch.setattr(alert_renderer, 'ui_state', state)
@@ -247,6 +248,68 @@ def test_timeout_applies_onroad_and_offroad_and_touch_restarts_it(display, onroa
   assert not device.awake
 
 
+@pytest.mark.parametrize('ignition,big,timeout', [(True, True, 10), (True, False, 5), (False, True, 30)])
+def test_menu_timeout_does_not_wait_for_or_turn_off_display(display, monkeypatch, ignition, big, timeout):
+  from openpilot.selfdrive.ui import ui_state as module
+
+  state, device, now = display
+  state.ignition = state.started = ignition
+  monkeypatch.setattr(module.gui_app, 'big_ui', lambda: big)
+  callbacks = []
+  device.add_interactive_timeout_callback(lambda: callbacks.append(now[0]))
+  device._update_wakefulness()
+  now[0] = timeout
+  device._update_wakefulness()
+  assert not callbacks
+  now[0] += .1
+  device._update_wakefulness()
+  assert callbacks == [timeout + .1]
+  assert device.awake and device._wake_policy.deadline == DISPLAY_TIMEOUT
+  now[0] += 1
+  device._update_wakefulness()
+  assert callbacks == [timeout + .1]
+
+  module.gui_app.mouse_events = [SimpleNamespace(left_down=True)]
+  device._update_wakefulness()
+  module.gui_app.mouse_events = []
+  now[0] += timeout + .1
+  device._update_wakefulness()
+  assert len(callbacks) == 2 and device.awake
+
+
+def test_menu_timeout_override_does_not_change_display_deadline(display):
+  _, device, now = display
+  callbacks = []
+  device.add_interactive_timeout_callback(lambda: callbacks.append(now[0]))
+  device.set_override_interactive_timeout(7)
+  device._update_wakefulness()
+  now[0] = 7.1
+  device._update_wakefulness()
+  assert callbacks == [7.1]
+  assert device.awake and device._wake_policy.deadline == DISPLAY_TIMEOUT
+  device.set_override_interactive_timeout(None)
+  device._update_wakefulness()
+  now[0] = 17.2
+  device._update_wakefulness()
+  assert callbacks == [7.1, 17.2]
+  assert device.awake and device._wake_policy.deadline == DISPLAY_TIMEOUT
+
+
+def test_ignition_restores_short_menu_timeout_before_onroad_startup(display):
+  state, device, now = display
+  state.ignition = state.started = False
+  callbacks = []
+  device.add_interactive_timeout_callback(lambda: callbacks.append(now[0]))
+  device._update_wakefulness()
+  now[0] = 5
+  state.ignition = True
+  device._update_wakefulness()
+  now[0] = 15.1
+  device._update_wakefulness()
+  assert callbacks == [15.1]
+  assert device.awake and device._wake_policy.deadline == 65
+
+
 @pytest.fixture
 def backlight(display, monkeypatch):
   from openpilot.selfdrive.ui import ui_state as module
@@ -270,6 +333,11 @@ def test_idle_backlight_fades_before_panel_and_rendering_stop(display, backlight
   callbacks = []
   device.add_interactive_timeout_callback(lambda: callbacks.append(now[0]))
   device.update()
+  menu_timeout = 10 if onroad else 30
+  now[0] = menu_timeout + .1
+  device.update()
+  assert callbacks == [menu_timeout + .1]
+  assert device.awake
 
   levels = []
   for offset in (0, .4, 1, 1.6, 2, 3):
@@ -279,7 +347,7 @@ def test_idle_backlight_fades_before_panel_and_rendering_stop(display, backlight
     assert device.awake == (offset < 2)
   assert levels == [brightness, round(brightness * 0.8), round(brightness * 0.5), round(brightness * 0.2), 0, 0]
   assert power == render == [(DISPLAY_TIMEOUT + 2, False)]
-  assert callbacks == [DISPLAY_TIMEOUT + .4]
+  assert callbacks == [menu_timeout + .1]
 
 
 @pytest.mark.parametrize('wake', ['touch', 'popup'])

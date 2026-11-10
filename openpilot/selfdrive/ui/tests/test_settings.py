@@ -1,8 +1,133 @@
+from types import SimpleNamespace
 from unittest.mock import Mock, call
 
 import pytest
 
 from openpilot.selfdrive.ui.layouts.settings.lateral_maneuver import set_lateral_maneuver_mode
+
+
+@pytest.fixture
+def navigation(monkeypatch, tmp_path):
+  monkeypatch.setenv('PARAMS_ROOT', str(tmp_path / 'params'))
+  from openpilot.selfdrive.ui.layouts import main
+  from openpilot.system.ui.widgets import Widget
+
+  class Layout(Widget):
+    def __init__(self):
+      super().__init__()
+      self._setup_widget = self
+      self.completed = True
+
+    def _render(self, rect):
+      pass
+
+    set_callbacks = set_open_settings_callback = set_current_panel = lambda *args, **kwargs: None
+
+  for name in ('Sidebar', 'HomeLayout', 'BodyLayout', 'SettingsLayout', 'AugmentedRoadView', 'OnboardingWindow'):
+    monkeypatch.setattr(main, name, Layout)
+  monkeypatch.setattr(main, 'Screensaver', lambda *_: None)
+  monkeypatch.setattr(main.messaging, 'PubMaster', Mock())
+  state = SimpleNamespace(started=False, parked=False, ignition=False, is_body=False)
+  monkeypatch.setattr(main, 'ui_state', state)
+  device = SimpleNamespace(add_interactive_timeout_callback=Mock())
+  state.add_on_body_changed_callbacks = Mock()
+  monkeypatch.setattr(main, 'device', device)
+  app = main.gui_app
+  monkeypatch.setattr(app, '_nav_stack', [])
+  monkeypatch.setattr(app, '_nav_stack_ticks', [])
+  layout = main.MainLayout()
+
+  def tick():
+    for callback in app._nav_stack_ticks:
+      callback()
+
+  return SimpleNamespace(app=app, main=main, layout=layout, state=state, tick=tick, dialog=Layout,
+                         timeout=device.add_interactive_timeout_callback.call_args.args[0])
+
+
+def test_started_transition_reveals_road_view_under_nested_dialogs(navigation):
+  n = navigation
+  n.layout.open_settings(n.main.PanelType.NETWORK)
+  n.app.push_widget(n.dialog())
+  n.app.push_widget(n.dialog())
+  n.state.started = n.state.ignition = True
+  n.tick()
+  assert n.app.get_active_widget() is n.layout
+  assert n.layout._current_mode == n.main.MainState.ONROAD
+  assert not n.layout._sidebar.is_visible
+
+
+def test_leaving_park_reveals_road_view_without_another_started_edge(navigation):
+  n = navigation
+  n.state.started = n.state.ignition = n.state.parked = True
+  n.tick()
+  n.layout.open_settings(n.main.PanelType.DEVICE)
+  n.app.push_widget(n.dialog())
+  n.tick()
+  assert n.app.get_active_widget() is not n.layout
+  n.state.parked = False
+  n.tick()
+  assert n.app.get_active_widget() is n.layout
+  assert n.layout._current_mode == n.main.MainState.ONROAD
+
+
+def test_menu_timeout_returns_to_road_view_and_dismisses_dialog(navigation):
+  n = navigation
+  n.state.started = n.state.ignition = True
+  n.tick()
+  n.layout.open_settings(n.main.PanelType.DEVICE)
+  n.app.push_widget(n.dialog())
+  n.tick()
+  assert n.app.get_active_widget() is not n.layout
+  n.timeout()
+  assert n.app.get_active_widget() is n.layout
+  assert n.layout._current_mode == n.main.MainState.ONROAD
+
+
+@pytest.mark.parametrize('started', [False, True])
+def test_transition_and_timeout_preserve_onboarding(navigation, started):
+  n = navigation
+  n.app.push_widget(n.layout._onboarding_window)
+  n.state.started = n.state.ignition = started
+  n.tick()
+  n.timeout()
+  assert n.app.get_active_widget() is n.layout._onboarding_window
+  assert n.layout._current_mode == n.main.MainState.HOME
+  n.app.pop_widget()
+  n.tick()
+  assert n.layout._current_mode == (n.main.MainState.ONROAD if started else n.main.MainState.HOME)
+
+
+def test_parked_menu_timeout_keeps_screensaver_visible(navigation):
+  n = navigation
+  n.state.started = n.state.ignition = n.state.parked = True
+  n.tick()
+  n.layout.open_settings(n.main.PanelType.DEVICE)
+  screensaver = n.dialog()
+  n.app.push_widget(screensaver)
+  n.timeout()
+  assert n.app.get_active_widget() is screensaver
+
+
+def test_ignition_and_leaving_park_do_not_bypass_system_startup(navigation):
+  n = navigation
+  n.state.ignition = True
+  n.state.parked = False
+  n.tick()
+  n.timeout()
+  assert n.layout._current_mode == n.main.MainState.HOME
+
+
+def test_offroad_transition_updates_home_without_dismissing_dialog(navigation):
+  n = navigation
+  n.state.started = n.state.ignition = True
+  n.tick()
+  dialog = n.dialog()
+  n.app.push_widget(dialog)
+  n.state.started = n.state.ignition = False
+  n.tick()
+  assert n.app.get_active_widget() is dialog
+  assert n.layout._current_mode == n.main.MainState.HOME
 
 
 def test_enabling_lateral_maneuver_mode_clears_live_delay():

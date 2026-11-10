@@ -291,6 +291,8 @@ class UIState:
 class Device:
   def __init__(self):
     self._wake_policy = DisplayWakePolicy()
+    self._interaction_time: float | None = None
+    self._prev_timed_out = False
     self._offroad_alerts: set[str] | None = None
     self._offroad_alert_poll_time = 0.0
     self._override_interactive_timeout: int | None = None
@@ -323,10 +325,11 @@ class Device:
     if self._override_interactive_timeout is not None:
       return self._override_interactive_timeout
 
-    return DISPLAY_TIMEOUT
+    ignition_timeout = 10 if gui_app.big_ui() else 5
+    return ignition_timeout if ui_state.ignition else 30
 
   def _reset_interactive_timeout(self) -> None:
-    self._wake_policy.reset(time.monotonic(), self.interactive_timeout)
+    self._interaction_time = time.monotonic() + self.interactive_timeout
 
   def add_interactive_timeout_callback(self, callback: Callable):
     self._interactive_timeout_callbacks.append(callback)
@@ -384,10 +387,20 @@ class Device:
     from openpilot.selfdrive.ui.onroad.alert_renderer import get_alert
 
     now = time.monotonic()
+    touch = any(ev.left_down for ev in gui_app.mouse_events)
+    # Menu inactivity is independent of the longer display timeout.
+    if self._interaction_time is None or ui_state.ignition != self._wake_policy.ignition or touch:
+      self._reset_interactive_timeout()
+    timed_out = now > self._interaction_time
+    if timed_out and not self._prev_timed_out:
+      for callback in self._interactive_timeout_callbacks:
+        callback()
+    self._prev_timed_out = timed_out
+
     parked = ui_state.parked
     if parked != self._parked:
       self._parked = parked
-      self._wake_policy.reset(now, self.interactive_timeout)
+      self._wake_policy.reset(now, DISPLAY_TIMEOUT)
     alert = None
     enabled = None
     if ui_state.started:
@@ -405,14 +418,11 @@ class Device:
           self._offroad_alerts.add('UpdateAvailable')
         self._offroad_alert_poll_time = now
 
-    awake, timeout_edge = self._wake_policy.update(
-      now, self.interactive_timeout, ignition=ui_state.ignition, started=ui_state.started,
+    awake, _ = self._wake_policy.update(
+      now, DISPLAY_TIMEOUT, ignition=ui_state.ignition, started=ui_state.started,
       enabled=enabled, alert=alert,
-      touch=any(ev.left_down for ev in gui_app.mouse_events), offroad_alerts=self._offroad_alerts if not ui_state.started else None,
+      touch=touch, offroad_alerts=self._offroad_alerts if not ui_state.started else None,
       pc=PC)
-    if timeout_edge:
-      for callback in self._interactive_timeout_callbacks:
-        callback()
     # Keep rendering and panel power on until the backlight fade finishes.
     self._set_awake(awake or now < self._wake_policy.deadline + DISPLAY_FADE_DURATION)
 

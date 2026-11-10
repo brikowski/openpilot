@@ -283,12 +283,14 @@ def test_park_wakes_sleeping_display_then_times_out_again(display, backlight):
   state.sm['carState'].standstill = True
   device.update()
   assert device.awake and device._brightness_target > 0
+  assert device._wake_policy.deadline == now[0] + DISPLAY_TIMEOUT
   now[0] += DISPLAY_TIMEOUT + 3
   device.update()
   assert not device.awake and device._brightness_target == 0
   state.sm['carState'].gearShifter = car.CarState.GearShifter.drive
   device.update()
   assert device.awake
+  assert device._wake_policy.deadline == now[0] + DISPLAY_TIMEOUT
   now[0] += DISPLAY_TIMEOUT + 3
   device.update()
   assert not device.awake
