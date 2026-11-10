@@ -172,6 +172,10 @@ if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin '$D
 tools/op.sh switch origin '$BRANCH'
 UV_CACHE_DIR='$DEVICE_UV_CACHE' UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' \
   UV_PYTHON_PREFERENCE=managed uv sync --frozen --all-extras
+# The switch may have run the old helper; dependencies can remove its Git LFS binary.
+if test -f lfs.py; then
+  .venv/bin/python lfs.py install
+fi
 $MODEL_CHECK
 # Use the same memory-aware build entry point as device startup, without developer CLI dependencies.
 PATH=\"/data/openpilot/.venv/bin:\$PATH\" PYTHONPATH=/data/openpilot \

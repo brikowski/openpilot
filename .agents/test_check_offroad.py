@@ -95,6 +95,9 @@ remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return
   if command == "deploy_device":
     target = "Params().put('UpdaterTargetBranch', 'ody-op-test')"
     assert result.stdout.index(code) < result.stdout.index(target) < result.stdout.index("tools/op.sh switch")
+    assert ".venv/bin/python lfs.py install" in result.stdout
+    migration = result.stdout.index(".venv/bin/python lfs.py install")
+    assert result.stdout.index("uv sync --frozen --all-extras") < migration < result.stdout.index("model = Path(")
     assert result.stdout.rindex(code) < result.stdout.index("sudo reboot")
 
 
