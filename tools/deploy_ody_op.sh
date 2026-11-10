@@ -150,6 +150,9 @@ test -z \"\$failed\"
 deploy_device() {
   local_pair
   cd "$ROOT_DIR"
+  local required_agnos
+  required_agnos=$(AGNOS_VERSION=; source "$ROOT_DIR/launch_env.sh"; printf '%s' "$AGNOS_VERSION")
+  test -n "$required_agnos"
   git diff --check
   git -C opendbc_repo diff --check
   .venv/bin/python .agents/preflash.py
@@ -167,6 +170,10 @@ deploy_device() {
 set -euo pipefail
 cd /data/openpilot
 $OFFROAD_CHECK
+if test -f /AGNOS && test \"\$(cat /VERSION)\" != '$required_agnos'; then
+  echo 'refusing: install AGNOS $required_agnos before deploying this source' >&2
+  exit 1
+fi
 \"\$ody_check_python\" -c \"from openpilot.common.params import Params; Params().put('UpdaterTargetBranch', '$BRANCH')\"
 if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin '$DEVICE_REMOTE'; else git remote add origin '$DEVICE_REMOTE'; fi
 tools/op.sh switch origin '$BRANCH'

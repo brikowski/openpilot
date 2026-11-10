@@ -101,6 +101,44 @@ remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return
     assert result.stdout.rindex(code) < result.stdout.index("sudo reboot")
 
 
+@pytest.mark.parametrize("agnos,version,accepted", [
+  (True, "required", True),
+  (True, "older", False),
+  (True, "", False),
+  (True, None, False),
+  (False, "older", True),
+])
+def test_deployment_requires_target_agnos_before_changing_device(tmp_path, agnos, version, accepted):
+  root = Path(__file__).parents[1]
+  required = (root / "launch_env.sh").read_text().split('export AGNOS_VERSION="', 1)[1].split('"', 1)[0]
+  script = (root / "tools/deploy_ody_op.sh").read_text().rsplit('\nmain "$@"', 1)[0]
+  script = '\n'.join(f"ROOT_DIR={shlex.quote(str(root))}" if line.startswith("ROOT_DIR=") else line
+                     for line in script.splitlines())
+  mocks = '''
+local_pair() { PARENT_SHA=x; OPENDBC_SHA=x; }
+git() { if [[ "$*" == *ls-remote* ]]; then echo 'x refs/heads/ody-op-test'; fi; }
+.venv/bin/python() { return 0; }
+OFFROAD_CHECK=:
+remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return 1; }
+'''
+  capture = subprocess.run(["bash", "-c", script + mocks + "deploy_device"], capture_output=True, text=True,
+                           env={"PATH": "/usr/bin:/bin", "AGNOS_VERSION": "inherited-override"})
+  assert capture.returncode == 1
+  # Execute only the real preflight, before the first parameter, source or build mutation.
+  prefix = capture.stdout.split('"$ody_check_python" -c', 1)[0]
+  prefix = prefix.replace("cd /data/openpilot", "cd " + shlex.quote(str(tmp_path)))
+  prefix = prefix.replace("/AGNOS", str(tmp_path / "AGNOS")).replace("/VERSION", str(tmp_path / "VERSION"))
+  if agnos:
+    (tmp_path / "AGNOS").touch()
+  if version is not None:
+    (tmp_path / "VERSION").write_text(required if version == "required" else version)
+  result = subprocess.run(["bash", "-c", prefix + '\necho PREFLIGHT_PASSED'], capture_output=True, text=True)
+  assert (result.returncode == 0) == accepted
+  assert ("PREFLIGHT_PASSED" in result.stdout) == accepted
+  if not accepted:
+    assert f"install AGNOS {required}" in result.stderr
+
+
 @pytest.mark.parametrize("project,global_env,guard_status,expected", [
   (True, True, 0, "project"),
   (False, True, 0, "global"),
