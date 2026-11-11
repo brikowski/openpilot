@@ -60,8 +60,9 @@ active safety rails.
   estimate show that coast supplies the current negative request. Qualified coast overrides the fixed
   fallback entry while measured response remains within the existing response margin. A settled
   same-gear brake handoff tolerates forecast drift within that margin only while the request is held
-  or easing and measured deceleration still meets it. Stronger requests, measured shortfall, larger
-  forecast deficits or unreliable state restore ordinary selection. Starting a brake release normally requires coast to supply the request.
+  or easing and any measured deceleration shortfall stays within that margin. Stronger requests,
+  larger shortfalls or forecast deficits, and unreliable state restore ordinary selection.
+  Starting a brake release normally requires coast to supply the request.
   Settled brake history, a held/easing request, and both current and filtered excess
   deceleration allow the same bounded forecast margin for initial release.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
