@@ -22,8 +22,9 @@ active safety rails.
 - `GAS_COMMAND` is opaque/unitless. Do not infer acceleration or torque linearity from its raw value.
 - Received `KINEMATICS.LONG_ACCEL` has unqualified scale and reference frame on this Odyssey.
   Keep it diagnostic until qualified; it is not interchangeable with net `aEgo`.
-- The Honda Bosch ECU closes its own acceleration/brake loop. Do not stack a generic OpenPilot PID
-  around `ACCEL_COMMAND` or use CAN shaping to hide an upstream planner/controller mismatch.
+- Keep gas and brake response calibration separate; gas feedback belongs in `GAS_COMMAND`.
+  Do not stack a generic OpenPilot PID across both domains or use CAN shaping to hide an
+  upstream planner/controller mismatch. Native gas acceleration-loop behavior is unverified.
 - On the current `ody-op-test` Odyssey port, the controller chooses mutually exclusive gas/brake
   domains from the raw request, with response-qualified gas entry from settled coast, brake entry
   from observed coast with a prior forecast, and response-qualified road-speed brake release. Its
