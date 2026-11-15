@@ -227,7 +227,7 @@ def test_changed_evidence_requires_a_new_cleanup_preview(archive):
   root, evidence, policy = configured(archive)
   ledger = evidence / 'log-validation-ledger.jsonl'
   plan = retention.preview(root, ledger, policy, NOW, evidence=evidence)
-  (evidence / 'new-evidence.json').write_text('new evidence')
+  (evidence / 'new-evidence.json').write_bytes(b'x' * 30000)
   with pytest.raises(ValueError, match='changed'):
     retention.apply_plan(root, ledger, policy, plan, evidence=evidence)
   assert len(list(root.glob('*/rlog.zst'))) == 2
@@ -236,3 +236,11 @@ def test_changed_evidence_requires_a_new_cleanup_preview(archive):
 def test_evidence_is_counted_once_when_roots_overlap(tmp_path):
   (tmp_path / 'rlog.zst').write_bytes(b'log')
   assert retention.budget_status(tmp_path, {'budget_bytes': 50_000_000_000}, tmp_path)['archive_bytes'] == 3
+
+
+def test_saved_preview_is_counted_without_invalidating_its_own_review(archive):
+  root, evidence, policy = configured(archive)
+  ledger = evidence / 'log-validation-ledger.jsonl'
+  plan = retention.preview(root, ledger, policy, NOW, evidence=evidence)
+  (evidence / 'retention-plan.json').write_text(json.dumps(plan, indent=2))
+  assert retention.apply_plan(root, ledger, policy, plan, evidence=evidence) == [OLD]

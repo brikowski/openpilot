@@ -155,7 +155,7 @@ def apply_plan(root, ledger_path, policy, plan, record_removed=lambda route: Non
       plan.get('evidence_root') != (str(evidence.resolve()) if evidence is not None else None)):
     raise ValueError('plan root or policy changed')
   current = preview(root, ledger_path, policy, plan['as_of'], plan.get('incoming_bytes', 0), plan.get('keep', ()), evidence)
-  if current['candidates'] != plan.get('candidates') or current['archive_bytes'] != plan.get('archive_bytes'):
+  if current['candidates'] != plan.get('candidates') or current['projected_bytes'] > current['budget_bytes']:
     raise ValueError('candidate files or evidence changed; generate another preview')
   removed = []
   for row in plan['candidates']:

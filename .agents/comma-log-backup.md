@@ -175,7 +175,7 @@ SSH fallback. New acquisitions remain protected until their review retires them.
 Cleanup removes eligible whole log routes only. Evidence, protected baselines, unresolved faults,
 unvalidated/partial routes and linked files remain. If their combined size leaves no room, refuse
 new transfers. Cleanup receipts also consume budget; capacity planning reserves their bytes.
-Changing evidence after a preview invalidates it. `archive_retention.py --preview` remains
+Plans recheck evidence usage and refuse cleanup when the reviewed result will no longer fit. `archive_retention.py --preview` remains
 available for review, and `--apply` rechecks it. Removal from the synchronized mirror propagates
 to Proton and other Macs; no private policy, plan or receipt belongs in Git.
 
