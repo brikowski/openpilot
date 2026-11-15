@@ -151,6 +151,85 @@ def test_disabling_lateral_maneuver_mode_preserves_live_delay():
   ]
 
 
+@pytest.fixture
+def longitudinal_mode(monkeypatch, tmp_path):
+  import raylib_nb as rl
+  from openpilot.common.params import Params
+  from openpilot.selfdrive.ui.widgets import longitudinal_mode
+
+  monkeypatch.setenv('PARAMS_ROOT', str(tmp_path))
+  params = Params()
+  state = SimpleNamespace(params=params, started=False, ignition=False, is_release=False, alpha_long_enabled=False,
+                          CP=SimpleNamespace(alphaLongitudinalAvailable=True))
+  state.is_offroad = lambda: not state.started
+  state.update_params = lambda: setattr(state, 'alpha_long_enabled', params.get_bool('AlphaLongitudinalEnabled'))
+  monkeypatch.setattr(longitudinal_mode, 'ui_state', state)
+  app = longitudinal_mode.gui_app
+  monkeypatch.setattr(app, 'font', lambda *args: rl.Font())
+  dialogs = []
+  monkeypatch.setattr(app, 'push_widget', dialogs.append)
+  monkeypatch.setattr(app, 'pop_widget', Mock())
+  return SimpleNamespace(button=longitudinal_mode.LongitudinalModeButton(), params=params, state=state, dialogs=dialogs)
+
+
+def test_home_longitudinal_mode_confirms_enable_and_uses_existing_setting(longitudinal_mode):
+  m = longitudinal_mode
+  assert m.button.is_visible
+  assert m.button._label._text() == 'Radar'
+  m.button._toggle()
+  assert not m.params.get_bool('AlphaLongitudinalEnabled')
+  assert m.params.get('OnroadCycleRequested') is None
+  m.dialogs[-1]._confirm_button_callback()
+  assert m.params.get_bool('AlphaLongitudinalEnabled')
+  assert m.params.get_bool('OnroadCycleRequested')
+  assert m.button._label._text() == 'OpenPilot'
+
+  m.params.remove('OnroadCycleRequested')
+  m.button._toggle()
+  assert not m.params.get_bool('AlphaLongitudinalEnabled')
+  assert m.params.get_bool('OnroadCycleRequested')
+  assert m.button._label._text() == 'Radar'
+  assert len(m.dialogs) == 1
+
+
+def test_home_longitudinal_mode_cancel_preserves_selection(longitudinal_mode):
+  m = longitudinal_mode
+  m.button._toggle()
+  m.dialogs[-1]._cancel_button_callback()
+  assert not m.params.get_bool('AlphaLongitudinalEnabled')
+  assert m.params.get('OnroadCycleRequested') is None
+  assert m.button._label._text() == 'Radar'
+
+
+@pytest.mark.parametrize('blocked', ['ignition', 'started', 'is_release', 'unknown_car', 'unsupported_car'])
+@pytest.mark.parametrize('confirm_open', [False, True])
+def test_home_longitudinal_mode_rechecks_availability(longitudinal_mode, blocked, confirm_open):
+  m = longitudinal_mode
+  if confirm_open:
+    m.button._toggle()
+  if blocked == 'unknown_car':
+    m.state.CP = None
+  elif blocked == 'unsupported_car':
+    m.state.CP.alphaLongitudinalAvailable = False
+  else:
+    setattr(m.state, blocked, True)
+  assert not m.button.is_visible
+  if confirm_open:
+    m.dialogs[-1]._confirm_button_callback()
+  else:
+    m.button._toggle()
+    assert not m.dialogs
+  assert not m.params.get_bool('AlphaLongitudinalEnabled')
+  assert m.params.get('OnroadCycleRequested') is None
+
+
+def test_home_longitudinal_mode_reflects_settings_changes(longitudinal_mode):
+  m = longitudinal_mode
+  m.params.put_bool('AlphaLongitudinalEnabled', True, block=True)
+  m.state.update_params()
+  assert m.button._label._text() == 'OpenPilot'
+
+
 @pytest.mark.parametrize('variant', ['tici', 'mici'])
 def test_following_preference_is_shared_across_eco_states(monkeypatch, tmp_path, variant):
   import raylib_nb as rl
