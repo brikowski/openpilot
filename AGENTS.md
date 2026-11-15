@@ -1,286 +1,186 @@
-# Odyssey command-following — cold-start rules
+# Odyssey development guidance
 
-Read this before changing lateral or longitudinal behavior or its tooling. This file holds decisions
-and invariants; private route history and derivations belong in the private Proton Drive `evidence/` folder.
+This file holds durable project boundaries. Read linked guides when relevant to the task;
+keep route history, changing measurements and experiment decisions in Proton's private evidence archive.
 
-## Project objective
+## Objective and judgment
 
-Make the Odyssey follow `carControl`'s lateral and longitudinal commands as accurately and
-smoothly as its Honda actuators allow in Standard and ECON modes. Treat ECON as native vehicle
-behavior; account for it only where observed response requires it, without duplicating its response
-or affecting Standard mode with ECON-specific logic. Keep production changes minimal relative to current
-`commaai/openpilot` and its pinned `commaai/opendbc`.
+Make the Odyssey's actual lateral and longitudinal response follow `carControl` accurately and
+smoothly in Standard and factory ECON modes, within Honda hardware limits.
 
-Continuously prefer the simplest effective solution. Before adding code, tuning, heuristics,
-special cases, or abstractions, determine whether existing behavior can be simplified, removed,
-or used directly. Favor reliable live or learned state and straightforward control over unnecessary
-fixed behavior. Use fixed values when they are the simplest correct solution or necessary constraints
-or fallbacks. Retain complexity only for a clear behavioral benefit; keep code and documentation useful.
+Locate the first reproducible command-to-response error and fix it in the responsible layer,
+including OpenPilot or `opendbc`. Do not mask upstream faults with Honda-specific compensation.
 
-Write production changes as if they could be upstreamed to OpenPilot. Follow existing architecture
-and conventions, prefer general solutions when the evidence supports shared behavior, and keep
-vehicle-specific logic narrow. Keep implementations minimal, maintainable, and easy to review.
+Treat ECON as native behavior. Share calibration unless measured response requires otherwise,
+and keep ECON-specific adaptation out of Standard.
 
-For every comparable private full-rate route, resolve the exact parent and nested `opendbc` revisions,
-reconstruct the command path with zero-order-held CAN, and identify the first repeatable breakdown:
+Choose the simplest reliable solution. Reuse, simplify, or remove existing logic before adding
+complexity. Use live state, learning, or fixed values according to what is simplest and supported
+by evidence. Follow upstream architecture and keep vehicle-specific logic narrow. Write production
+changes as if they could be upstreamed, minimizing differences from current `commaai/openpilot`
+and its pinned `commaai/opendbc`.
 
-- If the upstream plan or model asks for the wrong motion, investigate OpenPilot planning or model
-  behavior.
-- If the plan is sound but `carControl` is wrong, investigate OpenPilot's controller or state machine.
-- If `carControl` is right but CAN values or gas/brake domains are wrong, investigate the Honda port,
-  DBC translation, or safety boundary.
-- If the command and domain are right but the vehicle responds incorrectly, investigate Honda ECU and
-  actuator response without reshaping the OpenPilot command.
+Use engineering judgment to resolve routine ambiguities, define acceptance criteria and choose
+proportionate validation within the authorization, safety and privacy boundaries below.
+Revisit earlier decisions when new evidence warrants; historical keep/change/retire labels and
+experiment branches are evidence receipts, not permanent design restrictions.
 
-Apply the same ownership rule independently to lateral and longitudinal control. Treat command/CAN
-fidelity and physical response as separate outcomes: replay validates command shape, while
-full-rate road evidence validates closed-loop behavior. Every candidate needs proportionate
-mutation-verified tests, an attributable baseline comparison, and an explicit keep/change/retire
-decision.
-Historical keep/change/retire labels are evidence receipts, not permanent exclusions. New
-full-rate logs may reopen any mechanism when they supply a repeatable first-divergence hypothesis;
-re-audit the cited exposure instead of treating an absence of proof as proof of failure. Preserve
-the verified safety, provenance, and ownership boundaries below.
+Before extensive analysis, identify the question and the decision its answer could change.
+Reuse verified results when inputs and relevant behavior are unchanged. Stop an analysis when it
+answers that question; more logs, artifacts or passing checks do not themselves establish progress.
+Keep documentation and tooling useful and proportional to the decision.
 
-Runtime changes in both OpenPilot and nested `opendbc` are in scope for this objective. Use pinned
-upstream behavior as the comparison baseline. Fix command generation, controller state, timing, or
-publication in OpenPilot when the first repeatable divergence belongs there; fix CAN translation,
-domains, safety translation, and actuator response in the Honda layer when it belongs there. Do not
-mask an upstream error in the car port or change the planner/model's intended motion to compensate
-for Honda actuator limitations. Keep vehicle-specific changes as narrow as practical and put each
-behavior in the simplest appropriate layer.
+Missing logs, an unavailable device or an unmeasured installed candidate can block a particular
+road-performance claim. Continue independent analysis, justified implementation and software
+validation. When no justified action remains, explain the blocker and what would unlock progress;
+do not repeatedly poll unchanged state without a reason to expect new information.
 
-## What this branch is
+## Find the responsible layer
 
-`ody-op-test` is the development and supervised-test branch for Honda Bosch command following on
-`HONDA_ODYSSEY_5G_MMR`, including tooling and documentation. `ody-op` is the clean public install
-branch and repository default. Target development pull requests to `ody-op-test`. Integrate changes
-and their tests directly on `ody-op-test` in both the parent and nested `opendbc`. Upstream syncs use
-merge commits to preserve both histories. GitHub Actions runs software checks and publishes the
-latest `ody-op-test` to `ody-op` every Sunday at 12:01 AM America/Chicago after those checks pass.
-Software checks also run manually,
-without push or pull-request triggers. Inherited upstream workflows are disabled in the fork's
-GitHub settings. The small schedulers live on
-the default branch, `ody-op`, with their reviewed source also in `ody-op-test`. Every Monday at
-12:01 AM America/Chicago, a separate job merges official master and its exact opendbc pin into
-`ody-op-test`, checks the result, and publishes the nested source before the parent. Source conflicts
-or concurrent development stop publication. Sync retains the fork workflow definitions to avoid
-reactivating inherited CI. The opendbc push uses a repository-specific deploy key.
-`master` is inactive
-history; use `upstream/master` for deliberate upstream updates. The scheduler publishes
-the exact checked revision and rejects development advances during testing. The Sunday release does
-not sync upstream; neither weekly job rewrites development history or deploys to the device.
-Push development source only to `ody-op-test`; leave publication of `ody-op` to the automatic
-GitHub Actions release workflow. Never manually push `ody-op` or run
-`.agents/publish_public.py --publish` from this checkout. A local preview is available with
-`.venv/bin/python .agents/publish_public.py`. The publisher retains vehicle
-code, build files, tests, and the paired gitlink, excludes custom agent, analysis, editor, and
-deployment tooling, refreshes the two reviewed weekly schedulers, and preserves the rest of the
-public branch’s independent CI configuration.
-Publication is not road-validated promotion and never deploys to the device.
-Use only these two branches; do not create additional branches or worktrees. Verify the public tree
-retains identical vehicle source, tests, and submodule pins. Publish the nested source before the
-parent; the parent gitlink identifies the exact Honda revision even if the nested public ref lags. Keep the parent
-and nested opendbc SHAs paired; use `git revert` to change or retire a candidate, and keep the prior
-road-known-good pair reachable.
+Apply attribution independently to lateral and longitudinal behavior:
 
-Old experiment branches and their mechanisms are historical evidence, not active targets or
-accepted knowledge. Their private measurements remain in Proton Drive's `evidence/tune-evidence.md`;
-they do not prohibit a new source-compatible hypothesis owned by current logs.
+| First reproducible divergence | Owner |
+| --- | --- |
+| Wrong intended motion | OpenPilot model or planner |
+| Sound plan, wrong `carControl` | OpenPilot controller, state machine, timing or publication |
+| Correct `carControl`, wrong numeric CAN or command domain | Honda translation, DBC or safety boundary |
+| Correct commands and domains, wrong vehicle response | Honda ECU or actuator response |
 
-Alpha Long has a separate safety boundary on this Bosch Odyssey: enabling
-`openpilotLongitudinalControl` disables the Bosch radar ECU through the Honda UDS
-communication-control path, and the controller keeps it disabled with tester-present messages.
-Treat Honda CMBS, including stock AEB and FCW, as unavailable during Alpha Long road tests.
-This is independent of the Panda `alternativeExperience` AEB-forwarding flag and of safety
-guards that reject OpenPilot AEB bits; neither mechanism restores CMBS while the radar ECU is
-disabled.
+For longitudinal work, trace `longitudinalPlan` → `carControl.actuators.accel` →
+`ACCEL_COMMAND` plus `GAS_COMMAND`/`BRAKE_REQUEST` → vehicle response. `longcontrol` may
+legitimately override `longitudinalPlan.aTarget`. Trace the analogous lateral command path.
+Fix upstream errors at their owner; preserve intended motion when calibrating actuators.
 
-The Odyssey supervised trial uses a fixed `[0, 3840]` LKA map with
-`latAccelFactor 1.35` and `friction 0.2 / 1.5` in both stock ACC and Alpha Long. Both retain
-`steerActuatorDelay 0.15` and the stock slew of 7680 CAN counts/s
-through Honda's ordinary rate limiter. The seed conversion preserves ordinary acceleration and
-friction commands in counts. Factory departure traffic includes 3840-count requests with idle
-reported brake feedback; do not gate this steering range on braking.
-`carOutput` reports the emitted counts normalized by the active
-range, including zero while inactive. General extra-count road benefit remains unproven. The torque learner
-retains its stock physical sample buckets and fit coordinates, converting its published parameters
-to the active normalization. Its Odyssey cache version rejects prior fits; incompatible torque-configuration or steering-route
-caches must not be restored. See [`.agents/car-port-standards.md`](.agents/car-port-standards.md).
+Correct failure to achieve the requested low-speed acceleration, rather than adding a car-port
+stop-until-zero latch or retaining braking after the upstream request releases. Judge stopped
+brake holding separately from moving acceleration tracking.
 
-`extract.py` and `validate_log.py` retain controller-side lateral command/output, saturation,
-steering response, overrides, and fault diagnostics. For full-rate Odyssey stock-radar routes,
-`validate_log.py` compares sustained bus-0 `sendcan` commands with physical bus-1 steering output.
-The radar can hold payloads while advancing its own counter, so counter equality does not prove
-dynamic forwarding fidelity or transport delay. On Alpha Long routes,
-the controller instead sends steering directly on bus 1; compare that `sendcan` to same-cycle
-`carOutput`, not to the stock-radar forwarding path. Neither TX comparison proves EPS acceptance. These
-diagnostics do not by themselves prove lane tracking or closed-loop road behavior.
+For car-port or safety changes, use [car-port standards](.agents/car-port-standards.md).
+Resolve signal meaning and rails from the exact pinned DBC/safety source, not matching names on
+another fork. `GAS_COMMAND` and engine effort reports have no qualified physical torque units.
+`carOutput.actuatorsOutput` describes emitted actuators, never internal learner telemetry.
 
-## Attribution boundary
+## Evidence and validation
 
-Trace questionable lateral and longitudinal behavior independently in this order:
+- Resolve exact parent and nested `opendbc` revisions for evidence used in a behavior claim.
+  Pool different revisions only after a source diff establishes compatibility of the relevant paths;
+  matching child hashes alone do not establish parent compatibility. Use pinned upstream as the baseline.
+- Reconstruct the relevant controller and zero-order-held CAN history for translation, timing or
+  state hypotheses. Preserve enough continuous history for the mechanism being tested. Reuse
+  qualified captures and existing diagnostics rather than rebuilding unrelated analyses.
+- Separate command fidelity from physical response. Replay on frozen inputs proves command shape,
+  not an alternative closed-loop trajectory, ride quality or ECU acceptance. Qlogs are too
+  decimated for transition measurements. Passing software checks do not prove road benefit.
+- Compare actual and requested motion under comparable speed, demand, terrain, drivetrain, mode,
+  authority and driver state. Separate gas/brake domains and lateral/longitudinal conclusions.
+  Use suitable timing and uncertainty checks. Source-compatible matched intervals or pooled events
+  can suffice; exact-route A/B and fixed route counts are not mandatory.
+- Reuse existing checks. Verify new behavioral or metric checks reject the defect they are meant
+  to detect, using a known regression or deliberate fault. Check selection against known exposure;
+  report empty or inapplicable cohorts explicitly. A threshold flag starts investigation, not tuning.
+- For each candidate, record its hypothesis, source pair, relevant validation and keep/change/retire
+  decision. Keep software-validated candidates, measured improvements and unresolved questions
+  distinct. Do not retain a mechanism merely because it is already present.
+- Gas, braking and their transitions may change together as a coherent design. Validate affected
+  domains and interactions, using component tests or offline ablations where useful. Separate
+  road deployments for each component are not required.
 
-`longitudinalPlan` → `carControl.actuators.accel` → `ACCEL_COMMAND` plus
-`GAS_COMMAND`/`BRAKE_REQUEST` → Honda ECU/vehicle response.
+Choose checks for the changed layer. Documentation generally needs review, link checks and
+`git diff --check`; diagnostic code needs focused tests and meaningful fault rejection; actuation
+changes additionally need source-matched replay, interface/rail/safety checks and supervised road
+assessment. `lefthook run pre-commit` provides focused local checks; `.agents/preflash.py` adds
+Odyssey interface and Panda coverage. Follow the car-port guide for safety-suite/MISRA obligations.
+Broaden testing when a failure, new change or unresolved concern warrants it.
 
-For lateral behavior, trace the upstream lateral plan/controller command → `carControl` steering
-actuator output → Honda steering CAN → Honda ECU/vehicle response.
+## Branches, commits and publication
 
-`carControl.actuators.accel` is the controller input; `longitudinalPlan.aTarget` is upstream and
-`longcontrol` may legitimately override it. Numeric `ACCEL_COMMAND` fidelity is not sufficient if
-the domain bits leave gas inactive. Locate the first divergence before assigning the symptom.
+- Work directly on `ody-op-test` in both repositories, including tests and development tooling.
+  Target development PRs there. `ody-op` is the clean public install/default branch. Create no
+  additional branches or worktrees. `master` is inactive history; use `upstream/master` for deliberate syncs.
+- Keep commits focused: separate production behavior, tooling, evidence/docs and unrelated user work.
+  Commit at a useful validated boundary, not merely because the tree is dirty. Do not squash or
+  amend history unless requested; use `git revert` to retire committed candidates and keep the
+  prior road-known-good parent/child pair reachable.
+- Publish nested development source before its parent gitlink. Verify exact root/child SHAs,
+  remote refs and clean state. **Never sync `opendbc` to its own master**: merge only OpenPilot's
+  exact upstream pin, or a `car.capnp` mismatch can crash `controlsd` on-road.
+- Sunday at 12:01 AM America/Chicago, Actions checks and publishes the exact tested `ody-op-test`
+  revision to `ody-op`. Monday at 12:01 AM, a separate job merges official OpenPilot master and
+  its exact `opendbc` pin into development, checks it, then publishes child before parent.
+  Syncs use merge commits; conflicts or concurrent development stop publication. Sunday does not
+  sync upstream, and neither job deploys to the device.
+- Keep inherited workflows disabled and retain reviewed fork definitions during sync. Checks run
+  manually or through the weekly jobs, not on pushes/PRs. Reviewed scheduler source lives on both
+  branches; default-branch schedulers dispatch the jobs. Nested sync uses its repository deploy key.
+- Push development only to `ody-op-test`. **Never manually push `ody-op` or run
+  `.agents/publish_public.py --publish` here.** Preview with `.venv/bin/python .agents/publish_public.py`.
+  Publication must preserve identical vehicle source, tests and submodule pins while excluding
+  private data and agent/analysis/editor/deployment tooling, refreshing reviewed schedulers and
+  retaining independent public CI configuration. Publication is not road-validated promotion.
 
-Use that first divergence to choose the work:
+Commit justified, software-validated candidates and tests for supervised testing before road
+benefit is established. Promotion requires attributable physical improvement or a required safety
+fix, adequate comparable exposure and no unacceptable regression. Do not require road proof before
+a candidate can be implemented and tested, or let an independent unmeasured trial stop other work.
 
-- If the model/planner command pulses or fails to stop, investigate Experimental/model/planner
-  behavior; do not compensate for it in the car port.
-- If the planner is smooth but `carControl` is not, investigate `longcontrol`.
-- If `carControl` is correct but numeric CAN or the active gas/brake domain differs, investigate the
-  Honda translation.
-- If numeric CAN and its domain are correct but `aEgo` bites or lags, calibrate Honda actuator
-  response without reshaping the model command.
-- At very low speed, correct failure to achieve the requested acceleration, not failure to stop
-  by itself. If the vehicle follows `carControl` but upstream does not request a complete stop,
-  leave that upstream behavior unchanged. Do not add a stop-until-zero latch or retain braking
-  against a released upstream request merely to complete a stop.
-- Apply the same boundary to lateral behavior: do not use Honda steering shaping to compensate for an
-  upstream lateral-plan or controller error, and do not retune a correct command path without a
-  repeatable vehicle-response symptom.
+## Private data and uploads
 
-## Evidence rules
+- The sole archive is Proton Drive's `Documents/openpilot/{rlogs,evidence}`. For analysis, read its
+  `README.md`. Tools discover the active `ProtonDrive-*-folder/Documents/openpilot` under
+  `~/Library/CloudStorage`; `OPENPILOT_PRIVATE_ROOT`, `LOG_ROOT` and `ODYSSEY_EVIDENCE_ROOT` override
+  discovery. Keep account names and absolute mounts machine-local. Never commit private data.
+  `.private/` holds ignored operational migration receipts only: no second archive or symlink.
+- Check Proton before connecting to the comma. `.agents/pull_logs.py --all-new` validates available
+  files without SSH; `--list` applies retention and previews availability. Before explicit
+  `--device-fallback`, check Mac sync and uploader health. Fallback records sanitized acquisition
+  diagnostics and copies only closed rlogs, resumably and with source SHA-256 verification.
+  Low-priority SSH fallback is allowed while driving, over cellular or a hotspot.
+- Enforce **50 GB (50,000,000,000 bytes) combined** across rlogs, partials, evidence and analysis
+  caches. Use the retention policy and archive lock to reserve headroom. Remove only eligible
+  whole log routes; never evidence or protected, unvalidated, unresolved-fault, linked or partial
+  routes. Refuse a transfer that cannot fit. Mirror deletion propagates to Proton and other computers.
+- Validate each new or extended drive with `.agents/validate_log.py`; its private ledger is
+  authoritative. Newly arriving segments reopen coverage. Keep prefixes/suffixes explicitly partial.
+  Upload receipts establish past verification, not current cloud presence or whole-drive coverage.
+- The optional uploader requires owner sign-in and explicit enablement. Installing the fork does
+  not enable it. It uploads closed rlogs on fresh Wi-Fi while parked or driving. Credentials,
+  configuration and the standalone worker stay outside the checkout. It never downloads Drive
+  payloads, deletes cloud data, retains source logs or changes stock log deletion, display,
+  screensaver or power-down behavior. Updating checkout source does not update the worker.
+- Before uploader, sync or migration work, read the [runbook/handoff](.agents/comma-log-backup.md#agent-handoff)
+  and private `evidence/proton-uploader-handoff.md`. Read the device before claiming current health;
+  counts and installed revisions in receipts are snapshots. Preserve owner opt-in and the only
+  unsynchronized copy; an approved past migration exception does not authorize another one.
+- Before uploading, the worker checks parent-archive size metadata, including evidence, against
+  the same cap. Proton counts trashed descendants, so this can pause conservatively early. The
+  worker never purges Trash; do not bypass the cap. Reconcile concurrent writers through intake checks.
 
-1. **Replay checks command shape, not closed-loop timing.** It freezes the recorded inputs; only a
-   drive measures when the controller changes domains.
-2. **Pool on resolved behavior revisions, not branch names.** Resolve both parent and nested
-   `opendbc` commits. Matching `opendbc` hashes do not establish comparable OpenPilot behavior.
-   Pool different hashes only after a source diff proves the measured command path and response
-   mechanism behavior-identical. Private evidence records any excluded routes.
-3. **Mutation-verify a check when you write it.** A check you have never seen fail is not evidence.
-   If it cannot be made to fail, that is the finding.
-4. Before adding a check, measure overlap with existing checks and verify its mask against a known
-   event. Name it after the symptom, not a proposed fix.
-5. A threshold flag identifies an event to inspect; it is not permission to tune.
-6. Treat comments and prose as leads. Verify current code, DBC semantics, safety limits, and logs.
-7. Compare the outcome OpenPilot requested, not merely whether two drives used the same road. For
-   lateral, compare actual versus desired lateral acceleration in comparable speed, demand, and
-   authority bins. For longitudinal, compare `aEgo` versus `carControl.actuators.accel` separately in
-   gas and brake domains, conditioned on comparable speed, request, and terrain. Use controller-to-
-   wire fidelity and domain bits to locate the first divergence. Exact-route A/B is useful when
-   available, but source-compatible matched intervals or pooled events are sufficient when their
-   conditioning, exposure, and sensitivity checks make the direction attributable. Unmatched
-   whole-route averages are not evidence.
-8. There is no fixed route-count gate. One decisive safety regression may retire a candidate, while
-   noisy evidence may remain inconclusive regardless of drive count. Do not wait for a specially
-   shaped second or third route when existing exact-provenance evidence resolves the hypothesis.
-9. Every candidate must have an explicit keep, change, or retire decision after checking the relevant
-   lateral or longitudinal exposure. Do not retain tuning merely because it is historical or already
-   present.
+Use `.agents/inspect_following.py`, `.agents/inspect_response.py` and `.agents/extract.py` as
+appropriate. Keep route numbers, measurements and experiment history in Proton evidence; production
+comments should explain the invariant or reason. Never rewrite sealed historical receipts during a move.
 
-## Workflow
+## Vehicle and deployment boundaries
 
-- Private rlogs and evidence live in Proton Drive under `Documents/openpilot/rlogs` and
-  `Documents/openpilot/evidence`. Read that folder's `README.md`. Analysis tools discover the
-  active `ProtonDrive-*-folder/Documents/openpilot` under `~/Library/CloudStorage`;
-  `OPENPILOT_PRIVATE_ROOT`, `LOG_ROOT` and `ODYSSEY_EVIDENCE_ROOT` can override discovery.
-  Account names and absolute cloud mounts remain machine-local. Never commit private data;
-  the ignored `.private/` directory now holds operational migration receipts only, not a second
-  logs/evidence archive or a symlink. Keep those receipts out of commits/publication too.
-- The optional [comma uploader](.agents/comma-log-backup.md) uploads closed full-rate rlogs on
-  fresh Wi-Fi while parked or driving. It requires owner sign-in and explicit enablement;
-  installing the fork does not install or enable it. Sessions and configuration stay outside
-  the checkout. It never downloads Drive file payloads, deletes cloud data, retains source logs
-  or changes stock device deletion, screensaver, display-off or power-down behavior.
-- Before uploader work, read the [agent handoff](.agents/comma-log-backup.md#agent-handoff)
-  and, when available, the private `evidence/proton-uploader-handoff.md` in the discovered Proton archive.
-  The private receipt records the installed source pair, live verification and unfinished sync
-  checks. Treat counts and installed revisions as snapshots; read the device before claiming
-  current health. Updating checkout source does not update the standalone `/data` worker.
-- Check the synchronized Proton archive before connecting to the device.
-  `.agents/pull_logs.py --all-new` validates available files without SSH; `--list` applies retention and previews
-  availability without transfers. Use explicit `--device-fallback` only after
-  checking Mac sync and uploader health. The fallback records sanitized diagnostics in the
-  private acquisition ledger before copying closed rlogs with source SHA-256 verification.
-  Fallback is allowed while driving, over cellular or a hotspot; remote reads stay low priority.
-  Matching upload receipts prove past verification, not current cloud presence or whole-drive coverage.
-- The archive cap is 50 GB (50,000,000,000 bytes) combined across rlogs, resumable partials,
-  evidence and analysis caches. Intake/list checks remove expired eligible routes and reserve
-  headroom before fallback transfers. Cleanup removes whole eligible log routes, never evidence;
-  protected, unvalidated, unresolved-fault, linked and partial routes remain protected. If they or
-  evidence prevent fitting, refuse the transfer rather than exceed the cap. Keep protection reasons
-  in the private retention policy; a single archive lock serializes intake and cleanup.
-  Retention deletion from this synchronized mirror propagates to Proton and other computers.
-- Before each upload the comma checks metadata for the destination's parent archive folder,
-  including evidence, against the same 50 GB limit. Proton includes trashed descendants in this
-  server value, so uploads can pause conservatively early until the owner reviews storage.
-  The worker never removes cloud files or empties Trash. This check does not depend on the Mac;
-  concurrent external writers still require subsequent intake checks to reconcile archive usage.
-- Run every drive through `.agents/validate_log.py`; its private validation ledger is authoritative.
-  Newly uploaded segments reopen partial coverage. Retained suffixes remain explicitly partial.
-  Qlogs are too decimated for transition metrics. Use `.agents/extract.py` for exploration.
-- Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
-- Use `.agents/inspect_response.py` to rank achieved-jerk peaks against the causal wire-command
-  history, physical command-domain edges, gear changes, terrain, lead state, and powertrain context.
-- Review lateral and longitudinal behavior as separate evidence streams; a result on one axis does
-  not authorize a change on the other.
-- Car-port edits follow [`.agents/car-port-standards.md`](.agents/car-port-standards.md). Keep
-  production comments PR-lean:
-  explain the invariant or reason; keep route numbers, dates, and experiment history in evidence.
-- `carOutput.actuatorsOutput` must describe actuator output, not internal learner state. The
-  historical deployed child used its `gas`/`brake` fields for learned-factor telemetry; the
-  upstream-rooted port restores actuator semantics. Any future learner telemetry must be
-  reconstructed offline or moved to an explicitly named diagnostic event accepted by the
-  corresponding schema owner.
-- **Never sync opendbc to its own master.** Merge only the commit openpilot master pins, or
-  `controlsd` crashes on-road from a `car.capnp` schema mismatch.
-- `lefthook run pre-commit` covers focused lint and pure metric tests. `.agents/preflash.py` adds
-  Odyssey interface and panda-safety coverage; neither substitutes for a road drive.
+Current trials target `HONDA_ODYSSEY_5G_MMR`. Keep Alpha Long enabled unless the owner changes it.
+On this Bosch Odyssey, `openpilotLongitudinalControl` disables the radar ECU through UDS communication control and
+tester-present keeps it disabled. Honda CMBS, including stock AEB and FCW, is unavailable.
+Panda AEB-forwarding flags or rejection of OpenPilot AEB bits do not restore it.
 
-## Commit and promotion gate
+The current steering trial uses `[0, 3840]`, `latAccelFactor 1.35`, `friction 0.2 / 1.5`,
+`steerActuatorDelay 0.15` and the ordinary `7680` counts/s limiter in both stock ACC and Alpha Long.
+These are a supervised configuration, not a proven physical optimum. Factory 3840 requests occur with idle reported
+braking; do not gate this range on braking. Preserve stock physical learner coordinates/buckets,
+active output normalization (zero when inactive) and cache compatibility; never restore an
+incompatible or unassociated torque-configuration/steering-route cache. Details live in the car-port guide.
 
-Commit subsequent changes separately. Squash or amend existing history only when the user explicitly asks.
+In stock-radar routes, compare bus-0 TX with physical bus-1 steering; the radar can hold payloads
+while advancing its counter. Alpha Long sends steering directly on bus 1: compare TX with
+same-cycle `carOutput`. Neither comparison proves EPS acceptance or extra-count tracking benefit.
 
-Commit at a stable evidence boundary, not merely because tests pass or a worktree is dirty. Before
-committing, classify every diff as production behavior, diagnostic tooling, evidence/docs, or
-unrelated user work; never mix unrelated work.
+After source, focused/fault-rejection, preflash and provenance checks pass, use the guarded
+deployment path for an authorized supervised test. Verify fresh offroad state before switching or
+restarting the device. An offline or onroad device defers installation, not independent development.
+Verify installed root/child SHAs separately from process health and road behavior; a pushed commit
+or queued updater download is not installation. Keep rollback pairs reachable throughout.
 
-A diagnostic/tooling commit is ready when its semantics and ownership are documented, deliberate
-mutation makes the relevant check fail, focused tests and `git diff --check` pass, and no vehicle
-runtime behavior changes. Evidence or ledger updates may be a separate commit when they are useful
-for reproducibility, but they must not be mixed with unrelated changes.
-
-Promotion of production behavior additionally requires exact route, parent, and nested `opendbc`
-provenance; first-divergence ownership; a coherent, attributable design; source-compatible full-rate comparison with
-adequate exposure; an attributable improvement or required safety fix without unacceptable
-regression; and an explicit keep/change/retire decision. Resolve DBC signal meaning from the exact
-nested revision; do not infer alignment from matching signal names across `ody-op-test`,
-`sunnypilot/staging`, or another branch.
-
-Gas response, brake response, and their transitions may be changed together as a coordinated
-design. There is no one-change-at-a-time requirement. Validate each affected domain and their
-interactions, and use component-level tests or offline ablations when needed for attribution;
-separate road deployments are not mandatory for each component. Retain overlapping corrections
-only with a stated role and supporting evidence, not merely because they were already deployed.
-
-Commit each software-validated candidate and its tests directly to `ody-op-test` for supervised car
-testing before road benefit is established; a commit is not a promotion. After the source,
-mutation, focused-test, preflash, and provenance gates pass, deployment
-is the default next step for a supervised road test when the user authorizes it; do not defer it
-merely because the candidate is unpromoted. Verify the root SHA, nested `opendbc` gitlink SHA, remote
-refs, and clean state separately from device health and road behavior. Keep the `ody-op-test` and nested
-`opendbc` rollback SHAs reachable throughout.
-
-No new logs is not an implementation blocker. It may block performance assessment of a specific
-implemented change that needs new road evidence; continue independent analysis and candidate work.
-
-Device availability is not an implementation gate. Continue in-scope analysis, OpenPilot and Honda changes,
-tests, commits, and publication on `ody-op-test` when the evidence and software gates pass, even if the
-device is offline or onroad. A published commit or queued updater download is not an installation:
-defer the guarded switch and exact device readback until the device is reachable and offroad, then
-assess road response separately. An unmeasured installed candidate also does not block an
-independent, evidence-backed change, but retain both source pairs for attribution and rollback.
-
-## Current focus
-
-The latest route exposure, trial decisions, and exact rollback pair are in the private Proton Drive evidence folder. Keep Alpha Long enabled for these trials unless the user changes it. Honda CMBS is
-unavailable while it is active. Command-path fidelity alone does not establish closed-loop benefit.
+The current exposure, decisions and exact rollback pair belong in Proton evidence, not this file.
