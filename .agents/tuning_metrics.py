@@ -1398,28 +1398,13 @@ def command_transition_metrics(grid, requested, engaged, vego, brake_pressed, br
 
 def sign_disagreement_metrics(requested, wire_accel, brake_request, active, pitch, *,
                               request_threshold, downhill_pitch, dt, transition_grace_s):
-  """Measure sustained brake/accel disagreement and separate grade-owned exposure.
+  """Measure positive-request brake-domain exposure, excluding transition grace.
 
-  A positive request can arrive one ACC_CONTROL period before the held CAN command releases.
-  That transport phase is not a latched brake defect. Descents are kept separately because the
-  actuator-domain decision intentionally includes gravity while ``requested`` does not.
-
-  MAGNITUDE IS REPORTED TWICE, ON PURPOSE - they answer different questions and one of them is
-  structurally near-zero here (measured 2026-08-05, routes 00000002/00000003):
-    * ``sign_disagree_worst`` = min(wire - requested). This is the ACCEL_COMMAND error, and in
-      exactly these frames the wire carries the request faithfully - measured -0.06 and -0.11
-      m/s^2. It is the right number for a STALE-STATE leak (route 34 read -2.04 that way) and
-      the wrong number for a domain hold, so ``SIGN_DISAGREE_MAG_FLAG`` at 0.50 cannot fire on
-      a hold no matter how bad the hold gets. Do not "fix" that by lowering the constant; it
-      guards a different failure.
-    * ``sign_disagree_withheld_*`` = the REQUEST itself over those frames. GAS_COMMAND is at its
-      inactive constant throughout (``brake_request`` and gas-inactive are exact complements in
-      create_acc_commands - verified 0 disagreeing frames across both routes), so a positive
-      ACCEL_COMMAND cannot produce acceleration. This is the severity the driver feels, and the
-      integral is in m/s: the speed openpilot asked for and did not get. Measured 1.82 and 7.62
-      m/s on those two routes while the error-based number stayed under 0.11.
-  Both are defined only on the CarController input and the wire, never on the reconstructed
-  domain or its thresholds, so two tunes can be compared on identical terms.
+  A positive net request can legitimately need the brake domain when passive coast would
+  accelerate faster. Separate downhill exposure without inferring whether the domain is correct.
+  ``sign_disagree_worst`` measures numeric wire error. The legacy ``sign_disagree_withheld_*``
+  keys retain the positive request's peak and time integral for ledger compatibility; neither
+  measures missing acceleration or lost speed. Physical response is not an input to this metric.
   """
   raw = active & brake_request & (requested > request_threshold)
   sustained = after_grace(raw, dt, transition_grace_s)

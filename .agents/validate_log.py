@@ -1415,9 +1415,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
   command below 3 m/s or during the bounded road-speed onset arm; only raw revisions are held to
   the tighter passthrough threshold.
 
-  Returns brake-domain following error, sign disagreement, lifecycle regressions, and physical
-  BRAKE_REQUEST burst metrics. The fresh path's raw request and fixed upstream threshold supply the
-  exact domain-decision input below.
+  Returns brake-domain following error, positive-request domain exposure, lifecycle regressions,
+  and BRAKE_REQUEST transition metrics.
   """
   source_commit = (opendbc_commit or "")[:12]
   out = {"overshoot_frac": None, "addon_mean": None, "honda_bite_frac": None,
@@ -1833,8 +1832,7 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
     out["downhill_windows"] = int(np.sum(np.diff(down.astype(np.int8), prepend=0) == 1))
     out["downhill_toggles_per_min"] = float(out["downhill_toggles"] / max(dn_min, 1e-3))
 
-  # Preserve the historical positive-request descent-hold counter as a regression guard. A fresh
-  # raw-request split should report zero apart from command-period transport skew.
+  # Positive-request brake holds are exposure; passive response determines actual brake need.
   out.update(descent_hold_metrics(
     requested, BR, eng_all, pitch,
     request_threshold=SIGN_DISAGREE_REQUEST,
@@ -2271,18 +2269,19 @@ def verdicts(r):
     non_grade = r.get("sign_disagree_non_grade_frac", 0.0)
     magnitude_bad = r["sign_disagree_worst"] < -SIGN_DISAGREE_MAG_FLAG
     sd_bad = non_grade > SIGN_DISAGREE_NON_GRADE_FLAG or magnitude_bad
-    add("sign disagreement", not sd_bad,
+    add("positive-request brake domain", not sd_bad,
         f"{r['sign_disagree_frac']*100:.2f}% sustained: "
         f"{r.get('sign_disagree_downhill_frac', 0.0)*100:.2f}% downhill, "
         f"{non_grade*100:.2f}% non-grade; {r.get('sign_disagree_sec', 0.0):.1f}s over "
         f"{r.get('sign_disagree_events', 0)} event(s), longest "
         f"{r.get('sign_disagree_longest', 0.0):.2f}s; "
-        f"{r.get('sign_disagree_withheld_integral', 0.0):.2f} m/s of requested speed withheld "
-        f"(worst request {r.get('sign_disagree_withheld_worst', 0.0):+.2f}, "
+        f"{r.get('sign_disagree_withheld_integral', 0.0):.2f} m/s request integral under BRAKE_REQUEST "
+        f"(peak request {r.get('sign_disagree_withheld_worst', 0.0):+.2f}, "
         f"wire error {r['sign_disagree_worst']:+.2f} m/s^2) "
-        f"({r.get('sign_disagree_transition_frames', 0)} transition frames ignored)",
-        status=("large brake/accel disagreement beyond the designed hysteresis band" if magnitude_bad
-                else "sustained brake/accel disagreement away from descent grade compensation")
+        f"({r.get('sign_disagree_transition_frames', 0)} transition frames ignored); "
+        "not a measured speed deficit",
+        status=("inspect negative wire error against a positive request; verify physical response" if magnitude_bad
+                else "inspect sustained brake-domain selection away from descents; verify physical response")
                if sd_bad else None)
 
   # --- device thermal (not the tune; it's whether the hardware is being cooked) ---
@@ -2562,7 +2561,7 @@ def main():
              "brake release hold (diagnostic)",
              "negative-request live gas (diagnostic)",
              "brake-domain transition bursts",
-             "sign disagreement", "aEgo jerk (diagnostic)",
+             "positive-request brake domain", "aEgo jerk (diagnostic)",
              "low-speed deceleration (diagnostic)"}
   lateral = {"lateral telemetry (diagnostic)", "lateral model tracking (diagnostic)",
              "lateral high-authority following (diagnostic)"}

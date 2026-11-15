@@ -1645,19 +1645,13 @@ def test_creep_detector_can_actually_fire():
   assert not healthy.any()
 
 
-def test_sign_disagreement_severity_uses_the_request_not_the_wire_error():
-  """The wire error is near-zero exactly where the domain withholds gas; grade the request.
-
-  Guards the 2026-08-05 finding: ACCEL_COMMAND carries the request faithfully through a domain
-  hold, so `sign_disagree_worst` (min(wire - requested)) stays tiny no matter how much
-  acceleration was actually withheld. If the withheld-request fields are ever re-derived from
-  `wire` this test goes red.
-  """
+def test_positive_brake_domain_exposure_uses_the_request_not_the_wire_error():
+  """Keep request exposure distinct from numeric wire error, without inferring physical loss."""
   n = 22
-  requested = np.full(n, 0.40)   # openpilot asking for real acceleration
+  requested = np.full(n, 0.40)   # a positive net-acceleration request
   wire = requested.copy()        # ...and the wire carrying it perfectly
   brake = np.zeros(n, dtype=bool)
-  brake[1:21] = True             # 20 frames latched; 2 lost to the 20 ms grace
+  brake[1:21] = True             # 20 brake-domain frames; 2 lost to the 20 ms grace
   active = np.ones(n, dtype=bool)
   pitch = np.zeros(n)
 
@@ -1666,15 +1660,15 @@ def test_sign_disagreement_severity_uses_the_request_not_the_wire_error():
     request_threshold=0.02, downhill_pitch=-0.012, dt=0.01, transition_grace_s=0.02,
   )
 
-  # The error-based number sees nothing at all here - that is the whole point.
+  # Numeric fidelity can be exact throughout the selected exposure.
   assert np.isclose(m["sign_disagree_worst"], 0.0)
-  # The request-based numbers see the full severity.
+  # The legacy request fields measure exposure, not achieved motion.
   assert m["sign_disagree_events"] == 1
   assert np.isclose(m["sign_disagree_sec"], 0.18)
   assert np.isclose(m["sign_disagree_longest"], 0.18)
   assert np.isclose(m["sign_disagree_withheld_worst"], 0.40)
   assert np.isclose(m["sign_disagree_withheld_integral"], 18 * 0.01 * 0.40)
-  # Mutation guard: withheld severity must not collapse when the wire tracks the request.
+  # Exposure must not collapse when the wire tracks the request.
   assert m["sign_disagree_withheld_integral"] > abs(m["sign_disagree_worst"])
 
 
