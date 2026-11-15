@@ -80,13 +80,15 @@ preview only. The publisher retains vehicle code, tests, and submodule
 pins, excludes custom tooling, and preserves public CI configuration. Publication never deploys to
 the device; device build/health checks and road assessment remain separate gates.
 
-Set `COMMA_SSH=comma@<tailnet-host>` or `ODYSSEY_DEVICE` in your local shell before using
-live-device tasks. Private rlogs and route evidence live in Proton Drive under
-`Documents/openpilot`; analysis tools discover the active folder under `~/Library/CloudStorage`.
-Read its `README.md` for the archive layout and `LOG_ROOT` setup. The optional
-[device uploader](../.agents/comma-log-backup.md) requires owner sign-in and explicit enablement;
-it uploads closed rlogs on Wi-Fi while parked or driving. Keep machine-specific addresses and
-private route data out of Git.
+Private logs and evidence live in Proton Drive under `Documents/openpilot`; analysis tools
+find the active account under `~/Library/CloudStorage`. Read that archive's `README.md` for
+machine-local environment setup. Its combined logs-and-evidence cap is 50 GB, including partials
+and caches. The [optional comma uploader](../.agents/comma-log-backup.md) requires owner sign-in
+and explicit enablement; it uploads closed rlogs on Wi-Fi while parked or driving. It never
+preserves device logs, downloads cloud file payloads or deletes cloud files.
+
+Set `COMMA_SSH=comma@<tailnet-host>` or `ODYSSEY_DEVICE` for explicit device fallback and deployment.
+Keep machine-specific addresses, account details and private route data out of Git.
 
 This checkout also exposes a small set of explicit VS Code tasks in
 [`../.vscode/tasks.json`](../.vscode/tasks.json):

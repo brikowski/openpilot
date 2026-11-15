@@ -1,7 +1,7 @@
 # Odyssey command-following — cold-start rules
 
 Read this before changing lateral or longitudinal behavior or its tooling. This file holds decisions
-and invariants; private route history and derivations belong in the Git-excluded local `.private/evidence/` folder.
+and invariants; private route history and derivations belong in the private Proton Drive `evidence/` folder.
 
 ## Project objective
 
@@ -85,7 +85,7 @@ and nested opendbc SHAs paired; use `git revert` to change or retire a candidate
 road-known-good pair reachable.
 
 Old experiment branches and their mechanisms are historical evidence, not active targets or
-accepted knowledge. Their private measurements remain in `.private/evidence/tune-evidence.md`;
+accepted knowledge. Their private measurements remain in Proton Drive's `evidence/tune-evidence.md`;
 they do not prohibit a new source-compatible hypothesis owned by current logs.
 
 Alpha Long has a separate safety boundary on this Bosch Odyssey: enabling
@@ -179,30 +179,38 @@ Use that first divergence to choose the work:
 
 ## Workflow
 
-- Private rlogs and evidence stay in the Git-excluded local `.private/` folder. Read
-  `.private/README.md` on the analysis host. Tools default to `.private/rlogs/` and
-  `.private/evidence/`; `OPENPILOT_PRIVATE_ROOT`, `LOG_ROOT` and `ODYSSEY_EVIDENCE_ROOT`
-  can override them. Do not put the archive in cloud storage or force-add it to Git.
-  Commit/push guards reject private files, and the public publisher excludes `.private/` independently.
-- Pull new drives on demand with `.agents/pull_logs.py --all-new` over Tailscale SSH using
-  machine-local `COMMA_SSH` or `ODYSSEY_DEVICE`. `--local --all-new` checks saved logs without
-  SSH. `--list` applies retention and previews the selected inventory without transfers.
-  No background uploader or cloud transfer is used. Downloads are allowed while driving,
-  over cellular or a hotspot. Remote reads run at low CPU/I/O priority; only closed full-rate
-  rlogs are copied, with resumable partial files and source SHA-256 verification.
-- Every intake/list check removes expired eligible routes and enforces a hard 30 GB
-  (30,000,000,000 byte) rlog cap, counting partial downloads. It removes oldest eligible
-  routes when space is needed and reserves transfer headroom before rsync. Protected,
-  unvalidated, unresolved-fault, linked and partial routes are retained. If they prevent a
-  transfer fitting, refuse the download rather than exceed the cap. A single archive lock
-  prevents concurrent pulls from overspending that space. Device logs are never deleted.
-- Maintain `.private/evidence/rlog-retention-policy.json` protection reasons for active baselines,
-  unresolved events and needed comparison inputs. New acquisitions stay protected until review
-  explicitly retires them. Default retention is 30 days; capacity can retire younger disposable
-  routes. Cleanup records whole-route removals in the private retention ledger. Review a standalone
-  preview with `.agents/archive_retention.py --preview .private/evidence/retention-plan.json`.
+- Private rlogs and evidence live in Proton Drive under `Documents/openpilot/rlogs` and
+  `Documents/openpilot/evidence`. Read that folder's `README.md`. Analysis tools discover the
+  active `ProtonDrive-*-folder/Documents/openpilot` under `~/Library/CloudStorage`;
+  `OPENPILOT_PRIVATE_ROOT`, `LOG_ROOT` and `ODYSSEY_EVIDENCE_ROOT` can override discovery.
+  Account names and absolute cloud mounts remain machine-local. Never commit private data;
+  the ignored `.private/` recovery copy remains protected by commit/push/publication guards.
+- The optional [comma uploader](.agents/comma-log-backup.md) uploads closed full-rate rlogs on
+  fresh Wi-Fi while parked or driving. It requires owner sign-in and explicit enablement;
+  installing the fork does not install or enable it. Sessions and configuration stay outside
+  the checkout. It never downloads Drive file payloads, deletes cloud data, retains source logs
+  or changes stock device deletion, screensaver, display-off or power-down behavior.
+- Check the synchronized Proton archive before connecting to the device.
+  `.agents/pull_logs.py --all-new` validates available files without SSH; `--list` applies retention and previews
+  availability without transfers. Use explicit `--device-fallback` only after
+  checking Mac sync and uploader health. The fallback records sanitized diagnostics in the
+  private acquisition ledger before copying closed rlogs with source SHA-256 verification.
+  Fallback is allowed while driving, over cellular or a hotspot; remote reads stay low priority.
+  Matching upload receipts prove past verification, not current cloud presence or whole-drive coverage.
+- The archive cap is 50 GB (50,000,000,000 bytes) combined across rlogs, resumable partials,
+  evidence and analysis caches. Intake/list checks remove expired eligible routes and reserve
+  headroom before fallback transfers. Cleanup removes whole eligible log routes, never evidence;
+  protected, unvalidated, unresolved-fault, linked and partial routes remain protected. If they or
+  evidence prevent fitting, refuse the transfer rather than exceed the cap. Keep protection reasons
+  in the private retention policy; a single archive lock serializes intake and cleanup.
+  Retention deletion from this synchronized mirror propagates to Proton and other computers.
+- Before each upload the comma checks metadata for the destination's parent archive folder,
+  including evidence, against the same 50 GB limit. Proton includes trashed descendants in this
+  server value, so uploads can pause conservatively early until the owner reviews storage.
+  The worker never removes cloud files or empties Trash. This check does not depend on the Mac;
+  concurrent external writers still require subsequent intake checks to reconcile archive usage.
 - Run every drive through `.agents/validate_log.py`; its private validation ledger is authoritative.
-  Newly closed segments reopen partial coverage. Retained suffixes remain explicitly partial.
+  Newly uploaded segments reopen partial coverage. Retained suffixes remain explicitly partial.
   Qlogs are too decimated for transition metrics. Use `.agents/extract.py` for exploration.
 - Use `.agents/inspect_following.py` plus cached upstream signals to locate the first divergence.
 - Use `.agents/inspect_response.py` to rank achieved-jerk peaks against the causal wire-command
@@ -268,5 +276,5 @@ independent, evidence-backed change, but retain both source pairs for attributio
 
 ## Current focus
 
-The latest route exposure, trial decisions, and exact rollback pair are in the local `.private/evidence/` folder. Keep Alpha Long enabled for these trials unless the user changes it. Honda CMBS is
+The latest route exposure, trial decisions, and exact rollback pair are in the private Proton Drive evidence folder. Keep Alpha Long enabled for these trials unless the user changes it. Honda CMBS is
 unavailable while it is active. Command-path fidelity alone does not establish closed-loop benefit.

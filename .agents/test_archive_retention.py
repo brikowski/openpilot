@@ -114,6 +114,11 @@ def configured(archive):
   evidence.mkdir()
   (evidence / "log-validation-ledger.jsonl").write_bytes(ledger.read_bytes())
   (evidence / "rlog-retention-policy.json").write_text(json.dumps(policy))
+  # Real logs must be larger than the cleanup receipt counted in the combined cap.
+  for path in root.glob('*/rlog.zst'):
+    path.write_bytes(path.read_bytes() * 1000)
+  policy['budget_bytes'] = 22000
+  (evidence / 'rlog-retention-policy.json').write_text(json.dumps(policy))
   return root, evidence, policy
 
 
@@ -123,9 +128,9 @@ def test_capacity_can_retire_a_recent_disposable_route(archive):
   rows = [json.loads(x) for x in ledger.read_text().splitlines()]
   rows[0]["start_wall"] = NOW - 86400
   ledger.write_text("".join(json.dumps(row) + "\n" for row in rows))
-  result = retention.enforce(root, evidence, incoming_bytes=5, now=NOW)
+  result = retention.enforce(root, evidence, incoming_bytes=5000, now=NOW)
   assert result["removed"] == [OLD]
-  assert result["archive_bytes"] + 5 == 20
+  assert result["archive_bytes"] + 5000 <= 22000
   assert (root / (BASE + "--0/rlog.zst")).exists()
   receipt = json.loads((evidence / "rlog-retention-ledger.jsonl").read_text())
   assert receipt["removed"] == OLD
@@ -133,7 +138,7 @@ def test_capacity_can_retire_a_recent_disposable_route(archive):
 
 def test_expired_disposable_routes_are_removed_even_with_free_space(archive):
   root, evidence, policy = configured(archive)
-  policy["budget_bytes"] = 100
+  policy["budget_bytes"] = 100000
   (evidence / "rlog-retention-policy.json").write_text(json.dumps(policy))
   assert retention.enforce(root, evidence, now=NOW)["removed"] == [OLD]
 
@@ -142,7 +147,7 @@ def test_capacity_refuses_before_any_deletion_if_required_evidence_will_not_fit(
   root, evidence, _ = configured(archive)
   before = {str(p): p.read_bytes() for p in root.rglob("*") if p.is_file()}
   with pytest.raises(retention.ArchiveFull, match="protected"):
-    retention.enforce(root, evidence, incoming_bytes=6, now=NOW)
+    retention.enforce(root, evidence, incoming_bytes=7000, now=NOW)
   assert {str(p): p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
 
 
@@ -178,7 +183,7 @@ def test_single_archive_lock_prevents_overlapping_download_reservations(tmp_path
 
 
 def test_config_cannot_raise_the_hard_cap(tmp_path):
-  assert retention.budget_status(tmp_path, {"budget_bytes": 50_000_000_000})["budget_bytes"] == 30_000_000_000
+  assert retention.budget_status(tmp_path, {"budget_bytes": 80_000_000_000})["budget_bytes"] == 50_000_000_000
 
 
 @pytest.mark.parametrize("findings", [[{"check": "unresolved", "ok": False, "status": None}], {"unresolved": "FAIL"}])
@@ -190,3 +195,44 @@ def test_failed_validation_is_kept_even_under_capacity_pressure(archive, finding
   report = retention.preview(root, ledger, policy, NOW)
   assert report["candidates"] == []
   assert report["kept"][OLD] == "unresolved validation finding"
+
+
+def test_budget_includes_evidence_and_resumable_logs_without_reading_payloads(archive, monkeypatch):
+  root, _, policy = archive
+  evidence = root.parent / 'evidence'
+  evidence.mkdir()
+  (evidence / 'analysis.npz').write_bytes(b'cached evidence')
+  partial = root / (OLD + '--0/.rsync-partial')
+  partial.mkdir()
+  (partial / 'rlog.zst').write_bytes(b'inflight')
+  monkeypatch.setattr(Path, 'open', lambda *args, **kwargs: pytest.fail('size check read a payload'))
+  result = retention.budget_status(root, policy, evidence)
+  assert result['rlog_bytes'] == 38
+  assert result['evidence_bytes'] == len(b'cached evidence')
+  assert result['archive_bytes'] == 38 + len(b'cached evidence')
+
+
+def test_evidence_pressure_can_refuse_capacity_without_deleting_it(archive):
+  root, evidence, _ = configured(archive)
+  cache = evidence / 'required-analysis.npz'
+  cache.write_bytes(b'x' * 22000)
+  originals = {str(p): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+  with pytest.raises(retention.ArchiveFull):
+    retention.enforce(root, evidence, now=NOW)
+  assert cache.read_bytes() == b'x' * 22000
+  assert {str(p): p.read_bytes() for p in root.rglob('*') if p.is_file()} == originals
+
+
+def test_changed_evidence_requires_a_new_cleanup_preview(archive):
+  root, evidence, policy = configured(archive)
+  ledger = evidence / 'log-validation-ledger.jsonl'
+  plan = retention.preview(root, ledger, policy, NOW, evidence=evidence)
+  (evidence / 'new-evidence.json').write_text('new evidence')
+  with pytest.raises(ValueError, match='changed'):
+    retention.apply_plan(root, ledger, policy, plan, evidence=evidence)
+  assert len(list(root.glob('*/rlog.zst'))) == 2
+
+
+def test_evidence_is_counted_once_when_roots_overlap(tmp_path):
+  (tmp_path / 'rlog.zst').write_bytes(b'log')
+  assert retention.budget_status(tmp_path, {'budget_bytes': 50_000_000_000}, tmp_path)['archive_bytes'] == 3

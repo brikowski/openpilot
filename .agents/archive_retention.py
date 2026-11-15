@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the local rlog archive within 30 GB while preserving required evidence."""
+"""Keep logs and evidence within 50 GB while preserving required evidence."""
 import argparse
 from contextlib import contextmanager
 import fcntl
@@ -15,7 +15,7 @@ from pathlib import Path
 from private_paths import evidence_root, rlog_root
 
 SEGMENT = re.compile(r"([0-9a-f]{8}--[0-9a-f]+)--([0-9]+)")
-MAX_ARCHIVE_BYTES = 30_000_000_000
+MAX_ARCHIVE_BYTES = 50_000_000_000
 
 
 class ArchiveFull(RuntimeError):
@@ -60,17 +60,25 @@ def route_files(root, route):
   return result
 
 
-def budget_status(root, policy):
+def budget_status(root, policy, evidence=None):
   budget = policy['budget_bytes']
   if type(budget) is not int or budget < 1:
     raise ValueError('invalid archive budget')
   budget = min(budget, MAX_ARCHIVE_BYTES)
-  # Count temporary/partial files as well as completed rlogs. Metadata only.
-  usage = sum(p.stat().st_size for p in root.rglob('*') if p.is_file() and not p.is_symlink())
-  return {'archive_bytes': usage, 'budget_bytes': budget, 'budget_exceeded': usage > budget}
+  evidence = evidence if evidence is not None else root.parent / 'evidence'
+  # Metadata only: include resumable files and all evidence, without hydrating payloads.
+  logs = {p: p.stat().st_size for p in root.rglob('*') if p.is_file() and not p.is_symlink()}
+  notes = {p: p.stat().st_size for p in evidence.rglob('*') if p.is_file() and not p.is_symlink() and p not in logs}
+  usage = sum(logs.values()) + sum(notes.values())
+  return {'archive_bytes': usage, 'rlog_bytes': sum(logs.values()), 'evidence_bytes': sum(notes.values()),
+          'budget_bytes': budget, 'budget_exceeded': usage > budget}
 
 
-def preview(root, ledger_path, policy, now, incoming_bytes=0, keep=()):
+def removal_record(at, route, plan_sha256):
+  return {'at': at, 'removed': route, 'plan_sha256': plan_sha256, 'reason': 'age or capacity'}
+
+
+def preview(root, ledger_path, policy, now, incoming_bytes=0, keep=(), evidence=None):
   if root.is_symlink():
     raise ValueError('refusing cleanup through a linked archive root')
   if type(incoming_bytes) is not int or incoming_bytes < 0:
@@ -79,7 +87,7 @@ def preview(root, ledger_path, policy, now, incoming_bytes=0, keep=()):
   days = policy['retention_days']
   if not isinstance(protected, dict) or type(days) is not int or days < 1:
     raise ValueError('invalid retention policy')
-  storage = budget_status(root, policy)
+  storage = budget_status(root, policy, evidence)
   usage, budget = storage['archive_bytes'], storage['budget_bytes']
   rows = {}
   if ledger_path.exists():
@@ -123,27 +131,31 @@ def preview(root, ledger_path, policy, now, incoming_bytes=0, keep=()):
       continue
     item = {'route': route, 'drive_end': start + minutes * 60,
             'validation_sha256': hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest(),
-            'files': files, 'bytes': sum(p['bytes'] for p in files)}
+            'files': files, 'bytes': sum(p['bytes'] for p in files),
+            'receipt_bytes': len((json.dumps(removal_record(now, route, '0' * 64)) + '\n').encode()) if evidence else 0}
     (candidates if item['drive_end'] < now - days * 86400 else recent).append(item)
   candidates.sort(key=lambda row: (row['drive_end'], row['route']))
-  remaining = usage + incoming_bytes - sum(row['bytes'] for row in candidates)
+  remaining = usage + incoming_bytes - sum(row['bytes'] - row['receipt_bytes'] for row in candidates)
   for row in sorted(recent, key=lambda row: (row['drive_end'], row['route'])):
-    if remaining > budget:
+    if remaining > budget and row['bytes'] > row['receipt_bytes']:
       candidates.append(row)
-      remaining -= row['bytes']
+      remaining -= row['bytes'] - row['receipt_bytes']
     else:
       kept[row['route']] = 'inside retention window'
   return {'version': 1, 'as_of': now, 'root': str(root.resolve()), 'policy': policy,
+          'evidence_root': str(evidence.resolve()) if evidence is not None else None,
           **storage, 'incoming_bytes': incoming_bytes, 'keep': sorted(keep),
           'candidate_bytes': sum(r['bytes'] for r in candidates), 'projected_bytes': remaining,
-          'candidates': candidates, 'kept': kept, 'scope': 'Local logs including partials; analysis/evidence caches are separate.'}
+          'candidates': candidates, 'kept': kept,
+          'scope': 'Logs including partials plus evidence and analysis caches; cleanup removes eligible log routes only.'}
 
 
-def apply_plan(root, ledger_path, policy, plan, record_removed=lambda route: None):
-  if plan.get('version') != 1 or plan.get('root') != str(root.resolve()) or plan.get('policy') != policy:
+def apply_plan(root, ledger_path, policy, plan, record_removed=lambda route: None, evidence=None):
+  if (plan.get('version') != 1 or plan.get('root') != str(root.resolve()) or plan.get('policy') != policy or
+      plan.get('evidence_root') != (str(evidence.resolve()) if evidence is not None else None)):
     raise ValueError('plan root or policy changed')
-  current = preview(root, ledger_path, policy, plan['as_of'], plan.get('incoming_bytes', 0), plan.get('keep', ()))
-  if current['candidates'] != plan.get('candidates'):
+  current = preview(root, ledger_path, policy, plan['as_of'], plan.get('incoming_bytes', 0), plan.get('keep', ()), evidence)
+  if current['candidates'] != plan.get('candidates') or current['archive_bytes'] != plan.get('archive_bytes'):
     raise ValueError('candidate files or evidence changed; generate another preview')
   removed = []
   for row in plan['candidates']:
@@ -159,20 +171,20 @@ def apply_plan(root, ledger_path, policy, plan, record_removed=lambda route: Non
 def enforce(root, evidence, incoming_bytes=0, keep=(), now=None):
   policy = read_policy(evidence)
   ledger = evidence / 'log-validation-ledger.jsonl'
-  report = preview(root, ledger, policy, time.time() if now is None else now, incoming_bytes, keep)  # noqa: TID251
+  report = preview(root, ledger, policy, time.time() if now is None else now, incoming_bytes, keep, evidence)  # noqa: TID251
   if report['projected_bytes'] > report['budget_bytes']:
-    raise ArchiveFull(f"30 GB log cap: need {report['projected_bytes'] / 1e9:.3f} GB after eligible cleanup; "
+    raise ArchiveFull(f"50 GB archive cap: need {report['projected_bytes'] / 1e9:.3f} GB after eligible cleanup; "
                       'protected, unvalidated or partial logs prevent this transfer. Review protections or resume/remove partials.')
   plan_sha = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
   with (evidence / 'rlog-retention-ledger.jsonl').open('a') as stream:
     def record_removed(route):
-      stream.write(json.dumps({'at': report['as_of'], 'removed': route, 'plan_sha256': plan_sha, 'reason': 'age or capacity'}) + '\n')
+      stream.write(json.dumps(removal_record(report['as_of'], route, plan_sha)) + '\n')
       stream.flush()
-    removed = apply_plan(root, ledger, policy, report, record_removed)
-  storage = budget_status(root, policy)
+    removed = apply_plan(root, ledger, policy, report, record_removed, evidence)
+  storage = budget_status(root, policy, evidence)
   if storage['archive_bytes'] + incoming_bytes > storage['budget_bytes']:
     raise ArchiveFull('archive changed during capacity reservation; download refused')
-  print(f"Local logs: {storage['archive_bytes'] / 1e9:.3f} / {storage['budget_bytes'] / 1e9:g} GB; "
+  print(f"Archive (logs + evidence): {storage['archive_bytes'] / 1e9:.3f} / {storage['budget_bytes'] / 1e9:g} GB; "
         f"removed {len(removed)} expired/capacity route(s)")
   return {**storage, 'removed': removed}
 
@@ -182,7 +194,7 @@ def main():
   action = parser.add_mutually_exclusive_group()
   action.add_argument('--preview', type=Path, help='write a reviewable plan without deleting')
   action.add_argument('--apply', type=Path, help='apply an unchanged preview')
-  action.add_argument('--enforce', action='store_true', help='clean expired routes and enforce the local cap now')
+  action.add_argument('--enforce', action='store_true', help='clean expired routes and enforce the combined archive cap now')
   args = parser.parse_args()
   root, evidence = rlog_root(), evidence_root()
   with archive_lock(evidence):
@@ -191,8 +203,8 @@ def main():
       return
     policy = read_policy(evidence)
     ledger = evidence / 'log-validation-ledger.jsonl'
-    report = preview(root, ledger, policy, time.time())  # noqa: TID251
-    print(f"Local logs: {report['archive_bytes'] / 1e9:.3f} / {report['budget_bytes'] / 1e9:g} GB")
+    report = preview(root, ledger, policy, time.time(), evidence=evidence)  # noqa: TID251
+    print(f"Archive (logs + evidence): {report['archive_bytes'] / 1e9:.3f} / {report['budget_bytes'] / 1e9:g} GB")
     print(f"Preview: {len(report['candidates'])} eligible route(s); {len(report['kept'])} kept")
     if args.preview:
       if args.preview.resolve().is_relative_to(Path(__file__).resolve().parents[1]) and not args.preview.resolve().is_relative_to(evidence):
@@ -202,10 +214,9 @@ def main():
       plan = read_json(args.apply)
       with (evidence / 'rlog-retention-ledger.jsonl').open('a') as stream:
         def record_removed(route):
-          stream.write(json.dumps({'at': report['as_of'], 'removed': route,
-                                   'plan_sha256': hashlib.sha256(args.apply.read_bytes()).hexdigest()}) + '\n')
+          stream.write(json.dumps(removal_record(report['as_of'], route, hashlib.sha256(args.apply.read_bytes()).hexdigest())) + '\n')
           stream.flush()
-        removed = apply_plan(root, ledger, policy, plan, record_removed)
+        removed = apply_plan(root, ledger, policy, plan, record_removed, evidence)
       print(f'Removed {len(removed)} local route(s).')
 
 
