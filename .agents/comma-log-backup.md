@@ -55,7 +55,8 @@ enable flag, destination, encrypted account session, encryption key and receipts
   supported `pass` backend. The unattended GPG key stays on this device in a private directory;
   encryption does not protect against someone who controls the device/account.
 
-The Mac intake command is `.venv/bin/python .agents/pull_logs.py --all-new` (`--list` previews).
+The Mac intake command is `.venv/bin/python .agents/pull_logs.py --all-new`
+(`--list` enforces retention/capacity before previewing; it is not a read-only cleanup preview).
 It checks Proton first, validates the available snapshot and makes no device connection by default.
 Newly available segments reopen previously partial ledger coverage. Its age filter uses file mtimes;
 Proton arrival times can differ from drive times. Do not treat available segments as a whole drive.
@@ -149,19 +150,83 @@ enablement. A successful live upload and independent Proton download/hash compar
 analysis computer are required before claiming end-to-end backup operation; the comma must
 not download Drive file payloads for verification. Software tests alone do not establish it.
 
-## Restoration on the current UI
+## Agent handoff
 
-The restored indicator uses the upstream `raylib_nb` renderer in both main-screen variants.
-Archive discovery and the Mac intake task again use Proton first. Keep the local recovery copy
-until File Provider confirms the restored archive has finished uploading; a successful local
-copy/hash check alone does not establish server completion. No private data or account paths
-belong in the source commit.
+When available, read `evidence/proton-uploader-handoff.md` through `private_paths.evidence_root()`
+for the owner's installed revision pair, archive move receipt, live observations and pending checks.
+Without that private handoff, use this runbook and live device evidence; do not infer opt-in or credentials.
+Keep changing counts, account/machine details, verification filenames and route evidence in
+Proton, not this repository. These are snapshots, not a continuously refreshed health monitor.
+The owner chose Proton as the sole logs/evidence archive. Do not recreate `.private/rlogs`,
+`.private/evidence`, a second working copy or a symlink to the archive. The ignored `.private/`
+directory retains operational migration receipts only. Historical sealed evidence remains
+byte-identical; relocate old path prefixes instead of editing historical manifests.
 
-Re-run the focused tests and deliberate gate, command-allowlist, digest, source-retention,
-driving-visibility, timeout, combined-cap, archive-discovery and intake-order mutations when restoring this
-feature. The decision remains keep as optional tooling and a passive display: no actuator,
-stock log-deleter or display-wake behavior is changed. Device installation and an end-to-end
-cloud check remain separate from passing these software checks.
+The archive move and any owner-approved removal before server synchronization are recorded
+privately; they do not grant permission to repeat that exception for another move. Do not infer that
+filesystem verification means server synchronization is complete, and do not reset/uninstall
+Proton or clear its File Provider storage while it contains the only not-yet-uploaded copy.
+For a future move, retain originals until sync finishes unless the owner explicitly authorizes
+removing verified copies earlier with that limitation understood.
+
+Start with read-only checks on the comma:
+
+```sh
+cd /data/proton-log-backup
+./run_backup.sh status
+cat status.json
+sudo systemctl show proton-log-backup.service -p ActiveState -p SubState -p NRestarts -p MemoryCurrent
+sudo journalctl -u proton-log-backup.service -n 20 --no-pager -o cat
+```
+
+`status` reports opt-in and saved-session presence; it does not prove the session is still valid.
+Compare `status.json.updated_at` with `time.monotonic()` **on the device**, not the Mac.
+The UI rejects status older than 90 seconds. `last_success_at` is wall time; queue counters
+cover the current retained closed-log snapshot. They can shrink when stock cleanup removes
+logs. Matching receipts prove past cloud metadata verification, not present cloud existence,
+whole-drive coverage, Mac synchronization or independent payload readback.
+
+Check the exact parent, gitlink and nested checkout separately from service health:
+
+```sh
+cd /data/openpilot
+git rev-parse HEAD HEAD:opendbc_repo
+git -C opendbc_repo rev-parse HEAD
+git status --short
+```
+
+The standalone service, worker, generated `run_backup.sh`, client, session and receipts live
+outside the checkout. A Git update alone does not replace them. For a reviewed worker update,
+stop only `proton-log-backup.service`, transfer a `.next` file, compare SHA-256, atomically
+replace the worker and restart that service. Preserve config, credentials, receipts and the
+marked startup block. Initial installation and main checkout deployment require the fresh
+offroad guard; use `tools/deploy_ody_op.sh deploy` for tracked UI changes rather than copying
+tracked UI files onto the device. Documentation-only commits need no device rebuild/reboot.
+Do not log out, regenerate keys, rerun login or remove the installation to diagnose a queue wait.
+
+Missing cloud folders can be Mac restore lag: verify the signed-in account and existing parent
+before creating the exact missing destination. Do not create a second archive or move/overwrite
+cloud data to bypass that check. Diagnose Mac File Provider startup/sync separately from the
+comma worker; an active Mac process alone does not prove its provider is syncing.
+
+Keep these invariants when changing the feature:
+
+- Wi-Fi is required while parked **or driving**; do not restore a `started == false` gate.
+- Missing opt-in/session means no background cloud calls; expired access cannot authorize uploads.
+- The comma uploads only: metadata reads, folder creation and upload are allowed; payload downloads,
+  cloud deletion/movement and bidirectional synchronization remain forbidden.
+- Stock source deletion and power-down win. Do not add copies, hard links, xattrs or preservation flags.
+- The passive UI uses the shared `get_alert`, hides while driving and under other navigation layers,
+  and must not touch display-wake, interaction, screensaver, navigation or power deadlines.
+- The combined 50 GB admission cap does not authorize evidence deletion or automatic Trash purging.
+
+Re-run focused worker/UI/intake/retention checks for relevant changes. Deliberately break opt-in,
+session/Wi-Fi, command allowlist, digest, source deletion, driving visibility, timer isolation,
+combined-cap accounting, transfer reservation and archive discovery to see the checks fail.
+Integration tests exercise a real child process against a simulated cloud; do not label that a
+live account test. Independent server readback must occur on an analysis host, never the comma.
+Use the private pending verification marker and expected digest if it has not yet arrived on the
+Mac; do not claim that check passed simply because a pre-existing cached rlog has matching bytes.
 
 ## Archive budget and retention
 

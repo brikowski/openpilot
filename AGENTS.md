@@ -184,12 +184,18 @@ Use that first divergence to choose the work:
   active `ProtonDrive-*-folder/Documents/openpilot` under `~/Library/CloudStorage`;
   `OPENPILOT_PRIVATE_ROOT`, `LOG_ROOT` and `ODYSSEY_EVIDENCE_ROOT` can override discovery.
   Account names and absolute cloud mounts remain machine-local. Never commit private data;
-  the ignored `.private/` recovery copy remains protected by commit/push/publication guards.
+  the ignored `.private/` directory now holds operational migration receipts only, not a second
+  logs/evidence archive or a symlink. Keep those receipts out of commits/publication too.
 - The optional [comma uploader](.agents/comma-log-backup.md) uploads closed full-rate rlogs on
   fresh Wi-Fi while parked or driving. It requires owner sign-in and explicit enablement;
   installing the fork does not install or enable it. Sessions and configuration stay outside
   the checkout. It never downloads Drive file payloads, deletes cloud data, retains source logs
   or changes stock device deletion, screensaver, display-off or power-down behavior.
+- Before uploader work, read the [agent handoff](.agents/comma-log-backup.md#agent-handoff)
+  and, when available, the private `evidence/proton-uploader-handoff.md` in the discovered Proton archive.
+  The private receipt records the installed source pair, live verification and unfinished sync
+  checks. Treat counts and installed revisions as snapshots; read the device before claiming
+  current health. Updating checkout source does not update the standalone `/data` worker.
 - Check the synchronized Proton archive before connecting to the device.
   `.agents/pull_logs.py --all-new` validates available files without SSH; `--list` applies retention and previews
   availability without transfers. Use explicit `--device-fallback` only after

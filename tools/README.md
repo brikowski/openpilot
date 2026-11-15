@@ -88,7 +88,9 @@ and explicit enablement; it uploads closed rlogs on Wi-Fi while parked or drivin
 preserves device logs, downloads cloud file payloads or deletes cloud files.
 
 Set `COMMA_SSH=comma@<tailnet-host>` or `ODYSSEY_DEVICE` for explicit device fallback and deployment.
-Keep machine-specific addresses, account details and private route data out of Git.
+Keep machine-specific addresses, account details and private route data out of Git. Agents should
+start with the [uploader handoff](../.agents/comma-log-backup.md#agent-handoff) and the private
+`evidence/proton-uploader-handoff.md` in the discovered Proton archive.
 
 This checkout also exposes a small set of explicit VS Code tasks in
 [`../.vscode/tasks.json`](../.vscode/tasks.json):
