@@ -1765,9 +1765,8 @@ def _following(msgs, grid, requested, active, pid, pitch, vego, gaspressed, brak
         out["mild_negative_release_post_error_0p6_mean"] = float(np.mean(post_errors)) if post_errors else None
         out["mild_negative_release_details"] = releases
 
-  # Measure the driver-felt symptom directly: physical BRAKE_REQUEST bursts. The known tapping
-  # route 2f produced 18 real edges in 10 s, failed BRAKE_RELEASE_HOLD produced 10, while the
-  # historical 0.50 release width produced 2-4.
+  # Transmitted request edges nominate domain events. Received brake feedback and vehicle
+  # motion must establish whether they represent actuator cycling or harshness.
   brake_edges = _physical_edges(BR, active)
   brake_edge_times = grid[brake_edges]
   out["brake_toggle_edges"] = int(len(brake_edges))
@@ -2221,7 +2220,7 @@ def verdicts(r):
     release_error = r.get("mild_negative_release_post_error_0p6_mean")
     release_error_text = f"{release_error:+.3f}" if release_error is not None else "n/a"
     add("mild-negative brake release (diagnostic)", True,
-        f"{r['mild_negative_release_events']} physical brake-to-coast edge(s) while carControl stays negative; "
+        f"{r['mild_negative_release_events']} transmitted brake-to-coast edge(s) while carControl stays negative; "
         f"{r['mild_negative_release_rebrake_1s']} rebrake, "
         f"{r['mild_negative_release_gas_reentry_1s']} gas re-entry within 1s; "
         f"observed +0.6s mean aEgo-request {release_error_text} m/s^2 "
@@ -2233,9 +2232,9 @@ def verdicts(r):
     gap = (f", minimum gap {r['brake_toggle_min_gap']:.2f}s"
            if r.get("brake_toggle_min_gap") is not None else "")
     add("brake-domain transition bursts", not burst_bad,
-        f"{r['brake_toggle_edges']} physical edges, peak {r['brake_toggle_max_10s']}/10s"
+        f"{r['brake_toggle_edges']} transmitted BRAKE_REQUEST edges, peak {r['brake_toggle_max_10s']}/10s"
         f"{gap}{dn}",
-        status="rapid BRAKE_REQUEST cycling (downhill tapping)" if burst_bad else None)
+        status="rapid BRAKE_REQUEST cycling; inspect braking feedback and motion" if burst_bad else None)
   if r.get("brake_episode_count") is not None:
     duration = (f"{r['brake_episode_duration_median']:.2f}s"
                 if r.get("brake_episode_duration_median") is not None else "n/a")
