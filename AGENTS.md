@@ -22,6 +22,8 @@ and its pinned `commaai/opendbc`.
 
 Use engineering judgment to resolve routine ambiguities, define acceptance criteria and choose
 proportionate validation within the authorization, safety and privacy boundaries below.
+Judge success by measured vehicle tracking and smoothness. Develop justified candidates without
+claiming road benefit before validation.
 Revisit earlier decisions when new evidence warrants; historical keep/change/retire labels and
 experiment branches are evidence receipts, not permanent design restrictions.
 
