@@ -6,6 +6,10 @@ import unittest
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.common.parameterized import parameterized
 from openpilot.cereal import messaging, log
+from opendbc.car import gen_empty_fingerprint
+from opendbc.car.honda.hondacan import CanBus as HondaCanBus
+from opendbc.car.honda.interface import CarInterface as HondaInterface
+from opendbc.car.honda.values import CAR
 from opendbc.car.structs import car
 from openpilot.selfdrive.locationd.lagd import LateralLagEstimator, retrieve_initial_lag, masked_normalized_cross_correlation, \
                                                BLOCK_NUM_NEEDED, BLOCK_SIZE, MIN_OKAY_WINDOW_SEC, VERSION, MIN_LAG, MAX_LAG
@@ -67,6 +71,41 @@ class TestLagd(OpenpilotTestCase):
     lag, valid_blocks = saved_lag_params
     assert lag == msg.lateralDelay.lateralDelayEstimate
     assert valid_blocks == msg.lateralDelay.validBlocks
+
+  @parameterized.expand([
+    (CAR.HONDA_ODYSSEY_5G_MMR, False, True, False),
+    (CAR.HONDA_ODYSSEY_5G_MMR, True, False, False),
+    (CAR.HONDA_ODYSSEY_5G_MMR, False, False, True),
+    (CAR.HONDA_ODYSSEY_5G_MMR, True, True, True),
+    (CAR.HONDA_CITY_7G, False, True, True),
+    (CAR.HONDA_CITY_7G, True, False, True),
+    (CAR.HONDA_CRV_6G, False, True, True),
+    (CAR.HONDA_CRV_6G, True, False, True),
+  ])
+  def test_saved_delay_steering_route(self, model, previous_alpha, current_alpha, restore):
+    previous, current = [HondaInterface.get_params(model, gen_empty_fingerprint(), [], alpha, False, False)
+                         for alpha in (previous_alpha, current_alpha)]
+    assert (HondaCanBus(previous).lkas == HondaCanBus(current).lkas) == restore
+    params = Params()
+    msg = messaging.new_message('lateralDelay')
+    msg.lateralDelay.lateralDelayEstimate = .4
+    msg.lateralDelay.validBlocks = BLOCK_NUM_NEEDED
+    msg.lateralDelay.status = 'estimated'
+    msg.lateralDelay.version = VERSION
+    cache = msg.to_bytes()
+    params.put("LiveDelay", cache, block=True)
+    params.put("CarParamsPrevRoute", previous.to_bytes(), block=True)
+
+    saved = retrieve_initial_lag(params, current)
+    if restore:
+      assert saved == (msg.lateralDelay.lateralDelayEstimate, BLOCK_NUM_NEEDED)
+      assert params.get("LiveDelay") == cache
+    else:
+      assert saved is None
+      assert params.get("LiveDelay") is None
+      # A short route may advance CarParams before the periodic delay-cache write.
+      params.put("CarParamsPrevRoute", current.to_bytes(), block=True)
+      assert retrieve_initial_lag(params, current) is None
 
   def test_read_invalid_saved_params(self, subtests):
     params = Params()

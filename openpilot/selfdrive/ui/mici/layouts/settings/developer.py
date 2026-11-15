@@ -5,6 +5,7 @@ from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, Big
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigInputDialog, BigConfirmationCircleButton
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
+from openpilot.selfdrive.ui.layouts.settings.alpha_longitudinal import set_alpha_longitudinal_enabled
 from openpilot.selfdrive.ui.layouts.settings.lateral_maneuver import set_lateral_maneuver_mode
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.widgets.ssh_key import SshKeyFetcher
@@ -193,8 +194,7 @@ class DeveloperLayoutMici(NavScroller):
 
   def _on_alpha_long_enabled(self, state: bool):
     def do_toggle(_state: bool):
-      ui_state.params.put_bool("AlphaLongitudinalEnabled", _state, block=True)
-      restart_needed_callback()
+      set_alpha_longitudinal_enabled(ui_state.params, _state)
       self._update_toggles()
 
     if state:

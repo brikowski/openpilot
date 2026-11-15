@@ -11,6 +11,7 @@ from openpilot.selfdrive.ui.onroad.augmented_road_view import AugmentedRoadView
 from openpilot.selfdrive.ui.ui_state import device, ui_state
 from openpilot.selfdrive.ui.layouts.onboarding import OnboardingWindow
 from openpilot.selfdrive.ui.body.layouts.onroad import BodyLayout
+from openpilot.selfdrive.ui.widgets.upload_status import UploadStatus
 
 
 class MainState(IntEnum):
@@ -28,10 +29,12 @@ class MainLayout(Widget):
     self._sidebar = Sidebar()
     self._current_mode = MainState.HOME
     self._prev_onroad = False
+    self._prev_parked = False
 
     # Initialize layouts
     self._home_layout = HomeLayout()
     self._home_body_layout = BodyLayout()
+    self._upload_status = UploadStatus()
     self._layouts: dict[MainState, Widget] = {
       MainState.HOME: self._home_layout,
       MainState.SETTINGS: SettingsLayout(),
@@ -51,10 +54,10 @@ class MainLayout(Widget):
     if not self._onboarding_window.completed:
       gui_app.push_widget(self._onboarding_window)
 
+    gui_app.add_nav_stack_tick(self._handle_onroad_transition)
     self._screensaver = Screensaver(self)
 
   def _render(self, _):
-    self._handle_onroad_transition()
     self._render_main_content()
 
   def _setup_callbacks(self):
@@ -67,7 +70,7 @@ class MainLayout(Widget):
     for layout in (self._layouts[MainState.ONROAD], self._home_body_layout):
       layout.set_click_callback(self._on_onroad_clicked)
 
-    device.add_interactive_timeout_callback(self._set_mode_for_state)
+    device.add_interactive_timeout_callback(self._on_interactive_timeout)
     ui_state.add_on_body_changed_callbacks(self._on_body_changed)
 
   def _update_layout_rects(self):
@@ -77,9 +80,25 @@ class MainLayout(Widget):
     self._content_rect = rl.Rectangle(self._rect.x + x_offset, self._rect.y, self._rect.width - x_offset, self._rect.height)
 
   def _handle_onroad_transition(self):
-    if ui_state.started != self._prev_onroad:
-      self._prev_onroad = ui_state.started
+    if gui_app.widget_in_stack(self._onboarding_window):
+      return
 
+    started_changed = ui_state.started != self._prev_onroad
+    leaving_park = self._prev_parked and not ui_state.parked
+    self._prev_onroad = ui_state.started
+    self._prev_parked = ui_state.parked
+    if started_changed or leaving_park:
+      if ui_state.started:
+        gui_app.pop_widgets_to(self, self._set_mode_for_state)
+      else:
+        self._set_mode_for_state()
+
+  def _on_interactive_timeout(self):
+    if gui_app.widget_in_stack(self._onboarding_window):
+      return
+    if ui_state.started and not ui_state.parked:
+      gui_app.pop_widgets_to(self, self._set_mode_for_state)
+    else:
       self._set_mode_for_state()
 
   def _set_mode_for_state(self):
@@ -131,3 +150,5 @@ class MainLayout(Widget):
 
     content_rect = self._content_rect if self._sidebar.is_visible else self._rect
     self._layouts[self._current_mode].render(content_rect)
+    if gui_app.get_active_widget() is self and self._current_mode != MainState.SETTINGS:
+      self._upload_status.render(content_rect)

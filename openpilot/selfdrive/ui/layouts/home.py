@@ -5,6 +5,7 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.ui.widgets.offroad_alerts import UpdateAlert, OffroadAlert
 from openpilot.selfdrive.ui.widgets.prime import PrimeWidget
 from openpilot.selfdrive.ui.widgets.setup import SetupWidget
+from openpilot.selfdrive.ui.widgets.longitudinal_mode import LongitudinalModeButton
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos, TextAlignment
 from openpilot.system.ui.lib.multilang import tr, trn
@@ -51,6 +52,8 @@ class HomeLayout(Widget):
 
     self.update_notif_rect = rl.Rectangle(0, 0, 200, HEADER_HEIGHT - 10)
     self.alert_notif_rect = rl.Rectangle(0, 0, 220, HEADER_HEIGHT - 10)
+    self._longitudinal_mode = self._child(LongitudinalModeButton())
+    self._longitudinal_mode.set_rect(rl.Rectangle(0, 0, 280, HEADER_HEIGHT - 10))
 
     self._prime_widget = PrimeWidget()
     self._setup_widget = SetupWidget()
@@ -112,10 +115,15 @@ class HomeLayout(Widget):
       self.content_rect.x + left_width + SPACING, self.content_rect.y, RIGHT_COLUMN_WIDTH, self.content_rect.height
     )
 
-    self.update_notif_rect.x = self.header_rect.x
+    notif_x = self.header_rect.x
+    self._longitudinal_mode.set_position(notif_x, self.header_rect.y + 5)
+    if self._longitudinal_mode.is_visible:
+      notif_x += self._longitudinal_mode.rect.width + SPACING
+
+    self.update_notif_rect.x = notif_x
     self.update_notif_rect.y = self.header_rect.y + (self.header_rect.height - 60) // 2
 
-    notif_x = self.header_rect.x + (220 if self.update_available else 0)
+    notif_x += 220 if self.update_available else 0
     self.alert_notif_rect.x = notif_x
     self.alert_notif_rect.y = self.header_rect.y + (self.header_rect.height - 60) // 2
 
@@ -131,6 +139,9 @@ class HomeLayout(Widget):
     font = gui_app.font(FontWeight.MEDIUM)
 
     version_text_width = self.header_rect.width
+    if self._longitudinal_mode.is_visible:
+      version_text_width -= self._longitudinal_mode.rect.width + SPACING
+    self._longitudinal_mode.render()
 
     # Update notification button
     if self.update_available:

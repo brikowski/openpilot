@@ -1,11 +1,13 @@
 from openpilot.common.params import Params
+from openpilot.selfdrive.ui.layouts.settings.alpha_longitudinal import (
+  ALPHA_LONGITUDINAL_DESCRIPTION, alpha_longitudinal_dialog, set_alpha_longitudinal_enabled,
+)
 from openpilot.selfdrive.ui.layouts.settings.lateral_maneuver import set_lateral_maneuver_mode
 from openpilot.selfdrive.ui.widgets.ssh_key import ssh_key_item
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.list_view import toggle_item
 from openpilot.system.ui.widgets.scroller_tici import Scroller
-from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
 from openpilot.system.ui.widgets import DialogResult
@@ -20,12 +22,7 @@ DESCRIPTIONS = {
     "Warning: This grants SSH access to all public keys in your GitHub settings. Never enter a GitHub username " +
     "other than your own. A comma employee will NEVER ask you to add their GitHub username."
   ),
-  'alpha_longitudinal': tr_noop(
-    "<b>WARNING: openpilot longitudinal control is in alpha for this car and may disable Automatic Emergency Braking (AEB).</b><br><br>" +
-    "On this car, openpilot defaults to the car's built-in ACC instead of openpilot's longitudinal control. " +
-    "Enable this to switch to openpilot longitudinal control. " +
-    "Changing this setting will restart openpilot if the car is powered on."
-  ),
+  'alpha_longitudinal': ALPHA_LONGITUDINAL_DESCRIPTION,
 }
 
 
@@ -187,20 +184,13 @@ class DeveloperLayout(Widget):
     if state:
       def confirm_callback(result: DialogResult):
         if result == DialogResult.CONFIRM:
-          self._params.put_bool("AlphaLongitudinalEnabled", True, block=True)
-          self._params.put_bool("OnroadCycleRequested", True, block=True)
+          set_alpha_longitudinal_enabled(self._params, True)
           self._update_toggles()
         else:
           self._alpha_long_toggle.action_item.set_state(False)
 
-      # show confirmation dialog
-      content = (f"<h1>{self._alpha_long_toggle.title}</h1><br>" +
-                 f"<p>{self._alpha_long_toggle.description}</p>")
-
-      dlg = ConfirmDialog(content, tr("Enable"), rich=True, callback=confirm_callback)
-      gui_app.push_widget(dlg)
+      gui_app.push_widget(alpha_longitudinal_dialog(confirm_callback))
 
     else:
-      self._params.put_bool("AlphaLongitudinalEnabled", False, block=True)
-      self._params.put_bool("OnroadCycleRequested", True, block=True)
+      set_alpha_longitudinal_enabled(self._params, False)
       self._update_toggles()

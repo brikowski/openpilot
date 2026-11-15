@@ -7,6 +7,7 @@ from functools import partial
 
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal import log
+from opendbc.car.honda.hondacan import CanBus as HondaCanBus
 from opendbc.car.structs import car
 from openpilot.cereal.services import SERVICE_LIST
 from openpilot.common.constants import CV
@@ -371,6 +372,9 @@ def retrieve_initial_lag(params: Params, CP: car.CarParams):
         ld = last_lag_msg.lateralDelay
         if last_CP.carFingerprint != CP.carFingerprint:
           raise Exception("Car model mismatch")
+        # Bypassing Honda's radar changes the steering command path being measured.
+        if CP.brand == 'honda' and HondaCanBus(last_CP).lkas != HondaCanBus(CP).lkas:
+          raise Exception("Steering route mismatch")
 
         lag, valid_blocks, status, version = ld.lateralDelayEstimate, ld.validBlocks, ld.status, ld.version
         assert valid_blocks <= BLOCK_NUM, "Invalid number of valid blocks"
