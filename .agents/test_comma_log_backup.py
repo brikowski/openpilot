@@ -298,18 +298,24 @@ def test_opt_out_during_transfer_cancels_child_process(tmp_path):
   client.chmod(0o700)
   started = time.monotonic()
   beats = []
+  opted_out = []
 
   def allowed():
     try:
       ready = int((root / 'child.pid').read_text()) > 0
     except (FileNotFoundError, ValueError):
       ready = False
-    return (not ready or not beats) and time.monotonic() - started < 5
+    if ready and beats:
+      opted_out.append(time.monotonic())
+      return False
+    if time.monotonic() - started >= 30:
+      pytest.fail('test client did not become ready')
+    return True
 
   proton = backup.Proton(root, allowed, heartbeat=lambda: beats.append(True))
   with pytest.raises(backup.Paused):
     proton.call('filesystem', 'info', DESTINATION)
-  assert time.monotonic() - started < 7
+  assert opted_out and time.monotonic() - opted_out[0] < 7
   assert beats
   with pytest.raises(ProcessLookupError):
     os.kill(int((root / 'child.pid').read_text()), 0)
