@@ -179,10 +179,13 @@ def test_upload_start_progress_and_completion_do_not_extend_idle_timeouts(displa
 def test_optional_bytes_verified_success_and_failure_detail(indicator):
   write_status(indicator.path, pending_bytes=1073741824, last_success_at=1799999880., error=None)
   render(indicator)
-  assert '1.0 GiB queued' in indicator.labels[1]
-  assert 'Last 2m ago' in indicator.labels[1]
+  assert indicator.labels[1] == '1 of 4 log files | 1.0 GiB queued | Last 2m ago'
   indicator.now[0] = 1.
-  write_status(indicator.path, 'retrying', updated_at=1., pending_bytes=1073741824,
+  write_status(indicator.path, 'retrying', updated_at=1., error=None)
+  render(indicator)
+  assert indicator.labels[1] == 'Retrying | check connection or Proton sign-in'
+  indicator.now[0] = 2.
+  write_status(indicator.path, 'retrying', updated_at=2., pending_bytes=1073741824,
                last_success_at=1799999880., error='content_mismatch')
   render(indicator)
   assert 'Cloud file differs' in indicator.labels[1]

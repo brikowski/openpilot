@@ -182,7 +182,7 @@ def test_home_longitudinal_mode_confirms_enable_and_uses_existing_setting(longit
   m.dialogs[-1]._confirm_button_callback()
   assert m.params.get_bool('AlphaLongitudinalEnabled')
   assert m.params.get_bool('OnroadCycleRequested')
-  assert m.button._label._text() == 'OpenPilot'
+  assert m.button._label._text() == 'Alpha'
 
   m.params.remove('OnroadCycleRequested')
   m.button._toggle()
@@ -227,7 +227,7 @@ def test_home_longitudinal_mode_reflects_settings_changes(longitudinal_mode):
   m = longitudinal_mode
   m.params.put_bool('AlphaLongitudinalEnabled', True, block=True)
   m.state.update_params()
-  assert m.button._label._text() == 'OpenPilot'
+  assert m.button._label._text() == 'Alpha'
 
 
 @pytest.mark.parametrize('variant', ['tici', 'mici'])

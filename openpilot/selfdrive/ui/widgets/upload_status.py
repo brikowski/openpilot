@@ -21,7 +21,7 @@ LABELS = {
   'complete': ('Uploads complete', ''),
   'waiting_wifi': ('Waiting for Wi-Fi', 'Uploads resume automatically'),
   'sign_in': ('Proton sign-in needed', 'Sign in to resume log uploads'),
-  'retrying': ('Upload paused', 'Retrying · check connection or Proton sign-in'),
+  'retrying': ('Upload paused', 'Retrying | check connection or Proton sign-in'),
   'pending': ('Waiting to upload', 'Checking again shortly'),
   'unavailable': ('Uploader unavailable', 'Waiting for upload status'),
 }
@@ -92,12 +92,12 @@ class UploadStatus(Widget):
     if data['state'] in ('uploading', 'pending') and data.get('pending_bytes', 0):
       pending = data['pending_bytes']
       size = f'{pending / 2**30:.1f} GiB' if pending >= 2**30 else f'{max(1, round(pending / 2**20))} MiB'
-      detail += f' · {size} queued'
+      detail += f' | {size} queued'
     if data.get('last_success_at') is not None and data['state'] != 'unavailable':
       age = time.time() - data['last_success_at']  # noqa: TID251 -- compare a persisted upload event across boots.
       if age >= 0:
         elapsed = '<1m' if age < 60 else f'{int(age // 60)}m' if age < 3600 else f'{int(age // 3600)}h'
-        detail += f' · Last {elapsed} ago'
+        detail += f' | Last {elapsed} ago'
     active = data['state'] in ('uploading', 'complete')
     fraction = data['completed'] / data['total'] if active and data['total'] else float(data['state'] == 'complete')
     color = rl.Color(86, 202, 145, 255) if data['state'] == 'complete' else rl.Color(91, 162, 255, 255)

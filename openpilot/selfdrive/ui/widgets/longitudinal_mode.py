@@ -3,12 +3,13 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import DialogResult
-from openpilot.system.ui.widgets.button import Button
+from openpilot.system.ui.widgets.button import Button, ButtonStyle
 
 
 class LongitudinalModeButton(Button):
   def __init__(self):
-    super().__init__(lambda: tr("OpenPilot") if ui_state.alpha_long_enabled else tr("Radar"), self._toggle, font_size=40)
+    super().__init__(lambda: tr("Alpha") if ui_state.alpha_long_enabled else tr("Radar"), self._toggle, font_size=40,
+                     button_style=ButtonStyle.PRIMARY)
     self.set_visible(self._available)
 
   @staticmethod
