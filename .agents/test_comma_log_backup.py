@@ -31,11 +31,6 @@ def setup(tmp_path):
 
   class Client:
     namespace = 'volume~destination'
-    archive_bytes = 0
-
-    def archive_size(self, path):
-      assert path == DESTINATION.rsplit('/', 1)[0]
-      return self.archive_bytes
     remote = {}
 
     def info(self, path):
@@ -281,8 +276,8 @@ def test_new_remote_segment_folder_is_created_before_direct_file_upload(setup, m
   assert calls[1][0:3] == ('filesystem', 'upload', str(source))
 
 
-@pytest.mark.parametrize('operation', ['download', 'delete', 'trash', 'move'])
-def test_worker_cannot_download_or_delete_cloud_files(setup, monkeypatch, operation):
+@pytest.mark.parametrize('operation', ['download', 'delete', 'trash', 'move', 'size'])
+def test_worker_permits_only_upload_and_destination_metadata(setup, monkeypatch, operation):
   proton = backup.Proton(setup.root, lambda: True)
   monkeypatch.setattr(subprocess, 'Popen', lambda *a, **kw: pytest.fail('client must not start'))
   with pytest.raises(backup.BackupError, match='only upload'):
@@ -406,9 +401,7 @@ def test_backup_runs_through_real_cli_subprocess_and_keeps_source_ownership(setu
     assert args[0] == 'filesystem' and args[-1] == '--json'
     def remote(path):
       return cloud / path.removeprefix('/my-files/')
-    if args[1] == 'size':
-      print(json.dumps({'size': sum(p.stat().st_size for p in remote(args[2]).rglob('*') if p.is_file())}))
-    elif args[1] == 'info':
+    if args[1] == 'info':
       path = remote(args[2])
       if not path.exists():
         sys.exit(1)
@@ -449,38 +442,20 @@ def test_backup_runs_through_real_cli_subprocess_and_keeps_source_ownership(setu
   assert job.once() == 0
 
 
-def test_combined_cloud_cap_refuses_upload_without_preserving_source(setup):
+@pytest.mark.parametrize('reported_size', [50_000_000_000, 50_000_000_001, None])
+def test_upload_does_not_depend_on_archive_size(setup, monkeypatch, reported_size):
   source = segment(setup) / 'rlog.zst'
-  setup.job.client.archive_bytes = 50_000_000_000 - source.stat().st_size + 1
-  with pytest.raises(backup.BackupError) as error:
-    setup.job.once()
-  assert error.value.code == 'archive_full'
-  assert not [call for call in setup.calls if call[0] == 'upload']
-  assert source.stat().st_nlink == 1
-  shutil.rmtree(source.parent)
-  assert not source.exists()
 
+  def legacy_size(path):
+    setup.calls.append(('size', path))
+    if reported_size is None:
+      raise backup.BackupError('size metadata unavailable', code='metadata')
+    return reported_size
 
-@pytest.mark.parametrize('payload', ['{}', '{"size":true}', '{"size":-1}', '{"size":1.5}', '[]'])
-def test_missing_or_invalid_cloud_size_cannot_allow_an_upload(setup, monkeypatch, payload):
-  client = backup.Proton(setup.root, lambda: True)
-  monkeypatch.setattr(client, 'call', lambda *args: payload)
-  with pytest.raises(backup.BackupError):
-    client.archive_size('/my-files/Documents/openpilot')
-
-
-def test_cloud_size_is_metadata_for_the_entire_archive(setup, monkeypatch):
-  client = backup.Proton(setup.root, lambda: True)
-  calls = []
-  monkeypatch.setattr(client, 'call', lambda *args: calls.append(args) or '{"size":48186255886}')
-  assert client.archive_size('/my-files/Documents/openpilot') == 48186255886
-  assert calls == [('filesystem', 'size', '/my-files/Documents/openpilot')]
-
-
-def test_full_archive_can_confirm_an_existing_upload_without_consuming_more_space(setup):
-  source = segment(setup) / 'rlog.zst'
-  setup.job.client.archive_bytes = 50_000_000_000
-  setup.job.client.remote[f'{DESTINATION}/{source.parent.name}/rlog.zst'] = hashlib.sha1(source.read_bytes()).hexdigest()
+  monkeypatch.setattr(setup.job.client, 'archive_size', legacy_size, raising=False)
   assert setup.job.once() == 1
-  assert not [call for call in setup.calls if call[0] == 'upload']
+  assert not [call for call in setup.calls if call[0] == 'size']
+  assert [call for call in setup.calls if call[0] == 'upload'] == [('upload', source.parent.name)]
   assert json.loads((setup.root / 'status.json').read_text())['state'] == 'complete'
+  assert source.stat().st_nlink == 1
+  assert setup.job.once() == 0

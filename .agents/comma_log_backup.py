@@ -23,8 +23,7 @@ ROOT = Path('/data/proton-log-backup')
 LOGS = Path('/data/media/0/realdata')
 SEGMENT = re.compile(r'[0-9a-f]{8}--[0-9a-f]+--\d+')
 SESSION = 'ch.proton.drive/drive-sdk-cli/auth-session.gpg'
-MAX_ARCHIVE_BYTES = 50_000_000_000
-OPERATIONS = {('filesystem', 'size'), ('filesystem', 'info'), ('filesystem', 'create-folder'), ('filesystem', 'upload')}
+OPERATIONS = {('filesystem', 'info'), ('filesystem', 'create-folder'), ('filesystem', 'upload')}
 ERROR_MESSAGES = {
   'timeout': 'Proton command timed out; will retry',
   'proton_unavailable': 'Proton unavailable: check sign-in, connection and quota; will retry',
@@ -33,7 +32,6 @@ ERROR_MESSAGES = {
   'local_storage': 'Local upload storage unavailable; will retry',
   'receipt_storage': 'Upload receipt storage unavailable; will retry',
   'upload_failed': 'Upload failed; will retry',
-  'archive_full': '50 GB archive cap reached; review archived logs before retrying',
 }
 
 
@@ -190,15 +188,6 @@ class Proton:
     except (ValueError, TypeError) as error:
       raise BackupError(ERROR_MESSAGES['metadata'], code='metadata') from error
 
-  def archive_size(self, path):
-    try:
-      size = json.loads(self.call('filesystem', 'size', path))['size']
-      if type(size) is not int or size < 0:
-        raise ValueError('invalid archive size')
-      return size
-    except (ValueError, TypeError, KeyError) as error:
-      raise BackupError(ERROR_MESSAGES['metadata'], code='metadata') from error
-
   def upload(self, source, destination):
     parent = f'{destination}/{source.parent.name}'
     try:
@@ -290,24 +279,9 @@ class Backup:
             continue
           # Read the original file directly. Never copy, link, restore, or preserve source logs;
           # the stock deleter owns their lifetime, even if that interrupts a backup.
-          # The parent contains both rlogs and evidence. Size is metadata, never a file download.
-          # The CLI includes trashed descendants, so this guard can pause conservatively early.
           remote_path = f'{destination}/{segment}/rlog.zst'
-          if self.client.archive_size(destination.rsplit('/', 1)[0]) + source.stat().st_size > MAX_ARCHIVE_BYTES:
-            # An interrupted acknowledgment may leave a complete cloud copy without a receipt.
-            # Confirm it without consuming capacity or starting another upload.
-            try:
-              remote = self.client.info(remote_path)
-            except Paused:
-              raise
-            except BackupError as error:
-              raise BackupError(ERROR_MESSAGES['archive_full'], code='archive_full') from error
-            revision = remote.get('activeRevision') or {}
-            if (revision.get('claimedDigests') or {}).get('sha1') != sha1 or revision.get('claimedSize') != size:
-              raise BackupError(ERROR_MESSAGES['archive_full'], code='archive_full')
-          else:
-            self.client.upload(source, destination)
-            remote = self.client.info(remote_path)
+          self.client.upload(source, destination)
+          remote = self.client.info(remote_path)
           revision = remote.get('activeRevision') or {}
           digest = (revision.get('claimedDigests') or {}).get('sha1')
           if digest != sha1 or revision.get('claimedSize') != source.stat().st_size:

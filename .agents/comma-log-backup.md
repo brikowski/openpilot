@@ -218,7 +218,7 @@ Keep these invariants when changing the feature:
 - Stock source deletion and power-down win. Do not add copies, hard links, xattrs or preservation flags.
 - The passive UI uses the shared `get_alert`, hides while driving and under other navigation layers,
   and must not touch display-wake, interaction, screensaver, navigation or power deadlines.
-- The combined 50 GB admission cap does not authorize evidence deletion or automatic Trash purging.
+- Archive cleanup belongs to the analysis host; the uploader continues past the analysis budget.
 
 Re-run focused worker/UI/intake/retention checks for relevant changes. Deliberately break opt-in,
 session/Wi-Fi, command allowlist, digest, source deletion, driving visibility, timer isolation,
@@ -230,35 +230,24 @@ Mac; do not claim that check passed simply because a pre-existing cached rlog ha
 
 ## Archive budget and retention
 
-The combined archive cap is **50 GB (50,000,000,000 bytes)** across `rlogs/` and `evidence/`,
-including partial transfers, ledgers and analysis caches. File Provider metadata checks do not
-hydrate payloads. Analysis reads Proton directly; there is no second local working archive.
-The Mac intake takes an archive lock, removes expired eligible log routes, enforces the combined
-cap before listing/validation and reserves replacement/temporary headroom before an explicit
-SSH fallback. New acquisitions remain protected until their review retires them.
+The analysis storage budget is **50 GB (50,000,000,000 bytes)** across `rlogs/` and `evidence/`,
+including partial transfers, ledgers and caches. The Mac intake takes an archive lock, cleans eligible
+whole routes at every log check and reserves headroom before explicit SSH transfers. File Provider
+metadata checks do not hydrate payloads. Analysis reads Proton directly, without a second archive.
 
-Cleanup removes eligible whole log routes only. Evidence, protected baselines, unresolved faults,
-unvalidated/partial routes and linked files remain. If their combined size leaves no room, refuse
-new transfers. Cleanup receipts also consume budget; capacity planning reserves their bytes.
-Plans recheck evidence usage and refuse cleanup when the reviewed result will no longer fit. `archive_retention.py --preview` remains
-available for review, and `--apply` rechecks it. Removal from the synchronized mirror propagates
-to Proton and other Macs; no private policy, plan or receipt belongs in Git.
+The comma uploads closed rlogs on fresh Wi-Fi without checking aggregate archive size. Cloud uploads
+and synchronization can temporarily grow the archive beyond the analysis budget. Retention runs when
+analyzing logs; the uploader never deletes files or purges Trash. It still verifies remote content and
+keeps destination-bound receipts so confirmed files are skipped on later passes.
 
-Before each new comma upload, `filesystem size` checks the destination's parent folder against
-50 GB, covering both the log destination and its sibling evidence folder. Supply a `--destination`
-inside the intended archive when customizing installation. Missing/invalid size metadata leaves
-uploads pending. An existing identical cloud file can still be verified at capacity without
-re-uploading it. The worker never downloads file payloads, deletes files or purges Trash.
-
-The pinned official CLI's size operation includes active **and trashed** descendants, so the
-comma may pause conservatively before the Mac mirror reaches 50 GB. Review Proton storage/Trash
-when that happens. External simultaneous writers can change size after the check; this is a
-client-side admission check, not a server quota or distributed reservation. The Mac intake
-reconciles current visible archive usage. Evidence writes outside intake are measured on the
-next check, rather than prevented by an OS quota.
+Cleanup preserves evidence, active baselines, unresolved faults, unvalidated/partial routes and linked
+files. Review protection reasons and retire unnecessary logs during analysis. Explicit SSH transfers
+that cannot fit still wait for safe cleanup. Preview with `archive_retention.py --preview`; `--apply`
+rechecks the plan. Removal from the mirror propagates to Proton and other Macs. Private policies,
+plans and receipts stay outside Git.
 
 The restored UI uses the current shared `get_alert` function. Focused integration checks run the
 worker through a real child process with an isolated simulated cloud, verify persisted receipts,
-stock-source deletion and opt-out, and deliberately break the cap and other safeguards. These
+stock-source deletion and opt-out, continued uploads beyond the analysis budget, and fault rejection. These
 checks do not establish a live account session or device health: after installation, require a
 real upload and independent verification on the analysis host before claiming end-to-end operation.

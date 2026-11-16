@@ -137,10 +137,12 @@ a candidate can be implemented and tested, or let an independent unmeasured tria
   `--device-fallback`, check Mac sync and uploader health. Fallback records sanitized acquisition
   diagnostics and copies only closed rlogs, resumably and with source SHA-256 verification.
   Low-priority SSH fallback is allowed while driving, over cellular or a hotspot.
-- Enforce **50 GB (50,000,000,000 bytes) combined** across rlogs, partials, evidence and analysis
-  caches. Use the retention policy and archive lock to reserve headroom. Remove only eligible
-  whole log routes; never evidence or protected, unvalidated, unresolved-fault, linked or partial
-  routes. Refuse a transfer that cannot fit. Mirror deletion propagates to Proton and other computers.
+- Use **50 GB (50,000,000,000 bytes) combined** as the analysis storage budget across rlogs,
+  partials, evidence and caches. Every log intake/list check applies retention and reserves headroom
+  before explicit SSH transfers. Remove only eligible whole routes; never evidence or protected,
+  unvalidated, unresolved-fault, linked or partial routes. Refuse an explicit transfer that cannot fit.
+  Cloud uploads and synchronization may temporarily exceed the budget between analysis checks.
+  Review and retire unnecessary logs during analysis; mirror deletion propagates to Proton and other computers.
 - Validate each new or extended drive with `.agents/validate_log.py`; its private ledger is
   authoritative. Newly arriving segments reopen coverage. Keep prefixes/suffixes explicitly partial.
   Upload receipts establish past verification, not current cloud presence or whole-drive coverage.
@@ -153,9 +155,9 @@ a candidate can be implemented and tested, or let an independent unmeasured tria
   and private `evidence/proton-uploader-handoff.md`. Read the device before claiming current health;
   counts and installed revisions in receipts are snapshots. Preserve owner opt-in and the only
   unsynchronized copy; an approved past migration exception does not authorize another one.
-- Before uploading, the worker checks parent-archive size metadata, including evidence, against
-  the same cap. Proton counts trashed descendants, so this can pause conservatively early. The
-  worker never purges Trash; do not bypass the cap. Reconcile concurrent writers through intake checks.
+- Retention belongs to the analysis host. The uploader does not query aggregate archive size or
+  block uploads at the analysis budget. Reconcile synchronized arrivals through intake checks;
+  preserve the uploader's existing upload-only boundary.
 
 Use `.agents/inspect_following.py`, `.agents/inspect_response.py` and `.agents/extract.py` as
 appropriate. Keep route numbers, measurements and experiment history in Proton evidence; production
