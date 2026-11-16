@@ -157,7 +157,11 @@ class _CSShim:
 
 
 def odyssey_received_state(paths):
-  """Replay independently timestamped, received powertrain and brake feedback."""
+  """Decode received feedback across the complete ordered segment list.
+
+  The first send in a segment may consume a prior-segment carState. Retain its earlier CAN
+  samples: the prior segment's final update can be newer than that state.
+  """
   from opendbc.can.parser import CANParser
   parser = CANParser(ODYSSEY_PT_DBC, [('GAS_PEDAL_2', 0), ('GEARBOX_AUTO', 0), ('VSA_STATUS', 0)], 1)
   torque, gear, braking = [], [], []
