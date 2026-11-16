@@ -25,7 +25,7 @@ enable flag, destination, encrypted account session, encryption key and receipts
   segments are reconsidered every 30 seconds; the active logger-owned segment waits until closed.
 - Only closed full-rate rlogs are selected. Qlogs, video, account information and evidence ledgers
   are not uploaded. Logger locks and source changes are checked before transfer.
-- The worker's command allowlist permits only upload, folder creation, node metadata reads and folder-size metadata.
+- The worker's command allowlist permits only upload, folder creation and node metadata reads.
   It rejects Drive file downloads, deletion and movement before starting the client. It runs no
   bidirectional synchronization. Client/account metadata caches are not downloaded rlog copies.
 - Transfers read the original rlog directly. They create no log copies, hard links, preservation
