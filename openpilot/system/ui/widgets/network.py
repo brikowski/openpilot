@@ -137,7 +137,14 @@ class AdvancedNetworkSettings(Widget):
     wifi_metered_btn = ListItem(lambda: tr("Wi-Fi Network Metered"), description=lambda: tr("Prevent large data uploads when on a metered Wi-Fi connection"),
                                 action_item=self._wifi_metered_action)
 
+    self._auto_open_action = ToggleAction(initial_state=wifi_manager.auto_connect_open_wifi)
+    auto_open_btn = ListItem(lambda: tr("Auto-Connect Open Wi-Fi"),
+                             description=lambda: tr("Try open networks when disconnected. Skip sign-in and unavailable networks for 15 minutes."),
+                             action_item=self._auto_open_action,
+                             callback=lambda: wifi_manager.set_auto_connect_open_wifi(self._auto_open_action.get_state()))
+
     items: list[Widget] = [
+      auto_open_btn,
       tethering_btn,
       tethering_password_btn,
       text_item(lambda: tr("IP Address"), lambda: self._wifi_manager.ipv4_address),

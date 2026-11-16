@@ -4,6 +4,7 @@ Tests the state machine in isolation by constructing a WifiManager with mocked
 DBus, then calling _handle_state_change directly with NM state transitions.
 """
 import unittest
+import threading
 from jeepney.low_level import MessageType
 
 from openpilot.common.parameterized import parameterized
@@ -21,12 +22,15 @@ def _make_wm(mocker: Mocker, connections=None):
   wm._connections = dict(connections or {})
   wm._wifi_state = WifiState()
   wm._user_epoch = 0
+  wm._activation_lock = threading.Lock()
+  wm._auto_open_cooldown = {}
   wm._callback_queue = []
   wm._need_auth = []
   wm._activated = []
   wm._update_networks = mocker.MagicMock()
   wm._update_active_connection_info = mocker.MagicMock()
   wm._get_active_wifi_connection = mocker.MagicMock(return_value=(None, None))
+  wm._get_connection_settings = mocker.MagicMock(return_value={'connection': {'id': ('s', 'manual')}})
   return wm
 
 

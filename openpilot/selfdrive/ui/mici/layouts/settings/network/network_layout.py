@@ -68,6 +68,10 @@ class NetworkLayoutMici(NavScroller):
     self._wifi_button = WifiNetworkButton(self._wifi_manager)
     self._wifi_button.set_click_callback(lambda: gui_app.push_widget(self._wifi_ui))
 
+    self._auto_open_btn = BigToggle("auto-connect open Wi-Fi", "", initial_state=self._wifi_manager.auto_connect_open_wifi,
+                                   toggle_callback=self._wifi_manager.set_auto_connect_open_wifi,
+                                   description="Try open networks when disconnected. Skip sign-in and unavailable networks for 15 minutes.")
+
     # ******** eSIM ********
     self._cellular_manager = CellularManager()
     self._esim_ui = EsimUI(
@@ -92,6 +96,7 @@ class NetworkLayoutMici(NavScroller):
     # Main scroller ----------------------------------
     self._scroller.add_widgets([
       self._wifi_button,
+      self._auto_open_btn,
       self._esim_button,
       self._network_metered_btn,
       self._tethering_toggle_btn,

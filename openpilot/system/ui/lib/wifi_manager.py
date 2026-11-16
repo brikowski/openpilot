@@ -19,8 +19,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.system.ui.lib.networkmanager import (NM, NM_WIRELESS_IFACE, NM_802_11_AP_SEC_PAIR_WEP40,
                                                     NM_802_11_AP_SEC_PAIR_WEP104, NM_802_11_AP_SEC_GROUP_WEP40,
                                                     NM_802_11_AP_SEC_GROUP_WEP104, NM_802_11_AP_SEC_KEY_MGMT_PSK,
-                                                    NM_802_11_AP_SEC_KEY_MGMT_802_1X, NM_802_11_AP_FLAGS_NONE,
-                                                    NM_802_11_AP_FLAGS_PRIVACY, NM_802_11_AP_FLAGS_WPS,
+                                                    NM_802_11_AP_SEC_KEY_MGMT_802_1X, NM_802_11_AP_FLAGS_PRIVACY,
                                                     NM_PATH, NM_IFACE, NM_ACCESS_POINT_IFACE, NM_SETTINGS_PATH,
                                                     NM_SETTINGS_IFACE, NM_CONNECTION_IFACE, NM_DEVICE_IFACE,
                                                     NM_DEVICE_TYPE_WIFI, NM_ACTIVE_CONNECTION_IFACE,
@@ -38,6 +37,10 @@ TETHERING_IP_ADDRESS = "192.168.43.1"
 DEFAULT_TETHERING_PASSWORD = "swagswagcomma"
 SIGNAL_QUEUE_SIZE = 10
 SCAN_PERIOD_SECONDS = 5
+AUTO_OPEN_SCAN_SECONDS = 30
+AUTO_OPEN_CONNECT_SECONDS = 30
+AUTO_OPEN_RETRY_SECONDS = 15 * 60
+AUTO_OPEN_CONNECTION_ID = "openpilot automatic open Wi-Fi"
 
 DEBUG = False
 _dbus_call_idx = 0
@@ -82,7 +85,7 @@ def get_security_type(flags: int, wpa_flags: int, rsn_flags: int) -> SecurityTyp
   supports_wpa = (NM_802_11_AP_SEC_PAIR_WEP40 | NM_802_11_AP_SEC_PAIR_WEP104 | NM_802_11_AP_SEC_GROUP_WEP40 |
                   NM_802_11_AP_SEC_GROUP_WEP104 | NM_802_11_AP_SEC_KEY_MGMT_PSK)
 
-  if (flags == NM_802_11_AP_FLAGS_NONE) or ((flags & NM_802_11_AP_FLAGS_WPS) and not (wpa_props & supports_wpa)):
+  if not (flags & NM_802_11_AP_FLAGS_PRIVACY) and not wpa_props:
     return SecurityType.OPEN
   elif (flags & NM_802_11_AP_FLAGS_PRIVACY) and (wpa_props & supports_wpa) and not (wpa_props & NM_802_11_AP_SEC_KEY_MGMT_802_1X):
     return SecurityType.WPA
@@ -154,10 +157,18 @@ class WifiState:
   status: ConnectStatus = ConnectStatus.DISCONNECTED
 
 
+@dataclass
+class AutoOpenConnection:
+  ssid: str
+  path: str
+  deadline: float
+  next_check: float = 0.0
+
+
 class WifiManager:
   def __init__(self):
     self._networks: list[Network] = []  # an unsorted list of available Networks. a Network can be comprised of multiple APs
-    self._active = True  # used to not run when not in settings
+    self._active = True  # settings visible: scan more frequently and deliver network-list callbacks
     self._exit = False
 
     # DBus connections
@@ -186,6 +197,11 @@ class WifiManager:
 
     self._last_network_scan: float = 0.0
     self._callback_queue: list[Callable] = []
+    self._params = Params() if Params is not None else None
+    self._activation_lock = threading.Lock()
+    self._auto_open_connection: AutoOpenConnection | None = None
+    self._auto_open_cooldown: dict[str, float] = {}
+    self._auto_open_idle_since = time.monotonic()
 
     self._tethering_ssid = "weedle"
     if Params is not None:
@@ -212,7 +228,6 @@ class WifiManager:
       self._wait_for_wifi_device()
 
       # TODO: wait for state thread to start before adding tethering connection, tiny race currently
-      self._scan_thread.start()
       self._state_thread.start()
 
       self._init_connections()
@@ -222,6 +237,7 @@ class WifiManager:
       self._init_wifi_state()
 
       self._tethering_password = self._get_tethering_password()
+      self._scan_thread.start()
       cloudlog.debug("WifiManager initialized")
 
     threading.Thread(target=worker, daemon=True).start()
@@ -483,7 +499,8 @@ class WifiManager:
       self._update_active_connection_info()
 
       # Persist volatile connections (created by AddAndActivateConnection2) to disk
-      if conn_path is not None:
+      settings = self._get_connection_settings(conn_path) if conn_path is not None else {}
+      if settings and settings.get('connection', {}).get('id') != ('s', AUTO_OPEN_CONNECTION_ID):
         conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
         save_reply = self._conn_monitor.send_and_get_reply(new_method_call(conn_addr, 'Save'))
         if save_reply.header.message_type == MessageType.error:
@@ -498,12 +515,103 @@ class WifiManager:
         self._set_connecting(None)
 
   def _network_scanner(self):
+    next_auto_check = 0.0
     while not self._exit:
-      if self._active:
-        if time.monotonic() - self._last_network_scan > SCAN_PERIOD_SECONDS:
+      try:
+        now = time.monotonic()
+        if now >= next_auto_check:
+          self._auto_connect_open_network()
+          next_auto_check = time.monotonic() + SCAN_PERIOD_SECONDS
+        searching = self.auto_connect_open_wifi and self._wifi_state.status == ConnectStatus.DISCONNECTED
+        period = SCAN_PERIOD_SECONDS if self._active else AUTO_OPEN_SCAN_SECONDS
+        if (self._active or searching) and now - self._last_network_scan > period:
           self._request_scan()
-          self._last_network_scan = time.monotonic()
+          self._last_network_scan = now
+      except Exception:
+        cloudlog.exception("Wi-Fi scan/auto-connect failed")
       time.sleep(1 / 2.)
+
+  @property
+  def auto_connect_open_wifi(self) -> bool:
+    return self._params is not None and not self._params.get_bool("DisableAutoConnectOpenWifi")
+
+  def set_auto_connect_open_wifi(self, enabled: bool):
+    self._params.put_bool("DisableAutoConnectOpenWifi", not enabled, block=True)
+
+  def _reject_auto_open_connection(self):
+    connection = self._auto_open_connection
+    if connection is not None:
+      self._auto_open_cooldown[connection.ssid] = time.monotonic() + AUTO_OPEN_RETRY_SECONDS
+      # Use the exact activation, never the SSID: a manual connection may have replaced it during the probe.
+      self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (connection.path,)))
+      self._auto_open_connection = None
+    self._auto_open_idle_since = time.monotonic()
+
+  def _wifi_has_internet(self, interface: str) -> bool:
+    if not interface:
+      return False
+    try:
+      # An overall connectivity result could come from cellular or Tailscale. Keep TLS verification and reject redirects.
+      result = subprocess.run(["curl", "--disable", "--silent", "--noproxy", "*", "--interface", f"if!{interface}",
+                               "--ipv4", "--connect-timeout", "5", "--max-time", "10", "--max-filesize", "4096",
+                               "--output", "/dev/null", "--write-out", "%{http_code}",
+                               "https://connectivitycheck.gstatic.com/generate_204"],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=12)
+      return result.returncode == 0 and result.stdout == b"204"
+    except (OSError, subprocess.TimeoutExpired):
+      return False
+
+  def _auto_connect_open_network(self):
+    now = time.monotonic()
+    self._auto_open_cooldown = {ssid: until for ssid, until in self._auto_open_cooldown.items() if until > now}
+    if not self.auto_connect_open_wifi:
+      self._reject_auto_open_connection()
+      return
+    if self._wifi_device is None:
+      return
+
+    epoch = self._user_epoch
+    dev_addr = DBusAddress(self._wifi_device, bus_name=NM, interface=NM_DEVICE_IFACE)
+    reply = self._router_main.send_and_get_reply(Properties(dev_addr).get_all())
+    if reply.header.message_type == MessageType.error:
+      return
+    props = reply.body[0]
+    state = props.get('State', ('u', NMDeviceState.UNKNOWN))[1]
+    active_path = props.get('ActiveConnection', ('o', '/'))[1]
+
+    connection = self._auto_open_connection
+    if connection is not None:
+      if active_path != connection.path or state in (NMDeviceState.FAILED, NMDeviceState.UNAVAILABLE):
+        self._reject_auto_open_connection()
+      elif state == NMDeviceState.ACTIVATED:
+        if now >= connection.next_check:
+          if self._wifi_has_internet(props.get('IpInterface', ('s', ''))[1]):
+            connection.next_check = time.monotonic() + AUTO_OPEN_SCAN_SECONDS
+          else:
+            self._reject_auto_open_connection()
+      elif now >= connection.deadline:
+        self._reject_auto_open_connection()
+      return
+
+    if state != NMDeviceState.DISCONNECTED or self._wifi_state.status == ConnectStatus.CONNECTING:
+      self._auto_open_idle_since = now
+      return
+    # Give NetworkManager first opportunity to reconnect saved networks.
+    if now - self._auto_open_idle_since < AUTO_OPEN_CONNECT_SECONDS:
+      return
+    candidates = [n for n in self._networks if n.security_type == SecurityType.OPEN and not n.is_tethering and
+                  n.ssid not in self._connections and n.ssid not in self._auto_open_cooldown]
+    if not candidates:
+      return
+    network = max(candidates, key=lambda n: n.strength)
+    with self._activation_lock:
+      if self._user_epoch != epoch or not self.auto_connect_open_wifi:
+        return
+      path = self._add_and_activate_network(network.ssid, "", automatic=True)
+      if path is not None:
+        self._auto_open_connection = AutoOpenConnection(network.ssid, path, time.monotonic() + AUTO_OPEN_CONNECT_SECONDS)
+      else:
+        self._auto_open_cooldown[network.ssid] = time.monotonic() + AUTO_OPEN_RETRY_SECONDS
 
   def _wait_for_wifi_device(self):
     while not self._exit:
@@ -635,54 +743,65 @@ class WifiManager:
     self._set_connecting(ssid)
 
     def worker():
-      # Clear all connections that may already exist to the network we are connecting to
-      self.forget_connection(ssid, block=True)
-
-      connection = {
-        'connection': {
-          'type': ('s', '802-11-wireless'),
-          'uuid': ('s', str(uuid.uuid4())),
-          'id': ('s', f'openpilot connection {ssid}'),
-          'autoconnect-retries': ('i', 0),
-        },
-        '802-11-wireless': {
-          'ssid': ('ay', ssid.encode("utf-8")),
-          'hidden': ('b', hidden),
-          'mode': ('s', 'infrastructure'),
-        },
-        'ipv4': {
-          'method': ('s', 'auto'),
-          'dns-priority': ('i', 600),
-        },
-        'ipv6': {'method': ('s', 'ignore')},
-      }
-
-      if password:
-        connection['802-11-wireless-security'] = {
-          'key-mgmt': ('s', 'wpa-psk'),
-          'auth-alg': ('s', 'open'),
-          'psk': ('s', password),
-        }
-
-      # Volatile connection auto-deletes on disconnect (wrong password, user switches networks)
-      # Persisted to disk on ACTIVATED via Save()
-      if self._wifi_device is None:
-        cloudlog.warning("No WiFi device found")
-        # TODO: expose a failed connection state in the UI
-        self._init_wifi_state()
-        return
-
-      reply = self._router_main.send_and_get_reply(new_method_call(self._nm, 'AddAndActivateConnection2', 'a{sa{sv}}ooa{sv}',
-                                                                   (connection, self._wifi_device, "/", {'persist': ('s', 'volatile')})))
-
-      if reply.header.message_type == MessageType.error:
-        cloudlog.warning(f"Failed to add and activate connection for {ssid}: {reply}")
-        # TODO: expose a failed connection state in the UI
-        self._init_wifi_state()
+      with self._activation_lock:
+        self.forget_connection(ssid, block=True)
+        self._add_and_activate_network(ssid, password, hidden)
 
     threading.Thread(target=worker, daemon=True).start()
 
+  def _add_and_activate_network(self, ssid: str, password: str, hidden: bool = False, automatic: bool = False) -> str | None:
+    connection = {
+      'connection': {
+        'type': ('s', '802-11-wireless'),
+        'uuid': ('s', str(uuid.uuid4())),
+        'id': ('s', AUTO_OPEN_CONNECTION_ID if automatic else f'openpilot connection {ssid}'),
+        'autoconnect-retries': ('i', 0),
+      },
+      '802-11-wireless': {
+        'ssid': ('ay', ssid.encode("utf-8")),
+        'hidden': ('b', hidden),
+        'mode': ('s', 'infrastructure'),
+      },
+      'ipv4': {
+        'method': ('s', 'auto'),
+        'dns-priority': ('i', 600),
+      },
+      'ipv6': {'method': ('s', 'ignore')},
+    }
+
+    if password:
+      connection['802-11-wireless-security'] = {
+        'key-mgmt': ('s', 'wpa-psk'),
+        'auth-alg': ('s', 'open'),
+        'psk': ('s', password),
+      }
+
+    # Volatile connection auto-deletes on disconnect (wrong password, user switches networks)
+    # Manual connections are persisted on ACTIVATED; automatic connections remain temporary.
+    if self._wifi_device is None:
+      cloudlog.warning("No WiFi device found")
+      # TODO: expose a failed connection state in the UI
+      self._init_wifi_state()
+      return
+
+    options = {'persist': ('s', 'volatile')}
+    if automatic:
+      connection['connection']['autoconnect'] = ('b', False)
+      options['bind-activation'] = ('s', 'dbus-client')
+
+    reply = self._router_main.send_and_get_reply(new_method_call(self._nm, 'AddAndActivateConnection2', 'a{sa{sv}}ooa{sv}',
+                                                                 (connection, self._wifi_device, "/", options)))
+
+    if reply.header.message_type == MessageType.error:
+      cloudlog.warning(f"Failed to add and activate connection for {ssid}: {reply}")
+      # TODO: expose a failed connection state in the UI
+      self._init_wifi_state()
+      return None
+    return reply.body[1]
+
   def forget_connection(self, ssid: str, block: bool = False):
+    self._auto_open_cooldown[ssid] = time.monotonic() + AUTO_OPEN_RETRY_SECONDS
+
     def worker():
       conn_path = self._connections.get(ssid, None)
       if conn_path is None:
@@ -702,20 +821,21 @@ class WifiManager:
     self._set_connecting(ssid)
 
     def worker():
-      conn_path = self._connections.get(ssid, None)
-      if conn_path is None or self._wifi_device is None:
-        cloudlog.warning(f"Failed to activate connection for {ssid}: conn_path={conn_path}, wifi_device={self._wifi_device}")
-        # TODO: expose a failed connection state in the UI
-        self._init_wifi_state()
-        return
+      with self._activation_lock:
+        conn_path = self._connections.get(ssid, None)
+        if conn_path is None or self._wifi_device is None:
+          cloudlog.warning(f"Failed to activate connection for {ssid}: conn_path={conn_path}, wifi_device={self._wifi_device}")
+          # TODO: expose a failed connection state in the UI
+          self._init_wifi_state()
+          return
 
-      reply = self._router_main.send_and_get_reply(new_method_call(self._nm, 'ActivateConnection', 'ooo',
-                                                                   (conn_path, self._wifi_device, "/")))
+        reply = self._router_main.send_and_get_reply(new_method_call(self._nm, 'ActivateConnection', 'ooo',
+                                                                     (conn_path, self._wifi_device, "/")))
 
-      if reply.header.message_type == MessageType.error:
-        cloudlog.warning(f"Failed to activate connection for {ssid}: {reply}")
-        # TODO: expose a failed connection state in the UI
-        self._init_wifi_state()
+        if reply.header.message_type == MessageType.error:
+          cloudlog.warning(f"Failed to activate connection for {ssid}: {reply}")
+          # TODO: expose a failed connection state in the UI
+          self._init_wifi_state()
 
     if block:
       worker()
@@ -851,7 +971,7 @@ class WifiManager:
       cloudlog.warning(f"Failed to request scan: {reply}")
 
   def _update_networks(self, block: bool = True):
-    if not self._active:
+    if not (self._active or self.auto_connect_open_wifi):
       return
 
     def worker():
@@ -895,7 +1015,8 @@ class WifiManager:
 
         self._networks = [Network.from_dbus(ssid, ap_list, ssid == self._tethering_ssid) for ssid, ap_list in aps.items()]
         self._update_active_connection_info()
-        self._enqueue_callbacks(self._networks_updated, self.networks)  # sorted
+        if self._active:
+          self._enqueue_callbacks(self._networks_updated, self.networks)  # sorted
 
     if block:
       worker()

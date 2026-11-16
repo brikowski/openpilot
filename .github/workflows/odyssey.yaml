@@ -68,7 +68,8 @@ jobs:
             openpilot/selfdrive/ui/tests/test_screensaver.py \
             openpilot/selfdrive/ui/tests/test_upload_status.py \
             openpilot/selfdrive/ui/tests/test_lead_bar.py \
-            openpilot/selfdrive/ui/tests/test_settings.py
+            openpilot/selfdrive/ui/tests/test_settings.py \
+            openpilot/system/ui/lib/tests
       - name: Test development tools and Odyssey interface
         run: |
           if [ -d .agents ]; then

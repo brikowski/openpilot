@@ -70,6 +70,7 @@ jobs:
             openpilot/selfdrive/ui/tests/test_upload_status.py \
             openpilot/selfdrive/ui/tests/test_lead_bar.py \
             openpilot/selfdrive/ui/tests/test_settings.py \
+            openpilot/system/ui/lib/tests \
             .agents
           python3 .agents/preflash.py
       - name: Publish checked development pair
