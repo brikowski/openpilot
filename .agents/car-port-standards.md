@@ -40,6 +40,9 @@ active safety rails.
   It bypasses pre-activation
   and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
   `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration requires assistance.
+  Once issued and reported gas stay at zero through the existing response window, a prior coast
+  forecast closer to the request than both current and filtered gas response restores ordinary
+  coast/brake selection. This uses the same delayed history and calibration in Standard and ECON.
   Below the raw gas split, an already-active gas domain retains calibrated feedforward or a positive
   response correction while fresh, pedal-free state remains within the existing response margin. Positive
   mapped gas may also continue while mature same-drivetrain feedback already supports a bounded gas reduction;
