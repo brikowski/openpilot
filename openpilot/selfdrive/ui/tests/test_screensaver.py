@@ -7,38 +7,41 @@ from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT
 from openpilot.selfdrive.ui.tests.test_display_wake import backlight as backlight, display as display
 
 
-def test_animation_uses_the_graphics_buffer_and_color_contract(monkeypatch, tmp_path):
+def test_animation_uses_masked_tire_textures_and_clockwise_rotation(monkeypatch, tmp_path):
+  import numpy as np
+
   monkeypatch.setenv('PARAMS_ROOT', str(tmp_path / 'params'))
   monkeypatch.setenv('SCALE', '1')
   from openpilot.system.ui.widgets import odyssey
 
   monkeypatch.setattr(odyssey.gui_app, 'texture', lambda _: SimpleNamespace(width=1774, height=887))
-  for name in ('gen_texture_mipmaps', 'set_texture_filter', 'begin_scissor_mode', 'end_scissor_mode',
-               'begin_shader_mode', 'end_shader_mode', 'draw_texture_pro'):
+  pixels = np.full((887, 1774, 4), 255, dtype=np.uint8)
+  image = SimpleNamespace(width=1774, height=887, to_bytes=lambda _: pixels.tobytes())
+  monkeypatch.setattr(odyssey.gui_app, '_load_image_from_path', lambda _: image)
+  for name in ('gen_texture_mipmaps', 'set_texture_filter', 'begin_scissor_mode', 'end_scissor_mode', 'unload_image'):
     monkeypatch.setattr(odyssey.rl, name, lambda *_: None)
-  monkeypatch.setattr(odyssey.rl, 'load_shader_from_memory', lambda *_: object())
-  monkeypatch.setattr(odyssey.rl, 'get_shader_location', lambda *_: 0)
+  monkeypatch.setattr(odyssey.rl, 'load_texture_from_image', lambda _: object())
   monkeypatch.setattr(odyssey, 'time', SimpleNamespace(monotonic=lambda: 1.0))
-  colors, rotations = [], []
+  colors, rotations, wheels = [], [], []
 
   def draw(*args):
     color = args[-1]
     assert isinstance(color, rl.Color)
     colors.append(color)
 
-  def uniform(shader, location, value, kind):
-    buffer = memoryview(value)
-    assert buffer.format == 'f' and buffer.nbytes == 4
-    assert kind == rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT
-    rotations.append(buffer[0])
-
   monkeypatch.setattr(odyssey.rl, 'draw_rectangle_rounded', draw)
   monkeypatch.setattr(odyssey.rl, 'draw_rectangle_rec', draw)
-  monkeypatch.setattr(odyssey.rl, 'set_shader_value', uniform)
+  monkeypatch.setattr(odyssey.rl, 'draw_texture_pro', lambda *args: rotations.append(args[-2]))
+  monkeypatch.setattr(odyssey.rl, 'update_texture', lambda _, data: wheels.append(data))
   animation = odyssey.OdysseyAnimation()
   animation.render(rl.Rectangle(0, 0, 640, 320))
   assert colors
-  assert rotations == pytest.approx([420 / 160])
+  assert rotations == pytest.approx([0, np.degrees(420 / 160), np.degrees(420 / 160)])
+  assert len(wheels) == 2
+  for wheel in wheels:
+    assert wheel.shape == (312, 324, 4)
+    assert wheel[0, 0, 3] == 0
+    assert wheel[156, 162, 3] == 255
 
 
 @pytest.fixture
@@ -268,7 +271,7 @@ def test_park_requires_current_valid_stationary_car_state(display, fault):
   elif fault == 'invalid':
     state.sm.valid['carState'] = False
   else:
-    state.sm.recv_frame['carState'] = state.started_frame - 1
+    state.sm.recv_frame['carState'] = state._started_frame
   assert not state.parked
 
 

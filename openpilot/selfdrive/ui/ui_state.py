@@ -11,6 +11,7 @@ from openpilot.common.realtime import drop_realtime
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.lib.prime_state import PrimeState
 from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy
+from openpilot.selfdrive.ui.lib.notifications import Notifications
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.hardware import HARDWARE, PC
 from openpilot.common.hardware.usb import cable_connected, get_usb_state, is_chestnut_usb_id, usb_host_connected
@@ -18,6 +19,9 @@ from openpilot.selfdrive.modeld.helpers import chestnut_compiled
 from openpilot.selfdrive.selfdrived.alertmanager import OFFROAD_ALERTS
 
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
+BACKLIGHT_MIN = 30  # the lowest backlight the display shows properly
+# auto brightness goes below the backlight's floor by dimming the UI, down to 40% black
+BRIGHTNESS_MIN = BACKLIGHT_MIN * 0.6 if HARDWARE.get_device_type() == "mici" else BACKLIGHT_MIN
 PARAM_UPDATE_TIME = 1 / 5.0
 OFFROAD_ALERT_POLL_INTERVAL = 1.0
 DISPLAY_FADE_DURATION = 2.0
@@ -79,10 +83,11 @@ class UIState:
     )
 
     self.prime_state = PrimeState()
+    self.notifications = Notifications()
 
     # UI Status tracking
     self.status: UIStatus = UIStatus.DISENGAGED
-    self.started_frame: int = 0
+    self._started_frame: int = 0
     self.started_time: float = 0.0
     self._engaged_prev: bool = False
     self._started_prev: bool = False
@@ -111,6 +116,7 @@ class UIState:
     self.personality: log.LongitudinalPersonality = log.LongitudinalPersonality.standard
     self.has_longitudinal_control: bool = False
     self.alpha_long_enabled: bool = self.params.get_bool("AlphaLongitudinalEnabled")
+    self.personality_param: int = log.LongitudinalPersonality.standard
     self.is_body: bool | None = False
     self.CP: car.CarParams | None = None
     self.light_sensor: float = -1.0
@@ -139,7 +145,7 @@ class UIState:
   def parked(self) -> bool:
     sm = self.sm
     return (self.started and sm.alive['carState'] and sm.valid['carState'] and
-            sm.recv_frame['carState'] >= self.started_frame and sm['carState'].canValid and
+            self.received_since_started('carState') and sm['carState'].canValid and
             sm['carState'].gearShifter == car.CarState.GearShifter.park and sm['carState'].standstill)
 
   def is_onroad(self) -> bool:
@@ -148,8 +154,12 @@ class UIState:
   def is_offroad(self) -> bool:
     return not self.started
 
+  def received_since_started(self, service: str) -> bool:
+    return self.sm.recv_frame[service] > self._started_frame
+
   def update(self) -> None:
     self.prime_state.start()  # start thread after manager forks ui
+    self.notifications.start()
     if self._params_thread is None:
       self._params_thread = threading.Thread(target=self._params_refresh_worker, daemon=True)
       self._params_thread.start()
@@ -214,9 +224,9 @@ class UIState:
 
     # Handle onroad/offroad transition
     if self.started != self._started_prev or self.sm.frame == 1:
+      self.status = UIStatus.DISENGAGED
       if self.started:
-        self.status = UIStatus.DISENGAGED
-        self.started_frame = self.sm.frame
+        self._started_frame = self.sm.frame
         self.started_time = time.monotonic()
         self.chestnut_present = self.sm["deviceState"].chestnutPresent or (self.chestnut_compiled and self.usb_connected and not usb_host_connected())
 
@@ -234,7 +244,7 @@ class UIState:
                              ChestnutState.UNCOMPILED if detected else ChestnutState.DISCONNECTED)
       return
 
-    model_seen = self.sm.recv_frame["modelV2"] > self.started_frame
+    model_seen = self.received_since_started("modelV2")
     if not self.chestnut_present:
       self.chestnut_state = ChestnutState.DISCONNECTED
     elif not self.chestnut_compiled:
@@ -264,6 +274,7 @@ class UIState:
     self.is_metric = self.params.get_bool("IsMetric")
     self.initial_cruise_speed = self.params.get("InitialCruiseSpeedKph", return_default=True)
     self.always_on_dm = self.params.get_bool("AlwaysOnDM")
+    self.personality_param = self.params.get("LongitudinalPersonality", return_default=True)
     self.navigation_enabled = self.params.get_bool("NavigationEnabled")
     self.nav_destination_set = self.params.get("NavDestination") is not None
     self.chestnut_active = self.params.get("ChestnutActive")
@@ -369,12 +380,13 @@ class Device:
       else:
         clipped_brightness = ((clipped_brightness + 16.0) / 116.0) ** 3.0
 
-      clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [30, 100]))
+      clipped_brightness = float(np.interp(clipped_brightness, [0, 1], [BRIGHTNESS_MIN, 100]))
 
     brightness = self._brightness_filter.update(clipped_brightness)
     if not PC:
       brightness *= float(np.clip((self._wake_policy.deadline + DISPLAY_FADE_DURATION - time.monotonic()) / DISPLAY_FADE_DURATION, 0, 1))
-    brightness = round(brightness)
+    gui_app.set_dim(1 - brightness / BACKLIGHT_MIN)
+    brightness = round(max(brightness, BACKLIGHT_MIN))
     if not self._awake:
       brightness = 0
 
@@ -405,7 +417,7 @@ class Device:
     enabled = None
     if ui_state.started:
       sm = ui_state.sm
-      if sm.recv_frame['selfdriveState'] >= ui_state.started_frame and sm.alive['selfdriveState']:
+      if ui_state.received_since_started('selfdriveState') and sm.alive['selfdriveState']:
         ss = sm['selfdriveState']
         enabled = ss.enabled
       visible_alert = get_alert(sm)

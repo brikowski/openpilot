@@ -269,9 +269,9 @@ def test_following_preference_is_shared_across_eco_states(monkeypatch, tmp_path,
       layout._set_longitudinal_personality(1)
       layout._refresh_personality()
   else:
-    from openpilot.selfdrive.ui.mici.layouts.settings import toggles
+    from openpilot.selfdrive.ui.mici.layouts.settings import driving as toggles
     monkeypatch.setattr(toggles, 'ui_state', state)
-    layout = toggles.TogglesLayoutMici()
+    layout = toggles.DrivingLayoutMici()
     assert 'EcoModeEnabled' not in dict(layout._refresh_toggles)
     profile = layout._personality_toggle
     monkeypatch.setattr(profile._params, 'put', lambda key, value: Params.put(profile._params, key, value, block=True))

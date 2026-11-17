@@ -1,4 +1,4 @@
-"""Shared C3X and C4 white lead bars."""
+"""C3X and stock C4 white lead bars."""
 import importlib
 from types import SimpleNamespace
 
@@ -22,21 +22,24 @@ def renderer(request, monkeypatch, tmp_path):
                           leadTwo=SimpleNamespace(present=False, dRel=60., yRel=0., vRel=0.))
 
   class SubMaster(dict):
+    frame = 1
     recv_frame = {'extrinsicsCalibration': 1, 'modelV2': 1}
     updated = {'carParams': False, 'modelV2': False, 'radarState': False}
     valid = {'radarState': True}
 
-  sm = SubMaster(radarState=radar, extrinsicsCalibration=SimpleNamespace(height=[1.22]), modelV2=SimpleNamespace(),
+  model = SimpleNamespace(velocity=SimpleNamespace(x=[]), position=SimpleNamespace(x=[]))
+  sm = SubMaster(radarState=radar, extrinsicsCalibration=SimpleNamespace(height=[1.22]), modelV2=model,
                 selfdriveState=SimpleNamespace(enabled=True, engageable=False),
-                carState=SimpleNamespace(brakePressed=False), carOutput=SimpleNamespace(actuatorsOutput=SimpleNamespace(torque=0.)))
+                carState=SimpleNamespace(brakePressed=False, vEgo=20.),
+                carOutput=SimpleNamespace(actuatorsOutput=SimpleNamespace(torque=0.)))
   if request.param == 'c4':
     sm['longitudinalPlan'] = SimpleNamespace(longitudinalPlanSource=module.log.LongitudinalPlan.LongitudinalPlanSource.lead0)
   monkeypatch.setattr(module.ui_state, 'sm', sm)
-  monkeypatch.setattr(module.ui_state, 'started_frame', 0)
+  monkeypatch.setattr(module.ui_state, '_started_frame', 0)
 
   def update():
     if request.param == 'c4':
-      widget._update_leads(sm)
+      widget._update_lead_bars(sm)
     else:
       widget._update_leads(radar, x)
 
@@ -46,12 +49,13 @@ def renderer(request, monkeypatch, tmp_path):
 def test_stock_lead_shape_and_disappearance(renderer, monkeypatch):
   from openpilot.selfdrive.ui.onroad import lead_bar
 
-  _, _, widget, sm, update = renderer
+  platform, module, widget, sm, update = renderer
   update()
   draws = []
-  monkeypatch.setattr(lead_bar, 'draw_polygon', lambda rect, points, color: draws.append((points, color)))
+  monkeypatch.setattr(module if platform == 'c4' else lead_bar, 'draw_polygon',
+                      lambda rect, points, color: draws.append((points, color)) if len(points) else None)
   widget._draw_lead_indicator()
-  assert len(draws) == 2
+  assert len(draws) == (1 if platform == 'c4' else 2)
   assert all(len(points) == 4 and np.isfinite(points).all() for points, _ in draws)
   assert (draws[-1][1].r, draws[-1][1].g, draws[-1][1].b) == (255, 255, 255)
   assert draws[-1][1].a > 0
@@ -69,11 +73,13 @@ def test_lead_draw_uses_platform_coordinates(renderer, monkeypatch):
   platform, module, widget, _, update = renderer
   widget._rect = module.rl.Rectangle(25, 40, 2160, 1080)
   update()
-  points = widget._lead_vehicles[0].bar.copy()
+  leads = widget._lead_bars if platform == 'c4' else widget._lead_vehicles
+  points = leads[0].bar.copy()
   draws = []
-  monkeypatch.setattr(lead_bar, 'draw_polygon', lambda rect, points, color: draws.append(points))
+  monkeypatch.setattr(module if platform == 'c4' else lead_bar, 'draw_polygon',
+                      lambda rect, points, color: draws.append(points) if len(points) else None)
   widget._draw_lead_indicator()
-  np.testing.assert_allclose(draws[1], points + ([25, 40] if platform == 'c4' else [0, 0]))
+  np.testing.assert_allclose(draws[0 if platform == 'c4' else 1], points + ([25, 40] if platform == 'c4' else [0, 0]))
 
 
 @pytest.mark.parametrize('longitudinal,valid,visible', [(True, True, True), (False, True, False), (True, False, False)])

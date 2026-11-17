@@ -1,64 +1,30 @@
 import math
 import time
-from array import array
 
+import numpy as np
 import raylib_nb as rl
 
-from openpilot.system.ui.lib.application import GL_VERSION, gui_app
+from openpilot.system.ui.lib.application import ASSETS_DIR, gui_app
 from openpilot.system.ui.widgets import Widget
-
-# Both stages need the same GLSL version; raylib's device default vertex shader uses GLES 2.
-WHEEL_VERTEX_SHADER = GL_VERSION + """
-in vec3 vertexPosition;
-in vec2 vertexTexCoord;
-in vec4 vertexColor;
-uniform mat4 mvp;
-out vec2 fragTexCoord;
-out vec4 fragColor;
-
-void main() {
-  fragTexCoord = vertexTexCoord;
-  fragColor = vertexColor;
-  gl_Position = mvp * vec4(vertexPosition, 1.0);
-}
-"""
-
-# Cover the complete tires in the 1774x887 artwork, including the outer spokes and tread.
-WHEEL_SHADER = GL_VERSION + """
-in vec2 fragTexCoord;
-in vec4 fragColor;
-uniform sampler2D texture0;
-uniform float rotation;
-out vec4 finalColor;
-
-void main() {
-  vec2 size = vec2(textureSize(texture0, 0));
-  vec2 pixel = fragTexCoord * size;
-  vec2 centers[2] = vec2[2](vec2(392.0, 623.0), vec2(1431.0, 623.0));
-  vec2 radii = vec2(162.0, 156.0);
-  float c = cos(rotation);
-  float s = sin(rotation);
-  for (int i = 0; i < 2; i++) {
-    vec2 offset = (pixel - centers[i]) / radii;
-    if (length(offset) < 1.0) {
-      pixel = centers[i] + (mat2(c, -s, s, c) * offset) * radii;
-      break;
-    }
-  }
-  finalColor = texture(texture0, pixel / size) * fragColor;
-}
-"""
 
 
 class OdysseyAnimation(Widget):
   def __init__(self):
     super().__init__()
     self._texture = gui_app.texture("images/odyssey_sport.png")
-    rl.gen_texture_mipmaps(self._texture)
-    rl.set_texture_filter(self._texture, rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
-    self._shader = rl.load_shader_from_memory(WHEEL_VERTEX_SHADER, WHEEL_SHADER)
-    self._rotation_loc = rl.get_shader_location(self._shader, "rotation")
-    self._rotation = array("f", [0.0])
+    image = gui_app._load_image_from_path((ASSETS_DIR / "images/odyssey_sport.png").as_posix())
+    pixels = np.frombuffer(image.to_bytes(image.width * image.height * 4), dtype=np.uint8).reshape(image.height, image.width, 4)
+    self._wheels = []
+    # Extract the tires once; the renderer rotates ordinary textures without a shader.
+    for x in (392, 1431):
+      wheel = pixels[467:779, x - 162:x + 162].copy()
+      yy, xx = np.mgrid[:312, :324]
+      wheel[..., 3] *= ((xx + .5 - 162) / 162) ** 2 + ((yy + .5 - 156) / 156) ** 2 < 1
+      texture = rl.load_texture_from_image(rl.Image(None, 324, 312, 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8))
+      rl.update_texture(texture, wheel)
+      rl.set_texture_filter(texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+      self._wheels.append((x, texture))
+    rl.unload_image(image)
 
   def _render(self, rect: rl.Rectangle):
     elapsed = time.monotonic()
@@ -79,8 +45,8 @@ class OdysseyAnimation(Widget):
     car = rl.Rectangle(rect.x, rect.y + bob, rect.width, self._texture.height * scale)
     source = rl.Rectangle(0, 0, self._texture.width, self._texture.height)
     # A right-facing vehicle rolls clockwise at the same speed as the passing road.
-    self._rotation[0] = (distance / 160.0) % math.tau
-    rl.set_shader_value(self._shader, self._rotation_loc, self._rotation, rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.begin_shader_mode(self._shader)
     rl.draw_texture_pro(self._texture, source, car, rl.Vector2(0, 0), 0.0, rl.WHITE)
-    rl.end_shader_mode()
+    for x, texture in self._wheels:
+      wheel = rl.Rectangle(rect.x + x * scale, car.y + 623 * scale, 324 * scale, 312 * scale)
+      rl.draw_texture_pro(texture, rl.Rectangle(0, 0, 324, 312), wheel,
+                          rl.Vector2(162 * scale, 156 * scale), math.degrees(distance / 160.0) % 360, rl.WHITE)

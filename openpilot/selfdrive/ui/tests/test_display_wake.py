@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+import raylib_nb as rl
 
 from openpilot.selfdrive.ui.display_wake import DISPLAY_TIMEOUT, DisplayWakePolicy
 
@@ -96,6 +97,8 @@ def display(monkeypatch, tmp_path):
     recv_time = {'selfdriveState': 0.0}
 
   class State(SimpleNamespace):
+    received_since_started = module.UIState.received_since_started
+
     @property
     def parked(self):
       return module.UIState.parked.fget(self)
@@ -106,11 +109,14 @@ def display(monkeypatch, tmp_path):
                                                alertStatus=SimpleNamespace(raw=0), alertText1='', alertText2='',
                                                alertHudVisual=module.car.CarControl.HUDControl.VisualAlert.none, alertType=''),
                 radarState=SimpleNamespace(leadOne=SimpleNamespace(present=False), leadTwo=SimpleNamespace(present=False)))
-  state = State(started=True, ignition=True, alpha_long_enabled=False, started_frame=100, started_time=0., sm=sm,
+  state = State(started=True, ignition=True, alpha_long_enabled=False, _started_frame=99, started_time=0., sm=sm,
                 light_sensor=-1, params=SimpleNamespace(get=lambda _: None, get_bool=lambda _: False))
   monkeypatch.setattr(module, 'ui_state', state)
-  monkeypatch.setattr(module, 'gui_app', SimpleNamespace(target_fps=20, mouse_events=[], set_should_render=lambda _: None,
-                                                       big_ui=lambda: True))
+  app = SimpleNamespace(target_fps=20, mouse_events=[], set_should_render=lambda _: None,
+                        big_ui=lambda: True, _dim_color=rl.BLANK)
+  set_dim = type(module.gui_app).set_dim
+  app.set_dim = lambda dim: set_dim(app, dim)
+  monkeypatch.setattr(module, 'gui_app', app)
   monkeypatch.setattr(module, 'PC', False)
   from openpilot.selfdrive.ui.onroad import alert_renderer
   monkeypatch.setattr(alert_renderer, 'ui_state', state)
@@ -161,7 +167,7 @@ def test_generated_system_alert_wakes_and_holds_display(display, backlight, monk
   assert not device.awake
   state.sm.updated['selfdriveState'] = state.sm.alive['selfdriveState'] = False
   if startup:
-    state.sm.recv_frame['selfdriveState'] = state.started_frame - 1
+    state.sm.recv_frame['selfdriveState'] = state._started_frame
   for timestamp in (64, 100, 200):
     now[0] = timestamp
     device.update()
@@ -325,6 +331,8 @@ def backlight(display, monkeypatch):
 @pytest.mark.parametrize('onroad', [False, True])
 @pytest.mark.parametrize('brightness', [30, 100])
 def test_idle_backlight_fades_before_panel_and_rendering_stop(display, backlight, onroad, brightness):
+  from openpilot.selfdrive.ui import ui_state as module
+
   state, device, now = display
   power, render = backlight
   state.started = state.ignition = onroad
@@ -343,7 +351,9 @@ def test_idle_backlight_fades_before_panel_and_rendering_stop(display, backlight
   for offset in (0, .4, 1, 1.6, 2, 3):
     now[0] = DISPLAY_TIMEOUT + offset
     device.update()
-    levels.append(device._brightness_target)
+    levels.append(round(device._brightness_target * (1 - module.gui_app._dim_color.a / 255)))
+    if device.awake:
+      assert device._brightness_target >= module.BACKLIGHT_MIN
     assert device.awake == (offset < 2)
   assert levels == [brightness, round(brightness * 0.8), round(brightness * 0.5), round(brightness * 0.2), 0, 0]
   assert power == render == [(DISPLAY_TIMEOUT + 2, False)]
@@ -436,9 +446,9 @@ def test_screen_timeout_has_no_setting_and_ignores_legacy_value(display, monkeyp
     layout = toggles.TogglesLayout()
     assert 'ScreenTimeoutEnabled' not in layout._toggles
   else:
-    from openpilot.selfdrive.ui.mici.layouts.settings import toggles as mici_toggles
+    from openpilot.selfdrive.ui.mici.layouts.settings import driving as mici_toggles
     monkeypatch.setattr(mici_toggles, 'ui_state', state)
-    layout = mici_toggles.TogglesLayoutMici()
+    layout = mici_toggles.DrivingLayoutMici()
     assert 'ScreenTimeoutEnabled' not in dict(layout._refresh_toggles)
   state.update_params()
   layout._update_toggles()

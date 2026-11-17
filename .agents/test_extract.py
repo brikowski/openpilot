@@ -44,7 +44,7 @@ def test_model_commands_and_learned_boost_follow_publication_without_blending(mo
     plan.hasLead = plan.shouldStop
     plan.longitudinalPlanSource = "e2e" if plan.shouldStop else "cruise"
     if boost is not None:
-      plan.accelBoost = boost
+      plan.deprecated.accelBoost = boost
     messages.append(m)
   monkeypatch.setattr(extract, 'LogReader', lambda _: iter(sorted(messages, key=lambda m: m.logMonoTime)))
   monkeypatch.setattr(extract, '_segments', lambda _: ('synthetic', ['rlog']))

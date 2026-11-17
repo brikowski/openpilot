@@ -168,7 +168,7 @@ def _decode(paths):
       p = m.longitudinalPlan
       lp["t"].append(t)
       lp["atarget"].append(p.aTarget)
-      lp["accel_boost"].append(p.accelBoost)
+      lp["accel_boost"].append(p.deprecated.accelBoost)
       # Which candidate in longitudinal_planner won this frame. `cruise` while decelerating with no
       # lead means the a_cruise branch was clamped - see allow_throttle below.
       lp["source"].append(float(p.longitudinalPlanSource.raw))
