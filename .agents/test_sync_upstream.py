@@ -3,6 +3,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -148,6 +149,33 @@ def test_dirty_work_cannot_sync(repositories):
   with pytest.raises(SystemExit, match='clean'):
     sync.main([])
   assert (parent / 'fork').read_text() == 'unsaved work\n'
+
+
+def test_lfs_setup_keeps_raw_npz_fixtures_clean(tmp_path, monkeypatch):
+  source = Path(__file__).resolve().parents[1]
+  repo = tmp_path / 'checkout'
+  init(repo)
+  attributes = (source / '.gitattributes').read_text()
+  (repo / '.gitattributes').write_text(attributes)
+  fixture = 'openpilot/common/tests/fixtures/qrcode_0.npz'
+  path = repo / fixture
+  path.parent.mkdir(parents=True)
+  original = (source / fixture).read_bytes()
+  path.write_bytes(original)
+  git(repo, 'add', '.')
+  git(repo, 'commit', '--quiet', '-m', 'raw fixture before LFS setup')
+  git(repo, 'config', '--unset', 'core.hooksPath')
+  subprocess.run([sys.executable, str(source / 'lfs.py'), 'install'], cwd=repo, check=True)
+  monkeypatch.setenv('GIT_INDEX_FILE', str(tmp_path / 'fresh-index'))
+  git(repo, 'read-tree', 'HEAD')
+  assert git(repo, 'status', '--porcelain') == ''
+  assert path.read_bytes() == original
+
+  # The upstream wildcard alone renormalizes the raw fixture into an LFS pointer.
+  (repo / '.gitattributes').write_text('\n'.join(line for line in attributes.splitlines()
+                                                if not line.startswith('openpilot/common/tests/fixtures/')) + '\n')
+  git(repo, 'read-tree', 'HEAD')
+  assert ' M ' + fixture in git(repo, 'status', '--porcelain')
 
 
 def test_validated_pair_publishes_without_rewriting_history(repositories):
