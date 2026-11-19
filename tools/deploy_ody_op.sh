@@ -177,6 +177,10 @@ fi
 \"\$ody_check_python\" -c \"from openpilot.common.params import Params; Params().put('UpdaterTargetBranch', '$BRANCH')\"
 if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin '$DEVICE_REMOTE'; else git remote add origin '$DEVICE_REMOTE'; fi
 tools/op.sh switch origin '$BRANCH'
+# An updater overlay can leave a root-owned project environment. Repair it before uv needs to write it.
+if test -d .venv; then
+  sudo chown -hR comma:comma .venv
+fi
 UV_CACHE_DIR='$DEVICE_UV_CACHE' UV_PYTHON_INSTALL_DIR='$DEVICE_UV_PYTHON' \
   UV_PYTHON_PREFERENCE=managed uv sync --frozen --all-extras
 # The switch may have run the old helper; dependencies can remove its Git LFS binary.
@@ -187,9 +191,6 @@ $MODEL_CHECK
 # Use the same memory-aware build entry point as device startup, without developer CLI dependencies.
 PATH=\"/data/openpilot/.venv/bin:\$PATH\" PYTHONPATH=/data/openpilot \
   .venv/bin/python openpilot/system/manager/build.py
-# The updater's overlay can preserve root ownership from a prior install. Normalize the project
-# environment before reboot so its comma-owned git clean can replace editable package metadata.
-sudo chown -R comma:comma .venv
 test -z \"\$(find .venv -xdev ! -user comma -print -quit)\"
 test \"\$(git rev-parse HEAD)\" = '$PARENT_SHA'
 test \"\$(git ls-tree HEAD opendbc_repo | awk '{print \$3}')\" = '$OPENDBC_SHA'
