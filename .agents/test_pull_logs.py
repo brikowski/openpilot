@@ -438,6 +438,28 @@ def test_local_check_cleans_up_without_connecting_to_device(monkeypatch, tmp_pat
 
 
 
+def test_over_budget_list_still_reports_synced_routes_without_contacting_device(monkeypatch, tmp_path, capsys):
+  evidence = tmp_path / "evidence"
+  evidence.mkdir()
+  root = tmp_path / "rlogs"
+  route = "0000004c--bbbbbbbbbb"
+  segment = root / f"{route}--0"
+  segment.mkdir(parents=True)
+  (segment / "rlog.zst").write_bytes(b"closed rlog")
+  (evidence / "rlog-retention-policy.json").write_text(json.dumps({
+    "budget_bytes": 10, "retention_days": 30, "protected_routes": {}}))
+  monkeypatch.setattr(pull_logs, "evidence_root", lambda: evidence)
+  monkeypatch.setattr(pull_logs, "rlog_root", lambda: root)
+  monkeypatch.setattr(pull_logs, "_ssh", lambda *_: pytest.fail("archive preview contacted the device"))
+  monkeypatch.setattr(pull_logs, "validate", lambda *_: pytest.fail("archive preview validated a route"))
+  monkeypatch.setattr(sys, "argv", ["pull_logs.py", "--all-new", "--list", "--device-fallback"])
+  pull_logs.main()
+  output = capsys.readouterr()
+  assert route in output.out
+  assert "archive cap" in output.err
+  assert (segment / "rlog.zst").read_bytes() == b"closed rlog"
+
+
 def test_capacity_refuses_rsync_and_retries_when_source_will_not_fit(monkeypatch, tmp_path):
   route = "0000004c--bbbbbbbbbb"
   evidence = tmp_path / "evidence"

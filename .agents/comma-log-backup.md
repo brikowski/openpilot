@@ -56,7 +56,8 @@ enable flag, destination, encrypted account session, encryption key and receipts
   encryption does not protect against someone who controls the device/account.
 
 The Mac intake command is `.venv/bin/python .agents/pull_logs.py --all-new`
-(`--list` enforces retention/capacity before previewing; it is not a read-only cleanup preview).
+(`--list` checks retention first and may clean eligible routes. If the archive remains over budget,
+it reports the shortfall and lists already-synced routes without contacting the device.)
 It checks Proton first, validates the available snapshot and makes no device connection by default.
 Newly available segments reopen previously partial ledger coverage. Its age filter uses file mtimes;
 Proton arrival times can differ from drive times. Do not treat available segments as a whole drive.

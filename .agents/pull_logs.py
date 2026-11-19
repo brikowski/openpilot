@@ -476,7 +476,12 @@ def main():
     route_id = match[0]
 
   with archive_lock(evidence_root()):
-    enforce(LOCAL_ROOT, evidence_root(), keep={route_id} if route_id else set())
+    try:
+      enforce(LOCAL_ROOT, evidence_root(), keep={route_id} if route_id else set())
+    except ArchiveFull as error:
+      if not args.list:
+        raise
+      print(error, file=sys.stderr)
     _intake(args, route_id)
 
 
