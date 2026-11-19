@@ -123,6 +123,8 @@ remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return
     sync = result.stdout.index("uv sync --frozen --all-extras")
     assert result.stdout.index(code) < result.stdout.index("sudo chown -hR comma:comma .venv") < sync
     assert sync < migration < result.stdout.index("model = Path(")
+    ownership = "sudo chown -hR comma:comma .venv"
+    assert result.stdout.index("manager/build.py") < result.stdout.rindex(ownership) < result.stdout.rindex(code)
     assert result.stdout.rindex(code) < result.stdout.index("sudo reboot")
 
 

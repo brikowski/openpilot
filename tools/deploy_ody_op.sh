@@ -191,6 +191,8 @@ $MODEL_CHECK
 # Use the same memory-aware build entry point as device startup, without developer CLI dependencies.
 PATH=\"/data/openpilot/.venv/bin:\$PATH\" PYTHONPATH=/data/openpilot \
   .venv/bin/python openpilot/system/manager/build.py
+# Dependency sync can also populate the environment with root-owned cache entries.
+sudo chown -hR comma:comma .venv
 test -z \"\$(find .venv -xdev ! -user comma -print -quit)\"
 test \"\$(git rev-parse HEAD)\" = '$PARENT_SHA'
 test \"\$(git ls-tree HEAD opendbc_repo | awk '{print \$3}')\" = '$OPENDBC_SHA'
