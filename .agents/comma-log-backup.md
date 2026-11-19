@@ -241,8 +241,10 @@ analyzing logs; the uploader never deletes files or purges Trash. It still verif
 keeps destination-bound receipts so confirmed files are skipped on later passes.
 
 Cleanup preserves evidence, active baselines, unresolved faults, unvalidated/partial routes and linked
-files. Review protection reasons and retire unnecessary logs during analysis. Explicit SSH transfers
-that cannot fit still wait for safe cleanup. Preview with `archive_retention.py --preview`; `--apply`
+files. A contiguous route is eligible only after validation confirms both route sentinels and checks
+for reported steering faults, even with steering disengaged. Revalidate a reviewed older route with
+`validate_log.py` before retiring it if its ledger row lacks those checks.
+Explicit SSH transfers that cannot fit still wait for safe cleanup. Preview with `archive_retention.py --preview`; `--apply`
 rechecks the plan. Removal from the mirror propagates to Proton and other Macs. Private policies,
 plans and receipts stay outside Git.
 
