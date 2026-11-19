@@ -70,6 +70,29 @@ def test_deployment_waits_for_new_valid_offroad_state(first):
   params.get_bool.assert_called_once_with("IsOffroad")
 
 
+@pytest.mark.parametrize("checkout_can_import", [True, False])
+def test_remote_offroad_guard_uses_dependency_complete_interpreter(tmp_path, checkout_can_import):
+  script = (Path(__file__).parents[1] / "tools/deploy_ody_op.sh").read_text()
+  start = script.index("OFFROAD_CHECK=")
+  end = script.index("\nMODEL_CHECK=", start)
+  assignment = script[start:end].replace("/usr/local/venv/bin/python3", "./system-python")
+  (tmp_path / "tools").mkdir()
+  (tmp_path / "tools/check_offroad.py").write_text("guard body\n")
+
+  checkout_python = tmp_path / ".venv/bin/python"
+  checkout_python.parent.mkdir(parents=True)
+  system_python = tmp_path / "system-python"
+  for executable, import_status in ((checkout_python, int(not checkout_can_import)), (system_python, 0)):
+    body = f'if [ "$1" = "-c" ]; then exit {import_status}; fi\nprintf "%s\\n" "$0"\ncat'
+    executable.write_text("#!/bin/sh\n" + body + "\n")
+    executable.chmod(0o755)
+
+  result = subprocess.run(["bash", "-e", "-c", assignment + '\neval "$OFFROAD_CHECK"'],
+                          cwd=tmp_path, env={"ROOT_DIR": str(tmp_path)}, capture_output=True, text=True, check=True)
+  expected = ".venv/bin/python" if checkout_can_import else "./system-python"
+  assert result.stdout.splitlines() == [expected, "guard body"]
+
+
 @pytest.mark.parametrize("command", ["verify_device", "deploy_device"])
 def test_remote_recipes_check_offroad_before_switch_and_reboot(command):
   root = Path(__file__).parents[1]

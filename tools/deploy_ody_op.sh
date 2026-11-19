@@ -11,7 +11,7 @@ DEVICE_REMOTE=https://github.com/brikowski/openpilot.git
 DEVICE_UV_CACHE=/data/uv-cache
 DEVICE_UV_PYTHON=/data/uv-python
 OFFROAD_CHECK="ody_check_python=.venv/bin/python
-if ! test -x \"\$ody_check_python\"; then
+if ! \"\$ody_check_python\" -c 'from openpilot.cereal import messaging; from openpilot.common.params import Params' >/dev/null 2>&1; then
   ody_check_python=/usr/local/venv/bin/python3
 fi
 \"\$ody_check_python\" - <<'ODY_OFFROAD_CHECK'
