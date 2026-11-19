@@ -262,14 +262,13 @@ def _remote_segment_indices(rid):
   return indices
 
 
-def _verify_rlog_hashes(rid, retained):
-  """Verify retained source bytes; older local-only segments are not requalified."""
+def _remote_rlog_hashes(rid, retained):
   pattern = shlex.quote(f"{REMOTE_ROOT}/{rid}--*/rlog.zst")
   result = _ssh(f"nice -n 19 ionice -c 3 find {REMOTE_ROOT} -mindepth 2 -maxdepth 2 "
                 f"-type f -path {pattern} {CLOSED_RLOG_FILTER} -exec sha256sum {{}} +")
   if result.returncode:
     raise RuntimeError(result.stderr.strip() or "cannot read retained rlog checksums")
-  verified = set()
+  hashes = {}
   for line in result.stdout.splitlines():
     parts = line.split(maxsplit=1)
     if len(parts) != 2 or not re.fullmatch(r"[0-9a-f]{64}", parts[0]):
@@ -280,19 +279,29 @@ def _verify_rlog_hashes(rid, retained):
     index = int(source.parent.name.rsplit("--", 1)[1])
     if index not in retained:
       continue  # The route may have closed another segment after this snapshot.
-    if index in verified:
+    if index in hashes:
       raise RuntimeError("duplicate retained rlog checksum")
-    path = LOCAL_ROOT / source.parent.name / "rlog.zst"
+    hashes[index] = parts[0]
+  if set(hashes) != set(retained):
+    raise RuntimeError("retained rlog checksum inventory changed or is incomplete")
+  return hashes
+
+
+def _rlog_hash(rid, index):
+  path = LOCAL_ROOT / f"{rid}--{index}" / "rlog.zst"
+  with path.open("rb") as stream:
+    return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _verify_rlog_hashes(rid, retained):
+  """Verify retained source bytes; older local-only segments are not requalified."""
+  for index, source_hash in _remote_rlog_hashes(rid, retained).items():
     try:
-      with path.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+      digest = _rlog_hash(rid, index)
     except OSError as e:
       raise RuntimeError(f"cannot checksum local rlog {index}: {e}") from e
-    if digest != parts[0]:
+    if digest != source_hash:
       return False, f"rlog checksum mismatch in segment {index}"
-    verified.add(index)
-  if verified != set(retained):
-    raise RuntimeError("retained rlog checksum inventory changed or is incomplete")
   return True, ""
 
 
@@ -364,11 +373,20 @@ def _reserve_download(rid, retained):
     sizes[index] = int(size)
   if not set(retained) <= sizes.keys():
     raise RuntimeError("closed-source size inventory changed")
+  verified = set()
+  existing = set(_local_segment_indices(rid)) & set(retained)
+  if existing:
+    hashes = _remote_rlog_hashes(rid, retained)
+    for index in existing:
+      try:
+        if _rlog_hash(rid, index) == hashes[index]:
+          verified.add(index)
+      except OSError:
+        continue
+  pending = [index for index in retained if index not in verified]
   evidence = evidence_root()
-  # Reserve every source byte, including replacement/temp-file headroom. Existing local
-  # and resumable bytes still count until rsync actually reuses or replaces them.
-  enforce(LOCAL_ROOT, evidence, incoming_bytes=sum(sizes[i] for i in retained), keep={rid})
-
+  enforce(LOCAL_ROOT, evidence, incoming_bytes=sum(sizes[index] for index in pending), keep={rid})
+  return pending
 
 
 def pull(rid, expected_segments=None):
@@ -382,9 +400,12 @@ def pull(rid, expected_segments=None):
     try:
       retained = _remote_segment_indices(rid)
       print(f"  closed source snapshot: segments {retained[0]}–{retained[-1]} ({len(retained)} files)", flush=True)
-      _reserve_download(rid, retained)
-      files = "".join(f"{rid}--{index}/rlog.zst\n" for index in retained)
-      result = subprocess.run(cmd, input=files, capture_output=True, text=True)
+      pending = _reserve_download(rid, retained)
+      if pending:
+        files = "".join(f"{rid}--{index}/rlog.zst\n" for index in pending)
+        result = subprocess.run(cmd, input=files, capture_output=True, text=True)
+      else:
+        result = subprocess.CompletedProcess(cmd, 0, "", "")
       contiguous, completeness_detail = _local_segments_contiguous(rid, expected_indices=retained)
       if result.returncode == 0 and contiguous:
         contiguous, completeness_detail = _verify_rlog_hashes(rid, retained)

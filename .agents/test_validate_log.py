@@ -407,6 +407,33 @@ def test_local_segment_names_reject_ambiguous_short_route(tmp_path):
   assert _local_segment_names("00000029--eeeeeeeeee", tmp_path) == ["00000029--eeeeeeeeee--0"]
 
 
+@pytest.mark.parametrize(("indices", "start", "end", "whole"), [
+  ([0], "startOfRoute", "endOfRoute", True),
+  ([0, 1], "startOfRoute", "endOfRoute", True),
+  ([0, 1], "startOfRoute", "endOfSegment", False),
+  ([1, 2], "startOfSegment", "endOfRoute", False),
+  ([0, 2], "startOfRoute", "endOfRoute", False),
+  ([0], "startOfSegment", "endOfRoute", False),
+  ([0], "startOfRoute", None, False),
+])
+def test_whole_route_needs_both_sentinels_and_contiguous_recording(indices, start, end, whole):
+  from openpilot.cereal import log
+  from validate_log import _is_recorded_whole_route, _local_segment_coverage
+
+  init = log.Event.new_message()
+  init.init("initData")
+  messages = [init]
+  for sentinel_type in (start, end):
+    message = log.Event.new_message()
+    if sentinel_type is None:
+      message.init("carState")
+    else:
+      message.init("sentinel").type = sentinel_type
+    messages.append(message)
+  coverage = _local_segment_coverage([f"00000026--dddddddddd--{index}" for index in indices])
+  assert _is_recorded_whole_route(coverage, messages) is whole
+
+
 class _ProvenanceMessage:
   def __init__(self, service, **fields):
     self._service = service
@@ -2191,6 +2218,7 @@ def test_fault_published_after_disengagement_is_not_an_active_steering_fault(mon
   metrics = validate_log.analyze(messages, ODYSSEY, alpha_longitudinal=True)
   assert metrics['steer_fault_events'] == expected
   assert metrics['steer_fault_frames'] == expected
+  assert metrics['reported_steer_fault_frames'] == 1
   assert metrics['steering_override_events'] == expected
   assert metrics['lat_saturated_frac'] == pytest.approx(expected / (71 - int(flag_index == 0)))
   for pressed in observed['pedals']:

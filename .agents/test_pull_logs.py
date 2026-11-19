@@ -16,7 +16,7 @@ RESERVE_DOWNLOAD = pull_logs._reserve_download
 @pytest.fixture(autouse=True)
 def isolated_transfer_reservation(monkeypatch, tmp_path):
   # Legacy transfer fixtures do not expose source sizes; capacity has dedicated tests.
-  monkeypatch.setattr(pull_logs, "_reserve_download", lambda *args: None)
+  monkeypatch.setattr(pull_logs, "_reserve_download", lambda rid, retained: retained)
   evidence = tmp_path / "private-evidence"
   evidence.mkdir()
   monkeypatch.setattr(pull_logs, "evidence_root", lambda: evidence)
@@ -460,6 +460,7 @@ def test_capacity_refuses_rsync_and_retries_when_source_will_not_fit(monkeypatch
 
 def test_size_reservation_covers_only_the_fixed_closed_snapshot(monkeypatch, tmp_path):
   route = "0000004c--bbbbbbbbbb"
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", tmp_path)
   monkeypatch.setattr(pull_logs, "_ssh", lambda _: subprocess.CompletedProcess(
     [], 0, f"5 {pull_logs.REMOTE_ROOT}/{route}--0\n99 {pull_logs.REMOTE_ROOT}/{route}--1\n", ""))
   monkeypatch.setattr(pull_logs, "evidence_root", lambda: tmp_path)
@@ -467,6 +468,41 @@ def test_size_reservation_covers_only_the_fixed_closed_snapshot(monkeypatch, tmp
   monkeypatch.setattr(pull_logs, "enforce", lambda *a, **kw: calls.append(kw))
   RESERVE_DOWNLOAD(route, [0])
   assert calls == [{"incoming_bytes": 5, "keep": {route}}]
+
+
+def test_extending_a_route_reserves_only_new_or_nonmatching_segments(monkeypatch, tmp_path):
+  route = "0000004c--bbbbbbbbbb"
+  root = tmp_path / "rlogs"
+  payloads = [b"verified prefix", b"replacement", b"new closed segment"]
+  for index, existing in enumerate([payloads[0], b"bad prefix!"]):
+    file = root / f"{route}--{index}" / "rlog.zst"
+    file.parent.mkdir(parents=True)
+    file.write_bytes(existing)
+  monkeypatch.setattr(pull_logs, "LOCAL_ROOT", root)
+  monkeypatch.setattr(pull_logs, "_reserve_download", RESERVE_DOWNLOAD)
+  monkeypatch.setattr(pull_logs, "_remote_segment_indices", lambda _: [0, 1, 2])
+  def ssh(command):
+    if "sha256sum" in command:
+      rows = [f"{hashlib.sha256(data).hexdigest()}  {pull_logs.REMOTE_ROOT}/{route}--{index}/rlog.zst"
+              for index, data in enumerate(payloads)]
+    else:
+      rows = [f"{len(data)} {pull_logs.REMOTE_ROOT}/{route}--{index}" for index, data in enumerate(payloads)]
+    return subprocess.CompletedProcess([], 0, "\n".join(rows), "")
+
+  monkeypatch.setattr(pull_logs, "_ssh", ssh)
+  reservations = []
+  monkeypatch.setattr(pull_logs, "enforce", lambda *args, **kwargs: reservations.append(kwargs["incoming_bytes"]))
+  def transfer(cmd, **kwargs):
+    assert kwargs["input"].splitlines() == [f"{route}--{index}/rlog.zst" for index in (1, 2)]
+    for index in (1, 2):
+      file = root / f"{route}--{index}" / "rlog.zst"
+      file.parent.mkdir(exist_ok=True)
+      file.write_bytes(payloads[index])
+    return subprocess.CompletedProcess(cmd, 0, "", "")
+
+  monkeypatch.setattr(pull_logs.subprocess, "run", transfer)
+  assert pull_logs.pull(route)
+  assert reservations == [sum(map(len, payloads[1:]))]
 
 
 def test_failed_transfer_metadata_cannot_spend_reserved_rlog_capacity(monkeypatch, tmp_path):

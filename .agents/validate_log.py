@@ -1026,6 +1026,8 @@ def analyze(msgs, platform, alpha_longitudinal=None):
   _, cs_steering_pressed = _series(msgs, "carState", lambda m: 1.0 if m.carState.steeringPressed else 0.0)
   _, cs_steer_fault_temp = _series(msgs, "carState", lambda m: 1.0 if m.carState.steerFaultTemporary else 0.0)
   _, cs_steer_fault_perm = _series(msgs, "carState", lambda m: 1.0 if m.carState.steerFaultPermanent else 0.0)
+  r["reported_steer_fault_frames"] = (int(np.count_nonzero((cs_steer_fault_temp > .5) | (cs_steer_fault_perm > .5)))
+                                      if len(t_cs) else None)
   t_lp, lp_atarget = _series(msgs, "longitudinalPlan", lambda m: m.longitudinalPlan.aTarget)
   _, lp_cruise = _series(
     msgs, "longitudinalPlan",
@@ -2392,6 +2394,14 @@ def _local_segment_coverage(names):
           "missing_between": sorted(set(range(indices[0], indices[-1] + 1)) - set(indices))}
 
 
+def _is_recorded_whole_route(coverage, messages):
+  if not coverage["starts_at_zero"] or coverage["missing_between"] or len(messages) < 3:
+    return False
+  start, end = messages[1], messages[-1]
+  return (start.which() == "sentinel" and start.sentinel.type == "startOfRoute" and
+          end.which() == "sentinel" and end.sentinel.type == "endOfRoute")
+
+
 def append_ledger(route, description, r, v):
   ts = datetime.now(UTC).strftime("%Y-%m-%d")
   row = {"date": ts, "route": route, "description": description or "",
@@ -2503,6 +2513,8 @@ def main():
     lr = LogReader([os.path.join(rlog_root(), s, "rlog.zst") for s in segs])
 
   msgs = list(lr)
+  if segment_coverage is not None:
+    segment_coverage["whole_route"] = _is_recorded_whole_route(segment_coverage, msgs)
   cp = None
   for m in msgs:
     if m.which() == "carParams":
@@ -2514,7 +2526,7 @@ def main():
                         if cp is not None and platform == ODYSSEY else None)
   r = analyze(msgs, platform, alpha_longitudinal)
   r["local_segment_coverage"] = segment_coverage
-  if segment_coverage and (not segment_coverage["starts_at_zero"] or segment_coverage["missing_between"]):
+  if segment_coverage and not segment_coverage["whole_route"]:
     r["notes"].append(f"PARTIAL route: segments {segment_coverage['first']}–{segment_coverage['last']}, "
                       f"{segment_coverage['count']} available; metrics cover only recorded data.")
   if platform == ODYSSEY and alpha_longitudinal and not r.get("passive"):

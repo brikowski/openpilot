@@ -114,10 +114,14 @@ def preview(root, ledger_path, policy, now, incoming_bytes=0, keep=(), evidence=
     if any(check.get('ok') is not True if isinstance(check, dict) else check != 'PASS' for check in findings):
       kept[route] = 'unresolved validation finding'
       continue
-    coverage = row.get('local_segment_coverage', {})
-    if (sorted(indices) != list(range(len(indices))) or coverage.get('first') != 0 or coverage.get('last') != len(indices) - 1 or
+    coverage = row.get('local_segment_coverage') or {}
+    if (coverage.get('whole_route') is not True or sorted(indices) != list(range(len(indices))) or
+        coverage.get('first') != 0 or coverage.get('last') != len(indices) - 1 or
         coverage.get('count') != len(indices) or coverage.get('missing_between')):
       kept[route] = 'partial or changed coverage'
+      continue
+    if row.get('reported_steer_fault_frames') != 0:
+      kept[route] = 'reported or unreviewed steering faults'
       continue
     start, minutes = row.get('start_wall'), row.get('log_min')
     if (type(start) not in (float, int) or type(minutes) not in (float, int) or

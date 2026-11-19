@@ -23,8 +23,8 @@ def archive(tmp_path):
     path.mkdir()
     (path / "rlog.zst").write_bytes(b"full-rate route")
     rows.append({"route": route, "provenance_exact": True, "git_dirty": False, "qlog_fallback": False,
-                 "start_wall": NOW - 60 * 86400, "log_min": 1.,
-                 "local_segment_coverage": {"first": 0, "last": 0, "count": 1, "missing_between": []}})
+                 "start_wall": NOW - 60 * 86400, "log_min": 1., "reported_steer_fault_frames": 0,
+                 "local_segment_coverage": {"first": 0, "last": 0, "count": 1, "missing_between": [], "whole_route": True}})
   ledger.write_text("".join(json.dumps(row) + "\n" for row in rows))
   policy = {"budget_bytes": 20, "retention_days": 30, "protected_routes": {BASE: "active baseline"}}
   return root, ledger, policy
@@ -66,6 +66,32 @@ def test_uncertain_active_and_unreviewed_routes_are_kept(archive, condition):
   ledger.write_text("".join(json.dumps(row) + "\n" for row in rows))
   report = retention.preview(root, ledger, policy, NOW)
   assert report["candidates"] == [] and OLD in report["kept"]
+
+
+@pytest.mark.parametrize("known_prefix", [False, True])
+def test_contiguous_route_requires_confirmed_end_before_retirement(archive, known_prefix):
+  root, ledger, policy = archive
+  rows = [json.loads(x) for x in ledger.read_text().splitlines()]
+  coverage = rows[0]["local_segment_coverage"]
+  if known_prefix:
+    coverage["whole_route"] = False
+  else:
+    del coverage["whole_route"]
+  ledger.write_text("".join(json.dumps(row) + "\n" for row in rows))
+  report = retention.preview(root, ledger, policy, NOW)
+  assert report["kept"][OLD] == "partial or changed coverage"
+  assert report["candidates"] == []
+
+
+@pytest.mark.parametrize("raw_faults", [None, 1])
+def test_retention_preserves_fault_evidence_outside_lateral_engagement(archive, raw_faults):
+  root, ledger, policy = archive
+  rows = [json.loads(x) for x in ledger.read_text().splitlines()]
+  rows[0].update(steer_fault_frames=None, reported_steer_fault_frames=raw_faults)
+  ledger.write_text("".join(json.dumps(row) + "\n" for row in rows))
+  report = retention.preview(root, ledger, policy, NOW)
+  assert report["kept"][OLD] == "reported or unreviewed steering faults"
+  assert report["candidates"] == []
 
 
 @pytest.mark.parametrize("change", ["file", "policy", "ledger", "finding", "root"])
