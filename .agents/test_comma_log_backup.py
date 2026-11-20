@@ -442,6 +442,47 @@ def test_backup_runs_through_real_cli_subprocess_and_keeps_source_ownership(setu
   assert job.once() == 0
 
 
+def test_cli_subprocess_succeeds_after_parent_cwd_is_deleted(setup, tmp_path, monkeypatch):
+  import textwrap
+
+  (setup.root / 'bin').mkdir()
+  executable = setup.root / 'bin/proton-drive'
+  executable.write_text(f'#!{sys.executable}\n' + textwrap.dedent('''\
+    import json, os
+    cwd = os.getcwd()
+    assert cwd == os.environ['EXPECTED_CWD'], f'{cwd!r} != {os.environ["EXPECTED_CWD"]!r}'
+    print(json.dumps({'uid': 'volume~rlogs'}))
+    '''))
+  executable.chmod(0o700)
+  old_cwd = os.getcwd()
+  deleted_cwd = tmp_path / 'deleted_openpilot'
+  deleted_cwd.mkdir()
+  client = backup.Proton(setup.root, lambda: True)
+  monkeypatch.setenv('EXPECTED_CWD', str(setup.root.resolve()))
+  try:
+    os.chdir(deleted_cwd)
+    deleted_cwd.rmdir()
+    assert client.info(DESTINATION) == {'uid': 'volume~rlogs'}
+  finally:
+    os.chdir(old_cwd)
+
+
+def test_service_and_installer_avoid_openpilot_cwd_and_mask_background_dropin():
+  agents_dir = Path(__file__).resolve().parent
+  service = (agents_dir / 'proton-log-backup.service').read_text()
+  installer = (agents_dir / 'install_comma_log_backup.sh').read_text()
+  assert 'WorkingDirectory=/data/proton-log-backup' in service
+  assert 'WorkingDirectory=/data/openpilot' not in service
+  assert 'MemoryMax=512M' in service
+  runner_block = installer.split("cat <<'BACKUP_RUNNER'\n", 1)[1].split('\nBACKUP_RUNNER', 1)[0]
+  assert 'cd /data/proton-log-backup' in runner_block
+  assert 'cd /data/openpilot' not in runner_block
+  post_migrate = installer.rsplit("\nPY\n", 1)[1]
+  assert 'sudo mkdir -p /run/systemd/system/proton-log-backup.service.d' in post_migrate
+  assert 'sudo ln -sfn /dev/null /run/systemd/system/proton-log-backup.service.d/background.conf' in post_migrate
+  assert 'set-property' not in post_migrate
+
+
 @pytest.mark.parametrize('reported_size', [50_000_000_000, 50_000_000_001, None])
 def test_upload_does_not_depend_on_archive_size(setup, monkeypatch, reported_size):
   source = segment(setup) / 'rlog.zst'

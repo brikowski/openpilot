@@ -160,7 +160,7 @@ class Proton:
     # which could contain account details. No stdin means a background job cannot prompt.
     with tempfile.TemporaryFile() as output:
       process = subprocess.Popen([str(self.root / 'bin/proton-drive'), *args, '--json'],
-                                 env=environment(self.root), stdin=subprocess.DEVNULL,
+                                 cwd=self.root, env=environment(self.root), stdin=subprocess.DEVNULL,
                                  stdout=output, stderr=subprocess.DEVNULL, start_new_session=True)
       deadline = time.monotonic() + 600
       try:
@@ -321,7 +321,7 @@ def main():
     write_config(ROOT, {'enabled': False, 'destination': args.destination})
     UploadProgress(ROOT).update('disabled')
     if args.command != 'disable':
-      subprocess.run([str(ROOT / 'bin/proton-drive'), 'auth', args.command], env=environment(ROOT), check=True)
+      subprocess.run([str(ROOT / 'bin/proton-drive'), 'auth', args.command], cwd=ROOT, env=environment(ROOT), check=True)
     return
   if args.command == 'enable':
     if not has_session(ROOT):

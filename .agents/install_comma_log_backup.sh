@@ -27,7 +27,7 @@ chmod 700 . bin gnupg password-store client
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail'
   declare -f select_backup_python
   cat <<'BACKUP_RUNNER'
-cd /data/openpilot
+cd /data/proton-log-backup
 ody_backup_python=$(select_backup_python)
 export PYTHONPATH=/data/openpilot
 exec "$ody_backup_python" /data/proton-log-backup/comma_log_backup.py "$@"
@@ -69,24 +69,34 @@ from pathlib import Path
 hook = Path('/data/continue.sh')
 text = hook.read_text()
 marker = '# BEGIN optional Proton log backup'
-previous = '''# BEGIN optional Proton log backup
+original = '''# BEGIN optional Proton log backup
 sudo systemctl link --runtime /data/proton-log-backup/proton-log-backup.service
 sudo systemctl start --no-block proton-log-backup.service
 # END optional Proton log backup
 
 '''
-block = previous.replace(
+previous = original.replace(
   'sudo systemctl start --no-block',
   'sudo systemctl set-property --runtime proton-log-backup.service MemoryMax=512M\nsudo systemctl start --no-block',
 )
+block = original.replace(
+  'sudo systemctl link --runtime',
+  'sudo mkdir -p /run/systemd/system/proton-log-backup.service.d\n'
+  'sudo ln -sfn /dev/null /run/systemd/system/proton-log-backup.service.d/background.conf\n'
+  'sudo systemctl link --runtime',
+)
 updated = text
-if previous in text and text.count(marker) == 1:
+if block in text and text.count(marker) == 1:
+  pass
+elif previous in text and text.count(marker) == 1:
   updated = text.replace(previous, block)
+elif original in text and text.count(marker) == 1:
+  updated = text.replace(original, block)
 elif marker not in text:
   if text.count('cd /data/openpilot\n') != 1:
     raise SystemExit('unrecognized continue.sh; refusing to replace the startup hook')
   updated = text.replace('cd /data/openpilot\n', block + 'cd /data/openpilot\n')
-elif block not in text or text.count(marker) != 1:
+else:
   raise SystemExit('unrecognized Proton backup block; refusing to replace the startup hook')
 if updated != text:
   stat = hook.stat()
@@ -96,8 +106,9 @@ if updated != text:
   os.chown(temporary, stat.st_uid, stat.st_gid)
   temporary.replace(hook)
 PY
+sudo mkdir -p /run/systemd/system/proton-log-backup.service.d
+sudo ln -sfn /dev/null /run/systemd/system/proton-log-backup.service.d/background.conf
 sudo systemctl link --runtime /data/proton-log-backup/proton-log-backup.service
 sudo systemctl daemon-reload
-sudo systemctl set-property --runtime proton-log-backup.service MemoryMax=512M
 sudo systemctl start proton-log-backup.service
 ./run_backup.sh status
