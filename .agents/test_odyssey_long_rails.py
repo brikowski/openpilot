@@ -134,7 +134,9 @@ class TestOdysseyLongRails(unittest.TestCase):
                          computer_braking=braking, user_brake=pressure)
     self.assertEqual(rejects, [])
     self.assertTrue(all(gas == GAS_INACTIVE and brake == 1 for _, gas, brake in seen[50:80]))
-    self.assertTrue(all(command == (-40, GAS_INACTIVE, 0) for command in seen[80:130]))
+    # Filtered brake error settles within 60 ms after prior under-deceleration before releasing into coast.
+    self.assertTrue(all(accel == -40 and gas == GAS_INACTIVE for accel, gas, _ in seen[80:83]))
+    self.assertTrue(all(command == (-40, GAS_INACTIVE, 0) for command in seen[83:130]))
     self.assertTrue(all(accel == -40 and gas >= 0 and brake == 0 for accel, gas, brake in seen[130:135]))
     self.assertTrue(all(accel == -95 and gas == GAS_INACTIVE and brake == 1 for accel, gas, brake in seen[135:]))
 
@@ -627,12 +629,13 @@ class TestOdysseyLongRails(unittest.TestCase):
       assert brake_request == 0, "BRAKE_REQUEST remained latched against a positive start request"
 
   def test_odyssey_expands_range_without_changing_count_gain_or_slew(self):
-    """The Odyssey adds headroom with the same physical seed and count slew."""
+    """The Odyssey adds headroom with calibrated active-range seed parameters and count slew."""
     CP = _car_params()
     params = CarControllerParams(CP)
     self.assertEqual(params.STEER_MAX, 3840)
     self.assertEqual(params.STEER_DELTA_UP * params.STEER_MAX, 7680)
     self.assertEqual(params.STEER_DELTA_DOWN * params.STEER_MAX, 7680)
-    self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, 1.35, places=6)
-    self.assertAlmostEqual(CP.lateralTuning.torque.friction, .2 / 1.5, places=6)
+    self.assertAlmostEqual(CP.lateralTuning.torque.latAccelFactor, 1.05, places=6)
+    self.assertAlmostEqual(CP.lateralTuning.torque.friction, .12, places=6)
+    self.assertAlmostEqual(CP.maxLateralAccel, .9, places=6)
     self.assertAlmostEqual(CP.steerActuatorDelay, 0.15)

@@ -18,11 +18,14 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 def test_count_gain_below_stock_cap_and_added_headroom(speed, direction, econ, alpha_long):
   """Exercise the controller-to-wire path with identical physical state and requests."""
   candidate = CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], alpha_long, False, False)
-  stock = candidate.as_reader().as_builder()
-  stock.lateralTuning.torque.latAccelFactor = .9
-  stock.lateralTuning.torque.friction = .2
+  assert candidate.lateralTuning.torque.latAccelFactor == pytest.approx(1.05)
+  assert candidate.lateralTuning.torque.friction == pytest.approx(.12)
+  assert candidate.maxLateralAccel == pytest.approx(.9)
+  narrow_range = candidate.as_reader().as_builder()
+  narrow_range.lateralTuning.torque.latAccelFactor = 1.05 / 1.5
+  narrow_range.lateralTuning.torque.friction = .12 * 1.5
   arms = []
-  for cp in (stock, candidate):
+  for cp in (narrow_range, candidate):
     ci = CarInterface(cp)
     wire = CarController({Bus.pt: DBC[cp.carFingerprint][Bus.pt]}, cp)
     state = CarState(cp)
