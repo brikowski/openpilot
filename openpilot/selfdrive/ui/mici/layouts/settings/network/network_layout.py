@@ -71,7 +71,7 @@ class NetworkLayoutMici(NavScroller):
 
     self._auto_open_btn = BigToggle("auto-connect open Wi-Fi", "", initial_state=self._wifi_manager.auto_connect_open_wifi,
                                    toggle_callback=self._wifi_manager.set_auto_connect_open_wifi,
-                                   description="Try open networks when disconnected. Skip sign-in and unavailable networks for 15 minutes.")
+                                   description="Try strong open networks when disconnected. Prefer saved networks and skip sign-in or unavailable networks.")
 
     # ******** eSIM ********
     self._cellular_manager = CellularManager()

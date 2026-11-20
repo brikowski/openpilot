@@ -11,7 +11,13 @@ from jeepney.low_level import MessageType
 from openpilot.common.params import Params
 from openpilot.system.ui.lib.networkmanager import NMDeviceState, NMDeviceStateReason, NM_802_11_AP_FLAGS_PRIVACY
 from openpilot.system.ui.lib.wifi_manager import (WifiManager, WifiState, ConnectStatus, Network, SecurityType,
-                                                AUTO_OPEN_CONNECTION_ID, AUTO_OPEN_RETRY_SECONDS, get_security_type)
+                                                AUTO_OPEN_CONNECTION_ID, AUTO_OPEN_DROPPED_RETRY_SECONDS,
+                                                AUTO_OPEN_MAX_RETRY_SECONDS, AUTO_OPEN_MIN_STRENGTH,
+                                                AUTO_OPEN_ONROAD_DWELL_SECONDS, AUTO_OPEN_PROBE_URLS,
+                                                AUTO_OPEN_RECHECK_SECONDS, AUTO_OPEN_RETRY_SECONDS,
+                                                AUTO_OPEN_SAVED_HANDOFF_COOLDOWN_SECONDS, AUTO_OPEN_SAVED_SCAN_SECONDS,
+                                                AUTO_OPEN_SCAN_STALE_SECONDS, SCAN_PERIOD_SECONDS,
+                                                get_security_type)
 
 
 @pytest.fixture
@@ -31,7 +37,12 @@ def wifi(tmp_path, monkeypatch):
   wm._activation_lock = threading.Lock()
   wm._auto_open_connection = None
   wm._auto_open_cooldown = {}
+  wm._auto_open_failures = {}
+  wm._auto_open_seen_since = {}
   wm._auto_open_idle_since = 0.0
+  wm._last_networks_update = None
+  wm._saved_handoff_cooldown = {}
+  wm._non_autoconnect_paths = set()
   wm._callback_queue = []
   wm._activated = wm._forgotten = []
   wm._get_connection_settings = Mock(return_value={'connection': {'id': ('s', 'Home')}})
@@ -46,7 +57,14 @@ def wifi(tmp_path, monkeypatch):
 
   def reply(message):
     member = message.header.fields[3]
-    body = (props,) if member == 'GetAll' else ('/settings/auto', '/active/auto', {}) if member == 'AddAndActivateConnection2' else ()
+    if member == 'GetAll':
+      body = (props,)
+    elif member == 'AddAndActivateConnection2':
+      body = ('/settings/auto', '/active/auto', {})
+    elif member == 'ActivateConnection':
+      body = ('/active/saved',)
+    else:
+      body = ()
     return SimpleNamespace(header=SimpleNamespace(message_type=MessageType.method_return), body=body)
 
   wm._router_main = Mock()
@@ -176,11 +194,34 @@ def test_working_connection_stays_and_is_periodically_rechecked(wifi):
   wifi.connected()
   wm._auto_connect_open_network()
   wm._wifi_has_internet.assert_called_once_with('wlan0')
-  wifi.clock[0] += 29
+  assert wm._auto_open_connection.verified
+  wifi.clock[0] += AUTO_OPEN_RECHECK_SECONDS - 1
   wm._auto_connect_open_network()
   assert wm._wifi_has_internet.call_count == 1
+
+  # A single transient probe miss triggers a quick 5s retry without tearing down the connection.
   wifi.clock[0] += 1
   wm._wifi_has_internet.return_value = False
+  wm._auto_connect_open_network()
+  assert wm._wifi_has_internet.call_count == 2
+  assert wm._auto_open_connection.failed_checks == 1
+  assert not wifi.calls('DeactivateConnection')
+  wifi.clock[0] += SCAN_PERIOD_SECONDS - 1
+  wm._auto_connect_open_network()
+  assert wm._wifi_has_internet.call_count == 2
+  wifi.clock[0] += 1
+  wm._wifi_has_internet.return_value = True
+  wm._auto_connect_open_network()
+  assert wm._wifi_has_internet.call_count == 3
+  assert wm._auto_open_connection.failed_checks == 0
+  assert not wifi.calls('DeactivateConnection')
+
+  # Two consecutive failed rechecks disconnect and cool down the network.
+  wifi.clock[0] += AUTO_OPEN_RECHECK_SECONDS
+  wm._wifi_has_internet.return_value = False
+  wm._auto_connect_open_network()
+  assert not wifi.calls('DeactivateConnection')
+  wifi.clock[0] += SCAN_PERIOD_SECONDS
   wm._auto_connect_open_network()
   assert len(wifi.calls('AddAndActivateConnection2')) == 1
   assert len(wifi.calls('DeactivateConnection')) == 1
@@ -188,12 +229,21 @@ def test_working_connection_stays_and_is_periodically_rechecked(wifi):
 
 def test_opt_out_disconnects_only_the_automatic_connection(wifi):
   wm = wifi.wm
+  wm._auto_open_cooldown['Stale'] = 9999.0
+  wm._auto_open_failures['Stale'] = 2
   wm._auto_connect_open_network()
   wm.set_auto_connect_open_wifi(False)
   wm._auto_connect_open_network()
   assert wifi.calls('DeactivateConnection')[-1].body == ('/active/auto',)
+  assert 'Cafe' not in wm._auto_open_cooldown
+  assert 'Cafe' not in wm._auto_open_failures
   wm._auto_connect_open_network()
   assert len(wifi.calls('DeactivateConnection')) == 1
+  wm.set_auto_connect_open_wifi(True)
+  assert wm._auto_open_cooldown == {}
+  assert wm._auto_open_failures == {}
+  wm._params = None
+  wm.set_auto_connect_open_wifi(False)
 
 
 def test_rejected_activation_is_skipped_without_saving_or_deleting_profiles(wifi):
@@ -282,3 +332,278 @@ def test_security_flags_cannot_misclassify_encrypted_network_as_open():
   assert get_security_type(0, 0, 0) == SecurityType.OPEN
   assert get_security_type(NM_802_11_AP_FLAGS_PRIVACY, 0, 0) != SecurityType.OPEN
   assert get_security_type(0, 0, 0x800) != SecurityType.OPEN
+
+
+def test_weak_open_networks_are_skipped(wifi):
+  wm = wifi.wm
+  wm._networks = [Network('WeakCafe', AUTO_OPEN_MIN_STRENGTH - 1, SecurityType.OPEN, False)]
+  wm._auto_connect_open_network()
+  assert not wifi.calls('AddAndActivateConnection2')
+  wm._networks.append(Network('Cafe', AUTO_OPEN_MIN_STRENGTH, SecurityType.OPEN, False))
+  wm._auto_connect_open_network()
+  assert len(wifi.calls('AddAndActivateConnection2')) == 1
+  assert wifi.calls('AddAndActivateConnection2')[0].body[0]['802-11-wireless']['ssid'] == ('ay', b'Cafe')
+
+
+def test_onroad_dwell_guard_avoids_driveby_networks(wifi):
+  wm = wifi.wm
+  wm._params.put_bool('IsOffroad', False, block=True)
+  wm._auto_connect_open_network()
+  assert not wifi.calls('AddAndActivateConnection2')
+  wifi.clock[0] += AUTO_OPEN_ONROAD_DWELL_SECONDS - 1
+  wm._auto_connect_open_network()
+  assert not wifi.calls('AddAndActivateConnection2')
+
+  # Vanishing between scans resets the dwell timer.
+  wm._networks = []
+  wm._auto_connect_open_network()
+  wm._networks = [Network('Cafe', 60, SecurityType.OPEN, False)]
+  wm._auto_connect_open_network()
+  assert not wifi.calls('AddAndActivateConnection2')
+  wifi.clock[0] += AUTO_OPEN_ONROAD_DWELL_SECONDS - 1
+  wm._auto_connect_open_network()
+  assert not wifi.calls('AddAndActivateConnection2')
+  wifi.clock[0] += 1
+  wm._auto_connect_open_network()
+  assert len(wifi.calls('AddAndActivateConnection2')) == 1
+
+  # Offroad joins immediately once seen without extra dwell wait.
+  wm._auto_open_connection = None
+  wm._auto_open_seen_since.clear()
+  wm._params.put_bool('IsOffroad', True, block=True)
+  wm._networks = [Network('Library', 60, SecurityType.OPEN, False)]
+  wm._auto_connect_open_network()
+  assert len(wifi.calls('AddAndActivateConnection2')) == 2
+
+
+def test_stale_scan_results_do_not_trigger_connection(wifi):
+  wm = wifi.wm
+  wm._last_networks_update = 0.0
+  wifi.clock[0] = AUTO_OPEN_SCAN_STALE_SECONDS + 1
+  wm._auto_connect_open_network()
+  assert not wifi.calls('AddAndActivateConnection2')
+  wm._last_networks_update = wifi.clock[0]
+  wm._auto_connect_open_network()
+  assert len(wifi.calls('AddAndActivateConnection2')) == 1
+
+
+@pytest.mark.parametrize('saved_visible', [False, True])
+def test_fast_fallback_after_portal_failure_respects_saved_network_visibility(wifi, saved_visible):
+  wm = wifi.wm
+  wm._networks = [Network('Starbucks', 90, SecurityType.OPEN, False), Network('Cafe', 60, SecurityType.OPEN, False)]
+  if saved_visible:
+    wm._networks.append(Network('Home', 70, SecurityType.WPA, False))
+  wm._wifi_has_internet.return_value = False
+  wm._auto_connect_open_network()
+  assert wm._auto_open_connection.ssid == 'Starbucks'
+  wifi.connected()
+  wm._auto_connect_open_network()
+  assert wm._auto_open_connection is None
+  wifi.props.update(State=('u', NMDeviceState.DISCONNECTED), ActiveConnection=('o', '/'))
+  wm._auto_connect_open_network()
+  if saved_visible:
+    assert len(wifi.calls('AddAndActivateConnection2')) == 1
+    wifi.clock[0] += 30.0
+    wm._auto_connect_open_network()
+  assert len(wifi.calls('AddAndActivateConnection2')) == 2
+  assert wifi.calls('AddAndActivateConnection2')[1].body[0]['802-11-wireless']['ssid'] == ('ay', b'Cafe')
+
+
+def test_saved_network_handoff_prefers_newly_visible_autoconnect_network(wifi):
+  wm = wifi.wm
+  wm._networks = [Network('Cafe', 50, SecurityType.OPEN, False), Network('BrokenSaved', 70, SecurityType.WPA, False),
+                  Network('NonAuto', 95, SecurityType.WPA, False)]
+  wm._connections.update(BrokenSaved='/saved/broken', NonAuto='/saved/nonauto', Hotspot='/saved/hotspot')
+  wm._non_autoconnect_paths.add('/saved/nonauto')
+  wm._auto_connect_open_network()
+  assert wm._auto_open_connection.initial_saved_ssids == frozenset({'BrokenSaved'})
+  wifi.connected()
+  wm._auto_connect_open_network()
+  assert not wifi.calls('ActivateConnection')
+
+  # Previously invisible saved network appears -> hand off cleanly without blacklisting Cafe.
+  wm._networks.extend([Network('Hotspot', 100, SecurityType.OPEN, True), Network('Home', 60, SecurityType.WPA, False)])
+  wm._auto_connect_open_network()
+  handoff = wifi.calls('ActivateConnection')[-1]
+  assert handoff.body == ('/saved/home', wm._wifi_device, '/')
+  assert not wifi.calls('DeactivateConnection')
+  assert wm._auto_open_connection is None
+  assert 'Cafe' not in wm._auto_open_cooldown
+  assert wm._saved_handoff_cooldown['Home'] == wifi.clock[0] + AUTO_OPEN_SAVED_HANDOFF_COOLDOWN_SECONDS
+
+
+def test_failed_saved_handoff_sets_cooldown_and_keeps_working_open_wifi(wifi):
+  wm = wifi.wm
+  wm._auto_connect_open_network()
+  wifi.connected()
+  wm._auto_connect_open_network()
+  wm._networks.append(Network('Home', 70, SecurityType.WPA, False))
+  old_reply = wm._router_main.send_and_get_reply.side_effect
+
+  def fail_activate(message):
+    if message.header.fields[3] == 'ActivateConnection':
+      return SimpleNamespace(header=SimpleNamespace(message_type=MessageType.error), body=('failed',))
+    return old_reply(message)
+
+  wm._router_main.send_and_get_reply.side_effect = fail_activate
+  wm._auto_connect_open_network()
+  assert len(wifi.calls('ActivateConnection')) == 1
+  assert wm._auto_open_connection is not None
+  assert wm._auto_open_connection.ssid == 'Cafe'
+  assert wm._saved_handoff_cooldown['Home'] == wifi.clock[0] + AUTO_OPEN_SAVED_HANDOFF_COOLDOWN_SECONDS
+  wm._auto_connect_open_network()
+  assert len(wifi.calls('ActivateConnection')) == 1
+
+
+def test_connection_bookkeeping_tracks_non_autoconnect_paths(wifi):
+  wm = wifi.wm
+  old_reply = wm._router_main.send_and_get_reply.side_effect
+
+  def list_reply(message):
+    if message.header.fields[3] == 'ListConnections':
+      return SimpleNamespace(header=SimpleNamespace(message_type=MessageType.method_return),
+                             body=(['/saved/auto', '/saved/manual'],))
+    return old_reply(message)
+
+  wm._router_main.send_and_get_reply.side_effect = list_reply
+  wm._get_connection_settings.side_effect = lambda p: {
+    '/saved/auto': {'connection': {'id': ('s', 'Home')}, '802-11-wireless': {'ssid': ('ay', b'Home')}},
+    '/saved/manual': {'connection': {'id': ('s', 'Manual'), 'autoconnect': ('b', False)}, '802-11-wireless': {'ssid': ('ay', b'Manual')}},
+    '/saved/open_temp': {'connection': {'id': ('s', AUTO_OPEN_CONNECTION_ID)}, '802-11-wireless': {'ssid': ('ay', b'Cafe')}},
+  }[p]
+  wm._init_connections()
+  assert wm._non_autoconnect_paths == {'/saved/manual'}
+  wm._new_connection('/saved/open_temp')
+  assert wm._non_autoconnect_paths == {'/saved/manual', '/saved/open_temp'}
+  wm._connection_removed('/saved/open_temp')
+  assert wm._non_autoconnect_paths == {'/saved/manual'}
+
+
+def test_manual_replacement_and_clean_verified_drop_and_manual_connect(wifi):
+  wm = wifi.wm
+  wm._auto_connect_open_network()
+  wifi.connected()
+  wm._auto_connect_open_network()
+  wifi.props['ActiveConnection'] = '/active/manual'
+  wm._auto_connect_open_network()
+  assert wm._auto_open_connection is None
+  assert not wifi.calls('DeactivateConnection')
+  assert 'Cafe' not in wm._auto_open_cooldown
+
+  # Clean drop after verification uses short 60s retry without escalating backoff.
+  wifi.props.update(State=('u', NMDeviceState.DISCONNECTED), ActiveConnection=('o', '/'))
+  wifi.clock[0] += 30.0
+  wm._auto_connect_open_network()
+  wifi.connected()
+  wm._auto_connect_open_network()
+  assert wm._auto_open_connection.verified
+  wifi.props.update(State=('u', NMDeviceState.DISCONNECTED), ActiveConnection=('o', '/'))
+  wm._auto_connect_open_network()
+  assert wm._auto_open_connection is None
+  assert wm._auto_open_cooldown['Cafe'] == wifi.clock[0] + AUTO_OPEN_DROPPED_RETRY_SECONDS
+  assert wm._auto_open_failures.get('Cafe', 0) == 0
+
+  # Manual connection does not leave SSID on cooldown or backoff.
+  wm._requests = Mock()
+  wm._auto_open_failures['Cafe'] = 2
+  wm.connect_to_network('Cafe', '')
+  assert 'Cafe' not in wm._auto_open_cooldown
+  assert 'Cafe' not in wm._auto_open_failures
+  worker = wm._requests.put.call_args.args[0]
+  worker()
+  assert 'Cafe' not in wm._auto_open_cooldown
+
+  # Manual activate_connection clears cooldowns, failures, and handoff cooldown.
+  wm._auto_open_cooldown['Home'] = 999.0
+  wm._auto_open_failures['Home'] = 3
+  wm._saved_handoff_cooldown['Home'] = 999.0
+  wm.activate_connection('Home', block=True)
+  assert 'Home' not in wm._auto_open_cooldown
+  assert 'Home' not in wm._auto_open_failures
+  assert 'Home' not in wm._saved_handoff_cooldown
+
+
+def test_exponential_backoff_caps_and_resets_on_verified_success(wifi):
+  wm = wifi.wm
+  wm._wifi_has_internet.return_value = False
+  expected_delays = [AUTO_OPEN_RETRY_SECONDS, AUTO_OPEN_RETRY_SECONDS * 2, AUTO_OPEN_MAX_RETRY_SECONDS, AUTO_OPEN_MAX_RETRY_SECONDS]
+  for delay in expected_delays:
+    wm._auto_connect_open_network()
+    wifi.connected()
+    wm._auto_connect_open_network()
+    assert wm._auto_open_cooldown['Cafe'] == wifi.clock[0] + delay
+    wifi.props.update(State=('u', NMDeviceState.DISCONNECTED), ActiveConnection=('o', '/'))
+    wifi.clock[0] += delay
+
+  wm._wifi_has_internet.return_value = True
+  wm._auto_connect_open_network()
+  wifi.connected()
+  wm._auto_connect_open_network()
+  assert 'Cafe' not in wm._auto_open_failures
+
+
+def test_fallback_probe_handles_primary_network_failure_but_stops_on_portal(wifi, monkeypatch):
+  calls = []
+
+  def fake_run(cmd, **_kwargs):
+    calls.append(cmd)
+    if len(calls) == 1 and fake_run.first_error is not None:
+      if isinstance(fake_run.first_error, Exception):
+        raise fake_run.first_error
+      return fake_run.first_error
+    return SimpleNamespace(stdout=fake_run.second_code, returncode=0)
+
+  fake_run.first_error = subprocess.TimeoutExpired('curl', 12)
+  fake_run.second_code = b'204'
+  monkeypatch.setattr('openpilot.system.ui.lib.wifi_manager.subprocess.run', fake_run)
+  assert WifiManager._wifi_has_internet(wifi.wm, 'wlan0')
+  assert [c[-1] for c in calls] == list(AUTO_OPEN_PROBE_URLS)
+
+  calls.clear()
+  fake_run.first_error = SimpleNamespace(stdout=b'302', returncode=0)
+  assert not WifiManager._wifi_has_internet(wifi.wm, 'wlan0')
+  assert len(calls) == 1
+
+
+def test_background_scanner_saved_scan_and_immediate_disable(wifi, monkeypatch):
+  wm = wifi.wm
+  wm._wifi_state = WifiState(ssid='Cafe', status=ConnectStatus.CONNECTED)
+  wm._request_scan = Mock()
+  auto_check = Mock()
+  monkeypatch.setattr(wm, '_auto_connect_open_network', auto_check)
+  monkeypatch.setattr('openpilot.system.ui.lib.wifi_manager.time.sleep', lambda _: setattr(wm, '_exit', True))
+
+  # On manual/saved connection: no background scans.
+  wm._exit = False
+  wm._last_network_scan = 0.0
+  wifi.clock[0] = 500.0
+  wm._network_scanner()
+  wm._request_scan.assert_not_called()
+
+  # On auto-open connection: scan on the slower saved-network interval.
+  wm._auto_open_connection = wm._auto_open_connection or SimpleNamespace(ssid='Cafe')
+  wm._exit = False
+  wm._last_network_scan = 450.0
+  wifi.clock[0] = 500.0
+  wm._network_scanner()
+  wm._request_scan.assert_not_called()
+  wm._exit = False
+  wm._last_network_scan = 0.0
+  wifi.clock[0] = AUTO_OPEN_SAVED_SCAN_SECONDS + 1
+  wm._network_scanner()
+  assert wm._request_scan.call_count == 1
+
+  # Opt-out invokes _auto_connect_open_network immediately even before the next 5s poll window.
+  auto_check.reset_mock()
+  wm.set_auto_connect_open_wifi(False)
+  wm._exit = False
+  ticks = [0]
+
+  def two_ticks(_):
+    ticks[0] += 1
+    if ticks[0] >= 2:
+      wm._exit = True
+
+  monkeypatch.setattr('openpilot.system.ui.lib.wifi_manager.time.sleep', two_ticks)
+  wm._network_scanner()
+  assert auto_check.call_count == 2

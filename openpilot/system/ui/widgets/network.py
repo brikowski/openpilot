@@ -138,8 +138,9 @@ class AdvancedNetworkSettings(Widget):
                                 action_item=self._wifi_metered_action)
 
     self._auto_open_action = ToggleAction(initial_state=wifi_manager.auto_connect_open_wifi)
+    auto_open_desc = "Try strong open networks when disconnected. Prefer saved networks and skip sign-in or unavailable networks."
     auto_open_btn = ListItem(lambda: tr("Auto-Connect Open Wi-Fi"),
-                             description=lambda: tr("Try open networks when disconnected. Skip sign-in and unavailable networks for 15 minutes."),
+                             description=lambda: tr(auto_open_desc),
                              action_item=self._auto_open_action,
                              callback=lambda: wifi_manager.set_auto_connect_open_wifi(self._auto_open_action.get_state()))
 

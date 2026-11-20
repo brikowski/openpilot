@@ -41,7 +41,20 @@ SCAN_PERIOD_SECONDS = 5
 AUTO_OPEN_SCAN_SECONDS = 30
 AUTO_OPEN_CONNECT_SECONDS = 30
 AUTO_OPEN_RETRY_SECONDS = 15 * 60
+AUTO_OPEN_MAX_RETRY_SECONDS = 60 * 60
+AUTO_OPEN_DROPPED_RETRY_SECONDS = 60
+AUTO_OPEN_RECHECK_SECONDS = 60
+AUTO_OPEN_MAX_FAILED_RECHECKS = 2
+AUTO_OPEN_MIN_STRENGTH = 35
+AUTO_OPEN_ONROAD_DWELL_SECONDS = 30
+AUTO_OPEN_SCAN_STALE_SECONDS = 90
+AUTO_OPEN_SAVED_SCAN_SECONDS = 120
+AUTO_OPEN_SAVED_HANDOFF_COOLDOWN_SECONDS = 5 * 60
 AUTO_OPEN_CONNECTION_ID = "openpilot automatic open Wi-Fi"
+AUTO_OPEN_PROBE_URLS = (
+  "https://connectivitycheck.gstatic.com/generate_204",
+  "https://cp.cloudflare.com/generate_204",
+)
 
 DEBUG = False
 _dbus_call_idx = 0
@@ -164,6 +177,9 @@ class AutoOpenConnection:
   path: str
   deadline: float
   next_check: float = 0.0
+  verified: bool = False
+  failed_checks: int = 0
+  initial_saved_ssids: frozenset[str] = frozenset()
 
 
 class WifiManager:
@@ -198,12 +214,17 @@ class WifiManager:
     self._ipv4_forward = False
 
     self._last_network_scan: float = 0.0
+    self._last_networks_update: float | None = None
     self._callback_queue: list[Callable] = []
     self._params = Params() if Params is not None else None
     self._activation_lock = threading.Lock()
     self._auto_open_connection: AutoOpenConnection | None = None
     self._auto_open_cooldown: dict[str, float] = {}
+    self._auto_open_failures: dict[str, int] = {}
+    self._auto_open_seen_since: dict[str, float] = {}
     self._auto_open_idle_since = time.monotonic()
+    self._saved_handoff_cooldown: dict[str, float] = {}
+    self._non_autoconnect_paths: set[str] = set()
 
     self._tethering_ssid = "weedle"
     if Params is not None:
@@ -533,12 +554,19 @@ class WifiManager:
     while not self._exit:
       try:
         now = time.monotonic()
-        if now >= next_auto_check:
+        if now >= next_auto_check or (not self.auto_connect_open_wifi and self._auto_open_connection is not None):
           self._auto_connect_open_network()
-          next_auto_check = time.monotonic() + SCAN_PERIOD_SECONDS
-        searching = self.auto_connect_open_wifi and self._wifi_state.status == ConnectStatus.DISCONNECTED
-        period = SCAN_PERIOD_SECONDS if self._active else AUTO_OPEN_SCAN_SECONDS
-        if (self._active or searching) and now - self._last_network_scan > period:
+          now = time.monotonic()
+          next_auto_check = now + SCAN_PERIOD_SECONDS
+        if self._active:
+          period = SCAN_PERIOD_SECONDS
+        elif self.auto_connect_open_wifi and self._wifi_state.status == ConnectStatus.DISCONNECTED:
+          period = AUTO_OPEN_SCAN_SECONDS
+        elif self.auto_connect_open_wifi and self._auto_open_connection is not None:
+          period = AUTO_OPEN_SAVED_SCAN_SECONDS
+        else:
+          period = None
+        if period is not None and now - self._last_network_scan > period:
           self._request_scan()
           self._last_network_scan = now
       except Exception:
@@ -550,36 +578,88 @@ class WifiManager:
     return self._params is not None and not self._params.get_bool("DisableAutoConnectOpenWifi")
 
   def set_auto_connect_open_wifi(self, enabled: bool):
+    if self._params is None:
+      return
     self._params.put_bool("DisableAutoConnectOpenWifi", not enabled, block=True)
+    if enabled:
+      self._auto_open_cooldown.clear()
+      self._auto_open_failures.clear()
 
-  def _reject_auto_open_connection(self):
+  def _is_saved_autoconnect_ssid(self, ssid: str) -> bool:
+    conn_path = self._connections.get(ssid)
+    return (conn_path is not None and ssid != self._tethering_ssid and conn_path not in self._non_autoconnect_paths and
+            (self._auto_open_connection is None or self._auto_open_connection.ssid != ssid))
+
+  def _visible_saved_networks(self) -> list[Network]:
+    return [n for n in self._networks if self._is_saved_autoconnect_ssid(n.ssid) and n.strength >= AUTO_OPEN_MIN_STRENGTH]
+
+  def _cooldown_auto_open_ssid(self, ssid: str, seconds: float | None = None) -> float:
+    if seconds is None:
+      failures = self._auto_open_failures.get(ssid, 0)
+      seconds = min(AUTO_OPEN_RETRY_SECONDS * (2 ** failures), AUTO_OPEN_MAX_RETRY_SECONDS)
+      self._auto_open_failures[ssid] = failures + 1
+    self._auto_open_cooldown[ssid] = time.monotonic() + seconds
+    return seconds
+
+  def _clear_auto_open_connection(self, *, deactivate: bool = True, cooldown: bool = True,
+                                  cooldown_seconds: float | None = None, reset_idle: bool = True, reason: str = ""):
     connection = self._auto_open_connection
     if connection is not None:
-      self._auto_open_cooldown[connection.ssid] = time.monotonic() + AUTO_OPEN_RETRY_SECONDS
-      # Use the exact activation, never the SSID: a manual connection may have replaced it during the probe.
-      self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (connection.path,)))
+      delay = self._cooldown_auto_open_ssid(connection.ssid, cooldown_seconds) if cooldown else 0.0
+      if deactivate:
+        # Use the exact activation, never the SSID: a manual connection may have replaced it during the probe.
+        self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (connection.path,)))
+      cloudlog.info(f"Auto-open Wi-Fi cleared {connection.ssid!r}: reason={reason or 'unknown'}, cooldown={int(delay)}s")
       self._auto_open_connection = None
-    self._auto_open_idle_since = time.monotonic()
+    if reset_idle:
+      self._auto_open_idle_since = time.monotonic()
 
   def _wifi_has_internet(self, interface: str) -> bool:
     if not interface:
       return False
-    try:
-      # An overall connectivity result could come from cellular or Tailscale. Keep TLS verification and reject redirects.
-      result = subprocess.run(["curl", "--disable", "--silent", "--noproxy", "*", "--interface", f"if!{interface}",
-                               "--ipv4", "--connect-timeout", "5", "--max-time", "10", "--max-filesize", "4096",
-                               "--output", "/dev/null", "--write-out", "%{http_code}",
-                               "https://connectivitycheck.gstatic.com/generate_204"],
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=12)
-      return result.returncode == 0 and result.stdout == b"204"
-    except (OSError, subprocess.TimeoutExpired):
+    for url in AUTO_OPEN_PROBE_URLS:
+      try:
+        # An overall connectivity result could come from cellular or Tailscale. Keep TLS verification and reject redirects.
+        result = subprocess.run(["curl", "--disable", "--silent", "--noproxy", "*", "--interface", f"if!{interface}",
+                                 "--ipv4", "--connect-timeout", "5", "--max-time", "10", "--max-filesize", "4096",
+                                 "--output", "/dev/null", "--write-out", "%{http_code}", url],
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=12)
+      except (OSError, subprocess.TimeoutExpired):
+        continue
+      if result.returncode == 0:
+        return result.stdout == b"204"
+    return False
+
+  def _handoff_to_saved_network(self, connection: AutoOpenConnection, epoch: int) -> bool:
+    candidates = [n for n in self._visible_saved_networks()
+                  if n.ssid not in connection.initial_saved_ssids and n.ssid not in self._saved_handoff_cooldown]
+    if not candidates:
       return False
+    saved = max(candidates, key=lambda n: n.strength)
+    with self._activation_lock:
+      if self._user_epoch != epoch or not self.auto_connect_open_wifi or self._wifi_device is None:
+        return False
+      conn_path = self._connections.get(saved.ssid)
+      if conn_path is None:
+        return False
+      reply = self._router_main.send_and_get_reply(new_method_call(self._nm, 'ActivateConnection', 'ooo',
+                                                                   (conn_path, self._wifi_device, "/")))
+      self._saved_handoff_cooldown[saved.ssid] = time.monotonic() + AUTO_OPEN_SAVED_HANDOFF_COOLDOWN_SECONDS
+      if reply.header.message_type == MessageType.error:
+        cloudlog.warning(f"Auto-open Wi-Fi failed handoff to saved network {saved.ssid!r}: {reply}")
+        return False
+      cloudlog.info(f"Auto-open Wi-Fi handing off from {connection.ssid!r} to saved network {saved.ssid!r} (strength={saved.strength})")
+      self._auto_open_connection = None
+      self._auto_open_idle_since = time.monotonic()
+      return True
 
   def _auto_connect_open_network(self):
     now = time.monotonic()
     self._auto_open_cooldown = {ssid: until for ssid, until in self._auto_open_cooldown.items() if until > now}
+    self._saved_handoff_cooldown = {ssid: until for ssid, until in self._saved_handoff_cooldown.items() if until > now}
     if not self.auto_connect_open_wifi:
-      self._reject_auto_open_connection()
+      self._clear_auto_open_connection(deactivate=True, cooldown=False, reset_idle=True, reason="disabled")
+      self._auto_open_seen_since.clear()
       return
     if self._wifi_device is None:
       return
@@ -595,37 +675,78 @@ class WifiManager:
 
     connection = self._auto_open_connection
     if connection is not None:
-      if active_path != connection.path or state in (NMDeviceState.FAILED, NMDeviceState.UNAVAILABLE):
-        self._reject_auto_open_connection()
+      if active_path not in ('/', connection.path):
+        self._clear_auto_open_connection(deactivate=False, cooldown=False, reset_idle=True, reason="replaced")
+      elif active_path == '/' or state in (NMDeviceState.FAILED, NMDeviceState.UNAVAILABLE, NMDeviceState.DISCONNECTED, NMDeviceState.UNMANAGED):
+        was_clean_drop = connection.verified and state != NMDeviceState.FAILED
+        self._clear_auto_open_connection(
+          deactivate=(active_path == connection.path),
+          cooldown=True,
+          cooldown_seconds=AUTO_OPEN_DROPPED_RETRY_SECONDS if was_clean_drop else None,
+          reset_idle=bool(self._visible_saved_networks()),
+          reason="dropped" if was_clean_drop else f"state_{state}",
+        )
       elif state == NMDeviceState.ACTIVATED:
+        if self._handoff_to_saved_network(connection, epoch):
+          return
         if now >= connection.next_check:
           if self._wifi_has_internet(props.get('IpInterface', ('s', ''))[1]):
-            connection.next_check = time.monotonic() + AUTO_OPEN_SCAN_SECONDS
+            if not connection.verified:
+              cloudlog.info(f"Auto-open Wi-Fi verified internet on {connection.ssid!r}")
+            connection.verified = True
+            connection.failed_checks = 0
+            self._auto_open_failures.pop(connection.ssid, None)
+            connection.next_check = time.monotonic() + AUTO_OPEN_RECHECK_SECONDS
           else:
-            self._reject_auto_open_connection()
+            user_acted = self._user_epoch != epoch
+            if not user_acted and connection.verified and connection.failed_checks + 1 < AUTO_OPEN_MAX_FAILED_RECHECKS:
+              connection.failed_checks += 1
+              connection.next_check = time.monotonic() + SCAN_PERIOD_SECONDS
+              cloudlog.info(f"Auto-open Wi-Fi transient probe miss ({connection.failed_checks}/{AUTO_OPEN_MAX_FAILED_RECHECKS}) on {connection.ssid!r}")
+            else:
+              should_cooldown = not (user_acted and connection.verified)
+              self._clear_auto_open_connection(
+                deactivate=True,
+                cooldown=should_cooldown,
+                reset_idle=(user_acted or bool(self._visible_saved_networks())),
+                reason="recheck_failed" if connection.verified else "no_internet",
+              )
       elif now >= connection.deadline:
-        self._reject_auto_open_connection()
+        self._clear_auto_open_connection(deactivate=True, cooldown=True, reset_idle=bool(self._visible_saved_networks()), reason="connect_timeout")
       return
 
     if state != NMDeviceState.DISCONNECTED or self._wifi_state.status == ConnectStatus.CONNECTING:
       self._auto_open_idle_since = now
+      self._auto_open_seen_since.clear()
       return
+    if self._last_networks_update is not None and now - self._last_networks_update > AUTO_OPEN_SCAN_STALE_SECONDS:
+      self._auto_open_seen_since.clear()
+      return
+
+    strong_open = [n for n in self._networks if n.security_type == SecurityType.OPEN and not n.is_tethering and n.strength >= AUTO_OPEN_MIN_STRENGTH]
+    self._auto_open_seen_since = {n.ssid: self._auto_open_seen_since.get(n.ssid, now) for n in strong_open}
+
     # Give NetworkManager first opportunity to reconnect saved networks.
     if now - self._auto_open_idle_since < AUTO_OPEN_CONNECT_SECONDS:
       return
-    candidates = [n for n in self._networks if n.security_type == SecurityType.OPEN and not n.is_tethering and
-                  n.ssid not in self._connections and n.ssid not in self._auto_open_cooldown]
+    min_dwell = AUTO_OPEN_ONROAD_DWELL_SECONDS if (self._params is not None and self._params.get("IsOffroad") is False) else 0.0
+    candidates = [n for n in strong_open if n.ssid not in self._connections and n.ssid not in self._auto_open_cooldown and
+                  now - self._auto_open_seen_since[n.ssid] >= min_dwell]
     if not candidates:
       return
     network = max(candidates, key=lambda n: n.strength)
+    initial_saved = frozenset(n.ssid for n in self._visible_saved_networks())
     with self._activation_lock:
       if self._user_epoch != epoch or not self.auto_connect_open_wifi:
         return
       path = self._add_and_activate_network(network.ssid, "", automatic=True)
       if path is not None:
-        self._auto_open_connection = AutoOpenConnection(network.ssid, path, time.monotonic() + AUTO_OPEN_CONNECT_SECONDS)
+        self._auto_open_connection = AutoOpenConnection(network.ssid, path, time.monotonic() + AUTO_OPEN_CONNECT_SECONDS,
+                                                        initial_saved_ssids=initial_saved)
+        cloudlog.info(f"Auto-open Wi-Fi connecting to {network.ssid!r} (strength={network.strength})")
       else:
-        self._auto_open_cooldown[network.ssid] = time.monotonic() + AUTO_OPEN_RETRY_SECONDS
+        delay = self._cooldown_auto_open_ssid(network.ssid)
+        cloudlog.info(f"Auto-open Wi-Fi activation failed for {network.ssid!r}, cooldown={int(delay)}s")
 
   def _wait_for_wifi_device(self):
     while not self._exit:
@@ -651,11 +772,17 @@ class WifiManager:
       cloudlog.exception(f"Error getting adapter type {adapter_type}: {e}")
     return None
 
+  @staticmethod
+  def _is_non_autoconnect(settings: dict) -> bool:
+    conn = settings.get('connection', {})
+    return conn.get('id') == ('s', AUTO_OPEN_CONNECTION_ID) or not bool(conn.get('autoconnect', ('b', True))[1])
+
   def _init_connections(self) -> None:
     settings_addr = DBusAddress(NM_SETTINGS_PATH, bus_name=NM, interface=NM_SETTINGS_IFACE)
     known_connections = self._router_main.send_and_get_reply(new_method_call(settings_addr, 'ListConnections')).body[0]
 
     conns: dict[str, str] = {}
+    non_autoconnect: set[str] = set()
     for conn_path in known_connections:
       settings = self._get_connection_settings(conn_path)
 
@@ -667,7 +794,10 @@ class WifiManager:
         ssid = settings['802-11-wireless']['ssid'][1].decode("utf-8", "replace")
         if ssid != "":
           conns[ssid] = conn_path
+          if self._is_non_autoconnect(settings):
+            non_autoconnect.add(conn_path)
     self._connections = conns
+    self._non_autoconnect_paths = non_autoconnect
 
   def _new_connection(self, conn_path: str):
     settings = self._get_connection_settings(conn_path)
@@ -676,9 +806,14 @@ class WifiManager:
       ssid = settings['802-11-wireless']['ssid'][1].decode("utf-8", "replace")
       if ssid != "":
         self._connections[ssid] = conn_path
+        if self._is_non_autoconnect(settings):
+          self._non_autoconnect_paths.add(conn_path)
+        else:
+          self._non_autoconnect_paths.discard(conn_path)
 
   def _connection_removed(self, conn_path: str):
     self._connections = {ssid: path for ssid, path in self._connections.items() if path != conn_path}
+    self._non_autoconnect_paths.discard(conn_path)
 
   def _get_active_connections(self, router: DBusConnection | DBusRouter | None = None):
     # Returns list of ActiveConnection
@@ -754,11 +889,13 @@ class WifiManager:
     self._router_main.send_and_get_reply(new_method_call(settings_addr, 'AddConnection', 'a{sa{sv}}', (connection,)))
 
   def connect_to_network(self, ssid: str, password: str, hidden: bool = False):
+    self._auto_open_cooldown.pop(ssid, None)
+    self._auto_open_failures.pop(ssid, None)
     self._set_connecting(ssid)
 
     def worker():
       with self._activation_lock:
-        self.forget_connection(ssid, block=True)
+        self.forget_connection(ssid, block=True, cooldown=False)
         self._add_and_activate_network(ssid, password, hidden)
 
     self._requests.put(worker)
@@ -813,8 +950,9 @@ class WifiManager:
       return None
     return reply.body[1]
 
-  def forget_connection(self, ssid: str, block: bool = False):
-    self._auto_open_cooldown[ssid] = time.monotonic() + AUTO_OPEN_RETRY_SECONDS
+  def forget_connection(self, ssid: str, block: bool = False, cooldown: bool = True):
+    if cooldown:
+      self._auto_open_cooldown[ssid] = time.monotonic() + AUTO_OPEN_RETRY_SECONDS
 
     def worker():
       conn_path = self._connections.get(ssid, None)
@@ -832,6 +970,9 @@ class WifiManager:
       self._requests.put(worker)
 
   def activate_connection(self, ssid: str, block: bool = False):
+    self._auto_open_cooldown.pop(ssid, None)
+    self._auto_open_failures.pop(ssid, None)
+    self._saved_handoff_cooldown.pop(ssid, None)
     self._set_connecting(ssid)
 
     def worker():
@@ -1029,6 +1170,7 @@ class WifiManager:
             cloudlog.exception(f"Failed to parse AP properties for {ap_path}")
 
         self._networks = [Network.from_dbus(ssid, ap_list, ssid == self._tethering_ssid) for ssid, ap_list in aps.items()]
+        self._last_networks_update = time.monotonic()
         self._update_active_connection_info()
         if self._active:
           self._enqueue_callbacks(self._networks_updated, self.networks)  # sorted
