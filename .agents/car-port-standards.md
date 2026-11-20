@@ -177,10 +177,10 @@ active safety rails.
   No new learner or gas-map gain is added. This selection does not activate friction braking, alter
   `ACCEL_COMMAND`, or change non-Odyssey Honda behavior.
   Replay does not establish road benefit.
-- The fixed Odyssey trial uses 3840 steering counts, seed factor 1.35 and
-  friction 0.2 / 1.5 in stock ACC and Alpha Long. Both use the ordinary Honda
-  limiter with 7680 CAN counts/s and delay 0.15. Seed scaling preserves acceleration and
-  friction commands in counts. `carOutput` reports actual emitted counts normalized by
+- The fixed Odyssey trial uses 3840 steering counts, seed factor 1.05,
+  friction 0.12 and `maxLateralAccel` 0.9 in the active 3840 normalization in
+  stock ACC and Alpha Long. Both use the ordinary Honda
+  limiter with 7680 CAN counts/s and delay 0.15. `carOutput` reports actual emitted counts normalized by
   the active range; inactive output is zero. General higher-count road benefit remains unproven.
   The torque learner retains its stock physical sample range and fit metric, with points and
   fitted parameters published in the active normalization. Its Odyssey cache version rejects prior

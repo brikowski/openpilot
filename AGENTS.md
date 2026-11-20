@@ -170,8 +170,9 @@ On this Bosch Odyssey, `openpilotLongitudinalControl` disables the radar ECU thr
 tester-present keeps it disabled. Honda CMBS, including stock AEB and FCW, is unavailable.
 Panda AEB-forwarding flags or rejection of OpenPilot AEB bits do not restore it.
 
-The current steering trial uses `[0, 3840]`, `latAccelFactor 1.35`, `friction 0.2 / 1.5`,
-`steerActuatorDelay 0.15` and the ordinary `7680` counts/s limiter in both stock ACC and Alpha Long.
+The current steering trial uses `[0, 3840]`, `latAccelFactor 1.05`, `friction 0.12`,
+`maxLateralAccel 0.9`, `steerActuatorDelay 0.15` and the ordinary `7680` counts/s limiter in both
+stock ACC and Alpha Long (seed in the active 3840 normalization).
 These are a supervised configuration, not a proven physical optimum. Factory 3840 requests occur with idle reported
 braking; do not gate this range on braking. Preserve stock physical learner coordinates/buckets,
 active output normalization (zero when inactive) and cache compatibility; never restore an
