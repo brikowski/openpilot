@@ -101,10 +101,14 @@ def manager_cleanup() -> None:
   cloudlog.info("everything is dead")
 
 
-def should_reboot_for_update(params: Params, sm: messaging.SubMaster) -> bool:
-  if (not params.get_bool("UpdateAvailable") or params.get_bool("DisableUpdates") or
-      params.get("UpdaterState") != "idle" or not params.get_bool("IsOffroad") or
-      any(params.get_bool(key) for key in ("DoShutdown", "DoUninstall", "DoReboot"))):
+AUTO_UPDATE_OFFROAD_DELAY_S = 60.0
+AUTO_UPDATE_CHECK_INTERVAL_S = 30.0
+AUTO_UPDATE_MIN_FREE_SPACE_PERCENT = 5.0
+AUTO_UPDATE_MIN_VOLTAGE_MV = 11_800
+
+
+def _vehicle_offroad_ignition_off(params: Params, sm: messaging.SubMaster) -> bool:
+  if not params.get_bool("IsOffroad"):
     return False
 
   services = ['deviceState', 'pandaStates']
@@ -113,10 +117,80 @@ def should_reboot_for_update(params: Params, sm: messaging.SubMaster) -> bool:
 
   # Offroad can also mean startup was blocked while the car is still running.
   pandas = sm['pandaStates']
-  if not pandas or any(ps.pandaType == log.PandaState.PandaType.unknown or ps.ignitionLine or ps.ignitionCan for ps in pandas):
+  return bool(pandas) and not any(ps.pandaType == log.PandaState.PandaType.unknown or ps.ignitionLine or ps.ignitionCan for ps in pandas)
+
+
+def _auto_update_environment_ready(params: Params, sm: messaging.SubMaster) -> bool:
+  if (not params.get_bool("UpdateAvailable") or params.get_bool("DisableUpdates") or
+      params.get("UpdaterState") != "idle" or
+      any(params.get_bool(key) for key in ("DoShutdown", "DoUninstall", "DoReboot", "IsDriverViewEnabled", "IsLiveStreaming"))):
     return False
 
-  return can_install_update(params.get("UpdaterTargetBranch"))
+  if not _vehicle_offroad_ignition_off(params, sm):
+    return False
+
+  device_state = sm['deviceState']
+  if device_state.thermalStatus >= log.DeviceState.ThermalStatus.overheated or device_state.freeSpacePercent < AUTO_UPDATE_MIN_FREE_SPACE_PERCENT:
+    return False
+
+  in_car = any(ps.harnessStatus != log.PandaState.HarnessStatus.notConnected for ps in sm['pandaStates'])
+  if in_car:
+    if 'peripheralState' not in sm.services or not sm.all_checks(['peripheralState']):
+      return False
+    peripheral = sm['peripheralState']
+    if peripheral.pandaType == log.PandaState.PandaType.unknown or peripheral.voltage < AUTO_UPDATE_MIN_VOLTAGE_MV:
+      return False
+
+  return True
+
+
+def should_reboot_for_update(params: Params, sm: messaging.SubMaster) -> bool:
+  return _auto_update_environment_ready(params, sm) and can_install_update(params.get("UpdaterTargetBranch"))
+
+
+class AutoUpdateTracker:
+  """Apply an ignition-off settle window and throttle repeated staging inspections."""
+
+  def __init__(self) -> None:
+    self._offroad_ign_off_since: float | None = None
+    self._next_staging_check: float = 0.0
+    self._last_target_branch: str | None = None
+    self._last_updater_state: str | None = None
+    self._deferred_logged: bool = False
+
+  def should_reboot(self, params: Params, sm: messaging.SubMaster) -> bool:
+    now = time.monotonic()
+    if _vehicle_offroad_ignition_off(params, sm):
+      if self._offroad_ign_off_since is None:
+        self._offroad_ign_off_since = now
+    else:
+      self._offroad_ign_off_since = None
+
+    updater_state = params.get("UpdaterState")
+    target_branch = params.get("UpdaterTargetBranch")
+    if (not params.get_bool("UpdateAvailable") or
+        (updater_state != self._last_updater_state and updater_state == "idle") or
+        target_branch != self._last_target_branch):
+      self._next_staging_check = 0.0
+      self._deferred_logged = False
+    self._last_updater_state = updater_state
+    self._last_target_branch = target_branch
+
+    if not _auto_update_environment_ready(params, sm):
+      return False
+    if self._offroad_ign_off_since is None or now - self._offroad_ign_off_since < AUTO_UPDATE_OFFROAD_DELAY_S:
+      return False
+    if now < self._next_staging_check:
+      return False
+
+    if can_install_update(target_branch):
+      return True
+
+    self._next_staging_check = now + AUTO_UPDATE_CHECK_INTERVAL_S
+    if not self._deferred_logged:
+      cloudlog.info("deferring automatic update installation until staging guards pass")
+      self._deferred_logged = True
+    return False
 
 
 def manager_thread() -> None:
@@ -133,8 +207,9 @@ def manager_thread() -> None:
     ignore.append("pandad")
   ignore += [x for x in os.getenv("BLOCK", "").split(",") if len(x) > 0]
 
-  sm = messaging.SubMaster(['deviceState', 'carParams', 'pandaStates'], poll='deviceState')
+  sm = messaging.SubMaster(['deviceState', 'carParams', 'pandaStates', 'peripheralState'], poll='deviceState')
   pm = messaging.PubMaster(['managerState'])
+  auto_update = AutoUpdateTracker()
 
   params.put_bool("IsOffroad", True, block=True)
   ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore)
@@ -183,7 +258,7 @@ def manager_thread() -> None:
     except Exception:
       pass
 
-    if should_reboot_for_update(params, sm):
+    if auto_update.should_reboot(params, sm):
       cloudlog.info("installing staged update automatically with ignition off")
       params.put_bool("DoReboot", True, block=True)
 

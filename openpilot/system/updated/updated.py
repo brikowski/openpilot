@@ -90,7 +90,13 @@ def can_install_update(target_branch: str | None) -> bool:
     # Match the launcher's protection against overwriting local development work.
     if run(["find", os.path.join(BASEDIR, ".git"), "-newer", str(OVERLAY_INIT), "-print", "-quit"]).strip():
       return False
-    return run(["git", "rev-parse", "--abbrev-ref", "HEAD"], FINALIZED).strip() == target_branch
+    finalized_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], FINALIZED).strip()
+    if finalized_branch != target_branch or finalized_branch == "HEAD":
+      return False
+    finalized_commit = run(["git", "rev-parse", "HEAD"], FINALIZED).strip()
+    current_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], BASEDIR).strip()
+    current_commit = run(["git", "rev-parse", "HEAD"], BASEDIR).strip()
+    return bool(finalized_commit) and (finalized_branch, finalized_commit) != (current_branch, current_commit)
   except (OSError, subprocess.CalledProcessError):
     cloudlog.exception("unable to confirm staged update is installable")
     return False
