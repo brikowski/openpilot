@@ -269,3 +269,37 @@ def test_host_key_download_authenticates_with_the_job_token(tmp_path):
   assert result.returncode == 0, result.stderr
   assert '          GITHUB_TOKEN: ${{ github.token }}\n' in step
   assert hosts.read_text() == 'github.com ssh-ed25519 test-host-key\n'
+
+
+def test_weekly_sync_workflow_replaces_release_and_shares_checks():
+  root = Path(__file__).resolve().parents[1]
+  assert not (root / '.github/workflows/odyssey-release.yaml').exists()
+  assert not (root / '.github/workflows/odyssey-sync.yaml').exists()
+  assert not (root / '.agents/publish_public.py').exists()
+
+  upstream = (root / '.github/workflows/odyssey-upstream.yaml').read_text()
+  assert "cron: '1 0 * * 1'" in upstream
+  assert 'timezone: America/Chicago' in upstream
+  assert 'workflow_dispatch:' in upstream
+  assert 'workflow_call:' in upstream
+  assert "if: github.repository == 'brikowski/openpilot'" in upstream
+  assert "if: steps.merge.outputs.changed == 'true'" in upstream
+  assert upstream.count('./tools/op.sh setup') == 1
+  assert 'bash .agents/run_odyssey_ci.sh lint' in upstream
+  assert 'bash .agents/run_odyssey_ci.sh test' in upstream
+
+  checks = (root / '.github/workflows/odyssey.yaml').read_text()
+  assert 'workflow_dispatch:' in checks
+  assert 'schedule:' not in checks
+  assert 'bash .agents/run_odyssey_ci.sh lint' in checks
+  assert 'bash .agents/run_odyssey_ci.sh test' in checks
+
+  script = root / '.agents/run_odyssey_ci.sh'
+  syntax = subprocess.run(['bash', '-n', str(script)], text=True, capture_output=True)
+  assert syntax.returncode == 0, syntax.stderr
+  block = re.search(r'pytest -q \\\n((?:      \S+(?: \\)?\n)+)', script.read_text())
+  assert block is not None
+  targets = [line.strip().removesuffix(' \\') for line in block.group(1).splitlines()]
+  assert targets
+  for target in targets:
+    assert (root / target).exists(), f'missing CI test target: {target}'

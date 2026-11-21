@@ -1,6 +1,10 @@
-name: Odyssey upstream compatibility
+name: Odyssey weekly upstream sync
 
 on:
+  schedule:
+    - cron: '1 0 * * 1'
+      timezone: America/Chicago
+  workflow_dispatch:
   workflow_call:
     secrets:
       OPENDBC_SYNC_KEY:
@@ -8,6 +12,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: odyssey-weekly-sync
+  cancel-in-progress: false
 
 env:
   CI: 1
@@ -20,6 +28,7 @@ env:
 
 jobs:
   sync:
+    if: github.repository == 'brikowski/openpilot'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -31,6 +40,7 @@ jobs:
       - name: Prepare paired development branches
         id: before
         run: |
+          ./lfs.py install
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git -C opendbc_repo config user.name 'github-actions[bot]'
@@ -40,40 +50,37 @@ jobs:
           git -C opendbc_repo remote add upstream https://github.com/commaai/opendbc.git
           echo "parent=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "child=$(git -C opendbc_repo rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Set up merge tooling
-        run: ./tools/op.sh setup
+      - name: Install uv
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if ! command -v uv >/dev/null 2>&1; then
+            curl --retry 5 --retry-delay 5 --retry-all-errors -LsSf https://astral.sh/uv/install.sh | UV_GITHUB_TOKEN="${GITHUB_TOKEN:-}" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
       - name: Merge official master and its pinned opendbc
-        run: python3 .agents/sync_upstream.py
+        id: merge
+        run: |
+          python3 .agents/sync_upstream.py
+          if [ "$(git rev-parse HEAD)" = "${{ steps.before.outputs.parent }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Set up merged build environment
+        if: steps.merge.outputs.changed == 'true'
         run: ./tools/op.sh setup
       - name: Check dependencies and lint
-        run: |
-          uv lock --check
-          ruff check openpilot opendbc_repo/opendbc/car/honda
-          ruff check .agents --ignore ISC002
+        if: steps.merge.outputs.changed == 'true'
+        run: bash .agents/run_odyssey_ci.sh lint
       - name: Build merged source
+        if: steps.merge.outputs.changed == 'true'
         run: scons -j2
       - name: Check merged vehicle behavior and development tools
-        run: |
-          python3 -m pytest -q \
-            opendbc_repo/opendbc/car/honda/tests/test_honda.py \
-            opendbc_repo/opendbc/safety/tests/test_honda.py \
-            openpilot/common/tests/test_prefix.py \
-            openpilot/selfdrive/car/tests/test_cruise_speed.py \
-            openpilot/selfdrive/controls/tests/test_controlsd.py \
-            openpilot/selfdrive/controls/tests/test_longitudinal_planner.py \
-            openpilot/selfdrive/controls/tests/test_departure_alerts.py \
-            openpilot/selfdrive/selfdrived/tests/test_eco_mode.py \
-            openpilot/selfdrive/locationd/test/test_torqued.py \
-            openpilot/selfdrive/ui/tests/test_display_wake.py \
-            openpilot/selfdrive/ui/tests/test_screensaver.py \
-            openpilot/selfdrive/ui/tests/test_upload_status.py \
-            openpilot/selfdrive/ui/tests/test_lead_bar.py \
-            openpilot/selfdrive/ui/tests/test_settings.py \
-            openpilot/system/ui/lib/tests \
-            .agents
-          python3 .agents/preflash.py
+        if: steps.merge.outputs.changed == 'true'
+        run: bash .agents/run_odyssey_ci.sh test
       - name: Publish checked development pair
+        if: steps.merge.outputs.changed == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENDBC_SYNC_KEY: ${{ secrets.OPENDBC_SYNC_KEY }}

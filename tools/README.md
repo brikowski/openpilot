@@ -65,20 +65,15 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 
 ## Private Odyssey workflow
 
-Use `ody-op-test` for development, tooling, and supervised tests. `ody-op` is the public install
-branch and repository default; target development pull requests to `ody-op-test`. GitHub Actions
-publishes the latest `ody-op-test` every Sunday at 6:15 PM America/Chicago
-after software checks pass. Monday at 6:15 AM, a separate job merges official master and its exact
-opendbc pin into `ody-op-test`, validates it, and publishes opendbc before the parent. Both retain
-existing history and stop for source conflicts or concurrent development. The small schedulers live
-on `ody-op`; neither weekly job deploys to the device. Sunday publishes the exact checked revision.
-`master` is inactive history; use `upstream/master` for
-deliberate upstream updates. Push development source only to `ody-op-test`; the automatic GitHub
-Actions release owns publication of `ody-op`. Do not manually push `ody-op` or run the publisher
-with `--publish` from this checkout. Use `.venv/bin/python .agents/publish_public.py` for a local
-preview only. The publisher retains vehicle code, tests, and submodule
-pins, excludes custom tooling, and preserves public CI configuration. Publication never deploys to
-the device; device build/health checks and road assessment remain separate gates.
+Use `ody-op-test` for development, tooling, and supervised tests (`ody-op` public releases are
+retired); target development pull requests to `ody-op-test`. Every Monday at 12:01 AM
+America/Chicago, `.github/workflows/odyssey-upstream.yaml` merges official master and its exact
+opendbc pin into `ody-op-test`, skips build/test/push when already up to date, validates with
+`.agents/run_odyssey_ci.sh`, and publishes `opendbc_repo` before the parent. Syncs retain existing
+history and stop for source conflicts or concurrent development, and never deploy to the device.
+`master` is inactive history; use `upstream/master` for deliberate upstream updates. Push
+development source only to `ody-op-test`; device build/health checks and road assessment remain
+separate gates.
 
 Private logs and evidence live in Proton Drive under `Documents/openpilot`; analysis tools
 find the active account under `~/Library/CloudStorage`. Read that archive's `README.md` for

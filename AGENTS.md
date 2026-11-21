@@ -97,8 +97,9 @@ Broaden testing when a failure, new change or unresolved concern warrants it.
 ## Branches, commits and publication
 
 - Work directly on `ody-op-test` in both repositories, including tests and development tooling.
-  Target development PRs there. `ody-op` is the clean public install/default branch. Create no
-  additional branches or worktrees. `master` is inactive history; use `upstream/master` for deliberate syncs.
+  `ody-op-test` is the active development and default branch; target PRs there. Create no
+  additional branches or worktrees. `master` is inactive history; use `upstream/master` for
+  deliberate syncs. (`ody-op` public release publishing is retired.)
 - Keep commits focused: separate production behavior, tooling, evidence/docs and unrelated user work.
   Commit at a useful validated boundary, not merely because the tree is dirty. Do not squash or
   amend history unless requested; use `git revert` to retire committed candidates and keep the
@@ -106,19 +107,15 @@ Broaden testing when a failure, new change or unresolved concern warrants it.
 - Publish nested development source before its parent gitlink. Verify exact root/child SHAs,
   remote refs and clean state. **Never sync `opendbc` to its own master**: merge only OpenPilot's
   exact upstream pin, or a `car.capnp` mismatch can crash `controlsd` on-road.
-- Sunday at 12:01 AM America/Chicago, Actions checks and publishes the exact tested `ody-op-test`
-  revision to `ody-op`. Monday at 12:01 AM, a separate job merges official OpenPilot master and
-  its exact `opendbc` pin into development, checks it, then publishes child before parent.
-  Syncs use merge commits; conflicts or concurrent development stop publication. Sunday does not
-  sync upstream, and neither job deploys to the device.
+- Monday at 12:01 AM America/Chicago, `.github/workflows/odyssey-upstream.yaml` merges official
+  OpenPilot master and its exact `opendbc` pin into `ody-op-test`, skips build/test/push when
+  already up to date, runs the shared `.agents/run_odyssey_ci.sh` lint/test checks, then publishes
+  child before parent. Syncs use merge commits; conflicts or concurrent development stop
+  publication, and the job never deploys to the device.
 - Keep inherited workflows disabled and retain reviewed fork definitions during sync. Checks run
-  manually or through the weekly jobs, not on pushes/PRs. Reviewed scheduler source lives on both
-  branches; default-branch schedulers dispatch the jobs. Nested sync uses its repository deploy key.
-- Push development only to `ody-op-test`. **Never manually push `ody-op` or run
-  `.agents/publish_public.py --publish` here.** Preview with `.venv/bin/python .agents/publish_public.py`.
-  Publication must preserve identical vehicle source, tests and submodule pins while excluding
-  private data and agent/analysis/editor/deployment tooling, refreshing reviewed schedulers and
-  retaining independent public CI configuration. Publication is not road-validated promotion.
+  manually (`odyssey.yaml`) or through the weekly upstream sync (`odyssey-upstream.yaml`), not on
+  pushes/PRs. Nested sync uses its repository deploy key.
+- Push development only to `ody-op-test`.
 
 Commit justified, software-validated candidates and tests for supervised testing before road
 benefit is established. Promotion requires attributable physical improvement or a required safety
