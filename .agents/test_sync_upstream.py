@@ -278,7 +278,7 @@ def test_weekly_sync_workflow_replaces_release_and_shares_checks():
   assert not (root / '.agents/publish_public.py').exists()
 
   upstream = (root / '.github/workflows/odyssey-upstream.yaml').read_text()
-  assert "cron: '1 0 * * 1'" in upstream
+  assert "cron: '17 3 * * 0'" in upstream
   assert 'timezone: America/Chicago' in upstream
   assert 'workflow_dispatch:' in upstream
   assert 'workflow_call:' in upstream

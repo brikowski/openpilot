@@ -107,7 +107,7 @@ Broaden testing when a failure, new change or unresolved concern warrants it.
 - Publish nested development source before its parent gitlink. Verify exact root/child SHAs,
   remote refs and clean state. **Never sync `opendbc` to its own master**: merge only OpenPilot's
   exact upstream pin, or a `car.capnp` mismatch can crash `controlsd` on-road.
-- Monday at 12:01 AM America/Chicago, `.github/workflows/odyssey-upstream.yaml` merges official
+- Sunday at 3:17 AM America/Chicago, `.github/workflows/odyssey-upstream.yaml` merges official
   OpenPilot master and its exact `opendbc` pin into `ody-op-test`, skips build/test/push when
   already up to date, runs the shared `.agents/run_odyssey_ci.sh` lint/test checks, then publishes
   child before parent. Syncs use merge commits; conflicts or concurrent development stop
