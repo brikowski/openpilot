@@ -9,7 +9,6 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from private_paths import evidence_path
 
 import numpy as np
@@ -83,11 +82,10 @@ def odyssey_gas_lookup():
 
 def gas_lookup_delta(request, pitch, offset, speed, lookup=None):
   """Current-port feedforward sensitivity on frozen inputs, not native recorded output."""
-  from opendbc.car.honda.carcontroller import odyssey_gas_feedforward, odyssey_grade_gas_accel
+  from opendbc.car.honda.carcontroller import odyssey_grade_gas_accel
   bp, values = odyssey_gas_lookup() if lookup is None else lookup
-  params = SimpleNamespace(BOSCH_GAS_LOOKUP_BP=bp, BOSCH_GAS_LOOKUP_V=values)
-  original = odyssey_gas_feedforward(request, odyssey_grade_gas_accel(request, pitch), speed, params)[0]
-  adjusted = odyssey_gas_feedforward(request, odyssey_grade_gas_accel(request, pitch - offset), speed, params)[0]
+  original = float(np.interp(odyssey_grade_gas_accel(request, pitch), bp, values))
+  adjusted = float(np.interp(odyssey_grade_gas_accel(request, pitch - offset), bp, values))
   return adjusted - original
 
 

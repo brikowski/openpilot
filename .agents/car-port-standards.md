@@ -29,16 +29,16 @@ active safety rails.
   domains from the raw request, with response-qualified gas entry from settled coast, brake entry
   from observed coast with a prior forecast, and response-qualified road-speed brake release. Its
   active behavior is low-speed non-positive → brake below 5 m/s, fallback road-speed brake entry at -0.30
-  m/s², and ordinary active-gas continuity above Honda's raw -0.20 m/s² split. It does not add a
-  gasfactor, windfactor, low-speed PID, compensated-force map, or onset shaper. The current
-  passive-response candidate uses the existing same-gear forecast at 5–35 m/s. Qualified control
+  m/s², and ordinary active-gas continuity above Honda's raw -0.20 m/s² split using the stock
+  `BOSCH_GAS_LOOKUP_V = [0, 1600]` map (instance-scoped on Odyssey). It does not add a
+  gasfactor, windfactor, low-speed PID, negative gas bridge, low-speed gas trim, uphill gas cap, or
+  onset shaper. The current passive-response logic uses the existing same-gear forecast at 5–35 m/s. Qualified control
   shares the ordinary gas/coast speed boundary; dedicated stopping authority remains below 5 m/s. Both forecast
   and measured acceleration must fall below a negative request by the response margin before
   settled coast or a held, physically inactive brake domain can enter gas. Fresh valid CAN,
   received gear and braking state qualify this additional authority. A new brake selection must
   settle over the existing response-delay interval before inactive feedback can qualify that override.
-  It bypasses pre-activation
-  and permits existing bounded feedback at the gas-map floor, preserving raw gas-domain
+  It permits existing bounded feedback at the gas-map floor while preserving raw gas-domain
   `ACCEL_COMMAND`. Gas remains available at the floor while passive deceleration requires assistance.
   Once issued and reported gas stay at zero through the existing response window, a prior coast
   forecast closer to the request than both current and filtered gas response restores ordinary
@@ -70,17 +70,10 @@ active safety rails.
   Settled brake history, a held/easing request, and both current and filtered excess
   deceleration allow the same bounded forecast margin for initial release.
   Low-speed authority, braking beyond passive response and unreliable-state fallbacks remain.
-  The Odyssey-only uphill trial changes the opaque `GAS_COMMAND` mapping through a
-  bounded pitch load. The uphill load remains available through net-deceleration requests.
-  Light-grade weighting and the existing feedforward ceiling remain; calibration alone cannot
-  extend ordinary gas continuity below the raw split. A fresh negative gas bridge retains
-  `-60` at level/downhill grade and blends toward mapped gas on an uphill;
-  it does not enter when the compensated map is at its zero-gas floor or a qualified coast
-  forecast is at or above the requested acceleration. Unknown coast response retains the bridge fallback.
-  Downhill gas compensation uses the existing grade term through zero net demand;
-  it does not fade with the request. Raw gas-domain `ACCEL_COMMAND` is preserved.
-  Response feedback remains inactive during the bridge. An already-active
-  gas domain may still release into coast earlier on shallow climbs. At road
+  Odyssey grade compensation adjusts `gas_accel` linearly (`accel + 0.8 * g * sin(pitch)`, floored at
+  `BOSCH_GAS_LOOKUP_BP[0]`) for both uphill and downhill requests before applying the stock
+  `[0, 1600]` gas lookup, while leaving `ACCEL_COMMAND` raw. Coast/brake domain rules still govern
+  entry; from coast, mild negative requests remain neutral without a negative gas bridge. At road
   speed, brake-domain `ACCEL_COMMAND` preserves the bounded raw acceleration request.
   The raw-request trial isolates Honda's response from the prior brake-grade correction;
   internal grade compensation and physical benefit remain unestablished. The creep-speed brake trial adds
@@ -111,10 +104,9 @@ active safety rails.
   restarts settling for coast observations while retaining any prior estimate for the received gear.
   Existing gas continuity and unreliable-state fallbacks remain available.
   Replay does not prove road benefit.
-- Odyssey gas calibration and its uphill ceiling run together before response feedback.
-  The unpromoted gas-response observer pairs each request with its gain context. During startup,
-  measured excess uses the ordinary gain; positive feedback and cap-dependent gain wait for the
-  delayed observer. After 0.5 s of continuous active gas, it compares the earlier
+- Odyssey grade calibration runs directly into the stock Honda Bosch `[0, 1600]` lookup before
+  response feedback.
+  After 0.5 s of continuous active gas, the response observer compares the earlier
   `carControl` request with measured `aEgo` within the same received target gear and applies a bounded,
   slewed correction to `GAS_COMMAND` only. Received target-gear or transmission-activity changes
   clear delayed history. During warmup, issued correction remains within mapped headroom. Reverse
@@ -134,15 +126,16 @@ active safety rails.
   warmup, reverse-error, headroom and slew rules. Braking, driver input, unreliable state and drivetrain
   changes clear the paused offset; accepted factory mode changes also discard it. Positive offsets
   are not retained through coast. Other ineligible feedback clears its state.
-  Output uses the calibrated command's available headroom
-  in both directions, including the low-speed trim. Fresh delayed feedback uses that headroom for
+  Output uses the calibrated command's available headroom in both directions.
+  Fresh delayed feedback uses that headroom for
   its integral offset; warmup reconstructs that offset from the issued correction after accounting
   for the current proportional reduction.
   Accumulation respects these constraints, and output retains its slew limit. Mapped headroom also bounds
   feedback during high-demand launches.
-  Domain rules, raw gas-domain `ACCEL_COMMAND`, the negative bridge,
-  and brake translation remain unchanged; feedback can affect the exhausted-gas coast fallback. Replay
-  establishes command shape, not that the resulting vehicle acceleration is improved.
+  Domain rules, raw gas-domain `ACCEL_COMMAND`, and brake translation use the standard upstream Honda Bosch
+  safety limits (`[0, 2000]` gas, `[-3.5, 2.0]` m/s² accel, `ODYSSEY_LONG` retired); feedback can affect
+  the exhausted-gas coast fallback. Replay establishes command shape, not that the resulting vehicle
+  acceleration is improved.
 - The downhill gas-to-coast trial learns passive acceleration only from previously issued,
   settled, pedal-free coast or a settled negative-request brake selection with inactive actuators in the same target
   gear with valid CAN and fresh received gear, gas and braking state, using the existing recent five-sample median

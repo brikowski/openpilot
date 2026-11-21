@@ -38,14 +38,14 @@ def test_pitch_offset_holdout_cannot_fit_the_held_route():
 
 
 def test_feedforward_sensitivity_uses_odyssey_instance_lookup(monkeypatch):
-  monkeypatch.setattr(CarControllerParams, 'BOSCH_GAS_LOOKUP_V', [0, 1600])
-  assert gas_lookup_delta(.3, .03, .022, 14.) == pytest.approx(-117.7, abs=.5)
-  assert CarControllerParams.BOSCH_GAS_LOOKUP_V == [0, 1600]
+  monkeypatch.setattr(CarControllerParams, 'BOSCH_GAS_LOOKUP_V', [0, 2000])
+  assert gas_lookup_delta(.3, .03, .022, 14.) == pytest.approx(-125.6, abs=.5)
+  assert CarControllerParams.BOSCH_GAS_LOOKUP_V == [0, 2000]
 
 
-def test_feedforward_sensitivity_uses_speed_and_the_calibrated_ceiling():
-  assert gas_lookup_delta(.6, .06, .022, 14.) == pytest.approx(-60.4, abs=.5)
-  assert gas_lookup_delta(.6, .06, .022, 0.) == pytest.approx(-117.6, abs=.5)
+def test_feedforward_sensitivity_keeps_linear_grade_sensitivity_across_speed_and_load():
+  assert gas_lookup_delta(.6, .06, .022, 14.) == pytest.approx(-125.5, abs=.5)
+  assert gas_lookup_delta(.6, .06, .022, 0.) == pytest.approx(-125.5, abs=.5)
 
 
 def test_gps_coast_response_requires_recent_gps_and_keeps_coast_separate_from_brake():

@@ -217,6 +217,13 @@ MILD_CREEP_BRAKE_COMMITS = {
   "4887161dd7a2",  # shared coast eligibility preserves the same translation
   "5639f95ae502",  # pinned safety refactor preserves the Honda numeric translation
   "a3b3581fbbfb",  # settled-coast tolerance retains numeric brake translation
+  "1201e4bc550a",  # coast tolerance after brake release retains numeric brake translation
+  "59048440284a",  # zero-gas coast yield retains numeric brake translation
+  "c9c59aba0f87",  # floor gas withdrawal retains numeric brake translation
+  "74821f9f0082",  # gas floor and brake settling retains numeric brake translation
+  "3e56d9caaf0f",  # coast median window and active-brake exit retains numeric brake translation
+  "0aa941968e06",  # torque seed adjustment retains numeric brake translation
+  "9cfe297482f7",  # simplified Odyssey gas/grade and upstream safety retain numeric brake translation
 }
 RAW_ROAD_BRAKE_COMMITS = {
   "fb4da310aabf", "9285a5a1007a", "d2f49cb5c1fa", "85312f596d7d", "fd613d8772b1", "fb32e3038311", "90362b277147",

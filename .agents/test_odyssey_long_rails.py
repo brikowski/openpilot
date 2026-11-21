@@ -11,8 +11,7 @@ import numpy as np
 
 from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.honda.carcontroller import (ODYSSEY_RESPONSE_DELAY_FRAMES, ODYSSEY_RESPONSE_SLEW_COUNTS,
-                                             odyssey_low_speed_gas_command)
+from opendbc.car.honda.carcontroller import ODYSSEY_RESPONSE_DELAY_FRAMES, ODYSSEY_RESPONSE_SLEW_COUNTS
 from opendbc.car.honda.values import CAR, CarControllerParams
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -241,18 +240,7 @@ class TestOdysseyLongRails(unittest.TestCase):
   def test_odyssey_uses_upstream_gas_ceiling(self):
     """Keep upstream's Odyssey request-to-gas endpoint."""
     params = CarControllerParams(_car_params())
-    assert params.BOSCH_GAS_LOOKUP_V == [0, 2000]
-
-  def test_low_speed_positive_gas_trim_preserves_accel_domain_and_safety(self):
-    rows = {}
-    for speed in (4.0, 14.0, 30.0):
-      rejects, seen = _run(True, [1.1] * 20, pitch=0.0, vego=speed)
-      assert not rejects
-      assert len(seen) == 10
-      assert all(accel == 110 and brake == 0 for accel, _, brake in seen)
-      rows[speed] = np.median([gas for _, gas, _ in seen])
-    assert abs(rows[4.0] - rows[30.0]) <= 1
-    assert abs(rows[14.0] - (rows[30.0] - 200)) <= 1
+    assert params.BOSCH_GAS_LOOKUP_V == [0, 1600]
 
   def test_gas_response_corrects_measured_shortfall_without_changing_request_or_rails(self):
     requests = [0.2] * 20 + [0.0] * 160
@@ -267,23 +255,21 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert shortfall_gas[-1] - matched_gas[-1] > 100
     assert shortfall_gas.max() <= GAS_MAX
 
-  def test_gas_response_waits_for_negative_bridge_exit(self):
-    _, matched = _run(True, [-0.10] * 200 + [0.0] * 160,
-                      pitch=0.06, vego=18.0, aegos=0.0, target_gear=7)
-    rejects, seen = _run(True, [-0.10] * 200 + [0.0] * 160,
-                         pitch=0.06, vego=18.0, aegos=-0.3, target_gear=7)
+  def test_road_speed_coast_does_not_emit_negative_gas_bridge(self):
+    """Entering [-0.19, 0) from coast remains neutral until positive demand, keeping active feedback inside rails."""
+    requests = [-0.15] * 120 + [0.05] * 160
+    _, matched = _run(True, requests, pitch=0.0, vego=18.0, aegos=0.05, target_gear=7)
+    rejects, shortfall = _run(True, requests, pitch=0.0, vego=18.0, aegos=-0.3, target_gear=7)
     assert not rejects
-    gas = np.array([command for _, command, _ in seen])
-    matched_gas = np.array([command for _, command, _ in matched])
-    assert gas[0] == -60 and gas[99] > 0
-    assert np.all(np.diff(gas[:100]) >= 0), "grade preactivation must not pulse before feedback is eligible"
-    np.testing.assert_array_equal(gas[:126], matched_gas[:126])
-    assert gas[-1] - matched_gas[-1] > 100
-    assert gas.max() <= GAS_MAX
-    assert np.max(np.diff(gas[99:])) <= 100
-    # Feedforward is still settling; isolate feedback slew from its shared pitch-filter drift.
-    feedback = gas - matched_gas
-    assert np.max(np.diff(feedback[101:])) <= ODYSSEY_RESPONSE_SLEW_COUNTS + 1  # wire quantization
+    matched_gas = np.array([gas for _, gas, _ in matched])
+    shortfall_gas = np.array([gas for _, gas, _ in shortfall])
+    assert (shortfall_gas[:60] == GAS_INACTIVE).all()
+    assert (shortfall_gas[60:] > 0).all()
+    np.testing.assert_array_equal(shortfall_gas[:86], matched_gas[:86])
+    assert shortfall_gas[-1] - matched_gas[-1] > 100
+    assert shortfall_gas.max() <= 1600 <= GAS_MAX
+    feedback = shortfall_gas - matched_gas
+    assert np.max(np.diff(feedback[60:])) <= ODYSSEY_RESPONSE_SLEW_COUNTS + 1  # wire quantization
 
   def test_uphill_zero_request_keeps_only_an_active_gas_domain(self):
     requests = [0.2] * 100 + [0.0] * 100
@@ -308,12 +294,13 @@ class TestOdysseyLongRails(unittest.TestCase):
           assert all(gas == GAS_INACTIVE and brake for _, gas, brake in seen[10:])
 
   def test_light_downhill_braking_preserves_request_magnitude_and_release(self):
-    requests = np.r_[np.full(100, -.5), np.repeat([-.10, -.05, -.001, 0., .1], 2)]
+    requests = np.r_[np.full(100, -.5), np.repeat([-.10, -.05, -.001, 0., .1, .25], 2)]
     rejects, seen = _run(True, requests, pitch=-.05, vego=20., target_gear=7)
     assert not rejects
-    assert [accel for accel, _, _ in seen[-5:]] == [-10, -5, 0, 0, 10]
-    assert [brake for _, _, brake in seen[-5:]] == [1, 1, 1, 0, 0]
-    assert all(gas == GAS_INACTIVE for _, gas, _ in seen[-5:-1])
+    assert [accel for accel, _, _ in seen[-6:]] == [-10, -5, 0, 0, 10, 25]
+    assert [brake for _, _, brake in seen[-6:]] == [1, 1, 1, 0, 0, 0]
+    assert all(gas == GAS_INACTIVE for _, gas, _ in seen[-6:-2])
+    assert seen[-2][1] == 0
     assert seen[-1][1] > 0
     assert seen[49][0] == -50
 
@@ -348,8 +335,8 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert not brake[-10:].any()
     assert (gas[-10:] != GAS_INACTIVE).all()
 
-  def test_road_speed_gas_domain_uses_negative_bridge_before_positive_request(self):
-    """A coast recovery pre-activates with bounded negative gas, then uses direct positive gas."""
+  def test_road_speed_coast_remains_neutral_until_positive_request(self):
+    """A mild negative request from coast stays inactive coast before directly entering positive gas."""
     accels = np.array([0.10] * 20 + [-0.19] * 20 + [-0.21] * 20 + [-0.10] * 20 +
                       [0.01] * 20 + [0.03] * 20)
     rejects, seen = _run(True, accels, pitch=0.0, vego=20.0)
@@ -357,14 +344,13 @@ class TestOdysseyLongRails(unittest.TestCase):
     gases = np.array([gas for _, gas, _ in seen])
     brake = np.array([br for _, _, br in seen], dtype=bool)
     assert (gases[:20] != GAS_INACTIVE).all(), "stock gas range pulsed inactive"
-    assert (gases[20:30] == GAS_INACTIVE).all(), "gas re-entered below the bridge boundary"
-    assert (gases[30:40] == -60).all(), "nominal -0.10 request did not use the negative gas bridge"
-    assert (gases[40:50] != GAS_INACTIVE).all(), "positive road request did not re-enter gas"
-    assert (gases[50:60] != GAS_INACTIVE).all(), "larger road request did not keep gas active"
+    assert (gases[20:40] == GAS_INACTIVE).all(), "coast recovery unexpectedly activated gas on negative request"
+    assert (gases[40:50] > 0).all(), "positive road request did not re-enter gas"
+    assert (gases[50:60] > 0).all(), "larger road request did not keep gas active"
     assert not brake.any(), "gas release hysteresis unexpectedly selected the brake domain"
 
   def test_grade_gas_load_tapers_at_zero_and_keeps_raw_accel(self):
-    """Grade translation must keep the raw command and avoid the former split-step pulse."""
+    """Grade translation must keep the raw command and remain smooth through zero."""
     accels = np.full(400, 0.10)
     _, level = _run(True, accels, pitch=0.0, vego=31.0, aegos=0.10)
     _, downhill = _run(True, accels, pitch=-0.05, vego=31.0, aegos=0.10)
@@ -391,7 +377,7 @@ class TestOdysseyLongRails(unittest.TestCase):
     np.testing.assert_array_equal(driver_gas_commands, level_gas)
     assert np.median(downhill_gas[-50:]) < np.median(level_gas[-50:])
     assert np.median(uphill_gas[-50:]) > np.median(level_gas[-50:])
-    assert uphill_gas.max() <= GAS_MAX
+    assert uphill_gas.max() <= 1600 <= GAS_MAX
 
     near_zero = np.tile([0.01, -0.01], 100)
     _, uphill_crossings = _run(True, near_zero, pitch=0.03, vego=31.0)
@@ -404,8 +390,7 @@ class TestOdysseyLongRails(unittest.TestCase):
     _, steep = _run(True, np.full(400, 0.83), pitch=0.072, vego=31.0, aegos=0.83)
     assert np.median([gas for _, gas, _ in climb[-50:]]) > np.median([gas for _, gas, _ in climb_level[-50:]])
     params = CarControllerParams(_car_params())
-    bound_gas = round(np.interp(1.0, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V))
-    assert max(gas for _, gas, _ in steep) <= bound_gas
+    assert max(gas for _, gas, _ in steep) <= params.BOSCH_GAS_LOOKUP_V[-1] <= GAS_MAX
 
   def test_uphill_negative_request_keeps_existing_gas_until_the_bounded_release(self):
     """A climb may need engine output for a negative net request, without arming gas from coast."""
@@ -429,16 +414,15 @@ class TestOdysseyLongRails(unittest.TestCase):
     assert all(gas == GAS_INACTIVE for _, gas, _ in unqualified[100:])
     assert all(gas == GAS_INACTIVE for _, gas, _ in excess[100:])
 
-  def test_gas_command_matches_bounded_odyssey_translation(self):
-    """Only the targeted speed and demand band may differ from upstream's direct map."""
+  def test_gas_command_matches_stock_bosch_lookup_across_speeds(self):
+    """On level road, gas feedforward matches the stock Honda Bosch [0, 1600] lookup across speeds."""
     params = CarControllerParams(_car_params())
     for vego in (1.0, 8.0, 15.0, 22.0, 31.0):
       for accel in (0.10, 0.50, 1.00):
         with self.subTest(vego=vego, accel=accel):
           _, seen = _run(True, np.full(20, accel), pitch=0.0, vego=vego)
           gas = {command for _, command, _ in seen}
-          upstream = np.interp(accel, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V)
-          expected = round(odyssey_low_speed_gas_command(upstream, accel, vego))
+          expected = round(float(np.interp(accel, params.BOSCH_GAS_LOOKUP_BP, params.BOSCH_GAS_LOOKUP_V)))
           assert gas == {expected}
 
   def test_gas_response_is_bounded_and_bidirectional(self):
@@ -518,13 +502,11 @@ class TestOdysseyLongRails(unittest.TestCase):
             assert not rejects
             self.assertEqual(seen[0], (0, GAS_INACTIVE, 0))
             expected_brake = request <= 0. if speed < 5. else request < -.3
-            expected_gas = request > 0. or (speed >= 5. and request == -.1)
+            expected_gas = request > 0.
             for accel, gas, brake in seen[1:]:
               self.assertEqual(accel, round(request * 100))
               self.assertEqual(brake, expected_brake)
               self.assertEqual(gas != GAS_INACTIVE, expected_gas)
-              if speed >= 5. and request == -.1:
-                self.assertEqual(gas, -60)
 
   def test_alpha_long_available(self):
     """The tune is unreachable if the platform cannot get openpilot longitudinal."""

@@ -12,15 +12,15 @@ from opendbc.car.honda.values import CAR, CarControllerParams
 
 
 def test_replay_initializes_odyssey_gas_map_without_replacing_recorded_params(monkeypatch):
-  monkeypatch.setattr(CarControllerParams, 'BOSCH_GAS_LOOKUP_V', [0, 1600])
+  monkeypatch.setattr(CarControllerParams, 'BOSCH_GAS_LOOKUP_V', [0, 2000])
   recorded = CarInterface.get_params(CAR.HONDA_ODYSSEY_5G_MMR, gen_empty_fingerprint(), [], True, False, False)
   recorded.steerActuatorDelay = .123
   recorded.wheelbase = 3.25
   snapshot = recorded.to_dict()
   # Simulate a fresh replay process, which has not run Honda parameter initialization.
-  CarControllerParams.BOSCH_GAS_LOOKUP_V = [0, 1600]
+  CarControllerParams.BOSCH_GAS_LOOKUP_V = [0, 2000]
   controller = make_replay_controller(recorded)
-  assert controller.params.BOSCH_GAS_LOOKUP_V == [0, 2000]
+  assert controller.params.BOSCH_GAS_LOOKUP_V == [0, 1600]
   assert controller.CP is recorded
   assert recorded.to_dict() == snapshot
 
