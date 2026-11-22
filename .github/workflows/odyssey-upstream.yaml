@@ -2,7 +2,7 @@ name: Odyssey weekly upstream sync
 
 on:
   schedule:
-    - cron: '17 3 * * 0'
+    - cron: '17 21 * * 6'
       timezone: America/Chicago
   workflow_dispatch:
   workflow_call:

@@ -66,7 +66,7 @@ Development tools such as cabana, plotjuggler, and replay live in [openpilot/too
 ## Private Odyssey workflow
 
 Use `ody-op-test` for development, tooling, and supervised tests (`ody-op` public releases are
-retired); target development pull requests to `ody-op-test`. Every Sunday at 3:17 AM
+retired); target development pull requests to `ody-op-test`. Every Saturday at 9:17 PM
 America/Chicago, `.github/workflows/odyssey-upstream.yaml` merges official master and its exact
 opendbc pin into `ody-op-test`, skips build/test/push when already up to date, validates with
 `.agents/run_odyssey_ci.sh`, and publishes `opendbc_repo` before the parent. Syncs retain existing
