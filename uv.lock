@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12.3, <3.13"
 
 [manifest]
@@ -624,6 +624,7 @@ testing = [
 name = "openpilot"
 version = "0.1.0"
 source = { editable = "." }
+default-groups = ["standalone"]
 dependencies = [
     { name = "comma-deps-acados" },
     { name = "comma-deps-capnproto" },
@@ -749,7 +750,7 @@ requires-dist = [
     { name = "comma-deps-gcc-arm-none-eabi", marker = "extra == 'dev'" },
     { name = "libusb-package" },
     { name = "libusb1" },
-    { name = "opendbc", git = "https://github.com/commaai/opendbc.git?rev=master" },
+    { name = "opendbc", git = "https://github.com/commaai/opendbc.git?rev=6cd8a71d18019b50173f107018b98f8293813858" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "scons", marker = "extra == 'dev'" },
     { name = "setuptools", marker = "extra == 'dev'" },
