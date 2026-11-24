@@ -14,7 +14,7 @@ OFFROAD_CHECK="ody_check_python=.venv/bin/python
 if ! \"\$ody_check_python\" -c 'from openpilot.cereal import messaging; from openpilot.common.params import Params' >/dev/null 2>&1; then
   ody_check_python=/usr/local/venv/bin/python3
 fi
-\"\$ody_check_python\" - <<'ODY_OFFROAD_CHECK'
+\"\$ody_check_python\" - --ignition-off <<'ODY_OFFROAD_CHECK'
 $(cat "$ROOT_DIR/tools/check_offroad.py")
 ODY_OFFROAD_CHECK"
 
@@ -41,8 +41,8 @@ usage() {
 Usage: tools/deploy_ody_op.sh <deploy|verify>
 
 Commands:
-  deploy  Verify and publish the paired ody-op-test source, switch/build the offroad
-          device without changing Alpha Long, reboot, and verify exact state.
+  deploy  Confirm the vehicle is offroad with ignition off, publish the paired ody-op-test
+          source, switch/build without changing Alpha Long, reboot, and verify exact state.
   verify  Read-only comparison of the device against this checkout's ody-op-test pair.
 
 Environment:
@@ -156,6 +156,11 @@ deploy_device() {
   git diff --check
   git -C opendbc_repo diff --check
   .venv/bin/python .agents/preflash.py
+  remote "
+set -euo pipefail
+cd /data/openpilot
+$OFFROAD_CHECK
+"
   if test "$(git -C opendbc_repo ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')" != "$OPENDBC_SHA"; then
     git -C opendbc_repo push origin "$BRANCH"
   fi

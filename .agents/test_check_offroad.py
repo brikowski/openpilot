@@ -70,6 +70,30 @@ def test_deployment_waits_for_new_valid_offroad_state(first):
   params.get_bool.assert_called_once_with("IsOffroad")
 
 
+@pytest.mark.parametrize("panda", ["off", "line", "can", "unknown", "empty", "stale", "invalid", "dead"])
+def test_deployment_requires_fresh_ignition_off(panda, capsys):
+  sm = MagicMock()
+  sm.updated = {"deviceState": True}
+  sm.valid = {"deviceState": True, "pandaStates": panda != "invalid"}
+  sm.alive = {"deviceState": True, "pandaStates": panda != "dead"}
+  sm.logMonoTime = {"deviceState": 20, "pandaStates": 5 if panda == "stale" else 20}
+  pandas = [] if panda == "empty" else [guard.log.PandaState.new_message(
+    pandaType="unknown" if panda == "unknown" else "uno", ignitionLine=panda == "line", ignitionCan=panda == "can")]
+  states = {"deviceState": SimpleNamespace(started=False), "pandaStates": pandas}
+  sm.__getitem__.side_effect = states.__getitem__
+  params = MagicMock()
+  params.get_bool.return_value = True
+  with patch.object(guard.messaging, "SubMaster", return_value=sm) as subscribe, patch.object(guard, "Params", return_value=params), \
+       patch.object(guard.time, "monotonic_ns", side_effect=[10, 10, 3_000_000_011]):
+    if panda == "off":
+      guard.main(ignition_off=True)
+      assert capsys.readouterr().out == "offroad confirmed\n"
+    else:
+      with pytest.raises(SystemExit, match="refusing:"):
+        guard.main(ignition_off=True)
+  subscribe.assert_called_once_with(["deviceState", "pandaStates"])
+
+
 @pytest.mark.parametrize("checkout_can_import", [True, False])
 def test_remote_offroad_guard_uses_dependency_complete_interpreter(tmp_path, checkout_can_import):
   script = (Path(__file__).parents[1] / "tools/deploy_ody_op.sh").read_text()
@@ -83,7 +107,7 @@ def test_remote_offroad_guard_uses_dependency_complete_interpreter(tmp_path, che
   checkout_python.parent.mkdir(parents=True)
   system_python = tmp_path / "system-python"
   for executable, import_status in ((checkout_python, int(not checkout_can_import)), (system_python, 0)):
-    body = f'if [ "$1" = "-c" ]; then exit {import_status}; fi\nprintf "%s\\n" "$0"\ncat'
+    body = f'if [ "$1" = "-c" ]; then exit {import_status}; fi\ntest "$*" = "- --ignition-off" || exit 1\nprintf "%s\\n" "$0"\ncat'
     executable.write_text("#!/bin/sh\n" + body + "\n")
     executable.chmod(0o755)
 
@@ -105,7 +129,12 @@ def test_remote_recipes_check_offroad_before_switch_and_reboot(command):
 local_pair() { PARENT_SHA=x; OPENDBC_SHA=x; }
 git() { if [[ "$*" == *ls-remote* ]]; then echo 'x refs/heads/ody-op-test'; fi; }
 .venv/bin/python() { return 0; }
-remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return 1; }
+remote() {
+  if [[ "$1" == *ODY_OP_DEPLOY_COMPLETE* || "$1" == *parent_commit=* ]]; then
+    printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"
+    return 1
+  fi
+}
 '''
   result = subprocess.run(["bash", "-c", script + mocks + command], capture_output=True, text=True)
   assert result.returncode == 1
@@ -128,6 +157,24 @@ remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return
     assert result.stdout.rindex(code) < result.stdout.index("sudo reboot")
 
 
+def test_deployment_checks_ignition_before_publication():
+  root = Path(__file__).parents[1]
+  script = (root / "tools/deploy_ody_op.sh").read_text().rsplit('\nmain "$@"', 1)[0]
+  script = '\n'.join(f"ROOT_DIR={shlex.quote(str(root))}" if line.startswith("ROOT_DIR=") else line
+                     for line in script.splitlines())
+  mocks = '''
+local_pair() { PARENT_SHA=x; OPENDBC_SHA=x; }
+git() { if [[ "$*" == *ls-remote* || "$*" == *push* ]]; then echo PUBLICATION_STARTED; fi; }
+.venv/bin/python() { return 0; }
+remote() { printf '%s\\n' "$1"; return 73; }
+'''
+  result = subprocess.run(["bash", "-c", script + mocks + "deploy_device"], capture_output=True, text=True)
+  assert result.returncode == 73
+  assert "--ignition-off" in result.stdout
+  assert "PUBLICATION_STARTED" not in result.stdout
+  assert "tools/op.sh switch" not in result.stdout
+
+
 @pytest.mark.parametrize("agnos,version,accepted", [
   (True, "required", True),
   (True, "older", False),
@@ -146,7 +193,12 @@ local_pair() { PARENT_SHA=x; OPENDBC_SHA=x; }
 git() { if [[ "$*" == *ls-remote* ]]; then echo 'x refs/heads/ody-op-test'; fi; }
 .venv/bin/python() { return 0; }
 OFFROAD_CHECK=:
-remote() { printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"; return 1; }
+remote() {
+  if [[ "$1" == *ODY_OP_DEPLOY_COMPLETE* ]]; then
+    printf '%s\\n' "${1//ODY_OP_DEPLOY_COMPLETE/CAPTURED_MARKER}"
+    return 1
+  fi
+}
 '''
   capture = subprocess.run(["bash", "-c", script + mocks + "deploy_device"], capture_output=True, text=True,
                            env={"PATH": "/usr/bin:/bin", "AGNOS_VERSION": "inherited-override"})
