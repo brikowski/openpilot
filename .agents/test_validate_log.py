@@ -978,7 +978,7 @@ def test_light_brake_translation_matches_exact_revision_and_preserves_prior_base
   "852c47a9b867", "c91503afe54b", "e334273862e8", "3b910620868f",
   "b5a4597a01cd", "6a3be5fd57d9", "b6ebf89dd4ca", "d573d25cd2d4", "90825bb62937", "4887161dd7a2", "5639f95ae502",
   "a3b3581fbbfb", "1201e4bc550a", "59048440284a", "c9c59aba0f87", "74821f9f0082", "3e56d9caaf0f", "0aa941968e06",
-  "9cfe297482f7",
+  "9cfe297482f7", "88f30c0ea76c", "b2536a54650b",
 }))
 def test_raw_road_brake_revision_keeps_fallback_and_creep_translation(revision):
   request = np.array([-4., -.5, -.15, -.05, 0., .1, 3., -.3, -.3, -.15, -.1, -.05])
